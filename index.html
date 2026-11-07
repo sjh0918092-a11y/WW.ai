@@ -315,7 +315,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v1.5 · 2026-11-07";
+const APP_VERSION = "v1.6 · 2026-11-07";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -387,8 +387,8 @@ const ERR = {
   local_full: "브라우저 저장 공간이 가득 찼습니다.",
   quota_exceeded: "저장 공간 한도에 도달했습니다. 쓰지 않는 세계관을 삭제해 주세요.",
   timeout: "저장소가 응답하지 않습니다. 잠시 후 다시 열어 주세요.",
-  no_sample: "Gemini API 키가 없습니다. 왼쪽 'Gemini 설정'에서 키를 넣어 주세요.",
-  bad_key: "Gemini API 키가 올바르지 않거나 권한이 없습니다. 'Gemini 설정'에서 키를 확인해 주세요.",
+  no_sample: "Gemini 연결 설정이 없습니다. 왼쪽 'Gemini 설정'에서 API 키나 중계 서버 주소와 접속 암호를 넣어 주세요.",
+  bad_key: "API 키나 중계 서버 접속 암호가 올바르지 않거나 권한이 없습니다. 'Gemini 설정'에서 확인해 주세요.",
   model_not_found: "지정한 Gemini 모델을 찾을 수 없습니다. 'Gemini 설정'에서 모델 이름을 확인해 주세요.",
   network: "Gemini 서버에 연결하지 못했습니다. 인터넷 연결을 확인하고, 파일을 직접 열었다면 로컬 서버(예: python -m http.server)로 열어 보세요."
 };
@@ -399,9 +399,15 @@ const PAGE_MODEL = {};   // 모델과 생각 깊이는 'Gemini 설정'에서 정
 /* ---------- Gemini API ---------- */
 const GKEY = "wwiki:gemini";
 const GBASE = "https://generativelanguage.googleapis.com/v1beta";
-const GDEF = { key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "" };
+const GDEF = { mode: "key", relay: "", pass: "", key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "" };
 const THINKS = [["", "모델 기본값"], ["minimal", "minimal"], ["low", "low"], ["medium", "medium"], ["high", "high"]];
 let GS = (() => { try { return { ...GDEF, ...(JSON.parse(localStorage.getItem(GKEY) || "{}") || {}) }; } catch { return { ...GDEF }; } })();
+/* 연결 방식: 내 API 키로 Google에 바로 요청하거나(key), 중계 서버를 거친다(relay) */
+const gRelay = () => GS.mode === "relay";
+const gReady = () => gRelay() ? !!(GS.relay && GS.pass) : !!GS.key;
+const gBase = () => gRelay() ? GS.relay.replace(/\/+$/, "") + "/v1beta" : GBASE;
+const gAuth = () => gRelay() ? { "X-WW-Pass": GS.pass } : { "x-goog-api-key": GS.key };
+const normRelay = u => { u = String(u || "").trim().replace(/\/+$/, "").replace(/\/v1beta$/, ""); if (u && !/^https?:\/\//i.test(u)) u = "https://" + u; return u; };
 const saveGS = () => { try { localStorage.setItem(GKEY, JSON.stringify(GS)); } catch {} };
 function parseJsonLoose(t) {
   const tries = [t, t.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "")];
@@ -410,7 +416,7 @@ function parseJsonLoose(t) {
   return undefined;
 }
 async function gFetch(path, init) {
-  try { return await fetch(GBASE + path, init); }
+  try { return await fetch(gBase() + path, init); }
   catch (e) { if (e?.name === "AbortError") throw { code: "cancelled" }; throw { code: "network", message: String(e?.message || e) }; }
 }
 async function gError(res, model) {
@@ -446,7 +452,7 @@ const gemini = {
     try {
       kick();
       let res;
-      try { res = await fetch(GBASE + `/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": GS.key }, body: JSON.stringify(body), signal: ctl.signal }); }
+      try { res = await fetch(gBase() + `/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, { method: "POST", headers: { "Content-Type": "application/json", ...gAuth() }, body: JSON.stringify(body), signal: ctl.signal }); }
       catch (e) { if (opts.signal?.aborted) throw { code: "cancelled" }; if (stalled) throw { code: "stalled", message: "응답 없음" }; throw { code: "network", message: String(e?.message || e) }; }
       if (!res.ok) throw await gError(res, model);
       const reader = res.body.getReader(), dec = new TextDecoder();
@@ -482,7 +488,7 @@ const gemini = {
     finally { clearTimeout(timer); opts.signal?.removeEventListener("abort", onUser); }
   },
   async json(prompt, opts = {}) {
-    if (!GS.key) throw { code: "no_sample" };
+    if (!gReady()) throw { code: "no_sample" };
     const tier = opts.modelTier === "quick" ? "quick" : "main";
     const model = (GS[tier] || GDEF[tier]).trim(); let think = GS[tier + "Think"] || "";
     const mk = (contents, json) => { const b = { contents, generationConfig: json ? { responseMimeType: "application/json" } : {} }; if (think) b.generationConfig.thinkingConfig = { thinkingLevel: think }; return b; };
@@ -525,7 +531,7 @@ function sumUsage(a, b) {
   return { promptTokenCount: (a.promptTokenCount || 0) + (b.promptTokenCount || 0), candidatesTokenCount: (a.candidatesTokenCount || 0) + (b.candidatesTokenCount || 0), thoughtsTokenCount: (a.thoughtsTokenCount || 0) + (b.thoughtsTokenCount || 0) };
 }
 async function listGeminiModels() {
-  const res = await gFetch(`/models?pageSize=200`, { headers: { "x-goog-api-key": GS.key } });
+  const res = await gFetch(`/models?pageSize=200`, { headers: gAuth() });
   if (!res.ok) throw await gError(res, "");
   const j = await res.json();
   return (j.models || []).filter(m => (m.supportedGenerationMethods || []).includes("generateContent") && /gemini/i.test(m.name) && !/image|tts|live|audio|embedding|transcribe|robotics/i.test(m.name))
@@ -1853,7 +1859,7 @@ function renderSide() {
   const side = $("#side"), w = S.world;
   if (!w || S.view.name === "home") {
     side.innerHTML = `<section><h4>WorldWiki.ai</h4><ul><li><button type="button" class="cur" data-act="home">세계관 목록</button></li></ul></section>
-      <section class="stat"><h4>저장 위치</h4><span>${esc(storeLabel())}</span></section><section><h4>도구</h4><ul><li><button type="button" data-act="gset" class="${S.view.name === "gset" ? "cur" : ""}">Gemini 설정${GS.key ? "" : " ⚠"}</button></li><li><button type="button" data-act="log" class="${S.view.name === "log" ? "cur" : ""}">로그 보기 (${LOG.length})</button></li></ul></section>`;
+      <section class="stat"><h4>저장 위치</h4><span>${esc(storeLabel())}</span></section><section><h4>도구</h4><ul><li><button type="button" data-act="gset" class="${S.view.name === "gset" ? "cur" : ""}">Gemini 설정${gReady() ? "" : " ⚠"}</button></li><li><button type="button" data-act="log" class="${S.view.name === "log" ? "cur" : ""}">로그 보기 (${LOG.length})</button></li></ul></section>`;
     return;
   }
   const ents = Object.values(w.entities); const done = ents.filter(e => e.page).length;
@@ -1867,7 +1873,7 @@ function renderSide() {
     </ul></section>
     <section class="stat"><h4>문서 현황</h4><span>작성된 문서 <em>${done}</em></span><span>미작성 항목 <em>${ents.length - done}</em></span><span>연표 사건 <em>${w.timeline.length}</em></span></section>
     ${S.gen ? `<section><h4>작성 중</h4><div class="genpill"><span class="dot"></span><button type="button" class="btn" data-k="${S.gen.key}" style="padding:2px 8px">${esc(S.gen.title)}</button></div></section>` : ""}
-    <section><h4>도구</h4><ul><li><button type="button" data-act="gset" class="${S.view.name === "gset" ? "cur" : ""}">Gemini 설정${GS.key ? "" : " ⚠"}</button></li><li><button type="button" data-act="log" class="${S.view.name === "log" ? "cur" : ""}">로그 보기 (${LOG.length})</button></li></ul></section>
+    <section><h4>도구</h4><ul><li><button type="button" data-act="gset" class="${S.view.name === "gset" ? "cur" : ""}">Gemini 설정${gReady() ? "" : " ⚠"}</button></li><li><button type="button" data-act="log" class="${S.view.name === "log" ? "cur" : ""}">로그 보기 (${LOG.length})</button></li></ul></section>
     ${rec.length ? `<section class="rec"><h4>최근 본 문서</h4><ul>${rec.map(k => `<li><button type="button" data-k="${k}" class="${k === cur ? "cur" : ""}">${esc(w.entities[k].title)}</button></li>`).join("")}</ul></section>` : ""}`;
 }
 const storeLabel = () => ({ idb: "이 브라우저 IndexedDB (다른 기기와 공유되지 않음)", local: "이 브라우저 localStorage (용량 약 5MB)", memory: "임시 (새로고침하면 사라짐)" }[Store.mode]);
@@ -1876,10 +1882,20 @@ function gsetHtml() {
   const opt = v => THINKS.map(([x, l]) => `<option value="${x}" ${v === x ? "selected" : ""}>${esc(l)}</option>`).join("");
   const dl = `<datalist id="gmodels">${(S.gmodels || []).map(m => `<option value="${esc(m.id)}">${esc(m.label)}</option>`).join("")}</datalist>`;
   return `<div class="sheet gset"><div class="crumb"><span>도구</span></div><h1 class="t">Gemini 설정</h1>
-    <p class="note">키와 모델 설정은 이 브라우저의 localStorage에 평문으로 저장되며, 요청은 브라우저에서 Google로 바로 갑니다. 공용 컴퓨터에서는 쓰지 마세요.</p>
-    <h2 class="nf-h">API 키</h2>
-    <label class="lb" for="gKey">Gemini API 키 <span class="note" style="font-weight:400">Google AI Studio에서 발급</span></label>
-    <div class="keyrow"><input id="gKey" class="txt" type="password" autocomplete="off" spellcheck="false" value="${esc(GS.key)}" placeholder="AIza…"><button type="button" class="btn" data-act="gkey-show">보기</button></div>
+    <p class="note">연결 설정은 이 브라우저의 localStorage에 평문으로 저장됩니다. 공용 컴퓨터에서는 쓰지 마세요.</p>
+    <h2 class="nf-h">연결 방식</h2>
+    <select id="gMode" class="txt"><option value="key" ${gRelay() ? "" : "selected"}>내 API 키로 바로 연결</option><option value="relay" ${gRelay() ? "selected" : ""}>중계 서버로 연결 (초대받은 경우)</option></select>
+    <div id="gKeyBox" ${gRelay() ? "hidden" : ""}>
+      <label class="lb" for="gKey">Gemini API 키 <span class="note" style="font-weight:400">Google AI Studio에서 발급 · 요청은 브라우저에서 Google로 바로 갑니다</span></label>
+      <div class="keyrow"><input id="gKey" class="txt" type="password" autocomplete="off" spellcheck="false" value="${esc(GS.key)}" placeholder="AIza…"><button type="button" class="btn" data-act="gkey-show" data-for="gKey">보기</button></div>
+    </div>
+    <div id="gRelayBox" ${gRelay() ? "" : "hidden"}>
+      <label class="lb" for="gRelay">중계 서버 주소 <span class="note" style="font-weight:400">API 키는 중계 서버에 있고, 여기에는 접속 암호만 넣습니다</span></label>
+      <input id="gRelay" class="txt" type="url" autocomplete="off" spellcheck="false" value="${esc(GS.relay)}" placeholder="https://worldwiki-relay.○○○.workers.dev">
+      <label class="lb" for="gPass">접속 암호</label>
+      <div class="keyrow"><input id="gPass" class="txt" type="password" autocomplete="off" spellcheck="false" value="${esc(GS.pass)}"><button type="button" class="btn" data-act="gkey-show" data-for="gPass">보기</button></div>
+      <div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="relay-invite" ${GS.relay ? "" : "disabled"}>초대 링크 복사</button><span class="note">중계 서버 주소가 채워진 사이트 링크입니다. 접속 암호는 따로 알려 주세요.</span></div>
+    </div>
     <h2 class="nf-h">모델</h2>
     <div class="two"><div><label class="lb" for="gMain">기본 모델 <span class="note" style="font-weight:400">세계관 생성, 문서 작성, 충돌 고치기</span></label><input id="gMain" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.main)}"></div>
       <div><label class="lb" for="gMainT">생각 깊이</label><select id="gMainT">${opt(GS.mainThink)}</select></div></div>
@@ -1896,8 +1912,8 @@ function gsetHtml() {
 }
 function readGsetForm() {
   const v = id => ($("#" + id)?.value ?? "").trim();
-  GS = { ...GS, key: v("gKey"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT") };
-  saveGS(); S.sample = GS.key ? gemini : null;
+  GS = { ...GS, mode: v("gMode") === "relay" ? "relay" : "key", key: v("gKey"), relay: normRelay(v("gRelay")), pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT") };
+  saveGS(); S.sample = gReady() ? gemini : null;
 }
 function setGres(t) { S.gres = t; const el = $("#gRes"); if (el) el.textContent = t; }
 
@@ -2269,10 +2285,16 @@ document.addEventListener("click", ev => {
     case "fixv-back": { const k = S.fixv?.key || S.view.key; S.fixv = null; S.view = S.world && S.world.entities[k] ? { name: "article", key: k } : { name: "home" }; renderAll(); break; }
     case "log": S.view = { name: "log" }; renderAll(); window.scrollTo({ top: 0 }); break;
     case "gset": S.view = { name: "gset" }; S.gres = ""; renderAll(); window.scrollTo({ top: 0 }); break;
-    case "gkey-show": { const i = $("#gKey"); if (i) i.type = i.type === "password" ? "text" : "password"; break; }
-    case "gset-save": readGsetForm(); setGres(""); renderSide(); toast(GS.key ? "Gemini 설정을 저장했습니다." : "키가 비어 있어 생성 기능이 꺼집니다."); break;
+    case "gkey-show": { const i = $("#" + (d.for || "gKey")); if (i) i.type = i.type === "password" ? "text" : "password"; break; }
+    case "gset-save": readGsetForm(); setGres(""); renderSide(); toast(gReady() ? "Gemini 설정을 저장했습니다." : (gRelay() ? "중계 서버 주소나 접속 암호가 비어 있어 생성 기능이 꺼집니다." : "키가 비어 있어 생성 기능이 꺼집니다.")); renderMain(); break;
+    case "relay-invite": {
+      readGsetForm(); if (!GS.relay) { toast("중계 서버 주소를 먼저 넣어 주세요."); break; }
+      const link = location.origin + location.pathname + "#relay=" + encodeURIComponent(GS.relay);
+      (navigator.clipboard?.writeText(link) || Promise.reject()).then(() => toast("초대 링크를 복사했습니다. 접속 암호는 따로 알려 주세요."), () => setGres("초대 링크: " + link));
+      break;
+    }
     case "gset-test": (async () => {
-      readGsetForm(); renderSide(); if (!GS.key) { setGres("키를 먼저 넣어 주세요."); return; }
+      readGsetForm(); renderSide(); if (!gReady()) { setGres(gRelay() ? "중계 서버 주소와 접속 암호를 먼저 넣어 주세요." : "키를 먼저 넣어 주세요."); return; }
       const out = [];
       for (const tier of ["main", "quick"]) {
         setGres([...out, `${GS[tier]} 시험 중…`].join(" / "));
@@ -2283,7 +2305,7 @@ document.addEventListener("click", ev => {
       setGres(out.join(" / "));
     })(); break;
     case "gset-models": (async () => {
-      readGsetForm(); if (!GS.key) { setGres("키를 먼저 넣어 주세요."); return; }
+      readGsetForm(); if (!gReady()) { setGres(gRelay() ? "중계 서버 주소와 접속 암호를 먼저 넣어 주세요." : "키를 먼저 넣어 주세요."); return; }
       setGres("모델 목록을 불러오는 중…");
       try { S.gmodels = await listGeminiModels(); S.gres = `텍스트 생성 모델 ${S.gmodels.length}개를 불러왔습니다. 모델 칸을 누르면 고를 수 있습니다.`; renderMain(); }
       catch (e) { setGres("불러오지 못했습니다. " + errMsg(e)); }
@@ -2361,6 +2383,7 @@ $("#searchForm").addEventListener("submit", ev => {
 });
 document.addEventListener("change", ev => {
   if (ev.target.id === "cpType" && S.compose) S.compose.type = ev.target.value;
+  if (ev.target.id === "gMode") { const r = ev.target.value === "relay"; $("#gKeyBox").hidden = r; $("#gRelayBox").hidden = !r; }
   if (ev.target.id === "importFile" && ev.target.files?.[0]) { const f = ev.target.files[0]; ev.target.value = ""; importAll(f); }
 });
 /* 길게 누르기 감지: 터치로 빨간 링크를 0.5초 누르면 작성 페이지 */
@@ -2389,11 +2412,16 @@ document.addEventListener("keydown", ev => { if (ev.key === "Escape") $("#sugg")
 (async function boot() {
   renderAll();
   setInterval(() => { if (S.gen) updateGenLive(); const t = $("#fxTick"); if (t && S.fixv?.t0) t.textContent = Math.floor((performance.now() - S.fixv.t0) / 1000) + "초"; }, 1000);
-  S.sample = GS.key ? gemini : null; S.sampleReady = true;
+  const inv = /(?:^#|&)relay=([^&]+)/.exec(location.hash || "");   // 초대 링크(#relay=주소)로 들어오면 중계 서버 주소를 채운다
+  let invited = false;
+  if (inv) { const u = normRelay(decodeURIComponent(inv[1])); if (/^https:\/\//i.test(u)) { const same = GS.mode === "relay" && GS.relay === u; GS = { ...GS, mode: "relay", relay: u, pass: same ? GS.pass : "" }; saveGS(); invited = !GS.pass; } history.replaceState(null, "", location.pathname + location.search); }
+  S.sample = gReady() ? gemini : null; S.sampleReady = true;
   await Store.init();
   try { S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)); }
   catch (e) { toast("세계관 목록을 불러오지 못했습니다. " + errMsg(e)); }
-  S.ready = true; S.view = GS.key ? { name: "home" } : { name: "gset" }; renderAll();
+  S.ready = true; S.view = gReady() ? { name: "home" } : { name: "gset" };
+  if (invited) S.gres = "초대 링크로 중계 서버 주소가 채워졌습니다. 받은 접속 암호를 넣고 저장해 주세요.";
+  renderAll();
 })();
 })();
 </script>

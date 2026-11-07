@@ -1,0 +1,66 @@
+# Gemini 중계 서버 (Cloudflare Worker)
+
+친구가 내 Gemini API 키로 WorldWiki.ai를 쓰게 하되, 키 자체는 보여 주지 않기 위한 중계 서버입니다.
+키는 Cloudflare에만 저장되고, 친구는 **접속 암호**만 받습니다.
+
+```
+친구 브라우저 ──(접속 암호)──▶ Cloudflare Worker ──(내 API 키)──▶ Gemini API
+```
+
+- 비용: Cloudflare Workers 무료 플랜(하루 10만 요청)으로 충분합니다.
+- 접속 암호가 없거나 틀린 요청, 허용하지 않은 사이트에서 온 요청은 막습니다.
+- Gemini 생성과 모델 목록 조회 외의 요청은 모두 막습니다.
+
+## 1. Worker 만들기
+
+1. https://dash.cloudflare.com 에 가입하고 로그인합니다.
+2. 왼쪽 메뉴 **Compute (Workers)** 또는 **Workers & Pages** → **Create** → **Start with Hello World!** 를 고릅니다.
+3. 이름을 `worldwiki-relay` 처럼 정하고 **Deploy** 를 누릅니다.
+4. **Edit code** 를 눌러 편집기에 있는 코드를 모두 지우고, 이 폴더의 [`worker.js`](worker.js) 내용을 그대로 붙여 넣은 뒤 **Deploy** 를 누릅니다.
+
+## 2. 키와 암호 넣기
+
+Worker 화면 → **Settings** → **Variables and Secrets** → **Add** 에서 아래 값을 넣고 저장(Deploy)합니다.
+
+| 이름 | 종류 | 값 |
+|---|---|---|
+| `GEMINI_KEY` | **Secret** | Gemini API 키 |
+| `PASSWORDS` | **Secret** | 접속 암호. 친구마다 다르게 주려면 쉼표로 구분 (예: `chulsoo-7f3k,younghee-q9m2`) |
+| `ALLOWED_ORIGINS` | Text (선택) | 비워 두면 `https://sjh0918092-a11y.github.io` 만 허용 |
+
+- 키와 암호는 꼭 **Secret** 으로 넣으세요. Secret은 저장 후 대시보드에서도 다시 볼 수 없습니다.
+- 암호는 추측하기 어렵게 길게 만드세요.
+- 특정 친구를 끊으려면 `PASSWORDS` 에서 그 암호만 지우면 바로 막힙니다.
+
+## 3. 확인
+
+Worker 주소(`https://worldwiki-relay.<내 계정>.workers.dev`)를 브라우저로 열면 아래처럼 보여야 합니다.
+
+```json
+{"ok":true,"service":"WorldWiki relay","keyConfigured":true,"passwordsConfigured":true}
+```
+
+`keyConfigured` 나 `passwordsConfigured` 가 `false` 면 2단계 값을 다시 확인하세요.
+
+## 4. 앱에서 연결하고 친구 초대하기
+
+1. WorldWiki.ai → **Gemini 설정** → 연결 방식을 **중계 서버로 연결** 로 바꿉니다.
+2. Worker 주소와 접속 암호를 넣고 **연결 시험** 을 눌러 두 모델 모두 "성공"이 뜨는지 봅니다.
+3. **초대 링크 복사** 를 눌러 친구에게 보냅니다. 링크로 들어오면 중계 서버 주소가 자동으로 채워집니다.
+4. 접속 암호는 링크와 **따로** 알려 줍니다. 친구는 암호를 넣고 저장하면 바로 쓸 수 있습니다.
+
+## 사용량 관리
+
+- 모든 요청이 내 API 키로 나가므로, 사용량과 비용은 Google AI Studio의 사용량 화면과 Cloud 콘솔 결제 화면에서 함께 보입니다.
+- Cloud 콘솔 **결제 → 예산 및 알림** 에서 예산 알림을 걸어 두세요. 알림은 한도를 넘어도 사용을 막지는 않습니다.
+- 요청 수 자체를 막고 싶으면 Cloud 콘솔 **API 및 서비스 → Generative Language API → 할당량** 에서 낮출 수 있는 항목을 낮추세요.
+- 친구와 같은 키를 쓰므로 분당·일일 요청 한도도 함께 나눠 씁니다.
+
+## 문제 해결
+
+| 증상 | 원인 |
+|---|---|
+| "접속 암호가 올바르지 않거나…" | `PASSWORDS` 에 그 암호가 없거나 오타 |
+| "허용되지 않은 사이트입니다" | 앱을 다른 주소에서 열었음. 그 주소를 `ALLOWED_ORIGINS` 에 추가 |
+| "GEMINI_KEY 또는 PASSWORDS가 설정되지 않았습니다" | 2단계 값이 비어 있거나 저장(Deploy)하지 않음 |
+| `User location is not supported` | 요청이 Gemini 미지원 지역의 Cloudflare 서버를 거침. 다른 네트워크에서 다시 시도 |
