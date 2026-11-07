@@ -315,7 +315,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v1.6 · 2026-11-07";
+const APP_VERSION = "v1.7 · 2026-11-07";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1890,7 +1890,8 @@ function gsetHtml() {
       <div class="keyrow"><input id="gKey" class="txt" type="password" autocomplete="off" spellcheck="false" value="${esc(GS.key)}" placeholder="AIza…"><button type="button" class="btn" data-act="gkey-show" data-for="gKey">보기</button></div>
     </div>
     <div id="gRelayBox" ${gRelay() ? "" : "hidden"}>
-      <label class="lb" for="gRelay">중계 서버 주소 <span class="note" style="font-weight:400">API 키는 중계 서버에 있고, 여기에는 접속 암호만 넣습니다</span></label>
+      <p class="note" style="margin:8px 0 0">API 키는 중계 서버에 저장되어 있으므로 여기에는 키 대신 서버 주소와 접속 암호를 넣습니다.</p>
+      <label class="lb" for="gRelay">중계 서버 주소 <span class="note" style="font-weight:400">Cloudflare Worker 주소</span></label>
       <input id="gRelay" class="txt" type="url" autocomplete="off" spellcheck="false" value="${esc(GS.relay)}" placeholder="https://worldwiki-relay.○○○.workers.dev">
       <label class="lb" for="gPass">접속 암호</label>
       <div class="keyrow"><input id="gPass" class="txt" type="password" autocomplete="off" spellcheck="false" value="${esc(GS.pass)}"><button type="button" class="btn" data-act="gkey-show" data-for="gPass">보기</button></div>
