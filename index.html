@@ -338,7 +338,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v2.2 · 2026-11-07";
+const APP_VERSION = "v2.3 · 2026-11-07";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -383,7 +383,7 @@ const STYLES = {
   - 병기·기체·함선: 개요 / 개발 경위 / 성능과 특징 / 무장(무장별 하위 섹션 가능) / 전투 기록(전투별 하위 섹션) / 파일럿과 운용 부대 / 파생형이나 현황
   - 기술·물건: 개요 / 개발 / 원리와 특징 / 대표 사용 사례 / 현황
   - 제도·개념·문화: 개요 / 기원 / 내용 / 시행이나 변천 / 영향
-  마지막 섹션은 현황, 영향, 유산, 파생, 대중문화처럼 항목에 맞는 것으로 끝낸다. '비판과 논쟁', '논란' 섹션은 기본 구성에 없다. 이 항목 자체가 작중에서 이름이 붙을 만큼 공개적으로 다투어진 대상(정치 쟁점, 재판, 스캔들 등)일 때만 추가하며, 대부분의 문서에는 들어가지 않는다. 문서를 평가로 마무리하려고 이 섹션을 쓰지 않는다.`,
+  마지막 섹션은 현황, 영향, 유산, 파생, 대중문화처럼 항목에 맞는 것으로 끝낸다. 해석이 엇갈린다, 평가가 갈린다, 논쟁을 낳고 있다는 식의 섹션이나 마무리 문단은 쓰지 않는다. '평가', '해석', '논쟁', '논란', '비판과 논쟁', '엇갈리는 시각' 같은 섹션을 만들지 않고, 문서를 작중 사람들의 의견 대립으로 맺지 않는다. 문서는 이 항목에 실제로 일어난 일과 그 결과로 끝낸다.`,
     desc: `작중의 팬들이 공들여 쓴 위키 문체. '~이다'체로 쓰고, 서술자는 감탄하거나 독자에게 말을 걸지 않는다.
 - 서술자는 차갑게, 사건은 뜨겁게 쓴다. 장면의 무게는 수치의 대비(한계와 그것을 넘어선 결과), 치른 대가, 그 자리에 있던 사람들의 반응, 후대가 붙인 별명과 회자되는 방식으로 전한다.
 - 평가어("걸작", "명장면", "압권" 등)는 바로 앞뒤에 그 평가를 뒷받침하는 사실(전과, 수치, 비교)이 있을 때만, 한 문단에 하나까지 쓴다. "전설적인", "압도적인", "최강의", "경이로운"처럼 근거 없이 쓰거나 평가어를 겹쳐 쌓지 않는다.
@@ -932,7 +932,8 @@ function storyStyleRules() {
   return `- 문체: ${STYLES.encyc.desc}
 - 하이퍼링크: 다른 항목은 [[제목]] 또는 [[제목|본문에 보일 말]]로 감싼다. 이름 있는 인물, 장소, 조직, 사건, 물건은 처음 나올 때 링크한다. 이미 있는 항목은 아래 목록의 제목을 글자 그대로 쓴다. 자기 자신은 링크하지 않는다.
 - 본문 서식: 문단은 빈 줄로 구분, 목록은 "- ", 인용문은 "> "(다음 줄에 "> — 화자, 출처"), 강조는 **굵게**. 직접 인용은 많아야 1개. 각주와 취소선은 쓰지 않는다.
-- 단정형으로 쓴다. "밝혀지지 않았다", "~라고 전해진다" 같은 얼버무림과 "A가 아니라 B" 꼴의 반전 대구는 쓰지 않는다.`;
+- 단정형으로 쓴다. "밝혀지지 않았다", "~라고 전해진다" 같은 얼버무림과 "A가 아니라 B" 꼴의 반전 대구는 쓰지 않는다.
+- 해석이 엇갈린다, 논쟁을 낳고 있다는 식의 섹션이나 마무리 문단을 쓰지 않는다. 장 섹션은 그 장에 실제로 일어난 일과 그 결과로 끝낸다.`;
 }
 const entityIndex = (w, skip, max = 80) => Object.entries(w.entities).filter(([k]) => !skip.includes(k)).sort((a, b) => (b[1].page ? 1 : 0) - (a[1].page ? 1 : 0)).slice(0, max)
   .map(([, o]) => `- ${o.title}${o.type ? " — " + o.type : ""}${o.summary ? ". " + o.summary.slice(0, 50) : ""}`).join("\n") || "(없음)";
@@ -1190,12 +1191,11 @@ ${relText}
 ${idx}
 
 ## 이 문서의 엔진 (가장 중요)
-쓰기 전에 아래 다섯 가지를 먼저 정하고, 문서 전체를 이것을 중심으로 짠다. 그 아래의 규칙들은 이 엔진을 해치지 않는 범위에서 지키는 품질 기준이다.
+쓰기 전에 아래 네 가지를 먼저 정하고, 문서 전체를 이것을 중심으로 짠다. 그 아래의 규칙들은 이 엔진을 해치지 않는 범위에서 지키는 품질 기준이다.
 1. 훅: 이 문서를 읽은 사람이 친구에게 "그거 알아?" 하고 전할 만한 사실 하나. 개요의 첫 두 문장 안에 둔다.
 2. 절정: 이 항목이 걸린 가장 극적인 순간 하나. 절정에서는 실제로 무언가가 벌어져야 한다. 긴장만 쌓다가 행정 처리나 협상으로 넘어가지 말고, 이 장르의 핵심 행동(전투, 결투, 능력의 발현, 결정적 결단이나 배신)이 일어나는 순간을 고른다. 이 항목이 인물이면 그 인물이 직접 행동하거나 말하는 순간을 고르고, 주변 인물이 주인공을 대신하게 하지 않는다. 문서에서 가장 넉넉한 분량을 이 순간에 주고, 그때 무엇이 보이고 들렸는지, 그 자리의 사람들이 무엇을 했는지 장면으로 쓴다. 당시의 기록(신문 기사, 일기, 교신)을 직접 인용한다면 여기에 쓰는 것이 좋다. 문서의 나머지는 이 순간으로 가는 길과 그 뒤의 여파다.
 3. 큰길: 이 세계의 가장 큰 비틀기나 사건이 이 항목을 통해 피부에 와닿는 장면을 한 번 이상 쓴다. 다른 문서와 겹치는 설정이라도 이 항목의 자리에서 본 모습이라면 반복이 아니다.
 4. 사람의 끝: 이 문서에 이름이 나온 주요 인물(3~4명까지)은 무엇을 원했고 결국 어떻게 되었는지를 이 문서 안에서 마무리한다. 직함만 있고 사라지는 사람을 남기지 않는다. 이것을 한곳에 모아 정리하지 말고, 각자의 이야기가 끝나는 자리에서 쓴다.
-5. 열린 질문: 이 항목이 세계의 수수께끼에 닿아 있다면, 작중 사람들이 그것을 어떻게 설명하는지(가설, 학파, 종교적 해석, 음모론)와 각각을 누가 믿고 주장하는지 쓴다. 정답을 단정하지 않아도 되지만 가설은 구체적이어야 한다. 이것은 얼버무리는 공백과 다르다.
 그리고 이 장르의 독자가 이 항목에서 가장 보고 싶어 하는 것을 가장 많은 분량으로 쓴다.
 ${showFor(ty, ["기술","물건"]) ? `  - 병기·기체·함선: 동시대 다른 기체와 비교한 강함, 대표 전과, 특수 무장과 고유 기능, 명장면, 그것을 몬 파일럿이나 지휘관, 맞수. 이 병기가 전쟁 시기에 존재했다면 절정은 실전으로 고르고, 시험이나 사고는 실전 기록이 없을 때만 절정으로 삼는다. 대표 전투는 결과 요약이 아니라 경과(양측 배치, 전환점, 결정타, 손실)로 쓴다.
 ` : ""}${showFor(ty, ["인물"]) ? `  - 인물: 결정적인 선택과 활약, 사랑과 가족, 맞수와 동료, 남긴 것.
@@ -1234,7 +1234,7 @@ ${w.historical ? `## 실존 인물
 - 발언은 간접 인용으로 내용만 옮기는 것이 기본이다. 본문 중간에 큰따옴표 대사를 넣고 "~라고 말했다"로 받지 않는다. 직접 인용은 문서 전체에서 1~2개. 절정의 순간에 나온 말이나 작중에서 회자되는 한마디를 우선하며, 인물 문서라면 주인공 본인의 말을 우선한다. 인용할 때는 "> " 인용문 상자로 따로 두고 다음 줄에 "> — 화자, 출처"를 붙인다. 격언처럼 다듬은 말은 쓰지 않고 화자의 말투와 상황이 드러나게 한다.
 - "A가 아니라 B였다", "A보다 B였다" 같은 반전 대구는 인용문, 개요, 본문 어디에서도 쓰지 않는다. 이 세계에 없는 현실의 고사나 관용구(아킬레스건, 루비콘 등)도 쓰지 않는다.
 - 개요는 훅과 정의를 중심으로 짧게 쓴다. 진영별 이름, 규모 비교, 후대 평가 같은 정보를 개요에 몰아넣지 않고 맞는 섹션에 둔다.
-- 근거 없는 칭찬은 하지 않되 강한 것은 강하다고 쓴다. 강함은 형용사가 아니라 비교 대상, 전과, 상대가 치른 대가로 보여 준다. 실패와 갈등은 흐름 속에서 쓰고, "~라는 비판이 있다. 반면 ~" 식의 양론 정리는 실제 논쟁이 있을 때만 쓴다.
+- 근거 없는 칭찬은 하지 않되 강한 것은 강하다고 쓴다. 강함은 형용사가 아니라 비교 대상, 전과, 상대가 치른 대가로 보여 준다. 실패와 갈등은 흐름 속에서 쓰고, "~라는 비판이 있다. 반면 ~" 식의 양론 정리나 "해석이 엇갈린다", "논쟁이 이어지고 있다" 같은 문장은 쓰지 않는다.
 - 풍습, 은어, 속설은 이 항목이 직접 원인이거나 핵심 소재일 때만 다루고, 새로 만드는 것은 문서당 많아야 하나다.
 - 같은 정보를 반복하지 않는다. 인포박스의 수치와 날짜를 개요에서 다시 나열하지 않고, 개요에서 생애나 연혁을 요약하지 않는다.
 - 나이, 기간, 금액, 인원처럼 계산이 걸린 수치는 문서 안의 다른 날짜와 수치로 다시 계산해 서로 맞춘다(예: 출생일과 사건 날짜로 그때의 나이를 계산한다). 부대나 기체의 수는 동원, 손실, 격파, 항복, 잔존을 합쳐 처음 숫자와 맞춘다. 비율은 10할(100%)을 넘지 않는다. 개요에서 한 단언(예: 한 발도 쏘지 않았다)은 본문의 사건과 어긋나지 않게 범위를 정확히 쓴다.
@@ -1298,7 +1298,7 @@ function checkPrompt(w, key) {
   const ctx = keys.map(k => checkBrief(w, k, key)).join("\n\n");
   const own = [...w.entities[key].facts.filter(f => f.src !== key && live(f)).map(f => "- " + factLine(f)), ...w.entities[key].mentions.filter(m => m.from !== key && live(m)).map(m => `- 「${w.entities[m.from]?.title || "?"}」의 서술: ${m.text}`), ...relationsOf(w, key).filter(x => x.src !== key && live(x)).map(x => "- 관계: " + relLine(w, x))].join("\n");
   const text = [`# ${p.title}`, ...(p.infobox || []).map(r => `${r.label}: ${stripMarks(r.value)}`), ...p.sections.map(s => `${(s.level || 1) === 2 ? "###" : "##"} ${s.ch && (s.level || 1) === 1 ? `[${s.ch}장] ` : ""}${s.heading}\n${stripMarks(s.body)}`)].join("\n");
-  return `다음 위키 문서가 세계관의 확정 설정과 모순되는지 검사하라. 확정 설정과 명백히 반대되는 서술만 지적하고, 단순히 새로 추가된 정보나 해석의 차이는 문제 삼지 마라.
+  return `다음 위키 문서가 세계관의 확정 설정과 모순되는지 검사하라. 확정 설정과 명백히 반대되는 서술만 지적하고, 단순히 새로 추가된 정보나 해석의 차이는 문제 삼지 마라. 문체, 어투, 표현 방식은 지적하지 않는다.
 
 ${canonBlock({ ...w, timeline: (w.timeline || []).filter(t => t.src !== key) })}
 ${isStory(w) ? `\n${storyBlock(w, key)}\n이 문서는 ${p.baseAsOf || 1}~${p.syncedTo || p.baseAsOf || 1}장 시점에 작성되었다. 이 문서가 그 시점 이후의 일을 아는 것처럼 서술하면 모순으로 본다. 제목 앞에 [n장]이 붙은 섹션은 그 장에 일어난 일을 기록한 섹션이다.\n` : ""}
@@ -1617,18 +1617,6 @@ function autoLink(w, key, out) {
     }
   }
   return added;
-}
-/* 글자 모양으로 잡히는 문체 실수: 반전 대구, 10할이나 100%를 넘는 비율 */
-function lintPage(p) {
-  const out = [], seen = new Set();
-  const texts = [p.summary || "", ...(p.infobox || []).map(r => r.value), ...(p.sections || []).map(x => x.body)].map(stripMarks);
-  for (const t of texts) for (const m of t.matchAll(/[^.!?。\n]+[.!?。]?/g)) {
-    const sen = m[0].trim(); if (!sen || seen.has(sen)) continue;
-    if (/[가-힣A-Za-z0-9)\]'"’”]\s*(?:이|가)\s+아니라(?!고)\s*[^\s]/.test(sen) || /(?:이|가)\s+아니라(?!고),/.test(sen)) { seen.add(sen); out.push({ claim: sen.slice(0, 300), conflict: "문체 규칙: 'A가 아니라 B' 꼴의 반전 대구는 쓰지 않는다. 뜻은 살리고 대구 없이 고친다.", lint: true }); continue; }
-    const r = [...sen.matchAll(/(\d+(?:\.\d+)?)\s*할(?![인당머])/g)].some(x => +x[1] > 10) || [...sen.matchAll(/(\d+(?:\.\d+)?)\s*(?:%|퍼센트)/g)].some(x => +x[1] > 100);
-    if (r) { seen.add(sen); out.push({ claim: sen.slice(0, 300), conflict: "수치: 비율은 10할(100%)을 넘을 수 없다. 앞뒤 맥락에 맞는 값으로 고친다.", lint: true }); }
-  }
-  return out.slice(0, 6);
 }
 
 /* ---------- 충돌 부분 고치기 ---------- */
@@ -2529,7 +2517,7 @@ function articleHtml(k) {
   const out = (p.links || []).filter(x => w.entities[x]);
   const newOut = out.filter(x => !S.pages[x]).length;
   const chk = p.check;
-  const hi = (chk?.issues || []).filter(i => i.severity === "high"), lo = [...(chk?.issues || []).filter(i => i.severity !== "high"), ...lintPage(p)];
+  const hi = (chk?.issues || []).filter(i => i.severity === "high"), lo = (chk?.issues || []).filter(i => i.severity !== "high");   // 편집자 메모는 설정 충돌만 다룬다
   S.memo = { k, items: [...hi, ...lo] };
   const fixBtn = n => `<button type="button" class="btn memo-fix" data-fix="${n}" data-fixk="${k}" ${S.fixing || (S.gen && S.gen.key === k) || !S.sample ? "disabled" : ""}>${S.fixing && S.fixing.key === k && S.fixing.i === n ? "고치는 중…" : "고치기"}</button>`;
   const item = (i, n, cls) => `<li class="${cls}">${esc(i.claim)}${i.conflict ? `<span class="memo-why">${esc(i.conflict)}</span>` : ""}${fixBtn(n)}</li>`;
@@ -2681,15 +2669,17 @@ function storySideHtml(w) {
     ${busy || (ended ? `<button type="button" class="btn pri" data-act="epilogue">에필로그 보기</button>` : `<button type="button" class="btn pri" data-act="story-next" ${!S.pages[pk] ? "disabled title=\"주인공 문서가 완성된 뒤 넘어갈 수 있습니다\"" : ""}>${st.chapter + 1 >= STORY_N ? "마지막 장으로" : "다음 장으로"}</button>`)}
   </section>`;
 }
+/* 장이 넘어간 직후 주인공 문서 위에 띄우는 카드. 이번 장 줄거리와 변화 내용은 스포일러라 보여 주지 않고,
+   지난 장 줄거리와 이번 장에 엮인 탐험·영향받은 문서의 이름만 보여 준다 */
 function storyCardHtml(w, n) {
-  const c = w.story.chapters[n - 1]; if (!c) return "";
+  const c = w.story.chapters[n - 1], prev = w.story.chapters[n - 2]; if (!c) return "";
   const aff = (c.affected || []).filter(a => w.entities[a.key]);
   const wove = (c.wove || []).filter(x => w.entities[x.key]);
-  return `<section class="stcard" aria-label="이번 장 요약"><h3><span class="chb">${n}장</span>${esc(c.title)}</h3><p class="src">작중 ${esc(c.era)}${c.choice ? ` · 고른 행동: ${esc(c.choice.custom || c.choice.picked)}` : ""}</p>
-    <p style="margin-top:6px">${esc(c.summary)}</p>
-    ${wove.length ? `<h4>이번 장에 반영된 탐험</h4><ul>${wove.map(x => `<li>${linkHtml(w.entities[x.key].title)} — ${esc(x.how)}</li>`).join("")}</ul>` : `<h4>이번 장에 반영된 탐험</h4><p class="note">반영된 탐험이 없습니다. 이번 장은 뼈대대로 흘러갔습니다.</p>`}
-    ${aff.length ? `<h4>이번 장에서 바뀐 문서</h4><ul>${aff.map(a => `<li>${linkHtml(w.entities[a.key].title)} — ${esc(a.change)}</li>`).join("")}</ul><p class="note" style="margin-top:4px">파란 링크는 열면 이번 장의 변화를 덧붙이고, 빨간 링크는 이번 장 시점으로 새로 작성합니다.</p>` : ""}
-    <div class="row" style="margin-top:10px"><button type="button" class="btn" data-act="story-card-close">요약 닫기</button></div></section>`;
+  return `<section class="stcard" aria-label="이번 장 안내"><h3><span class="chb">${n}장</span>${esc(c.title)}</h3><p class="src">작중 ${esc(c.era)}${c.choice ? ` · 고른 행동: ${esc(c.choice.custom || c.choice.picked)}` : ""}</p>
+    ${prev ? `<h4>지난 이야기 · ${prev.n}장 「${esc(prev.title)}」</h4><p>${esc(prev.summary)}</p>` : ""}
+    <h4>이번 장에 엮인 탐험</h4>${wove.length ? `<p>${wove.map(x => linkHtml(w.entities[x.key].title)).join(" · ")}</p>` : `<p class="note">엮인 탐험이 없습니다. 이번 장은 뼈대대로 흘러갑니다.</p>`}
+    ${aff.length ? `<h4>이번 장에 영향을 받은 문서</h4><p>${aff.map(a => linkHtml(w.entities[a.key].title)).join(" · ")}</p><p class="note" style="margin-top:4px">무엇이 바뀌었는지는 아래 ${n}장 섹션과 각 문서에서 확인할 수 있습니다. 파란 링크는 열면 이번 장의 변화를 덧붙이고, 빨간 링크는 이번 장 시점으로 새로 작성합니다.</p>` : ""}
+    <div class="row" style="margin-top:10px"><button type="button" class="btn" data-act="story-card-close">안내 닫기</button></div></section>`;
 }
 function advanceHtml() {
   const w = S.world; if (!isStory(w)) return `<div class="sheet"><p class="note">스토리 모드 세계관이 아닙니다.</p></div>`;
@@ -2748,7 +2738,7 @@ function canonHtml() {
     <label class="lb">원안</label><div class="seedbox">${esc(w.seed)}</div>
     ${isStory(w) ? `<h2>이야기</h2>
     <p class="note">주인공 ${linkHtml(w.entities[w.story.protagonistKey].title)} · ${w.story.status === "ended" ? "완결" : `현재 ${w.story.chapter}장 / ${STORY_N}장`}. 이야기의 뼈대는 ${w.story.status === "ended" ? "아래 '숨겨진 뼈대 보기'에서" : "결말이 난 뒤에"} 볼 수 있습니다.</p>
-    <div style="overflow-x:auto"><table class="tl">${w.story.chapters.map(c => `<tr><td>${c.n}장</td><td><b>${esc(c.title)}</b> <span class="src">· ${esc(c.era)}</span><br>${esc(c.summary)}</td></tr>`).join("")}</table></div>
+    <div style="overflow-x:auto"><table class="tl">${w.story.chapters.map(c => `<tr><td>${c.n}장</td><td><b>${esc(c.title)}</b> <span class="src">· ${esc(c.era)}</span><br>${c.n < w.story.chapter || w.story.status === "ended" ? esc(c.summary) : `<span class="note">진행 중인 장입니다. 줄거리는 다음 장으로 넘어가면 공개됩니다.</span>`}</td></tr>`).join("")}</table></div>
     ${w.story.status === "ended" ? spineHtml(w) : ""}` : ""}
     <h2>작가 지침</h2>
     <label class="lb" for="wGuide">세계관 전체에 걸쳐 지킬 방향 <span class="note" style="font-weight:400">문체와 구성 규칙보다 우선하고, 확정 설정보다는 뒤에 옵니다. 1,000자까지</span></label>

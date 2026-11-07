@@ -119,6 +119,9 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert(bw && !bw.mode && !bw.story, "기본 모드 world에는 story 필드가 없어야 한다");
     await page.reload(); await page.waitForSelector(".wcard");
     await page.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(page, "대문 항목");
+    const bp = calls.filter(c => c.kind === "page").pop().prompt;
+    assert(!bp.includes("열린 질문") && bp.includes("해석이 엇갈린다, 평가가 갈린다, 논쟁을 낳고 있다는 식의 섹션"), "문서 프롬프트가 해석·논쟁 섹션을 막는다");
+    assert(calls.filter(c => c.kind === "check").pop().prompt.includes("문체, 어투, 표현 방식은 지적하지 않는다"));
     ok("기본 모드 세계관 생성, 문서 작성, 새로고침 후 복원이 그대로 된다");
 
     /* 2. 스토리 모드 생성 */
@@ -172,6 +175,8 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert(planPrompt.includes("발단 의도") && planPrompt.includes("결말 의도"), "장 계획 프롬프트에는 뼈대 전체가 들어간다");
     assert((await page.locator(".chb").allInnerTexts()).includes("2장"));
     const wove = await page.locator(".stcard").innerText();
+    assert(!wove.includes("2장 줄거리") && !wove.includes("이일이 파직되었다"), "새 장 줄거리와 변화 내용은 카드에 보이지 않는다(스포일러)");
+    assert(wove.includes("지난 이야기") && wove.includes("1장 줄거리."), "카드에는 지난 장 줄거리가 보인다");
     assert(wove.includes("이일") && wove.includes("여진 해적단"), "반영된 탐험 2곳 이상");
     sw = await worldOf(page, "녹둔도 연대기");
     const after = await pageOf(page, sw, "한서린");
