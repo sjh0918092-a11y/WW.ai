@@ -315,7 +315,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v1.3 · 2026-11-07";
+const APP_VERSION = "v1.4 · 2026-11-07";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1942,12 +1942,12 @@ function homeHtml() {
         <p class="note" style="margin:0 0 8px">질문을 고르면 그 질문으로 바로 세계관을 만듭니다. 아래 첫 문서와 작가 지침 칸도 함께 반영됩니다.</p>
         <div class="wi-grid">${S.whatIfs.map(q => `<button type="button" class="wi" data-whatif="${esc(q)}" ${S.creating || !S.sample ? "disabled" : ""}><span>만약</span>${esc(q)}</button>`).join("")}</div>
         <div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="whatif-more" ${S.creating ? "disabled" : ""}>다른 질문 보기</button></div></div>` : ""}
-      <textarea id="seedTa" rows="7" ${S.creating ? "disabled" : ""} ${S.seedTab === "whatif" ? "hidden" : ""} placeholder="어떤 세계인지 몇 문장으로 적어 주세요. 무엇이 현실과 다른지, 언제 어디가 무대인지, 누가 무엇을 두고 다투는지가 있으면 좋습니다.&#10;&#10;예: 1947년, 핵전쟁을 피하려고 미국과 소련이 모든 분쟁을 체스 대국으로 대신하기로 한 세계.">${esc(S.seed)}</textarea>
+      <textarea id="seedTa" rows="7" ${S.creating ? "disabled" : ""} ${S.seedTab === "whatif" ? "hidden" : ""} placeholder="어떤 세계인지 몇 문장으로 적어 주세요. 무엇이 현실과 다른지, 언제 어디가 무대인지, 누가 무엇을 두고 다투는지가 있으면 좋습니다.&#10;&#10;예: 우주력 1388년, 위화도에서 회군한 기동갑주가 왕조를 갈아치웠고, 그 왕조가 500년을 버텨 온 콜로니 국가.">${esc(S.seed)}</textarea>
       ${/^\d+$/.test(S.seedTab) ? `<p class="note" style="margin:6px 0 0">예시 원안입니다. 고쳐 쓰면 직접 작성 탭으로 옮겨집니다.</p>` : ""}
       <label class="lb" for="firstIn">첫 문서 <span class="note" style="font-weight:400">비워 두면 세계관을 대표하는 항목으로 자동 선택</span></label>
-      <input id="firstIn" class="txt" type="text" maxlength="60" value="${esc(S.first)}" placeholder="예: 제네바 체스 협약, 한서린, 공백지대" ${S.creating ? "disabled" : ""}>
+      <input id="firstIn" class="txt" type="text" maxlength="60" value="${esc(S.first)}" placeholder="예: 위화도 회군, 태조 전용기, 한양 궤도 거주구" ${S.creating ? "disabled" : ""}>
       <label class="lb" for="guideIn">작가 지침 <span class="note" style="font-weight:400">선택 · 세계관 전체에 걸쳐 지킬 방향. 모든 문서에 함께 전달됩니다</span></label>
-      <textarea id="guideIn" rows="3" maxlength="1000" placeholder="예: 홍콩 느와르풍으로. 실존 인물을 많이 등장시킨다. 잔혹한 묘사는 피한다. 주인공 격인 인물은 체스 기자 한서린." ${S.creating ? "disabled" : ""}>${esc(S.guideIn)}</textarea>
+      <textarea id="guideIn" rows="3" maxlength="1000" placeholder="예: 일본 거대 로봇 메카닉 SF풍으로. 네임드 파일럿에게는 전용기를 준다. 양산기 바리에이션을 풍부하게. 잔혹한 묘사는 피한다." ${S.creating ? "disabled" : ""}>${esc(S.guideIn)}</textarea>
       <div class="row" ${S.seedTab === "whatif" && !S.creating && !S.createErr ? "hidden" : ""}>
         <button type="button" class="btn pri" data-act="create" ${S.creating || !S.sampleReady ? "disabled" : ""}>${S.creating ? "설정 노트를 만드는 중…" : "세계관 만들기"}</button>
         ${S.creating ? `<span class="genpill"><span class="dot"></span>핵심 규칙과 연표를 정리하고 있습니다</span>` : ""}
@@ -2005,7 +2005,7 @@ function articleHtml(k) {
   const binding = e.mentions.filter(m => m.from !== k).length + e.facts.filter(f => f.src !== k).length;
   const rwBox = S.confirmRewrite === k ? `<div class="rwbox">
       <label class="lb" for="rwDir">다시 쓰기 방향 <span class="note" style="font-weight:400">선택</span></label>
-      <input id="rwDir" class="txt" type="text" maxlength="300" placeholder="예: 생애는 줄이고 1972년 대국을 중심으로, 분량은 절반 정도">
+      <input id="rwDir" class="txt" type="text" maxlength="300" placeholder="예: 생애는 줄이고 위화도 회군 전투를 중심으로, 분량은 절반 정도">
       <p class="note">이 문서의 이전 버전과 이전 버전이 확정한 사실은 참고하지 않고 새로 씁니다. 다른 문서가 이 항목에 대해 확정한 내용 ${binding}건은 그대로 지킵니다.${p.editedAt ? " 직접 수정한 내용도 사라집니다." : ""} 실패하거나 중단하면 이전 버전이 유지됩니다.</p>
       <div class="row" style="margin-top:6px"><button type="button" class="btn pri" data-rw-yes="${k}">다시 쓰기</button><button type="button" class="btn" data-act="rw-no">취소</button></div>
     </div>` : "";
@@ -2089,7 +2089,7 @@ function composeHtml(k) {
     <label class="lb" for="cpType">유형</label>
     <select id="cpType" class="txt"><option value="">자동으로 정하기</option>${TYPES.map(t => `<option value="${t}"${c.type === t ? " selected" : ""}>${t}</option>`).join("")}</select>
     <label class="lb" for="cpDir">작성 방향</label>
-    <textarea id="cpDir" rows="6" maxlength="1200" placeholder="예: 1388년 회군에서의 활약을 중심으로. 특수 무장 두 가지와 파일럿 강만택의 맞수 관계를 자세히. 분량은 길게.">${esc(c.dir)}</textarea>
+    <textarea id="cpDir" rows="6" maxlength="1200" placeholder="예: 위화도 회군에서의 활약을 중심으로. 특수 무장 두 가지와 전용기 파일럿의 맞수 관계를 자세히. 분량은 길게.">${esc(c.dir)}</textarea>
     <p class="note">확정된 내용과 핵심 규칙은 그대로 지키고, 그 안에서 이 방향을 가장 먼저 따릅니다. 분량이나 구성에 관한 요청도 반영됩니다.</p>
     ${busy ? `<div class="banner warn">「${esc(S.gen.title)}」 문서를 작성하는 중입니다. 끝난 뒤 작성할 수 있습니다.</div>` : ""}
     <div class="row"><button type="button" class="btn pri" data-compose-go="${k}" ${busy || !S.sample ? "disabled" : ""}>이 방향으로 작성</button><button type="button" class="btn" data-act="compose-cancel">취소</button></div></div>`;
@@ -2149,10 +2149,10 @@ function canonHtml() {
     <label class="lb">원안</label><div class="seedbox">${esc(w.seed)}</div>
     <h2>작가 지침</h2>
     <label class="lb" for="wGuide">세계관 전체에 걸쳐 지킬 방향 <span class="note" style="font-weight:400">문체와 구성 규칙보다 우선하고, 확정 설정보다는 뒤에 옵니다. 1,000자까지</span></label>
-    <textarea id="wGuide" rows="4" maxlength="1000" placeholder="예: 실존 인물을 많이 등장시킨다. 개그는 줄이고 첩보물처럼 쓴다.">${esc(w.guide || "")}</textarea>
+    <textarea id="wGuide" rows="4" maxlength="1000" placeholder="예: 양산기 바리에이션을 풍부하게. 개그는 줄이고 전쟁물처럼 쓴다.">${esc(w.guide || "")}</textarea>
     <h2>분위기</h2>
     <label class="lb" for="toneLabel">장르와 문화권</label>
-    <input id="toneLabel" class="txt" maxlength="60" value="${esc(w.tone?.label || "")}" placeholder="아직 판별하지 않았습니다. 예: 영미권 정통 하이 판타지">
+    <input id="toneLabel" class="txt" maxlength="60" value="${esc(w.tone?.label || "")}" placeholder="아직 판별하지 않았습니다. 예: 일본 거대 로봇 메카닉 SF">
     <label class="lb" for="toneGuide">문체 지침 <span class="note" style="font-weight:400">한 줄에 하나</span></label>
     <textarea id="toneGuide" rows="${Math.min(10, (w.tone?.guide.length || 4) + 1)}">${esc((w.tone?.guide || []).join("\n"))}</textarea>
     <div class="row"><button type="button" class="btn" data-act="tone-detect" id="toneBtn" ${!S.sample ? "disabled" : ""}>지침 다시 만들기</button><span class="note">장르와 문화권 칸에 적힌 분위기로 지침을 만듭니다. 비워 두면 원안에서 판별합니다. 결과를 확인한 뒤 아래 '설정 저장'을 눌러 주세요.</span></div>
@@ -2160,7 +2160,7 @@ function canonHtml() {
     <label class="lb" for="rulesTa">한 줄에 하나씩</label>
     <textarea id="rulesTa" rows="${Math.min(12, (w.rules.length || 3) + 2)}">${esc(w.rules.join("\n"))}</textarea>
     <label class="lb" for="userTa">사용자 확정 설정</label>
-    <textarea id="userTa" rows="4" placeholder="예: 주인공 한서린은 1962년 대국에서 진 적이 없다. 메가서울의 경찰 조직 이름은 '청람'이다.">${esc(w.userCanon || "")}</textarea>
+    <textarea id="userTa" rows="4" placeholder="예: 태조의 전용기 이름은 '위화'다. 조선 콜로니의 수도는 한양 궤도 거주구다.">${esc(w.userCanon || "")}</textarea>
     <div class="row"><button type="button" class="btn pri" data-act="save-canon">설정 저장</button><span class="note">저장 후 새로 작성하는 문서부터 반영됩니다.</span></div>
     ${Object.keys(w.navboxes || {}).length ? `<h2>틀</h2><ul style="margin:0;padding-left:20px">${Object.values(w.navboxes).map(nb => `<li>${esc(nb.title)} <span class="src">· ${nb.members.length}개 항목 · ${linkHtml(nb.srcTitle)}</span></li>`).join("")}</ul>` : ""}
     ${(w.relations || []).length ? `<h2>인물 관계</h2><div style="overflow-x:auto"><table class="tl">${w.relations.filter(x => w.entities[x.a] && w.entities[x.b]).map(x => `<tr><td>${esc(x.rel)}</td><td>${linkHtml(w.entities[x.a].title)} – ${linkHtml(w.entities[x.b].title)}${x.story ? ` <span class="${x.sup ? "" : "note"}">${x.sup ? `<del>${esc(x.story)}</del>` : esc(x.story)}</span>` : ""} <span class="src">· ${esc(w.entities[x.src]?.title || "?")}${x.sup ? " · 대체됨" : ""}</span></td></tr>`).join("")}</table></div>` : ""}
