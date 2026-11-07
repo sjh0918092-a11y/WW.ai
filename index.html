@@ -266,6 +266,8 @@ details.ent li{margin-bottom:3px}
 .kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;font-size:13.5px}
 .kv dt{color:var(--muted)} .kv dd{margin:0}
 
+.ver{position:fixed;right:calc(8px + env(safe-area-inset-right,0px));bottom:calc(6px + env(safe-area-inset-bottom,0px));z-index:5;font:11px/1.4 var(--f-mono);color:var(--muted);background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);padding:2px 6px;opacity:.85;pointer-events:none;user-select:none}
+@media print{.ver{display:none}}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--accent);color:var(--on-accent);padding:10px 16px;border-radius:var(--r);font-size:13.5px;box-shadow:0 8px 24px rgb(0 0 0 / .2);z-index:20;max-width:calc(100vw - 32px)}
 .toast button{background:none;border:0;color:inherit;text-decoration:underline;cursor:pointer;margin-left:8px;padding:0}
 
@@ -307,11 +309,15 @@ details.ent li{margin-bottom:3px}
   <main id="main"><div class="sheet"><p class="note">불러오는 중…</p></div></main>
 </div></div>
 <div class="toast" id="toast" hidden></div>
+<div class="ver" id="appVer" aria-hidden="true"></div>
 
 <script>
 (() => {
 "use strict";
+/* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
+const APP_VERSION = "v1.2 · 2026-11-07";
 const $ = (s, r = document) => r.querySelector(s);
+{ const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function cyrb53(str, seed = 0) { let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed; for (let i = 0; i < str.length; i++) { const ch = str.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); } h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507); h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909); h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507); h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909); return 4294967296 * (2097151 & h2) + (h1 >>> 0); }
 const norm = t => String(t || "").replace(/[「」『』]/g, "").replace(/\s+/g, " ").trim();
@@ -553,7 +559,7 @@ function logLine(r) {
   const t = new Date(r.at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
   return `[${t}] ${KIND[r.kind] || r.kind}${r.title ? ` 「${r.title}」` : ""}${"type" in r ? ` (${r.type || "유형 미정"})` : ""} · ${r.model ? `${r.model}/${r.effort || "기본"}` : r.tier}${r.tok ? ` · 토큰 입력 ${r.tok.i.toLocaleString()} / 생각 ${r.tok.t.toLocaleString()} / 출력 ${r.tok.o.toLocaleString()}` : ""} · 입력 ${Number(r.in || 0).toLocaleString()}자 · 첫 글자 ${secs(r.first)} · 총 ${secs(r.total)} · 출력 ${Number(r.out || 0).toLocaleString()}자 · ${r.retry ? ` · 재시도 ${r.retry}회${r.retries ? `(${r.retries.join(" / ")})` : ""}` : ""} · ${r.ok ? "성공" : "실패(" + r.err + (r.msg ? ": " + r.msg : "") + ")"}${r.ents ? ` · 세계관 항목 ${r.ents}개` : ""}`;
 }
-const logText = () => ["WorldWiki.ai 진단 로그", `저장 위치: ${Store.mode} · 기록 ${LOG.length}건`, ...LOG.map(logLine)].join("\n");
+const logText = () => ["WorldWiki.ai 진단 로그 · " + APP_VERSION, `저장 위치: ${Store.mode} · 기록 ${LOG.length}건`, ...LOG.map(logLine)].join("\n");
 function logHtml() {
   return `<div class="sheet"><div class="crumb"><span>진단</span></div><h1 class="t">진단 로그</h1>
     <p class="note">Gemini를 부를 때마다 걸린 시간을 기록합니다. '첫 글자'는 요청부터 글이 나오기 시작할 때까지, '총'은 끝날 때까지 걸린 시간입니다. 최근 40건이 이 브라우저에만 남습니다.</p>
