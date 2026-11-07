@@ -1,5 +1,5 @@
 <!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
-<title>WorldWiki.ai · Gemini</title>
+<title>WorldWiki.ai</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@600;700&display=swap">
@@ -297,7 +297,7 @@ details.ent li{margin-bottom:3px}
 
 <header class="top wrap">
   <div class="top-in">
-    <button class="brand" id="brand" data-act="home" type="button"><b>WorldWiki.ai</b><small class="prov">Gemini</small><span id="brandWorld">링크를 누르면 문서가 생깁니다</span></button>
+    <button class="brand" id="brand" data-act="home" type="button"><b>WorldWiki.ai</b><span id="brandWorld" hidden></span></button>
     <form class="search" id="searchForm" autocomplete="off" role="search">
       <input id="q" type="search" placeholder="세계관을 열면 검색할 수 있습니다" aria-label="문서 검색 또는 새 문서 만들기" disabled>
       <div class="sugg" id="sugg" hidden></div>
@@ -315,7 +315,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v1.8 · 2026-11-07";
+const APP_VERSION = "v1.9 · 2026-11-07";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1859,7 +1859,7 @@ function blocks(body, fns) {
 function renderAll() { renderTop(); renderSide(); renderMain(); }
 function renderTop() {
   const w = S.world;
-  $("#brandWorld").textContent = w ? `${w.title} · 작중 ${w.era}` : "링크를 누르면 문서가 생깁니다";
+  const bw = $("#brandWorld"); bw.textContent = w ? `${w.title} · 작중 ${w.era}` : ""; bw.hidden = !w;   // 세계관을 열었을 때만 이름을 보인다
   const q = $("#q"); q.disabled = !w; q.placeholder = w ? `「${w.title}」에서 검색하거나 새 항목 만들기` : "세계관을 열면 검색할 수 있습니다";
 }
 function renderSide() {
