@@ -41,7 +41,7 @@ function planJson(p) {
   const last = n === 5;
   const affected = n === 2 ? [{ title: "북관 철령", change: "북관 철령이 여진 해적단에게 포위되었다.", kind: "update" }, { title: "이일 (인물)", change: "이일이 파직되었다.", kind: "update" }, { title: "원균 함대", change: "원균 함대가 새로 출전했다.", kind: "new" }]
     : n === 3 ? [{ title: "이일", change: "이일이 백의종군했다.", kind: "update" }] : [{ title: "한양", change: "한양에 소식이 전해졌다.", kind: "update" }];
-  return { title: `${n}장의 사건`, era: `${1586 + n}년`, summary: `${n}장 줄거리. 한서린이 움직였다.`, timeline: [{ year: String(1586 + n), event: `${n}장 사건` }],
+  return { title: `제${n}장: ${n}번째 사건`, era: `${1586 + n}년`, summary: `${n}장 줄거리. 한서린이 움직였다.`, timeline: [{ year: String(1586 + n), event: `${n}장 사건` }],
     protagonistBlock: { heading: `${n}장 사건명`, sections: [{ heading: "출전", level: 1, body: `한서린은 [[이일(인물)]]과 함께 출전했다. (${n}장)` }, { heading: "귀환", level: 1, body: "한서린은 돌아왔다." }], infoboxPatch: [{ label: "상태", value: `${n}장 상태` }], summaryPatch: "" },
     affected, newEntities: [{ title: "원균 함대", type: "조직", summary: "새 함대" }], wove: [{ title: "이일", how: "이일이 출전의 계기가 되었다." }, { title: "여진 해적단(조직)", how: "해적단이 철령을 포위했다." }],
     facts: [{ about: "이일", fact: `이일은 ${n}장에 움직였다.` }], relations: [], spineRevise: n === 2 ? [{ n: 4, intent: "수정된 절정" }] : [],
@@ -185,6 +185,8 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert(after.sections.some(s => s.ch === 2) && after.infobox.find(r => r.label === "상태").value === "2장 상태");
     assert(sw.entities[kOf("원균 함대")] && sw.entities[kOf("이일")].facts.some(f => f.src === "ch2"), "affected 변화가 사실로 미리 들어간다");
     assert(sw.story.spine[3].revised && sw.story.spine[3].orig === "절정 의도");
+    assert.strictEqual(sw.story.chapters[1].title, "2번째 사건", "장 제목에서 '제2장:'을 뗀다");
+    assert(after.sections.some(s => s.ch === 2 && s.heading === "사건명"), "장 섹션 제목에서 '2장'을 뗀다");
     assert(!Object.values(sw.entities).some(o => /\((인물|조직)\)$/.test(o.title)), "모델이 '이일(인물)'처럼 써도 중복 항목을 만들지 않는다");
     assert(after.sections.some(s => s.body.includes("[[이일]]")) && await page.locator('.article a.wl[data-t="이일"]:not(.new)').count() > 0, "유형이 붙은 링크는 원래 문서로 이어진다");
     assert(sw.story.chapters[1].affected.some(a => a.key === kOf("이일")) && sw.story.chapters[1].wove.some(a => a.key === kOf("여진 해적단")));
@@ -285,6 +287,8 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     bwld.entities[dupB] = { title: "한양(지명)", type: "지명", summary: "수도", facts: [], mentions: [], page: true, box: "" };
     bps[dupB] = { ...JSON.parse(JSON.stringify(bps[pk2])), key: dupB, title: "한양(지명)", summary: "한양 문서" };
     bps[bwld.story.protagonistKey].sections[0].body += " [[북관 철령(지명)]]와 [[한양(지명)]]도 있다.";
+    bwld.story.chapters[0].title = "제1장: 녹둔도의 밤";
+    bps[bwld.story.protagonistKey].sections.find(x => x.ch === 2).heading = "2장 — 옛 제목";
     assert(!bps[hk], "테스트 전제: 한양은 아직 문서가 없다");
     fs.writeFileSync(file, JSON.stringify(bk));
     const third = await newPage(browser);
@@ -300,6 +304,8 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     const body = (await pageOf(third.page, tw, "한서린")).sections[0].body;
     assert(body.includes("[[북관 철령]]") && body.includes("[[한양]]") && !body.includes("(지명)]]"), "본문 링크를 원래 이름으로 고친다");
     assert.strictEqual(await third.page.locator('.article a.wl.new[data-t="한양"]').count(), 0, "옮긴 문서는 파란 링크로 보인다");
+    assert.strictEqual(tw.story.chapters[0].title, "녹둔도의 밤", "저장된 장 제목의 장 번호도 정리한다");
+    assert((await pageOf(third.page, tw, "한서린")).sections.some(x => x.ch === 2 && x.heading === "옛 제목"), "저장된 장 섹션 제목도 정리한다");
     ok("이미 생긴 '이름(유형)' 중복 항목과 문서는 세계관을 열 때 원래 항목에 합쳐진다");
     await third.ctx.close();
 

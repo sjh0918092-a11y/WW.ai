@@ -338,7 +338,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v2.5 · 2026-11-07";
+const APP_VERSION = "v2.6 · 2026-11-07";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -897,7 +897,12 @@ function missingChs(w, k) {
   const from = p.syncedTo ?? p.baseAsOf ?? 0;
   return w.story.chapters.filter(c => c.n > from && c.n <= w.story.chapter && (c.affected || []).some(a => a.key === k)).map(c => c.n);
 }
-const stripHead = t => String(t || "").replace(/^#+\s*/, "").replace(/^\[\d+장\]\s*/, "").replace(/^\d+(\.\d+)*\.?\s+/, "").trim().slice(0, 80);
+/* 장 제목에서 "제2장:", "2장 —", "Chapter 2.", "(2장)" 같은 장 번호를 뗀다. 장 번호는 앱이 배지로 붙인다 */
+const CH_NUM = "(?:제\\s*)?\\d+\\s*장|chapter\\s*\\d+|ch\\.?\\s*\\d+";
+const CH_HEAD_RE = new RegExp("^(?:" + CH_NUM + ")(?=[\\s:：.\\-—–·|]|$)[\\s:：.\\-—–·|]*", "i");
+const CH_TAIL_RE = new RegExp("\\s*[(（\\[]\\s*(?:" + CH_NUM + ")\\s*[)）\\]]$", "i");
+const chTitle = t => { const x = norm(t), y = x.replace(CH_HEAD_RE, "").replace(CH_TAIL_RE, "").replace(/^[「『"']\s*|\s*[」』"']$/g, "").trim(); return y || x; };
+const stripHead = t => chTitle(String(t || "").replace(/^#+\s*/, "").replace(/^\[\d+장\]\s*/, "").replace(/^\d+(\.\d+)*\.?\s+/, "")).slice(0, 80);
 /* 장 블록 하나를 문서 섹션으로: 큰 섹션 하나(작중 사건명) + 하위 섹션들. 모두 ch 표시가 붙는다 */
 function blockToSections(ch, heading, secs) {
   const list = (Array.isArray(secs) ? secs : []).filter(s => s && String(s.body || "").trim()).map(s => ({ heading: stripHead(s.heading), body: String(s.body).trim() }));
@@ -996,9 +1001,10 @@ ${choice ? `주인공의 다음 행동으로 독자가 고른 것: ${choice.cust
 - 탐험 결과 때문에 뒤의 뼈대 단계를 바꿔야 하면 spineRevise로 바꾼다. ${STORY_N}단계는 항상 결말로 남겨 둔다. 바꿀 필요가 없으면 빈 배열.
 - ${last ? `이번 장이 마지막 장이다. 결말을 낸다. 주인공이 바라는 것과 결핍이나 상처에 답을 주고, 지금까지 열린 갈등을 정리한다. ending.epilogue에 결말 이후를 3~5문장으로 쓴다. nextChoices는 빈 배열.` : `nextChoices에는 ${nextN}장이 끝날 때 주인공이 할 수 있는 다음 행동 후보 3개를 한 문장씩 쓴다. 서로 방향이 달라야 한다. ending은 null.`}
 - 주인공이 죽을 수도 있다. 주인공이 죽으면 이후 장은 그 죽음의 여파와 유산을 중심으로 진행하고, 주인공 문서의 장 섹션은 사후 사건으로 쓴다.
+- title과 heading에는 "${nextN}장", "제${nextN}장" 같은 장 번호를 넣지 않는다. 장 번호는 앱이 따로 붙인다.
 - era는 이 장의 작중 시점이다. 이전 장(${cur.era})보다 같거나 뒤여야 한다.
 - 확정 사실, 사용자 확정 설정, 핵심 규칙, 연표와 모순되지 않는다. "[사용자 확정]"이 붙은 내용과 사용자가 직접 수정한 주인공 문서의 내용을 최우선 제약으로 삼는다.
-- protagonistBlock은 주인공 문서 맨 뒤에 덧붙는 '${nextN}장' 섹션이다. heading은 작중 사건명, sections는 하위 섹션 2~4개, 모두 합쳐 1,200~2,500자. 주인공 문서에 이미 있는 내용은 반복하지 않는다. 이 장의 절정 장면을 정면으로 쓴다. 상태나 소속이 바뀌었으면 infoboxPatch로, 한 줄 정의가 바뀌어야 하면 summaryPatch로 고친다(바꿀 것이 없으면 빈 배열과 빈 문자열).
+- protagonistBlock은 주인공 문서 맨 뒤에 덧붙는 '${nextN}장' 섹션이다. heading은 작중 사건명(장 번호를 넣지 않는다), sections는 하위 섹션 2~4개, 모두 합쳐 1,200~2,500자. 주인공 문서에 이미 있는 내용은 반복하지 않는다. 이 장의 절정 장면을 정면으로 쓴다. 상태나 소속이 바뀌었으면 infoboxPatch로, 한 줄 정의가 바뀌어야 하면 summaryPatch로 고친다(바꿀 것이 없으면 빈 배열과 빈 문자열).
 - affected는 이번 장에서 무언가가 바뀐 다른 항목 3~8개다. 기존 항목은 아래 목록의 제목을 글자 그대로 쓴다(kind "update"). 새로 등장하는 항목이면 kind "new"이고 newEntities에도 넣는다. 엮은 탐험 항목도 바뀌었다면 affected에 넣는다. change는 이번 장에서 그 항목에 일어난 일 한 문장이다.
 - facts에는 이번 장에서 확정된 사실을 항목별로 4~10개, timeline에는 이번 장의 주요 사건 1~3개(연도만), relations에는 이번 장에서 새로 생기거나 바뀐 인물 관계를 넣는다.
 ${storyStyleRules()}
@@ -1032,7 +1038,7 @@ ${list}
 ${rel}
 
 ## 규칙
-- 장마다 블록 하나를 쓴다. heading은 그 장에서 이 항목이 겪은 일을 가리키는 작중 사건명이다. sections는 1~3개.
+- 장마다 블록 하나를 쓴다. heading은 그 장에서 이 항목이 겪은 일을 가리키는 작중 사건명이다. "2장", "제2장" 같은 장 번호는 넣지 않는다(앱이 따로 붙인다). sections는 1~3개.
 - 블록 하나의 분량은 기존 본문의 15~30%다. 이미 본문에 있는 내용은 반복하지 않는다.
 - 위 '이 항목에 일어난 일'과 줄거리에 맞춘다. 그 장 이후의 일은 쓰지 않는다.
 - 상태, 소속, 직위가 바뀌었으면 infoboxPatch로 고치고, 한 줄 정의가 바뀌어야 하면 summaryPatch에 새 정의를 쓴다. 바꿀 것이 없으면 빈 배열과 빈 문자열.
@@ -1128,7 +1134,7 @@ ${story ? `
 이 위키는 주인공 한 명을 중심으로 ${STORY_N}장짜리 이야기가 진행되는 스토리 모드다. 독자가 위키를 탐험한 내용이 다음 장의 줄거리에 엮인다. 설정 노트와 함께 다음을 정한다.
 - protagonist: 주인공의 한 문장 정의(summary), 주인공이 바라는 것(want), 주인공의 결핍이나 상처(wound).
 - spine: 발단·전개·위기·절정·결말 ${STORY_N}단계의 의도. 각 단계는 주인공의 want와 wound를 건드려야 한다. 결말 단계는 방향만 정하고 구체적인 결과를 확정하지 않는다. 독자의 탐험이 결말을 바꿀 여지를 남기기 위해서다. 이 뼈대는 독자에게 공개하지 않는다.
-- chapter1: 1장(발단)의 작중 사건명(title), 1장의 작중 시점(era), 공개 줄거리 3~5문장(summary), 주인공의 일상을 깨는 발단 사건 한 문장(incident), 1장이 끝날 때 주인공이 할 수 있는 다음 행동 후보 3개(nextChoices, 서로 방향이 다르게).
+- chapter1: 1장(발단)의 작중 사건명(title, "1장"이나 "제1장" 같은 장 번호는 넣지 않는다), 1장의 작중 시점(era), 공개 줄거리 3~5문장(summary), 주인공의 일상을 깨는 발단 사건 한 문장(incident), 1장이 끝날 때 주인공이 할 수 있는 다음 행동 후보 3개(nextChoices, 서로 방향이 다르게).
 - era(세계관 기준 시점)는 chapter1.era와 같게 한다. 연표는 1장 시점까지만 만든다.
 
 JSON 객체 하나만 출력:
@@ -1372,7 +1378,7 @@ function setupStory(w, b) {
   w.mode = "story"; w.era = era;
   w.story = { protagonistKey: w.mainKey, chapter: 1, status: "active", spine, endedAt: null, epilogue: "",
     protagonist: { summary: e.summary, want: stripMarks(pr.want || "").slice(0, 200), wound: stripMarks(pr.wound || "").slice(0, 200) },
-    chapters: [{ n: 1, title: norm(c1.title || "발단").slice(0, 60), era, summary: stripMarks(c1.summary).slice(0, 800), incident: stripMarks(c1.incident || "").slice(0, 240),
+    chapters: [{ n: 1, title: chTitle(c1.title || "발단").slice(0, 60), era, summary: stripMarks(c1.summary).slice(0, 800), incident: stripMarks(c1.incident || "").slice(0, 240),
       startedAt: Date.now(), explore: emptyExplore(), choice: null, wove: [], affected: [], auto: [],
       nextChoices: (Array.isArray(c1.nextChoices) ? c1.nextChoices : []).map(x => stripMarks(x).slice(0, 200)).filter(Boolean).slice(0, 3) }] };
 }
@@ -1456,6 +1462,18 @@ async function autoMerge(w) {
   return pairs.length;
 }
 
+/* 이미 저장된 장 제목과 장 섹션 제목에서 장 번호를 뗀다 */
+async function cleanChapterTitles(w) {
+  if (!isStory(w)) return;
+  let ws = false; const pg = [];
+  for (const c of w.story.chapters) { const t = chTitle(c.title); if (t !== c.title) { c.title = t; ws = true; } }
+  for (const [k, p] of Object.entries(S.pages)) {
+    let ch = false;
+    for (const sec of p.sections) if (sec.ch) { const h = stripHead(sec.heading); if (h && h !== sec.heading) { sec.heading = h; ch = true; } }
+    if (ch) pg.push(k);
+  }
+  try { for (const k of pg) await Store.savePage(w.id, S.pages[k]); if (ws) await Store.saveWorld(w); } catch {}
+}
 /* 사용자가 고른 합치기: dk 항목을 bk 항목에 합친다 */
 async function mergeAction(dk, bk) {
   const w = S.world; if (!w || !w.entities[dk] || !w.entities[bk] || dk === bk) return;
@@ -1484,6 +1502,7 @@ async function openWorld(wid, goKey) {
   S.view = { name: "loading" }; renderAll();
   try { S.pages = await Store.listPages(w.id); } catch (e) { toast(errMsg(e)); }
   const merged = await autoMerge(w);
+  await cleanChapterTitles(w);
   openEntity(goKey && w.entities[goKey] ? goKey : w.mainKey);
   if (merged) toast(`같은 대상을 가리키는데 따로 생긴 항목 ${merged}개를 원래 항목에 합쳤습니다. 예: "이름(인물)", 성이나 이름만 쓴 인물.`);
 }
@@ -2231,7 +2250,7 @@ function applyChapter(w, n, out, choice) {
     if (!s.revised) s.orig = s.intent;
     s.intent = stripMarks(r.intent).slice(0, 300); s.revised = true;
   }
-  st.chapters.push({ n, title: norm(out.title).slice(0, 60), era, summary: stripMarks(out.summary).slice(0, 800), startedAt: Date.now(), explore: emptyExplore(), choice,
+  st.chapters.push({ n, title: chTitle(out.title).slice(0, 60), era, summary: stripMarks(out.summary).slice(0, 800), startedAt: Date.now(), explore: emptyExplore(), choice,
     wove, affected, auto, nextChoices: n >= STORY_N ? [] : (Array.isArray(out.nextChoices) ? out.nextChoices : []).map(x => stripMarks(x).slice(0, 200)).filter(Boolean).slice(0, 3) });
   st.chapter = n; w.era = era;
   if (n >= STORY_N) { st.status = "ended"; st.endedAt = Date.now(); st.epilogue = stripMarks(out.ending?.epilogue || "").slice(0, 1200) || stripMarks(out.summary).slice(0, 800); }
