@@ -315,7 +315,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v1.7 · 2026-11-07";
+const APP_VERSION = "v1.8 · 2026-11-07";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -399,9 +399,16 @@ const PAGE_MODEL = {};   // 모델과 생각 깊이는 'Gemini 설정'에서 정
 /* ---------- Gemini API ---------- */
 const GKEY = "wwiki:gemini";
 const GBASE = "https://generativelanguage.googleapis.com/v1beta";
-const GDEF = { mode: "key", relay: "", pass: "", key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "" };
+const DEFAULT_RELAY = "https://lucky-feather-d3e9.sjh0918092.workers.dev";   // 기본 중계 서버. 주소는 공개돼도 되고, 접속 암호가 있어야 쓸 수 있다
+const GDEF = { mode: "key", relay: DEFAULT_RELAY, pass: "", key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "" };
 const THINKS = [["", "모델 기본값"], ["minimal", "minimal"], ["low", "low"], ["medium", "medium"], ["high", "high"]];
-let GS = (() => { try { return { ...GDEF, ...(JSON.parse(localStorage.getItem(GKEY) || "{}") || {}) }; } catch { return { ...GDEF }; } })();
+let GS = (() => {
+  let st = {}; try { st = JSON.parse(localStorage.getItem(GKEY) || "{}") || {}; } catch {}
+  const g = { ...GDEF, ...st };
+  if (!st.mode) g.mode = st.key ? "key" : "relay";   // 처음 온 사람(친구)은 중계 서버 연결로 시작하고, 키를 쓰던 사람은 그대로 둔다
+  if (!g.relay) g.relay = DEFAULT_RELAY;
+  return g;
+})();
 /* 연결 방식: 내 API 키로 Google에 바로 요청하거나(key), 중계 서버를 거친다(relay) */
 const gRelay = () => GS.mode === "relay";
 const gReady = () => gRelay() ? !!(GS.relay && GS.pass) : !!GS.key;
@@ -1890,12 +1897,12 @@ function gsetHtml() {
       <div class="keyrow"><input id="gKey" class="txt" type="password" autocomplete="off" spellcheck="false" value="${esc(GS.key)}" placeholder="AIza…"><button type="button" class="btn" data-act="gkey-show" data-for="gKey">보기</button></div>
     </div>
     <div id="gRelayBox" ${gRelay() ? "" : "hidden"}>
-      <p class="note" style="margin:8px 0 0">API 키는 중계 서버에 저장되어 있으므로 여기에는 키 대신 서버 주소와 접속 암호를 넣습니다.</p>
-      <label class="lb" for="gRelay">중계 서버 주소 <span class="note" style="font-weight:400">Cloudflare Worker 주소</span></label>
-      <input id="gRelay" class="txt" type="url" autocomplete="off" spellcheck="false" value="${esc(GS.relay)}" placeholder="https://worldwiki-relay.○○○.workers.dev">
-      <label class="lb" for="gPass">접속 암호</label>
+      <label class="lb" for="gPass">접속 암호 <span class="note" style="font-weight:400">API 키는 중계 서버에 있으니 받은 접속 암호만 넣으면 됩니다</span></label>
       <div class="keyrow"><input id="gPass" class="txt" type="password" autocomplete="off" spellcheck="false" value="${esc(GS.pass)}"><button type="button" class="btn" data-act="gkey-show" data-for="gPass">보기</button></div>
-      <div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="relay-invite" ${GS.relay ? "" : "disabled"}>초대 링크 복사</button><span class="note">중계 서버 주소가 채워진 사이트 링크입니다. 접속 암호는 따로 알려 주세요.</span></div>
+      <details class="memo" style="margin-top:10px" ${GS.relay !== DEFAULT_RELAY ? "open" : ""}><summary>중계 서버 주소 바꾸기</summary>
+        <input id="gRelay" class="txt" type="url" autocomplete="off" spellcheck="false" value="${esc(GS.relay)}" placeholder="${esc(DEFAULT_RELAY)}" aria-label="중계 서버 주소">
+        <p class="note" style="margin:6px 0 0">비워 두면 기본 서버를 씁니다.</p></details>
+      <div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="relay-invite">사이트 링크 복사</button><span class="note">친구에게 링크를 보내고, 접속 암호는 따로 알려 주세요.</span></div>
     </div>
     <h2 class="nf-h">모델</h2>
     <div class="two"><div><label class="lb" for="gMain">기본 모델 <span class="note" style="font-weight:400">세계관 생성, 문서 작성, 충돌 고치기</span></label><input id="gMain" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.main)}"></div>
@@ -1913,7 +1920,7 @@ function gsetHtml() {
 }
 function readGsetForm() {
   const v = id => ($("#" + id)?.value ?? "").trim();
-  GS = { ...GS, mode: v("gMode") === "relay" ? "relay" : "key", key: v("gKey"), relay: normRelay(v("gRelay")), pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT") };
+  GS = { ...GS, mode: v("gMode") === "relay" ? "relay" : "key", key: v("gKey"), relay: normRelay(v("gRelay")) || DEFAULT_RELAY, pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT") };
   saveGS(); S.sample = gReady() ? gemini : null;
 }
 function setGres(t) { S.gres = t; const el = $("#gRes"); if (el) el.textContent = t; }
@@ -2289,9 +2296,9 @@ document.addEventListener("click", ev => {
     case "gkey-show": { const i = $("#" + (d.for || "gKey")); if (i) i.type = i.type === "password" ? "text" : "password"; break; }
     case "gset-save": readGsetForm(); setGres(""); renderSide(); toast(gReady() ? "Gemini 설정을 저장했습니다." : (gRelay() ? "중계 서버 주소나 접속 암호가 비어 있어 생성 기능이 꺼집니다." : "키가 비어 있어 생성 기능이 꺼집니다.")); renderMain(); break;
     case "relay-invite": {
-      readGsetForm(); if (!GS.relay) { toast("중계 서버 주소를 먼저 넣어 주세요."); break; }
-      const link = location.origin + location.pathname + "#relay=" + encodeURIComponent(GS.relay);
-      (navigator.clipboard?.writeText(link) || Promise.reject()).then(() => toast("초대 링크를 복사했습니다. 접속 암호는 따로 알려 주세요."), () => setGres("초대 링크: " + link));
+      readGsetForm();
+      const link = location.origin + location.pathname + (GS.relay !== DEFAULT_RELAY ? "#relay=" + encodeURIComponent(GS.relay) : "");
+      (navigator.clipboard?.writeText(link) || Promise.reject()).then(() => toast("사이트 링크를 복사했습니다. 접속 암호는 따로 알려 주세요."), () => setGres("사이트 링크: " + link));
       break;
     }
     case "gset-test": (async () => {
