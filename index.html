@@ -338,7 +338,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v2.3 · 2026-11-07";
+const APP_VERSION = "v2.4 · 2026-11-07";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -729,7 +729,7 @@ const S = {
   gen: null, genErr: null, checking: null, sample: null, sampleReady: false,
   creating: false, createErr: null, seed: "", seedTab: "own", ownSeed: "", dice: null, whatIfs: null, first: "", guideIn: "",
   confirmDel: null, confirmRewrite: null, canonFilter: "all", focusEnt: null, nf: new Set(),
-  edit: null, refreshing: null, confirmDelPage: null, compose: null,
+  edit: null, refreshing: null, confirmDelPage: null, confirmMerge: null, compose: null,
   mode: "basic", storyGen: null, syncQ: [], syncing: null, syncErr: null, adv: null, storyCard: null
 };
 
@@ -737,14 +737,34 @@ const S = {
 const newEntity = (title, type, summary) => ({ title: norm(title), type: type || "", summary: summary || "", facts: [], mentions: [], page: false, box: "" });
 /* 모델이 목록의 유형 표시까지 제목으로 베껴 "김형식(인물)"처럼 쓰는 경우: 원래 이름의 항목이 있으면 그 항목으로 본다 */
 const TYPE_SUFFIX = new RegExp("^(.+?)\\s*[(（]\\s*(?:" + TYPES.join("|") + ")\\s*[)）]$");
+/* 성이나 이름 한 단어("벡")가 정확히 한 인물("마커스 벡")의 이름 첫 단어나 끝 단어와 같으면 그 인물의 키 */
+function nameOwner(w, t, except) {
+  t = norm(t); if (!t || /\s/.test(t) || t.length > 10) return null;
+  let hit = null;
+  for (const [k, o] of Object.entries(w.entities)) {
+    if (k === except || o.type !== "인물") continue;
+    const parts = o.title.replace(/\(.*\)$/, "").trim().split(/[\s·]+/).filter(Boolean);
+    if (parts.length < 2 || (parts[0] !== t && parts[parts.length - 1] !== t)) continue;
+    if (hit) return null;   // 같은 성을 쓰는 인물이 둘 이상이면 정할 수 없다
+    hit = k;
+  }
+  return hit;
+}
 function canonTitle(w, t) {
-  t = norm(t); if (!w || !t || w.entities[keyOf(t)]) return t;
+  t = norm(t); if (!w || !t) return t;
+  const k = keyOf(t); if (w.entities[k]) return t;
+  const al = w.aliases?.[k]; if (al && w.entities[al]) return w.entities[al].title;   // 합쳐진 이름은 남은 항목으로 넘어간다
   const m = TYPE_SUFFIX.exec(t); if (m && w.entities[keyOf(norm(m[1]))]) return norm(m[1]);
+  const o = nameOwner(w, t); if (o) return w.entities[o].title;
   return t;
 }
 const kOf = (w, t) => keyOf(canonTitle(w, t));
-/* 본문의 [[김형식(인물)]] → [[김형식]] */
-const cleanLinks = (w, text) => String(text ?? "").replace(LINK_RE, (m, a, b) => { const c = canonTitle(w, a); return c === norm(a) ? m : `[[${c}${b ? "|" + b : ""}]]`; });
+/* 본문의 [[김형식(인물)]] → [[김형식]], [[벡]] → [[마커스 벡|벡]] */
+const cleanLinks = (w, text) => String(text ?? "").replace(LINK_RE, (m, a, b) => {
+  const c = canonTitle(w, a); if (c === norm(a)) return m;
+  const label = b || (TYPE_SUFFIX.test(norm(a)) ? "" : norm(a));
+  return `[[${c}${label && label !== c ? "|" + label : ""}]]`;
+});
 function addFact(e, t, src) {
   t = stripMarks(t).slice(0, 240); if (!t || e.facts.some(f => f.t === t)) return;
   e.facts.push({ t, src }); if (e.facts.length > 24) e.facts.splice(e.facts.findIndex(f => f.src !== "user"), 1);
@@ -930,7 +950,7 @@ ${ended ? "- 결말과 모순되는 내용을 쓰지 않는다." : `- ${w.era} �
 }
 function storyStyleRules() {
   return `- 문체: ${STYLES.encyc.desc}
-- 하이퍼링크: 다른 항목은 [[제목]] 또는 [[제목|본문에 보일 말]]로 감싼다. 이름 있는 인물, 장소, 조직, 사건, 물건은 처음 나올 때 링크한다. 이미 있는 항목은 아래 목록의 제목을 글자 그대로 쓴다. 자기 자신은 링크하지 않는다.
+- 하이퍼링크: 다른 항목은 [[제목]] 또는 [[제목|본문에 보일 말]]로 감싼다. 이름 있는 인물, 장소, 조직, 사건, 물건은 처음 나올 때 링크한다. 이미 있는 항목은 아래 목록의 제목을 글자 그대로 쓴다. 이미 있는 인물을 성이나 이름, 별명만으로 부를 때도 링크는 [[목록의 전체 제목|부른 이름]]으로 건다(예: [[마커스 벡|벡]]). 자기 자신은 링크하지 않는다.
 - 본문 서식: 문단은 빈 줄로 구분, 목록은 "- ", 인용문은 "> "(다음 줄에 "> — 화자, 출처"), 강조는 **굵게**. 직접 인용은 많아야 1개. 각주와 취소선은 쓰지 않는다.
 - 단정형으로 쓴다. "밝혀지지 않았다", "~라고 전해진다" 같은 얼버무림과 "A가 아니라 B" 꼴의 반전 대구는 쓰지 않는다.
 - 해석이 엇갈린다, 논쟁을 낳고 있다는 식의 섹션이나 마무리 문단을 쓰지 않는다. 장 섹션은 그 장에 실제로 일어난 일과 그 결과로 끝낸다.`;
@@ -1261,7 +1281,7 @@ ${showFor(ty, ["인물"]) ? `## 인물 문서
 - 문체: ${st.desc}
 - 분량: ${st.len}.
 - 구성: ${structureFor(st.structure, ty)}
-- 하이퍼링크: 다른 항목은 [[제목]] 또는 [[제목|본문에 보일 말]]로 감싼다. 링크는 공격적으로 건다. 본문과 인포박스에 나오는 단어 중 따로 문서가 될 만한 것은 처음 나올 때 모두 링크한다. 이름 있는 인물, 장소, 조직, 사건, 문서나 기록, 물건, 제도, 그리고 이 세계에만 있는 용어(예: 어떤 존재들의 방언, 고유한 직업이나 의식)가 여기에 해당한다. 본문에 이름이 나온 인물, 조직, 장소, 사건은 처음 나올 때 빠짐없이 링크하며, 이 규칙은 아래 개수 목표보다 우선한다. 그 밖의 용어까지 합친 목표는 문서당 12~18개이고, 꼭 눌러 보고 싶은 것부터 건다. 이미 있는 항목도 본문에 자연스럽게 나왔다면 위 목록의 제목을 글자 그대로 써서 링크한다. 다만 링크하려고 기존 항목을 "~의 사례로 꼽힌다", "~와도 관련이 있다"처럼 억지로 끌어오지는 않는다. 현실의 일반 명사(소, 정오, 철도)는 이 세계에서 특별한 의미가 없으면 링크하지 않는다. 자기 자신은 링크하지 않고, 같은 대상은 처음 한 번만 링크한다.
+- 하이퍼링크: 다른 항목은 [[제목]] 또는 [[제목|본문에 보일 말]]로 감싼다. 링크는 공격적으로 건다. 본문과 인포박스에 나오는 단어 중 따로 문서가 될 만한 것은 처음 나올 때 모두 링크한다. 이름 있는 인물, 장소, 조직, 사건, 문서나 기록, 물건, 제도, 그리고 이 세계에만 있는 용어(예: 어떤 존재들의 방언, 고유한 직업이나 의식)가 여기에 해당한다. 본문에 이름이 나온 인물, 조직, 장소, 사건은 처음 나올 때 빠짐없이 링크하며, 이 규칙은 아래 개수 목표보다 우선한다. 그 밖의 용어까지 합친 목표는 문서당 12~18개이고, 꼭 눌러 보고 싶은 것부터 건다. 이미 있는 항목도 본문에 자연스럽게 나왔다면 위 목록의 제목을 글자 그대로 써서 링크한다. 이미 있는 인물을 성이나 이름, 별명만으로 부를 때도 링크는 [[목록의 전체 제목|부른 이름]]으로 건다(예: [[마커스 벡|벡]]). 같은 대상을 다른 이름으로 링크해 새 항목을 만들지 않는다. 다만 링크하려고 기존 항목을 "~의 사례로 꼽힌다", "~와도 관련이 있다"처럼 억지로 끌어오지는 않는다. 현실의 일반 명사(소, 정오, 철도)는 이 세계에서 특별한 의미가 없으면 링크하지 않는다. 자기 자신은 링크하지 않고, 같은 대상은 처음 한 번만 링크한다.
 - 인포박스: 유형에 맞는 4~8개 항목(label/value). value에도 [[링크]]를 쓸 수 있다. 인물이면 해당하는 경우 배우자, 자녀 같은 가족 항목을 넣는다. 전투나 전쟁이면 기간, 장소, 교전 세력, 지휘관(전사한 사람은 이름 뒤에 †), 전력, 피해, 결과를 넣고, 양측이 있는 항목은 value 안에서 "진영 A: … / 진영 B: …"로 나란히 쓴다.
 - 틀(navboxes): 이 항목 자체가 구성원이 정해진 집단(부대, 팀, 중대, 위원회, 내각, 기사단, 밴드, 가문, 왕조, 기수, 함대, 특정 기체 계열 등)이면 구성원 명단을 틀로 만든다.
   - 구성원이 40명 이하면 한 명도 빼지 않고 전원을 쓴다. 그보다 많으면 지휘부와 주요 구성원, 하위 단위를 정리한다.
@@ -1357,31 +1377,31 @@ function setupStory(w, b) {
       nextChoices: (Array.isArray(c1.nextChoices) ? c1.nextChoices : []).map(x => stripMarks(x).slice(0, 200)).filter(Boolean).slice(0, 3) }] };
 }
 
-/* "김형식(인물)"처럼 유형이 붙어 따로 생긴 항목을 원래 항목에 합친다.
-   원래 항목에 문서가 없으면 중복 문서를 원래 항목으로 옮기고, 둘 다 문서가 있으면 중복 문서를 지운다. */
-async function mergeTypeDupes(w) {
-  const pairs = [];
-  for (const [dk, d] of Object.entries(w.entities)) {
-    const m = TYPE_SUFFIX.exec(d.title || ""); if (!m) continue;
-    const bk = keyOf(norm(m[1])); if (bk !== dk && w.entities[bk]) pairs.push([dk, bk]);
-  }
-  if (!pairs.length) return 0;
-  const map = Object.fromEntries(pairs), re = k => map[k] || k;
+/* 항목 합치기: pairs = [[없앨 항목 키, 남길 항목 키], ...]
+   남길 항목에 문서가 없으면 없앨 항목의 문서를 옮기고, 둘 다 문서가 있으면 없앨 항목의 문서와 그 문서가 남긴 설정을 지운다.
+   없앤 이름은 w.aliases에 남겨, 이후 그 이름으로 건 링크가 남길 항목으로 넘어가게 한다(넘겨주기). */
+async function mergeEntities(w, pairs) {
+  const map = Object.fromEntries(pairs), re = k => { let n = 0; while (map[k] && n++ < 20) k = map[k]; return k; };
   const removed = [], saved = new Set();
-  for (const [dk, bk] of pairs) {
-    const d = w.entities[dk], b = w.entities[bk], dp = S.pages[dk];
-    if (dp && !S.pages[bk]) {   // 중복 쪽에만 문서가 있으면 원래 항목의 문서로 옮긴다
+  w.aliases ||= {};
+  for (const [dk] of pairs) {
+    const bk = re(dk), d = w.entities[dk], b = w.entities[bk], dp = S.pages[dk];
+    if (!d || !b || dk === bk) continue;
+    if (dp && !S.pages[bk]) {
       dp.key = bk; dp.title = b.title; S.pages[bk] = dp; saved.add(bk);
       b.type = d.type || b.type; b.summary = d.summary || b.summary; b.box = d.box || b.box; b.page = true; if (d.stub && !b.stub) b.stub = d.stub;
-    } else if (dp) {            // 둘 다 문서가 있으면 중복 문서와 그 문서가 남긴 설정을 지운다
+    } else if (dp) {
       purge(w, dk);
       for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === dk) delete w.navboxes[id];
     }
     if (dp) { delete S.pages[dk]; removed.push(dk); }
     for (const f of d.facts) if (!b.facts.some(x => x.t === f.t)) b.facts.push(f);
     for (const x of d.mentions) if (!b.mentions.some(y => y.from === x.from && y.text === x.text)) b.mentions.push(x);
+    if (b.facts.length > 24) b.facts.splice(0, b.facts.length - 24);
     delete w.entities[dk];
+    w.aliases[dk] = bk;
   }
+  for (const [x, y] of Object.entries(w.aliases)) { w.aliases[x] = re(y); if (w.entities[x]) delete w.aliases[x]; }
   for (const [k, o] of Object.entries(w.entities)) {
     for (const f of o.facts) f.src = re(f.src);
     o.mentions = o.mentions.filter(x => { x.from = re(x.from); return x.from !== k; });
@@ -1406,20 +1426,53 @@ async function mergeTypeDupes(w) {
     }
   }
   for (const [k, p] of Object.entries(S.pages)) {
-    const before = JSON.stringify([p.sections, p.infobox, p.notices, p.links]);
+    const before = JSON.stringify([p.sections, p.infobox, p.notices, p.links, p.conflicts]);
     for (const sec of p.sections) sec.body = cleanLinks(w, sec.body);
     for (const r of p.infobox || []) r.value = cleanLinks(w, r.value);
     p.notices = (p.notices || []).map(x => cleanLinks(w, x));
     p.links = [...new Set((p.links || []).map(re))].filter(x => x !== k);
     for (const c of p.conflicts || []) c.by = re(c.by);
-    if (JSON.stringify([p.sections, p.infobox, p.notices, p.links]) !== before) saved.add(k);
+    if (JSON.stringify([p.sections, p.infobox, p.notices, p.links, p.conflicts]) !== before) saved.add(k);
   }
+  S.recent = [...new Set(S.recent.map(re))].filter(x => w.entities[x]);
   try {
     for (const k of removed) await Store.deletePage(w.id, k);
     for (const k of saved) if (S.pages[k]) await Store.savePage(w.id, S.pages[k]);
     await Store.saveWorld(w);
-  } catch (err) { toast("중복 항목을 정리했지만 저장하지 못했습니다. " + errMsg(err)); }
+  } catch (err) { toast("항목을 합쳤지만 저장하지 못했습니다. " + errMsg(err)); }
+  return re;
+}
+/* 세계관을 열 때 자동으로 합치는 것: "이름(인물)"처럼 유형이 붙은 항목, 그리고 문서가 없는 "벡"처럼 한 인물의 성이나 이름만 쓴 항목 */
+async function autoMerge(w) {
+  const pairs = [], protect = new Set([w.mainKey, isStory(w) ? w.story.protagonistKey : null]);
+  for (const [dk, d] of Object.entries(w.entities)) {
+    if (protect.has(dk)) continue;
+    const m = TYPE_SUFFIX.exec(d.title || "");
+    if (m) { const bk = keyOf(norm(m[1])); if (bk !== dk && w.entities[bk]) { pairs.push([dk, bk]); continue; } }
+    if (!S.pages[dk] && (!d.type || d.type === "인물")) { const bk = nameOwner(w, d.title, dk); if (bk) pairs.push([dk, bk]); }
+  }
+  if (!pairs.length) return 0;
+  await mergeEntities(w, pairs);
   return pairs.length;
+}
+
+/* 사용자가 고른 합치기: dk 항목을 bk 항목에 합친다 */
+async function mergeAction(dk, bk) {
+  const w = S.world; if (!w || !w.entities[dk] || !w.entities[bk] || dk === bk) return;
+  if (S.gen || S.storyGen || S.syncing) { toast("다른 작업이 끝난 뒤 합쳐 주세요."); return; }
+  if (S.edit) { toast("편집 중인 문서를 먼저 저장하거나 취소해 주세요."); return; }
+  if (dk === w.mainKey || (isStory(w) && dk === w.story.protagonistKey)) { toast(`「${w.entities[dk].title}」은(는) ${isStory(w) ? "주인공" : "대문"} 문서라 다른 문서에 합칠 수 없습니다. 반대로 다른 문서를 이쪽에 합쳐 주세요.`); return; }
+  const from = w.entities[dk].title, to = w.entities[bk].title;
+  S.confirmMerge = null; S.memo = null; S.fixv = null;
+  await mergeEntities(w, [[dk, bk]]);
+  S.view = { name: "article", key: bk }; S.recent = [bk, ...S.recent.filter(x => x !== bk)].slice(0, 8);
+  renderAll(); window.scrollTo({ top: 0 });
+  toast(`「${from}」을(를) 「${to}」에 합쳤습니다. 이제 「${from}」 링크는 「${to}」 문서로 넘어갑니다.`);
+}
+async function notSame(k, other) {
+  const w = S.world, e = w?.entities[k]; if (!e) return;
+  (e.notSame ||= []).includes(other) || e.notSame.push(other);
+  renderMain(); try { await Store.saveWorld(w); } catch {}
 }
 
 async function openWorld(wid, goKey) {
@@ -1427,12 +1480,12 @@ async function openWorld(wid, goKey) {
   if (S.gen && S.gen.wid !== wid) { toast("다른 세계관의 문서를 작성하는 중입니다. 끝난 뒤 열어 주세요."); return; }
   if (S.storyGen && S.world?.id !== wid) { toast("다음 장을 쓰는 중입니다. 끝난 뒤 열어 주세요."); return; }
   if (S.syncing && S.world?.id !== wid) { toast("장의 변화를 문서에 반영하는 중입니다. 끝난 뒤 열어 주세요."); return; }
-  S.world = w; S.pages = {}; S.recent = []; S.confirmDel = null; S.nf = new Set(); S.edit = null; S.confirmDelPage = null; S.syncQ = []; S.syncErr = null; S.storyCard = null; S.adv = null;
+  S.world = w; S.pages = {}; S.recent = []; S.confirmDel = null; S.nf = new Set(); S.edit = null; S.confirmDelPage = null; S.confirmMerge = null; S.syncQ = []; S.syncErr = null; S.storyCard = null; S.adv = null;
   S.view = { name: "loading" }; renderAll();
   try { S.pages = await Store.listPages(w.id); } catch (e) { toast(errMsg(e)); }
-  const merged = await mergeTypeDupes(w);
-  openEntity(goKey || w.mainKey);
-  if (merged) toast(`"이름(인물)"처럼 유형이 붙어 따로 생긴 항목 ${merged}개를 원래 항목에 합쳤습니다.`);
+  const merged = await autoMerge(w);
+  openEntity(goKey && w.entities[goKey] ? goKey : w.mainKey);
+  if (merged) toast(`같은 대상을 가리키는데 따로 생긴 항목 ${merged}개를 원래 항목에 합쳤습니다. 예: "이름(인물)", 성이나 이름만 쓴 인물.`);
 }
 
 function openEntity(k) {
@@ -2285,6 +2338,7 @@ async function runSync(k) {
 /* ---------- rendering: text ---------- */
 function linkHtml(target, label) {
   const w = S.world; const t = canonTitle(w, target); const k = keyOf(t);
+  if (!label && t !== norm(target) && !TYPE_SUFFIX.test(norm(target))) label = norm(target);
   const e = w && w.entities[k]; const has = !!S.pages[k];
   const tip = has ? (e?.summary || t) : "아직 작성되지 않은 문서입니다. 누르면 바로 작성하고, 두 번 누르거나(PC) 길게 누르면(모바일) 방향을 정해 작성합니다.";
   return `<a class="wl${has ? "" : " new"}" href="#" data-k="${k}" data-t="${esc(t)}" title="${esc(tip)}">${esc(label || t)}</a>`;
@@ -2512,6 +2566,15 @@ function articleHtml(k) {
     : S.syncErr?.key === k ? `<div class="banner warn">${miss.join(", ")}장의 변화를 반영하지 못했습니다. ${esc(S.syncErr.msg)} <button type="button" class="btn" data-act="sync-retry" style="margin-left:6px;padding:2px 10px" ${!S.sample ? "disabled" : ""}>다시 시도</button></div>`
     : miss.length ? `<p class="memo-line"><span class="dot"></span>${miss.join(", ")}장의 변화를 반영할 차례를 기다리는 중</p>` : "";
   const cardHtml = card ? storyCardHtml(w, card.n) : "";
+  const fixed = k === w.mainKey || k === pk;
+  const twin = !fixed && (!e.type || e.type === "인물") ? nameOwner(w, e.title, k) : null;
+  const twinHtml = twin && !(e.notSame || []).includes(twin) ? `<div class="banner warn">「${esc(w.entities[twin].title)}」과(와) 같은 대상인가요? 합치면 「${esc(e.title)}」 링크는 모두 「${esc(w.entities[twin].title)}」 문서로 넘어갑니다. ${S.pages[twin] ? `이 문서는 지워지고 「${esc(w.entities[twin].title)}」 문서가 남습니다. 다른 문서들이 이 항목에 대해 확정한 내용은 옮겨집니다.` : `이 문서가 「${esc(w.entities[twin].title)}」 문서가 됩니다.`}
+    <div class="row" style="margin-top:6px"><button type="button" class="btn" data-mgdo="${k}" data-mgto="${twin}" ${S.gen || S.storyGen || S.syncing ? "disabled" : ""}>같은 대상이니 합치기</button><button type="button" class="btn" data-notsame="${k}" data-other="${twin}">다른 대상입니다</button></div></div>` : "";
+  const mergeBox = S.confirmMerge === k ? `<div class="rwbox">
+      <label class="lb" for="mgTo" style="margin-top:0">「${esc(e.title)}」을(를) 어느 문서에 합칠까요?</label>
+      <input id="mgTo" class="txt" list="mgList" placeholder="합칠 문서 제목" autocomplete="off"><datalist id="mgList">${Object.entries(w.entities).filter(([x]) => x !== k).sort((a, b) => (b[1].page ? 1 : 0) - (a[1].page ? 1 : 0)).slice(0, 300).map(([, o]) => `<option value="${esc(o.title)}"></option>`).join("")}</datalist>
+      <p class="note">같은 대상인데 이름이 달라 따로 생긴 문서를 하나로 합칩니다(별명, 칭호, 성만 쓴 이름 등). 이후 「${esc(e.title)}」 링크는 고른 문서로 넘어갑니다. 고른 문서에 이미 본문이 있으면 이 문서는 지워지고, 없으면 이 문서가 그 이름으로 옮겨집니다. 다른 문서들이 이 항목에 대해 확정한 내용은 옮겨집니다. 되돌릴 수 없습니다.</p>
+      <div class="row" style="margin-top:6px"><button type="button" class="btn pri" data-mg-yes="${k}">합치기</button><button type="button" class="btn" data-act="mg-no">취소</button></div></div>` : "";
   const fnHtml = fns.length ? `<section class="fns"><b>각주</b><ol>${fns.map((f, i) => `<li id="fn-${i + 1}">${inline(f)}</li>`).join("")}</ol></section>` : "";
   const back = [...new Set(e.mentions.map(m => m.from))].filter(x => w.entities[x] && x !== k);
   const out = (p.links || []).filter(x => w.entities[x]);
@@ -2536,7 +2599,8 @@ function articleHtml(k) {
     ${p.categories?.length ? `<div class="cats"><b>분류</b>${p.categories.map(c => `<span>${esc(c)}</span>`).join("")}</div>` : ""}
     ${navboxesFor(w, k).map(([, nb]) => navboxHtml(nb, nb.src === k, k)).join("")}
     ${cardHtml}
-    <div class="tools"><button type="button" class="btn" data-edit="${k}">편집</button><button type="button" class="btn" data-check="${k}" ${S.checking || !S.sample ? "disabled" : ""}>설정 검사</button>${rw}<button type="button" class="btn" data-focus="${k}">설정 노트에서 보기</button>${k === pk ? `<button type="button" class="btn dng" disabled title="주인공 문서는 이야기의 중심이라 삭제할 수 없습니다">삭제</button>` : `<button type="button" class="btn dng" data-delpage="${k}" aria-expanded="${S.confirmDelPage === k}">삭제</button>`}</div>
+    <div class="tools"><button type="button" class="btn" data-edit="${k}">편집</button><button type="button" class="btn" data-check="${k}" ${S.checking || !S.sample ? "disabled" : ""}>설정 검사</button>${rw}<button type="button" class="btn" data-focus="${k}">설정 노트에서 보기</button>${fixed ? "" : `<button type="button" class="btn" data-mg="${k}" aria-expanded="${S.confirmMerge === k}">합치기</button>`}${k === pk ? `<button type="button" class="btn dng" disabled title="주인공 문서는 이야기의 중심이라 삭제할 수 없습니다">삭제</button>` : `<button type="button" class="btn dng" data-delpage="${k}" aria-expanded="${S.confirmDelPage === k}">삭제</button>`}</div>
+    ${mergeBox}${twinHtml}
     ${S.confirmDelPage === k ? `<div class="rwbox"><p style="margin:0">「${esc(p.title)}」 문서를 삭제할까요?</p>
       <p class="note">문서와 이 문서가 확정한 사실, 틀, 연표 항목이 지워집니다. 다른 문서가 이 항목을 언급한 내용은 남고, 그 링크는 미작성 문서로 돌아갑니다. 되돌릴 수 없습니다.</p>
       <div class="row" style="margin-top:6px"><button type="button" class="btn dng" data-delpage-yes="${k}">삭제</button><button type="button" class="btn" data-act="delpage-no">취소</button></div></div>` : ""}
@@ -2787,7 +2851,7 @@ function composeFromSearch(title) {
   $("#q").value = ""; renderSugg(); $("#q").blur(); openCompose(k);
 }
 function goSearch(title) {
-  const w = S.world; const t = norm(title); if (!w || !t) return;
+  const w = S.world; const t = canonTitle(w, title); if (!w || !t) return;   // 합쳐진 이름이나 성만 쓴 이름은 원래 문서로
   const k = keyOf(t);
   if (!w.entities[k] && S.nf.has(k)) { $("#q").value = ""; renderSugg(); $("#q").blur(); S.view = { name: "notfound", title: t }; renderAll(); window.scrollTo({ top: 0 }); return; }
   if (!w.entities[k]) { w.entities[k] = newEntity(t, "", ""); w.entities[k].src = "search"; w.entities[k].searched = true; }
@@ -2848,6 +2912,10 @@ document.addEventListener("click", ev => {
   if (d.edit) { openEditor(d.edit); return; }
   if (d.delpage) { S.confirmDelPage = S.confirmDelPage === d.delpage ? null : d.delpage; S.confirmRewrite = null; renderMain(); return; }
   if (d.delpageYes) { deletePage(d.delpageYes); return; }
+  if (d.mg) { S.confirmMerge = S.confirmMerge === d.mg ? null : d.mg; S.confirmDelPage = null; S.confirmRewrite = null; renderMain(); if (S.confirmMerge) $("#mgTo")?.focus(); return; }
+  if (d.mgYes) { const w = S.world, v = norm($("#mgTo")?.value || ""); if (!w || !v) { toast("합칠 문서 제목을 골라 주세요."); return; } const t = keyOf(v), bk = w.entities[t] ? t : kOf(w, v); if (!w.entities[bk] || bk === d.mgYes) { toast(`「${v}」 항목을 찾을 수 없습니다. 목록에서 골라 주세요.`); return; } mergeAction(d.mgYes, bk); return; }
+  if (d.mgdo) { mergeAction(d.mgdo, d.mgto); return; }
+  if (d.notsame) { notSame(d.notsame, d.other); return; }
   if (d.refresh) { openEditor(d.refresh); saveEdit(); return; }
   if (d.dismiss) { dismissNotes(d.dismiss, d.field); return; }
   if (d.focus) { S.focusEnt = d.focus; S.view = { name: "canon" }; renderAll(); return; }
@@ -2920,6 +2988,7 @@ document.addEventListener("click", ev => {
     case "del-no": S.confirmDel = null; renderMain(); break;
     case "rw-no": S.confirmRewrite = null; renderMain(); break;
     case "delpage-no": S.confirmDelPage = null; renderMain(); break;
+    case "mg-no": S.confirmMerge = null; renderMain(); break;
     case "ed-save": saveEdit(); break;
     case "ed-save-raw": saveEdit(true); break;
     case "cf-apply": applyConflictChoices(); break;

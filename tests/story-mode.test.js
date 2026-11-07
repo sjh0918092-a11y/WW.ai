@@ -31,8 +31,8 @@ function kindOf(p) {
 const TONE = { label: "테스트 사극", guide: ["한자어를 섞는다", "건조하게 쓴다", "칭호를 남발하지 않는다", "고유명사는 조선풍", "인용은 짧게", "전투를 정면으로"] };
 const BASE = { tagline: "테스트 세계", historical: false, rules: ["규칙 하나", "규칙 둘", "규칙 셋", "규칙 넷", "규칙 다섯"], timeline: [{ year: "1580", event: "녹둔도 개척" }, { year: "1585", event: "북관 철령 완공" }], tone: TONE };
 function pageJson(title) {
-  const links = title === "한서린" ? "[[북관 철령]]과 [[이일]], [[한양]]" : title === "대문 항목" ? "[[북관 철령]]" : "[[한서린]]";
-  return { title, type: title === "한서린" || title === "이일" ? "인물" : "지명", summary: `${title}은 테스트 항목이다.`, categories: ["테스트"], notices: [], infobox: [{ label: "상태", value: "생존" }],
+  const links = title === "한서린" ? "[[북관 철령]]과 [[이일]], [[한양]]" : title === "대문 항목" ? "[[북관 철령]]" : title === "마커스 벡" ? "[[대문 항목]]" : title === "칼 슈미트" ? "[[벡]]" : "[[한서린]]";
+  return { title, type: title === "한서린" || title === "이일" || /벡|슈미트/.test(title) ? "인물" : "지명", summary: `${title}은 테스트 항목이다.`, categories: ["테스트"], notices: [], infobox: [{ label: "상태", value: "생존" }],
     sections: [{ heading: "개요", level: 1, body: `${title}은 ${links}와 얽힌 항목이다.` }, { heading: "역사", level: 1, body: `${title}의 역사는 1586년에 시작되었다.` }],
     facts: [], relations: [], navboxes: [], newEntities: [], timeline: [] };
 }
@@ -302,6 +302,53 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     bw = await worldOf(page, "기본 세계");
     assert(bw && !bw.story);
     ok("기본 모드 세계관에는 스토리 필드가 생기지 않는다");
+
+    /* 13. 성만 쓴 이름("벡")과 전체 이름("마커스 벡") */
+    await page.click('[data-act="home"]'); await page.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(page, "대문 항목");
+    await page.fill("#q", "마커스 벡"); await page.press("#q", "Enter"); await waitArticle(page, "마커스 벡");
+    await page.fill("#q", "칼 슈미트"); await page.press("#q", "Enter"); await waitArticle(page, "칼 슈미트");
+    bw = await worldOf(page, "기본 세계");
+    assert(!Object.values(bw.entities).some(o => o.title === "벡"), "새 링크 [[벡]]은 새 항목을 만들지 않는다");
+    assert.strictEqual(await page.locator('.article a.wl[data-t="마커스 벡"]:not(.new)').innerText(), "벡", "[[벡]]은 '벡'으로 보이고 마커스 벡 문서로 이어진다");
+    ok("새로 건 [[벡]] 링크는 이미 있는 「마커스 벡」 문서로 이어진다");
+    await page.click('[data-act="gset"]');
+    const [dl2] = await Promise.all([page.waitForEvent("download"), page.click('[data-act="export"]')]);
+    const file2 = path.join(os.tmpdir(), "ww-name-backup.json"); await dl2.saveAs(file2);
+    const bk2 = JSON.parse(fs.readFileSync(file2, "utf8")), bw2 = bk2.worlds.find(x => x.title === "기본 세계"), bp2 = bk2.pages[bw2.id];
+    const kt = t => Object.keys(bw2.entities).find(k => bw2.entities[k].title === t);
+    const mk = kt("마커스 벡"), ck = kt("칼 슈미트");
+    bw2.entities.ebeck = { title: "벡", type: "인물", summary: "벡", facts: [{ t: "벡은 함장이다.", src: ck }], mentions: [], page: true, box: "" };
+    bp2.ebeck = { ...JSON.parse(JSON.stringify(bp2[mk])), key: "ebeck", title: "벡" };
+    bw2.entities.emarcus = { title: "마커스", type: "", summary: "", facts: [], mentions: [{ from: ck, text: "마커스가 나타났다." }], page: false, box: "" };
+    bp2[ck].sections[0].body += " [[마커스]]와 [[벡]]이 함께 있었다.";
+    fs.writeFileSync(file2, JSON.stringify(bk2));
+    const fourth = await newPage(browser), q = fourth.page;
+    await q.goto(URL_); await q.waitForSelector("#seedTa");
+    await q.click('[data-act="gset"]'); await q.setInputFiles("#importFile", file2);
+    await q.waitForTimeout(500); await q.click('#side [data-act="home"]');
+    await q.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(q, "대문 항목");
+    let fw = await worldOf(q, "기본 세계");
+    assert(!Object.values(fw.entities).some(o => o.title === "마커스") && fw.entities[mk].mentions.some(m => m.text === "마커스가 나타났다."), "문서 없는 '마커스'는 자동으로 「마커스 벡」에 합친다");
+    assert(fw.entities.ebeck, "둘 다 문서가 있으면 자동으로 합치지 않는다");
+    await q.fill("#q", "벡"); await q.press("#q", "Enter"); await waitArticle(q, "벡");
+    assert((await q.locator("#main").innerText()).includes("「마커스 벡」과(와) 같은 대상인가요?"));
+    await q.click('[data-mgdo]'); await waitArticle(q, "마커스 벡");
+    fw = await worldOf(q, "기본 세계"); const keys = (await idbAll(q)).map(x => x[0]);
+    assert(!fw.entities.ebeck && fw.aliases.ebeck === mk && !keys.some(k => k.endsWith(":ebeck")), "합치면 「벡」 문서가 지워지고 넘겨주기가 남는다");
+    assert(fw.entities[mk].facts.some(f => f.t === "벡은 함장이다."), "다른 문서가 확정한 사실은 옮겨진다");
+    await q.fill("#q", "벡"); await q.press("#q", "Enter"); await waitArticle(q, "마커스 벡");
+    const cb = (await pageOf(q, fw, "칼 슈미트")).sections[0].body;
+    assert(cb.includes("[[마커스 벡|마커스]]") && cb.includes("[[마커스 벡|벡]]"), "본문 링크가 「마커스 벡」으로 바뀌고 보이는 이름은 그대로");
+    ok("성이나 이름만 쓴 항목: 문서가 없으면 자동으로, 둘 다 문서가 있으면 안내를 눌러 합치고, 이후 「벡」은 「마커스 벡」으로 넘어간다");
+    await q.fill("#q", "칼 슈미트"); await q.press("#q", "Enter"); await waitArticle(q, "칼 슈미트");
+    await q.click('[data-mg]'); await q.fill("#mgTo", "북관 철령"); await q.click('[data-mg-yes]'); await waitArticle(q, "북관 철령");
+    fw = await worldOf(q, "기본 세계");
+    assert(!Object.values(fw.entities).some(o => o.title === "칼 슈미트") && fw.entities[kt("북관 철령")].page, "직접 고른 문서로 합칠 수 있다");
+    assert(await q.locator('[data-mg]').count() === 1 && await q.locator('#side [data-k]').first().count() === 1);
+    await q.click('#side [data-k]:has-text("대문")'); await waitArticle(q, "대문 항목");
+    assert.strictEqual(await q.locator('[data-mg]').count(), 0, "대문 문서에는 합치기 버튼이 없다");
+    ok("합치기 버튼으로 별명 같은 다른 이름의 문서를 직접 고른 문서에 합칠 수 있다");
+    await fourth.ctx.close();
     await ctx.close();
     console.log(`\n모두 통과 (${step}개). Gemini 호출 ${calls.length}회: ` + Object.entries(calls.reduce((a, c) => (a[c.kind] = (a[c.kind] || 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
   } catch (e) {
