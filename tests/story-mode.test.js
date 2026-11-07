@@ -39,11 +39,11 @@ function pageJson(title) {
 function planJson(p) {
   const n = +(/다음 장\((\d)장\)/.exec(p) || [])[1];
   const last = n === 5;
-  const affected = n === 2 ? [{ title: "북관 철령", change: "북관 철령이 여진 해적단에게 포위되었다.", kind: "update" }, { title: "이일", change: "이일이 파직되었다.", kind: "update" }, { title: "원균 함대", change: "원균 함대가 새로 출전했다.", kind: "new" }]
+  const affected = n === 2 ? [{ title: "북관 철령", change: "북관 철령이 여진 해적단에게 포위되었다.", kind: "update" }, { title: "이일 (인물)", change: "이일이 파직되었다.", kind: "update" }, { title: "원균 함대", change: "원균 함대가 새로 출전했다.", kind: "new" }]
     : n === 3 ? [{ title: "이일", change: "이일이 백의종군했다.", kind: "update" }] : [{ title: "한양", change: "한양에 소식이 전해졌다.", kind: "update" }];
   return { title: `${n}장의 사건`, era: `${1586 + n}년`, summary: `${n}장 줄거리. 한서린이 움직였다.`, timeline: [{ year: String(1586 + n), event: `${n}장 사건` }],
-    protagonistBlock: { heading: `${n}장 사건명`, sections: [{ heading: "출전", level: 1, body: `한서린은 [[이일]]과 함께 출전했다. (${n}장)` }, { heading: "귀환", level: 1, body: "한서린은 돌아왔다." }], infoboxPatch: [{ label: "상태", value: `${n}장 상태` }], summaryPatch: "" },
-    affected, newEntities: [{ title: "원균 함대", type: "조직", summary: "새 함대" }], wove: [{ title: "이일", how: "이일이 출전의 계기가 되었다." }, { title: "여진 해적단", how: "해적단이 철령을 포위했다." }],
+    protagonistBlock: { heading: `${n}장 사건명`, sections: [{ heading: "출전", level: 1, body: `한서린은 [[이일(인물)]]과 함께 출전했다. (${n}장)` }, { heading: "귀환", level: 1, body: "한서린은 돌아왔다." }], infoboxPatch: [{ label: "상태", value: `${n}장 상태` }], summaryPatch: "" },
+    affected, newEntities: [{ title: "원균 함대", type: "조직", summary: "새 함대" }], wove: [{ title: "이일", how: "이일이 출전의 계기가 되었다." }, { title: "여진 해적단(조직)", how: "해적단이 철령을 포위했다." }],
     facts: [{ about: "이일", fact: `이일은 ${n}장에 움직였다.` }], relations: [], spineRevise: n === 2 ? [{ n: 4, intent: "수정된 절정" }] : [],
     nextChoices: last ? [] : ["진격한다", "후퇴한다", "협상한다"], ending: last ? { epilogue: "한서린은 고향으로 돌아갔다." } : null };
 }
@@ -180,6 +180,9 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert(after.sections.some(s => s.ch === 2) && after.infobox.find(r => r.label === "상태").value === "2장 상태");
     assert(sw.entities[kOf("원균 함대")] && sw.entities[kOf("이일")].facts.some(f => f.src === "ch2"), "affected 변화가 사실로 미리 들어간다");
     assert(sw.story.spine[3].revised && sw.story.spine[3].orig === "절정 의도");
+    assert(!Object.values(sw.entities).some(o => /\((인물|조직)\)$/.test(o.title)), "모델이 '이일(인물)'처럼 써도 중복 항목을 만들지 않는다");
+    assert(after.sections.some(s => s.body.includes("[[이일]]")) && await page.locator('.article a.wl[data-t="이일"]:not(.new)').count() > 0, "유형이 붙은 링크는 원래 문서로 이어진다");
+    assert(sw.story.chapters[1].affected.some(a => a.key === kOf("이일")) && sw.story.chapters[1].wove.some(a => a.key === kOf("여진 해적단")));
     ok("다음 장으로 → 선택 → 주인공 문서에 2장 블록이 붙고, 기존 본문은 그대로이며, 탐험이 반영된다");
 
     /* 5. 지연 갱신 */
@@ -260,6 +263,35 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert.deepStrictEqual(ow.story, sw.story, "스토리 진행 상태가 그대로 복원된다");
     ok("백업을 다른 브라우저에서 가져오면 장, 탐험 기록, 블록이 그대로 복원된다");
     await other.ctx.close();
+
+    /* 10-1. 이미 생긴 "이름(유형)" 중복 항목은 세계관을 열 때 원래 항목에 합친다 */
+    const bk = JSON.parse(fs.readFileSync(file, "utf8"));
+    const bwld = bk.worlds.find(x => x.title === "녹둔도 연대기"), bps = bk.pages[bwld.id];
+    const keyByTitle = t => Object.keys(bwld.entities).find(k => bwld.entities[k].title === t);
+    const pk2 = keyByTitle("북관 철령"), hk = keyByTitle("한양");
+    const dupA = "edupA", dupB = "edupB";   // 키 값 자체는 아무래도 된다(제목으로 판별)
+    bwld.entities[dupA] = { ...JSON.parse(JSON.stringify(bwld.entities[pk2])), title: "북관 철령(지명)", facts: [{ t: "중복 사실", src: bwld.story.protagonistKey }], mentions: [] };
+    bps[dupA] = { ...JSON.parse(JSON.stringify(bps[pk2])), key: dupA, title: "북관 철령(지명)" };
+    bwld.entities[dupB] = { title: "한양(지명)", type: "지명", summary: "수도", facts: [], mentions: [], page: true, box: "" };
+    bps[dupB] = { ...JSON.parse(JSON.stringify(bps[pk2])), key: dupB, title: "한양(지명)", summary: "한양 문서" };
+    bps[bwld.story.protagonistKey].sections[0].body += " [[북관 철령(지명)]]와 [[한양(지명)]]도 있다.";
+    assert(!bps[hk], "테스트 전제: 한양은 아직 문서가 없다");
+    fs.writeFileSync(file, JSON.stringify(bk));
+    const third = await newPage(browser);
+    await third.page.goto(URL_); await third.page.waitForSelector("#seedTa");
+    await third.page.click('[data-act="gset"]'); await third.page.setInputFiles("#importFile", file);
+    await third.page.waitForTimeout(500); await third.page.click('#side [data-act="home"]');
+    await third.page.click('.wcard button.open:has-text("녹둔도 연대기")'); await waitArticle(third.page, "한서린");
+    const tw = await worldOf(third.page, "녹둔도 연대기"), all = (await idbAll(third.page)).map(x => x[0]);
+    assert(!Object.values(tw.entities).some(o => /\(지명\)$/.test(o.title)), "중복 항목이 사라진다");
+    assert(!all.some(k => k.endsWith(":" + dupA) || k.endsWith(":" + dupB)), "중복 문서가 저장소에서 지워진다");
+    assert(all.some(k => k.endsWith(":" + hk)) && tw.entities[hk].page, "원래 항목에 문서가 없으면 중복 문서를 그쪽으로 옮긴다");
+    assert(tw.entities[pk2].facts.some(f => f.t === "중복 사실"), "중복 항목의 확정 사실은 원래 항목으로 옮긴다");
+    const body = (await pageOf(third.page, tw, "한서린")).sections[0].body;
+    assert(body.includes("[[북관 철령]]") && body.includes("[[한양]]") && !body.includes("(지명)]]"), "본문 링크를 원래 이름으로 고친다");
+    assert.strictEqual(await third.page.locator('.article a.wl.new[data-t="한양"]').count(), 0, "옮긴 문서는 파란 링크로 보인다");
+    ok("이미 생긴 '이름(유형)' 중복 항목과 문서는 세계관을 열 때 원래 항목에 합쳐진다");
+    await third.ctx.close();
 
     /* 11. 기본 모드 세계관은 끝까지 그대로 */
     bw = await worldOf(page, "기본 세계");

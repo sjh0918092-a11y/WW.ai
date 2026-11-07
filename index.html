@@ -338,7 +338,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v2.1 · 2026-11-07";
+const APP_VERSION = "v2.2 · 2026-11-07";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -735,6 +735,16 @@ const S = {
 
 /* ---------- canon helpers ---------- */
 const newEntity = (title, type, summary) => ({ title: norm(title), type: type || "", summary: summary || "", facts: [], mentions: [], page: false, box: "" });
+/* 모델이 목록의 유형 표시까지 제목으로 베껴 "김형식(인물)"처럼 쓰는 경우: 원래 이름의 항목이 있으면 그 항목으로 본다 */
+const TYPE_SUFFIX = new RegExp("^(.+?)\\s*[(（]\\s*(?:" + TYPES.join("|") + ")\\s*[)）]$");
+function canonTitle(w, t) {
+  t = norm(t); if (!w || !t || w.entities[keyOf(t)]) return t;
+  const m = TYPE_SUFFIX.exec(t); if (m && w.entities[keyOf(norm(m[1]))]) return norm(m[1]);
+  return t;
+}
+const kOf = (w, t) => keyOf(canonTitle(w, t));
+/* 본문의 [[김형식(인물)]] → [[김형식]] */
+const cleanLinks = (w, text) => String(text ?? "").replace(LINK_RE, (m, a, b) => { const c = canonTitle(w, a); return c === norm(a) ? m : `[[${c}${b ? "|" + b : ""}]]`; });
 function addFact(e, t, src) {
   t = stripMarks(t).slice(0, 240); if (!t || e.facts.some(f => f.t === t)) return;
   e.facts.push({ t, src }); if (e.facts.length > 24) e.facts.splice(e.facts.findIndex(f => f.src !== "user"), 1);
@@ -765,7 +775,7 @@ const factLine = f => f.t + (S.pages[f.src]?.editedAt ? " [사용자 확정]" : 
 /* 인물 관계: {a, b, rel, story, src, sup?} — a, b는 항목 키 */
 function addRelation(w, key, r) {
   if (!r || !r.a || !r.b || !r.rel) return;
-  const a = keyOf(r.a), b = keyOf(r.b);
+  const a = kOf(w, r.a), b = kOf(w, r.b);
   if (a === b || !w.entities[a] || !w.entities[b]) return;
   const rel = stripMarks(r.rel).slice(0, 60), story = stripMarks(r.story || "").slice(0, 260);
   w.relations ||= [];
@@ -825,7 +835,7 @@ function canonBlock(w) {
 function entityBrief(w, k, excludeSrc) {
   const o = w.entities[k];
   const facts = o.facts.filter(f => f.src !== excludeSrc && live(f)).slice(-6).map(f => "- " + factLine(f)).join("\n");
-  return `### 「${o.title}」${o.type ? " (" + o.type + ")" : ""}${o.summary ? " — " + o.summary : ""}${o.box ? "\n정보: " + o.box : ""}${facts ? "\n" + facts : ""}`;
+  return `### 「${o.title}」${o.type ? " · " + o.type : ""}${o.summary ? " — " + o.summary : ""}${o.box ? "\n정보: " + o.box : ""}${facts ? "\n" + facts : ""}`;
 }
 
 /* ---------- 스토리 모드: 상태와 탐험 기록 ---------- */
@@ -925,7 +935,7 @@ function storyStyleRules() {
 - 단정형으로 쓴다. "밝혀지지 않았다", "~라고 전해진다" 같은 얼버무림과 "A가 아니라 B" 꼴의 반전 대구는 쓰지 않는다.`;
 }
 const entityIndex = (w, skip, max = 80) => Object.entries(w.entities).filter(([k]) => !skip.includes(k)).sort((a, b) => (b[1].page ? 1 : 0) - (a[1].page ? 1 : 0)).slice(0, max)
-  .map(([, o]) => `- ${o.title}${o.type ? " (" + o.type + ")" : ""}${o.summary ? ": " + o.summary.slice(0, 50) : ""}`).join("\n") || "(없음)";
+  .map(([, o]) => `- ${o.title}${o.type ? " — " + o.type : ""}${o.summary ? ". " + o.summary.slice(0, 50) : ""}`).join("\n") || "(없음)";
 const firstPara = p => { const s = (p?.sections || []).find(x => !x.ch && x.body.trim()); return s ? stripMarks(s.body.split(/\n{2,}/)[0]).slice(0, 300) : ""; };
 function chapterPlanPrompt(w, nextN, choice) {
   const st = w.story, pk = st.protagonistKey, pp = S.pages[pk], pr = st.protagonist || {}, cur = curCh(w);
@@ -972,7 +982,7 @@ ${choice ? `주인공의 다음 행동으로 독자가 고른 것: ${choice.cust
 - facts에는 이번 장에서 확정된 사실을 항목별로 4~10개, timeline에는 이번 장의 주요 사건 1~3개(연도만), relations에는 이번 장에서 새로 생기거나 바뀐 인물 관계를 넣는다.
 ${storyStyleRules()}
 
-## 이미 존재하는 항목 (제목을 글자 그대로 쓴다)
+## 이미 존재하는 항목 (제목을 글자 그대로 쓴다. 각 줄의 "—" 앞까지가 제목이고, 뒤의 유형과 정의는 제목이 아니다. 제목에 "(인물)" 같은 유형을 붙이지 않는다)
 ${entityIndex(w, [pk])}
 
 ## 출력
@@ -1008,7 +1018,7 @@ ${rel}
 - facts에는 이 장 섹션이 확정한 사실 2~6개, timeline에는 새로 확정한 사건(있을 때만), newEntities에는 새로 링크한 항목을 넣는다.
 ${storyStyleRules()}
 
-## 이미 존재하는 항목 (제목을 글자 그대로 쓴다)
+## 이미 존재하는 항목 (제목을 글자 그대로 쓴다. 각 줄의 "—" 앞까지가 제목이고, 뒤의 유형과 정의는 제목이 아니다. 제목에 "(인물)" 같은 유형을 붙이지 않는다)
 ${entityIndex(w, [key], 60)}
 
 ## 출력
@@ -1131,7 +1141,7 @@ function pagePrompt(w, key, rewriteDir = null, guide = "") {
   const relText = rel.map(k => entityBrief(w, k, null)).join("\n\n") || "(아직 없음)";
   const idx = Object.entries(w.entities).filter(([k]) => k !== key && !rel.includes(k))
     .sort((a, b) => (b[1].page ? 1 : 0) - (a[1].page ? 1 : 0)).slice(0, 60)
-    .map(([, o]) => `- ${o.title}${o.type ? " (" + o.type + ")" : ""}${o.summary ? ": " + o.summary.slice(0, 60) : ""}`).join("\n") || "(아직 없음)";
+    .map(([, o]) => `- ${o.title}${o.type ? " — " + o.type : ""}${o.summary ? ". " + o.summary.slice(0, 60) : ""}`).join("\n") || "(아직 없음)";
   const known = e.facts.length || e.mentions.length || e.summary;
   const target = known
     ? `이미 다른 문서에서 확정된 내용이다. 반드시 일치시켜라.\n${e.type ? "유형: " + e.type + "\n" : ""}${e.summary ? "요약: " + e.summary + "\n" : ""}${e.facts.some(live) ? "확정 사실:\n" + e.facts.filter(live).map(f => "- " + factLine(f)).join("\n") + "\n" : ""}${e.mentions.some(live) ? "다른 문서에서의 언급:\n" + e.mentions.filter(live).map(m => `- 「${w.entities[m.from]?.title || "?"}」: "${m.text}"`).join("\n") : ""}`
@@ -1176,7 +1186,7 @@ ${mine.length ? `이 항목의 관계:\n${mine.slice(-10).map(x => "- " + relLin
 ${relText}
 
 ## 이미 존재하는 다른 항목 (링크할 때 제목을 정확히 그대로 쓴다)
-이 목록은 이름이 겹치거나 엇갈리지 않게 하려는 색인이다. 목록에 있다는 이유로 본문에 끌어오지 않는다.
+이 목록은 이름이 겹치거나 엇갈리지 않게 하려는 색인이다. 목록에 있다는 이유로 본문에 끌어오지 않는다. 각 줄의 "—" 앞까지가 제목이며, 뒤의 유형과 정의는 제목이 아니다. 제목에 "(인물)" 같은 유형을 붙이지 않는다.
 ${idx}
 
 ## 이 문서의 엔진 (가장 중요)
@@ -1347,6 +1357,71 @@ function setupStory(w, b) {
       nextChoices: (Array.isArray(c1.nextChoices) ? c1.nextChoices : []).map(x => stripMarks(x).slice(0, 200)).filter(Boolean).slice(0, 3) }] };
 }
 
+/* "김형식(인물)"처럼 유형이 붙어 따로 생긴 항목을 원래 항목에 합친다.
+   원래 항목에 문서가 없으면 중복 문서를 원래 항목으로 옮기고, 둘 다 문서가 있으면 중복 문서를 지운다. */
+async function mergeTypeDupes(w) {
+  const pairs = [];
+  for (const [dk, d] of Object.entries(w.entities)) {
+    const m = TYPE_SUFFIX.exec(d.title || ""); if (!m) continue;
+    const bk = keyOf(norm(m[1])); if (bk !== dk && w.entities[bk]) pairs.push([dk, bk]);
+  }
+  if (!pairs.length) return 0;
+  const map = Object.fromEntries(pairs), re = k => map[k] || k;
+  const removed = [], saved = new Set();
+  for (const [dk, bk] of pairs) {
+    const d = w.entities[dk], b = w.entities[bk], dp = S.pages[dk];
+    if (dp && !S.pages[bk]) {   // 중복 쪽에만 문서가 있으면 원래 항목의 문서로 옮긴다
+      dp.key = bk; dp.title = b.title; S.pages[bk] = dp; saved.add(bk);
+      b.type = d.type || b.type; b.summary = d.summary || b.summary; b.box = d.box || b.box; b.page = true; if (d.stub && !b.stub) b.stub = d.stub;
+    } else if (dp) {            // 둘 다 문서가 있으면 중복 문서와 그 문서가 남긴 설정을 지운다
+      purge(w, dk);
+      for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === dk) delete w.navboxes[id];
+    }
+    if (dp) { delete S.pages[dk]; removed.push(dk); }
+    for (const f of d.facts) if (!b.facts.some(x => x.t === f.t)) b.facts.push(f);
+    for (const x of d.mentions) if (!b.mentions.some(y => y.from === x.from && y.text === x.text)) b.mentions.push(x);
+    delete w.entities[dk];
+  }
+  for (const [k, o] of Object.entries(w.entities)) {
+    for (const f of o.facts) f.src = re(f.src);
+    o.mentions = o.mentions.filter(x => { x.from = re(x.from); return x.from !== k; });
+    for (const x of [...o.facts, ...o.mentions]) if (x.sup) x.sup.by = re(x.sup.by);
+    if (o.origin) o.origin = re(o.origin);
+  }
+  w.relations = (w.relations || []).filter(x => { x.a = re(x.a); x.b = re(x.b); x.src = re(x.src); if (x.sup) x.sup.by = re(x.sup.by); return x.a !== x.b; });
+  for (const t of w.timeline) { t.src = re(t.src); if (t.sup) t.sup.by = re(t.sup.by); }
+  for (const nb of Object.values(w.navboxes || {})) {
+    nb.src = re(nb.src); nb.members = [...new Set((nb.members || []).map(re))];
+    for (const r of nb.rows) r.items = r.items.map(x => cleanLinks(w, x));
+  }
+  if (w.mainKey) w.mainKey = re(w.mainKey);
+  if (isStory(w)) {
+    const st = w.story; st.protagonistKey = re(st.protagonistKey);
+    const uniq = a => [...new Set((a || []).map(re))];
+    for (const c of st.chapters) {
+      c.auto = uniq(c.auto);
+      const seen = new Set(); c.affected = (c.affected || []).filter(a => { a.key = re(a.key); return !seen.has(a.key) && seen.add(a.key); });
+      const seen2 = new Set(); c.wove = (c.wove || []).filter(a => { a.key = re(a.key); return !seen2.has(a.key) && seen2.add(a.key); });
+      const x = c.explore; if (x) { const op = {}; for (const [k, n] of Object.entries(x.opened || {})) op[re(k)] = (op[re(k)] || 0) + n; x.opened = op; x.created = uniq(x.created); x.edited = uniq(x.edited); x.searched = uniq(x.searched); }
+    }
+  }
+  for (const [k, p] of Object.entries(S.pages)) {
+    const before = JSON.stringify([p.sections, p.infobox, p.notices, p.links]);
+    for (const sec of p.sections) sec.body = cleanLinks(w, sec.body);
+    for (const r of p.infobox || []) r.value = cleanLinks(w, r.value);
+    p.notices = (p.notices || []).map(x => cleanLinks(w, x));
+    p.links = [...new Set((p.links || []).map(re))].filter(x => x !== k);
+    for (const c of p.conflicts || []) c.by = re(c.by);
+    if (JSON.stringify([p.sections, p.infobox, p.notices, p.links]) !== before) saved.add(k);
+  }
+  try {
+    for (const k of removed) await Store.deletePage(w.id, k);
+    for (const k of saved) if (S.pages[k]) await Store.savePage(w.id, S.pages[k]);
+    await Store.saveWorld(w);
+  } catch (err) { toast("중복 항목을 정리했지만 저장하지 못했습니다. " + errMsg(err)); }
+  return pairs.length;
+}
+
 async function openWorld(wid, goKey) {
   const w = S.worlds.find(x => x.id === wid); if (!w) return;
   if (S.gen && S.gen.wid !== wid) { toast("다른 세계관의 문서를 작성하는 중입니다. 끝난 뒤 열어 주세요."); return; }
@@ -1355,7 +1430,9 @@ async function openWorld(wid, goKey) {
   S.world = w; S.pages = {}; S.recent = []; S.confirmDel = null; S.nf = new Set(); S.edit = null; S.confirmDelPage = null; S.syncQ = []; S.syncErr = null; S.storyCard = null; S.adv = null;
   S.view = { name: "loading" }; renderAll();
   try { S.pages = await Store.listPages(w.id); } catch (e) { toast(errMsg(e)); }
+  const merged = await mergeTypeDupes(w);
   openEntity(goKey || w.mainKey);
+  if (merged) toast(`"이름(인물)"처럼 유형이 붙어 따로 생긴 항목 ${merged}개를 원래 항목에 합쳤습니다.`);
 }
 
 function openEntity(k) {
@@ -1436,6 +1513,10 @@ function afterGen(k, ok) {
 
 function integrate(w, key, out) {
   const e = w.entities[key];
+  if (Array.isArray(out?.sections)) for (const s of out.sections) if (s && typeof s.body === "string") s.body = cleanLinks(w, s.body);
+  if (Array.isArray(out?.infobox)) for (const r of out.infobox) if (r && typeof r.value === "string") r.value = cleanLinks(w, r.value);
+  if (Array.isArray(out?.notices)) out.notices = out.notices.map(x => typeof x === "string" ? cleanLinks(w, x) : x);
+  if (Array.isArray(out?.navboxes)) for (const nb of out.navboxes) for (const r of (Array.isArray(nb?.rows) ? nb.rows : [])) if (Array.isArray(r?.items)) r.items = r.items.map(x => typeof x === "string" ? cleanLinks(w, x) : x);
   const sections = (Array.isArray(out?.sections) ? out.sections : []).filter(s => s && (s.body || s.heading)).map(s => { const x = { heading: String(s.heading || "").replace(/^#+\s*/, "").replace(/^\d+(\.\d+)*\.?\s+/, "").slice(0, 80), level: s.level === 2 ? 2 : 1, body: String(s.body || "") }; if (s.ch > 0) x.ch = +s.ch; return x; });
   if (sections.length && sections[0].level === 2) sections[0].level = 1;
   if (!sections.some(s => s.body.trim())) throw { code: "bad_page" };
@@ -1444,7 +1525,7 @@ function integrate(w, key, out) {
   const type = TYPES.includes(out.type) ? out.type : (String(out.type || "").slice(0, 8) || "개념");
   const summary = stripMarks(out.summary).slice(0, 220);
   const notices = (Array.isArray(out.notices) ? out.notices : []).filter(x => typeof x === "string" && x.trim()).slice(0, 3).map(x => x.slice(0, 300));
-  const hints = {}; for (const n of (Array.isArray(out.newEntities) ? out.newEntities : [])) if (n && n.title) hints[keyOf(n.title)] = n;
+  const hints = {}; for (const n of (Array.isArray(out.newEntities) ? out.newEntities : [])) if (n && n.title) hints[kOf(w, n.title)] = n;
   const links = [];
   for (const t of [...sections.map(s => s.body), ...infobox.map(r => r.value), ...notices]) {
     for (const m of t.matchAll(LINK_RE)) {
@@ -1455,7 +1536,7 @@ function integrate(w, key, out) {
       addMention(w.entities[lk], key, sentenceAround(t, m.index, m[0].length));
     }
   }
-  for (const f of (Array.isArray(out.facts) ? out.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = keyOf(f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), key); }
+  for (const f of (Array.isArray(out.facts) ? out.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = kOf(w, f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), key); }
   for (const r of (Array.isArray(out.relations) ? out.relations : []).slice(0, 12)) addRelation(w, key, r);
   if (!e.stub) e.stub = { type: e.type || "", summary: e.summary || "" };  // 문서가 생기기 전, 링크로 약속된 정의
   e.type = type; if (summary) e.summary = summary; e.page = true; delete e.src;
@@ -1514,7 +1595,7 @@ function autoLink(w, key, out) {
   if (!Array.isArray(out?.sections)) return 0;
   const linked = new Set();
   for (const t of [...out.sections.map(s => String(s?.body || "")), ...(Array.isArray(out.infobox) ? out.infobox : []).map(r => String(r?.value || ""))])
-    for (const m of t.matchAll(LINK_RE)) linked.add(keyOf(norm(m[1])));
+    for (const m of t.matchAll(LINK_RE)) linked.add(kOf(w, m[1]));
   const cands = [];
   for (const [k, o] of Object.entries(w.entities)) {
     if (k === key || linked.has(k)) continue;
@@ -1716,11 +1797,11 @@ async function bgSync(k) {
     (w.relations || []).forEach(x => { if (x.sup?.by === k) delete x.sup; });
     w.timeline = w.timeline.filter(x => x.src !== k);
     w.relations = (w.relations || []).filter(x => x.src !== k);
-    for (const f of (Array.isArray(r?.facts) ? r.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = keyOf(f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), k); }
+    for (const f of (Array.isArray(r?.facts) ? r.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = kOf(w, f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), k); }
     for (const t of (Array.isArray(r?.timeline) ? r.timeline : [])) addTimeline(w, t, k);
     for (const x of (Array.isArray(r?.relations) ? r.relations : []).slice(0, 16)) addRelation(w, k, x);
     for (const n of (Array.isArray(r?.newEntities) ? r.newEntities : [])) {
-      if (!n || !n.title) continue; const o = w.entities[keyOf(n.title)];
+      if (!n || !n.title) continue; const o = w.entities[kOf(w, n.title)];
       if (o && !o.page && !o.summary && n.summary) { o.summary = stripMarks(n.summary).slice(0, 200); if (!o.type && TYPES.includes(n.type)) o.type = n.type; }
     }
     const issues = [];
@@ -1811,7 +1892,7 @@ function docText(p, w, navs) {
 function linksOfOut(w, out, k) {
   const texts = [...out.sections.map(s => s.body), ...out.infobox.map(r => r.value), ...out.notices, ...out.navboxes.flatMap(nb => nb.rows.flatMap(r => r.items))];
   const ks = [];
-  for (const t of texts) for (const m of String(t).matchAll(LINK_RE)) { const lk = keyOf(m[1]); if (lk !== k && !ks.includes(lk)) ks.push(lk); }
+  for (const t of texts) for (const m of String(t).matchAll(LINK_RE)) { const lk = kOf(w, m[1]); if (lk !== k && !ks.includes(lk)) ks.push(lk); }
   return ks;
 }
 /* 수정본과 대조할 기존 설정. 각 항목에 R/U/T/F/M 번호를 붙여 모델이 가리킬 수 있게 한다.
@@ -1985,12 +2066,12 @@ async function commitEdit(ed, out, r, conflicts, ch) {
   if (r) {
     for (const o of Object.values(w.entities)) o.facts = o.facts.filter(f => f.src !== k);
     w.timeline = w.timeline.filter(x => x.src !== k);
-    for (const f of (Array.isArray(r.facts) ? r.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = keyOf(f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), k); }
+    for (const f of (Array.isArray(r.facts) ? r.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = kOf(w, f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), k); }
     for (const t of (Array.isArray(r.timeline) ? r.timeline : [])) addTimeline(w, t, k);
     w.relations = (w.relations || []).filter(x => x.src !== k);
     for (const x of (Array.isArray(r.relations) ? r.relations : []).slice(0, 16)) addRelation(w, k, x);
     for (const n of (Array.isArray(r.newEntities) ? r.newEntities : [])) {
-      if (!n || !n.title) continue; const o = w.entities[keyOf(n.title)];
+      if (!n || !n.title) continue; const o = w.entities[kOf(w, n.title)];
       if (o && !o.page && !o.summary && n.summary) { o.summary = stripMarks(n.summary).slice(0, 200); if (!o.type && TYPES.includes(n.type)) o.type = n.type; }
     }
   }
@@ -2083,10 +2164,10 @@ function applyChapter(w, n, out, choice) {
   let era = norm(out.era || "").slice(0, 40) || prevEra;
   const A = yearNum(era), B = yearNum(prevEra);
   if (!isNaN(A) && !isNaN(B) && A < B) { console.warn(`[스토리] ${n}장 시점(${era})이 이전 장(${prevEra})보다 앞서 이전 장 시점을 씁니다.`); era = prevEra; }
-  const hints = {}; for (const x of (Array.isArray(out.newEntities) ? out.newEntities : [])) if (x && x.title) hints[keyOf(norm(x.title))] = x;
+  const hints = {}; for (const x of (Array.isArray(out.newEntities) ? out.newEntities : [])) if (x && x.title) { x.title = canonTitle(w, x.title); hints[keyOf(x.title)] = x; }
   const auto = [];
   const ensure = title => {
-    const t = norm(title).slice(0, 60); if (!t) return null; const k = keyOf(t);
+    const t = canonTitle(w, title).slice(0, 60); if (!t) return null; const k = keyOf(t);
     if (!w.entities[k]) { const h = hints[k]; w.entities[k] = newEntity(t, h && TYPES.includes(h.type) ? h.type : "", h ? stripMarks(h.summary).slice(0, 200) : ""); w.entities[k].origin = pk; auto.push(k); }
     return k;
   };
@@ -2100,8 +2181,8 @@ function applyChapter(w, n, out, choice) {
     addFact(w.entities[k], change, src);   // 열기 전에도 다른 문서 작성에 바로 반영되게 사실로 넣어 둔다
   }
   const wove = [];
-  for (const x of (Array.isArray(out.wove) ? out.wove : [])) { const k = x && x.title ? keyOf(norm(x.title)) : ""; if (!w.entities[k] || !x.how || wove.some(y => y.key === k)) continue; wove.push({ key: k, how: stripMarks(x.how).slice(0, 240) }); }
-  for (const f of (Array.isArray(out.facts) ? out.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = keyOf(norm(f.about)); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), src); }
+  for (const x of (Array.isArray(out.wove) ? out.wove : [])) { const k = x && x.title ? kOf(w, x.title) : ""; if (!w.entities[k] || !x.how || wove.some(y => y.key === k)) continue; wove.push({ key: k, how: stripMarks(x.how).slice(0, 240) }); }
+  for (const f of (Array.isArray(out.facts) ? out.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = kOf(w, f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), src); }
   for (const r of (Array.isArray(out.relations) ? out.relations : []).slice(0, 12)) addRelation(w, src, r);
   for (const t of (Array.isArray(out.timeline) ? out.timeline : []).slice(0, 4)) addTimeline(w, t, src, n);
   for (const r of (Array.isArray(out.spineRevise) ? out.spineRevise : [])) {
@@ -2215,7 +2296,7 @@ async function runSync(k) {
 
 /* ---------- rendering: text ---------- */
 function linkHtml(target, label) {
-  const w = S.world; const t = norm(target); const k = keyOf(t);
+  const w = S.world; const t = canonTitle(w, target); const k = keyOf(t);
   const e = w && w.entities[k]; const has = !!S.pages[k];
   const tip = has ? (e?.summary || t) : "아직 작성되지 않은 문서입니다. 누르면 바로 작성하고, 두 번 누르거나(PC) 길게 누르면(모바일) 방향을 정해 작성합니다.";
   return `<a class="wl${has ? "" : " new"}" href="#" data-k="${k}" data-t="${esc(t)}" title="${esc(tip)}">${esc(label || t)}</a>`;
