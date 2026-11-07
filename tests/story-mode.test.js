@@ -239,8 +239,13 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     /* 9. 결말 */
     for (const n of [4, 5]) {
       await page.click('[data-act="story-next"]'); await page.click('[data-act="story-skip"]');
-      if (n < 5) { await page.waitForSelector(".stcard", { timeout: 15000 }); await settle(page); }
+      await page.waitForSelector(".stcard", { timeout: 15000 }); await settle(page);
     }
+    assert.strictEqual((await page.locator("h1.t").innerText()).trim(), "한서린", "마지막 장도 주인공 문서부터 보여 준다");
+    assert((await page.locator(".article h2 .chb").allInnerTexts()).includes("5장"));
+    assert.strictEqual(await page.locator('.stcard [data-act="epilogue"]').count(), 1, "안내 카드 위에 '에필로그로' 버튼");
+    await page.evaluate(() => window.scrollTo(0, 0)); await shot(page, "6-final-chapter");
+    await page.click('.stcard [data-act="epilogue"]');
     await page.waitForFunction(() => document.querySelector("h1.t")?.textContent === "에필로그", null, { timeout: 15000 });
     assert((await page.locator("#main").innerText()).includes("한서린은 고향으로 돌아갔다."));
     await page.locator("details.memo summary").first().click(); await shot(page, "5-epilogue");
@@ -251,7 +256,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert(calls.filter(c => c.kind === "page").pop().prompt.includes("이야기는 5장에서 끝났다"), "결말 이후 시점으로 쓴다");
     sw = await worldOf(page, "녹둔도 연대기");
     assert.strictEqual(sw.story.status, "ended"); assert.strictEqual(sw.story.chapters.length, 5);
-    ok("5장 완료 후 에필로그가 뜨고, 새 문서는 결말 이후 시점으로 쓰이며 진행 중 안내가 사라진다");
+    ok("5장 완료 후 주인공 문서의 5장 섹션이 먼저 뜨고 '에필로그로'를 눌러야 에필로그가 뜨며, 새 문서는 결말 이후 시점으로 쓰이며 진행 중 안내가 사라진다");
 
     /* 10. 백업 내보내기 → 다른 브라우저에서 가져오기 */
     await page.click('[data-act="gset"]');
