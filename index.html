@@ -313,6 +313,11 @@ details.ent li{margin-bottom:3px}
 .ep-ch h3{margin:0 0 2px;font-family:var(--f-display);font-size:18px}
 .ep-ch p{margin:6px 0 0}
 .ep-ch ul{margin:6px 0 0;padding-left:18px;font-size:13.5px}
+.cast{display:flex;flex-direction:column;gap:8px;margin:0 0 8px}
+.cast-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto;gap:6px;padding:10px;border:1px solid var(--line);border-radius:var(--r);background:var(--paper)}
+.cast-row textarea{grid-column:1 / -1;min-height:0}
+.cast-row input.txt,.cast-row textarea{background:var(--sheet)}
+@media (max-width:560px){.cast-row{grid-template-columns:minmax(0,1fr) auto}.cast-row .cast-rel{grid-column:1 / -1;grid-row:2}}
 .spine{margin:6px 0 0;padding-left:18px;font-size:13.5px}
 .spine li{margin-bottom:6px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
@@ -338,7 +343,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v2.6 · 2026-11-07";
+const APP_VERSION = "v2.7 · 2026-11-07";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -730,7 +735,7 @@ const S = {
   creating: false, createErr: null, seed: "", seedTab: "own", ownSeed: "", dice: null, whatIfs: null, first: "", guideIn: "",
   confirmDel: null, confirmRewrite: null, canonFilter: "all", focusEnt: null, nf: new Set(),
   edit: null, refreshing: null, confirmDelPage: null, confirmMerge: null, compose: null,
-  mode: "basic", storyGen: null, syncQ: [], syncing: null, syncErr: null, adv: null, storyCard: null
+  mode: "basic", protoDesc: "", cast: [], storyGen: null, syncQ: [], syncing: null, syncErr: null, adv: null, storyCard: null
 };
 
 /* ---------- canon helpers ---------- */
@@ -791,7 +796,7 @@ function addTimeline(w, t, src, ch) {
 }
 /* 사실과 언급의 상태: sup = 다른 문서의 직접 수정으로 대체됨 (생성에서 제외) */
 const live = x => !x.sup;
-const factLine = f => f.t + (S.pages[f.src]?.editedAt ? " [사용자 확정]" : "");
+const factLine = f => f.t + (f.src === "user" || S.pages[f.src]?.editedAt ? " [사용자 확정]" : "");
 /* 인물 관계: {a, b, rel, story, src, sup?} — a, b는 항목 키 */
 function addRelation(w, key, r) {
   if (!r || !r.a || !r.b || !r.rel) return;
@@ -804,7 +809,7 @@ function addRelation(w, key, r) {
   if (w.relations.length > 500) w.relations.splice(w.relations.findIndex(x => !S.pages[x.src]?.editedAt), 1);
 }
 const relationsOf = (w, k) => (w.relations || []).filter(x => (x.a === k || x.b === k) && w.entities[x.a] && w.entities[x.b]);
-const relLine = (w, x) => `「${w.entities[x.a].title}」–「${w.entities[x.b].title}」: ${x.rel}${x.story ? ". " + x.story : ""}${S.pages[x.src]?.editedAt ? " [사용자 확정]" : ""}`;
+const relLine = (w, x) => `「${w.entities[x.a].title}」–「${w.entities[x.b].title}」: ${x.rel}${x.story ? ". " + x.story : ""}${x.src === "user" || S.pages[x.src]?.editedAt ? " [사용자 확정]" : ""}`;
 function purge(w, key) {
   for (const e of Object.values(w.entities)) {
     e.facts = e.facts.filter(f => f.src !== key); e.mentions = e.mentions.filter(m => m.from !== key);
@@ -868,7 +873,7 @@ const storyOn = w => isStory(w) && w.story.status !== "ended";
 const curCh = w => w.story.chapters[w.story.chapter - 1] || w.story.chapters[w.story.chapters.length - 1];
 const chSrc = n => "ch" + n;   // 장 계획이 확정한 사실·연표·관계의 출처
 const chOf = src => { const m = /^ch(\d+)$/.exec(String(src || "")); return m ? +m[1] : 0; };
-const srcTitle = (w, src, dflt) => chOf(src) ? `${chOf(src)}장 줄거리` : (w.entities[src]?.title || dflt);
+const srcTitle = (w, src, dflt) => src === "user" ? "사용자 설정" : chOf(src) ? `${chOf(src)}장 줄거리` : (w.entities[src]?.title || dflt);
 const emptyExplore = () => ({ opened: {}, created: [], edited: [], searched: [] });
 /* 이번 장 탐험 점수: 3·고침 + 3·검색 + 2·새 문서 + min(열람, 3) */
 function exploreScores(w, ch) {
@@ -940,7 +945,7 @@ function storyBlock(w, key, forPage) {
   let extra = "";
   if (forPage && key === pk) {
     const pr = st.protagonist || {};
-    extra = `\n\n이 문서는 이야기의 주인공 문서다.${pr.want ? ` 주인공이 바라는 것: ${pr.want}.` : ""}${pr.wound ? ` 주인공의 결핍이나 상처: ${pr.wound}.` : ""} 기본 프로필(출신, 가족, 능력, 동기)을 모두 쓴다. `
+    extra = `\n\n이 문서는 이야기의 주인공 문서다.${pr.desc ? ` 사용자가 정한 주인공의 특징(반드시 지킨다): ${pr.desc}.` : ""}${st.cast?.length ? ` 사용자가 정한 등장인물(${st.cast.map(c => w.entities[c.key]?.title || c.name).join(", ")})은 정해진 관계대로 본문과 인물 관계 섹션에 링크해 다룬다.` : ""}${pr.want ? ` 주인공이 바라는 것: ${pr.want}.` : ""}${pr.wound ? ` 주인공의 결핍이나 상처: ${pr.wound}.` : ""} 기본 프로필(출신, 가족, 능력, 동기)을 모두 쓴다. `
       + (n === 1 && !ended ? `마지막 큰 섹션은 1장 발단 사건 「${st.chapters[0].incident || st.chapters[0].title}」을 다룬다. 이 사건은 아직 끝나지 않았다.` : `생애 섹션의 끝부분에서 1장부터 ${n}장까지의 사건을 차례로 다룬다.`);
   }
   return `## 이야기 진행 상황 (${ended ? `완결 · ${STORY_N}장` : `현재 ${n}장 / ${STORY_N}장`}, 작중 시점 ${w.era})
@@ -978,7 +983,7 @@ ${toneBlock(w)}${w.guide ? `## 작가 지침 (사용자 지정)\n${w.guide}\n\n`
 「${w.entities[pk].title}」${w.entities[pk].summary ? " — " + w.entities[pk].summary : ""}
 - 바라는 것: ${pr.want || "(정해지지 않음)"}
 - 결핍이나 상처: ${pr.wound || "(정해지지 않음)"}
-
+${pr.desc ? `- 사용자가 정한 특징 (최우선 제약): ${pr.desc}\n` : ""}${st.cast?.length ? `\n## 사용자가 정한 등장인물 (최우선 제약. 특징과 주인공과의 관계를 지키고, 이야기에 꾸준히 등장시킨다)\n${castText(st.cast.map(c => ({ ...c, name: w.entities[c.key]?.title || c.name })))}\n` : ""}
 ## 숨겨진 이야기 뼈대 (독자에게 공개하지 않는다)
 ${st.spine.map(s => `- ${s.n}단계 ${s.beat}: ${s.intent}${s.revised ? " (앞선 장의 탐험 때문에 수정됨)" : ""}`).join("\n")}
 
@@ -1102,7 +1107,8 @@ async function detectTone(w, label) {
   const t = await callJson("tone", tonePrompt(w, label), { modelTier: "quick" }, { title: w.title });
   return normTone(t, label);
 }
-function biblePrompt(seed, first, guide, story) {
+function castText(cast) { return cast.map(c => `- ${c.name}${c.desc ? ` — 특징: ${c.desc}` : ""}${c.rel ? ` — 주인공과의 관계: ${c.rel}` : ""}`).join("\n"); }
+function biblePrompt(seed, first, guide, story, user = {}) {
   return `너는 가상 세계관 위키의 편집장이다. 사용자가 준 원안을 바탕으로 이 세계관 위키의 '설정 노트' 초안을 만든다.
 
 원안:
@@ -1132,7 +1138,7 @@ ${story ? (first ? `- mainTitle은 사용자가 지정한 주인공 "${first}"�
 ${story ? `
 ## 이야기 뼈대
 이 위키는 주인공 한 명을 중심으로 ${STORY_N}장짜리 이야기가 진행되는 스토리 모드다. 독자가 위키를 탐험한 내용이 다음 장의 줄거리에 엮인다. 설정 노트와 함께 다음을 정한다.
-- protagonist: 주인공의 한 문장 정의(summary), 주인공이 바라는 것(want), 주인공의 결핍이나 상처(wound).
+${user.desc ? `- 사용자가 정한 주인공의 특징(그대로 지키고, 바라는 것과 상처도 여기서 끌어낸다): ${user.desc}\n` : ""}${user.cast?.length ? `- 사용자가 정한 등장인물(이름은 글자 그대로 쓰고, 특징과 주인공과의 관계를 지킨다. 뼈대와 1장 줄거리에 자연스럽게 등장시킨다):\n${castText(user.cast)}\n` : ""}- protagonist: 주인공의 한 문장 정의(summary), 주인공이 바라는 것(want), 주인공의 결핍이나 상처(wound).
 - spine: 발단·전개·위기·절정·결말 ${STORY_N}단계의 의도. 각 단계는 주인공의 want와 wound를 건드려야 한다. 결말 단계는 방향만 정하고 구체적인 결과를 확정하지 않는다. 독자의 탐험이 결말을 바꿀 여지를 남기기 위해서다. 이 뼈대는 독자에게 공개하지 않는다.
 - chapter1: 1장(발단)의 작중 사건명(title, "1장"이나 "제1장" 같은 장 번호는 넣지 않는다), 1장의 작중 시점(era), 공개 줄거리 3~5문장(summary), 주인공의 일상을 깨는 발단 사건 한 문장(incident), 1장이 끝날 때 주인공이 할 수 있는 다음 행동 후보 3개(nextChoices, 서로 방향이 다르게).
 - era(세계관 기준 시점)는 chapter1.era와 같게 한다. 연표는 1장 시점까지만 만든다.
@@ -1350,7 +1356,8 @@ async function createWorld() {
   try {
     const first = norm(S.first).slice(0, 60), story = S.mode === "story";
     const guide = String(S.guideIn || "").replace(/\r/g, "").trim().slice(0, 1000);
-    const b = await callJson(story ? "storyBible" : "bible", biblePrompt(seed, first, guide, story), { modelTier: "default" }, { title: first });
+    const user = story ? { desc: String(S.protoDesc || "").replace(/\r/g, "").trim().slice(0, 500), cast: (S.cast || []).map(c => ({ name: norm(c.name).slice(0, 40), desc: norm(c.desc).slice(0, 300), rel: norm(c.rel).slice(0, 120) })).filter(c => c.name).slice(0, 8) } : {};
+    const b = await callJson(story ? "storyBible" : "bible", biblePrompt(seed, first, guide, story, user), { modelTier: "default" }, { title: first });
     if (!b || !b.title) throw { code: "invalid_json" };
     if (story && !(b.chapter1 && b.chapter1.summary)) throw { code: "invalid_json" };
     const w = { kind: "world", id: "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
@@ -1360,16 +1367,16 @@ async function createWorld() {
     for (const t of (Array.isArray(b.timeline) ? b.timeline : [])) addTimeline(w, t, "seed");
     const mt = first || norm(b.mainTitle || b.title);
     w.mainKey = keyOf(mt); w.entities[w.mainKey] = newEntity(mt, "", "");
-    if (story) setupStory(w, b);
+    if (story) setupStory(w, b, user);
     await Store.saveWorld(w);
     S.worlds.unshift(w); S.creating = false;
-    S.seed = S.ownSeed = S.first = S.guideIn = ""; S.seedTab = "own"; S.dice = null; S.whatIfs = null;   // 만들고 나면 입력란을 모두 비운다
+    S.seed = S.ownSeed = S.first = S.guideIn = S.protoDesc = ""; S.cast = []; S.seedTab = "own"; S.dice = null; S.whatIfs = null;   // 만들고 나면 입력란을 모두 비운다
     await openWorld(w.id);
   } catch (e) { S.creating = false; S.createErr = errMsg(e); renderMain(); }
 }
 
 /* 스토리 모드 세계관 준비: 주인공(=첫 문서), 숨겨진 뼈대, 1장 */
-function setupStory(w, b) {
+function setupStory(w, b, user = {}) {
   const pr = b.protagonist && typeof b.protagonist === "object" ? b.protagonist : {};
   const sp = Array.isArray(b.spine) ? b.spine : [];
   const spine = BEATS.map((beat, i) => { const x = sp.find(y => +y?.n === i + 1) || sp[i] || {}; return { n: i + 1, beat, intent: stripMarks(x.intent || "").slice(0, 300) || `${beat}: 주인공의 바람과 상처를 건드리는 사건`, revised: false }; });
@@ -1381,6 +1388,17 @@ function setupStory(w, b) {
     chapters: [{ n: 1, title: chTitle(c1.title || "발단").slice(0, 60), era, summary: stripMarks(c1.summary).slice(0, 800), incident: stripMarks(c1.incident || "").slice(0, 240),
       startedAt: Date.now(), explore: emptyExplore(), choice: null, wove: [], affected: [], auto: [],
       nextChoices: (Array.isArray(c1.nextChoices) ? c1.nextChoices : []).map(x => stripMarks(x).slice(0, 200)).filter(Boolean).slice(0, 3) }] };
+  // 사용자가 정한 주인공 특징과 등장인물은 '사용자 확정' 설정으로 남긴다
+  if (user.desc) { w.story.protagonist.desc = user.desc; addFact(e, "주인공의 특징(사용자 지정): " + user.desc, "user"); }
+  w.story.cast = [];
+  for (const c of user.cast || []) {
+    const k = keyOf(c.name); if (k === w.mainKey) continue;
+    if (!w.entities[k]) w.entities[k] = newEntity(c.name, "인물", c.desc.slice(0, 200));
+    const o = w.entities[k]; o.type = "인물"; o.origin = w.mainKey;
+    if (c.desc) addFact(o, c.desc, "user");
+    if (c.rel) { addFact(o, `「${e.title}」과(와)의 관계: ${c.rel}`, "user"); addRelation(w, "user", { a: e.title, b: c.name, rel: c.rel.slice(0, 60), story: c.rel.length > 60 ? c.rel : "" }); }
+    w.story.cast.push({ key: k, name: c.name, desc: c.desc, rel: c.rel });
+  }
 }
 
 /* 항목 합치기: pairs = [[없앨 항목 키, 남길 항목 키], ...]
@@ -1450,7 +1468,7 @@ async function mergeEntities(w, pairs) {
 }
 /* 세계관을 열 때 자동으로 합치는 것: "이름(인물)"처럼 유형이 붙은 항목, 그리고 문서가 없는 "벡"처럼 한 인물의 성이나 이름만 쓴 항목 */
 async function autoMerge(w) {
-  const pairs = [], protect = new Set([w.mainKey, isStory(w) ? w.story.protagonistKey : null]);
+  const pairs = [], protect = new Set([w.mainKey, ...(isStory(w) ? [w.story.protagonistKey, ...(w.story.cast || []).map(c => c.key)] : [])]);   // 사용자가 정한 인물은 자동으로 합치지 않는다
   for (const [dk, d] of Object.entries(w.entities)) {
     if (protect.has(dk)) continue;
     const m = TYPE_SUFFIX.exec(d.title || "");
@@ -2531,7 +2549,16 @@ function homeHtml() {
       <textarea id="seedTa" rows="7" ${S.creating ? "disabled" : ""} ${S.seedTab === "whatif" ? "hidden" : ""} placeholder="어떤 세계인지 몇 문장으로 적어 주세요. 무엇이 현실과 다른지, 언제 어디가 무대인지, 누가 무엇을 두고 다투는지가 있으면 좋습니다.&#10;&#10;예: 우주력 1388년, 위화도에서 회군한 기동갑주가 왕조를 갈아치웠고, 그 왕조가 500년을 버텨 온 콜로니 국가.">${esc(S.seed)}</textarea>
       ${/^\d+$/.test(S.seedTab) ? `<p class="note" style="margin:6px 0 0">예시 원안입니다. 고쳐 쓰면 직접 작성 탭으로 옮겨집니다.</p>` : ""}
       ${S.mode === "story" ? `<label class="lb" for="firstIn">주인공 <span class="note" style="font-weight:400">선택 · 비워 두면 원안에 맞는 인물로 자동 선택</span></label>
-      <input id="firstIn" class="txt" type="text" maxlength="60" value="${esc(S.first)}" placeholder="예: 이순신, 한서린" ${S.creating ? "disabled" : ""}>` : `<label class="lb" for="firstIn">첫 문서 <span class="note" style="font-weight:400">비워 두면 세계관을 대표하는 항목으로 자동 선택</span></label>
+      <input id="firstIn" class="txt" type="text" maxlength="60" value="${esc(S.first)}" placeholder="예: 이순신, 한서린" ${S.creating ? "disabled" : ""}>
+      <label class="lb" for="protoDesc">주인공 특징 <span class="note" style="font-weight:400">선택 · 성격, 능력, 처지, 바라는 것 등. 반드시 지킬 설정이 됩니다</span></label>
+      <textarea id="protoDesc" rows="2" maxlength="500" placeholder="예: 몰락한 무관 가문의 막내. 활은 잘 쏘지만 겁이 많다. 아버지의 누명을 벗기고 싶어 한다." ${S.creating ? "disabled" : ""}>${esc(S.protoDesc)}</textarea>
+      <label class="lb">등장인물 <span class="note" style="font-weight:400">선택 · 꼭 나왔으면 하는 인물. 최대 8명</span></label>
+      ${S.cast.length ? `<div class="cast">${S.cast.map((c, i) => `<div class="cast-row">
+        <input class="txt" data-cast="${i}" data-cf="name" maxlength="40" value="${esc(c.name)}" placeholder="이름" aria-label="등장인물 ${i + 1} 이름" ${S.creating ? "disabled" : ""}>
+        <input class="txt cast-rel" data-cast="${i}" data-cf="rel" maxlength="120" value="${esc(c.rel)}" placeholder="주인공과의 관계 (예: 소꿉친구이자 맞수)" aria-label="등장인물 ${i + 1} 주인공과의 관계" ${S.creating ? "disabled" : ""}>
+        <button type="button" class="btn" data-cast-del="${i}" aria-label="등장인물 ${i + 1} 빼기" ${S.creating ? "disabled" : ""}>빼기</button>
+        <textarea rows="2" data-cast="${i}" data-cf="desc" maxlength="300" placeholder="특징 (예: 북관 출신 궁수. 말수가 적고 셈이 빠르다)" aria-label="등장인물 ${i + 1} 특징" ${S.creating ? "disabled" : ""}>${esc(c.desc)}</textarea></div>`).join("")}</div>` : ""}
+      <button type="button" class="btn" data-act="cast-add" ${S.creating || S.cast.length >= 8 ? "disabled" : ""}>+ 등장인물 추가</button>` : `<label class="lb" for="firstIn">첫 문서 <span class="note" style="font-weight:400">비워 두면 세계관을 대표하는 항목으로 자동 선택</span></label>
       <input id="firstIn" class="txt" type="text" maxlength="60" value="${esc(S.first)}" placeholder="예: 위화도 회군, 태조 전용기, 한양 궤도 거주구" ${S.creating ? "disabled" : ""}>`}
       <label class="lb" for="guideIn">작가 지침 <span class="note" style="font-weight:400">선택 · 세계관 전체에 걸쳐 지킬 방향. 모든 문서에 함께 전달됩니다</span></label>
       <textarea id="guideIn" rows="3" maxlength="1000" placeholder="예: 일본 거대 로봇 메카닉 SF풍으로. 네임드 파일럿에게는 전용기를 준다. 양산기 바리에이션을 풍부하게. 잔혹한 묘사는 피한다." ${S.creating ? "disabled" : ""}>${esc(S.guideIn)}</textarea>
@@ -2822,6 +2849,7 @@ function canonHtml() {
     ${isStory(w) ? `<h2>이야기</h2>
     <p class="note">주인공 ${linkHtml(w.entities[w.story.protagonistKey].title)} · ${w.story.status === "ended" ? "완결" : `현재 ${w.story.chapter}장 / ${STORY_N}장`}. 이야기의 뼈대는 ${w.story.status === "ended" ? "아래 '숨겨진 뼈대 보기'에서" : "결말이 난 뒤에"} 볼 수 있습니다.</p>
     <div style="overflow-x:auto"><table class="tl">${w.story.chapters.map(c => `<tr><td>${c.n}장</td><td><b>${esc(c.title)}</b> <span class="src">· ${esc(c.era)}</span><br>${c.n < w.story.chapter || w.story.status === "ended" ? esc(c.summary) : `<span class="note">진행 중인 장입니다. 줄거리는 다음 장으로 넘어가면 공개됩니다.</span>`}</td></tr>`).join("")}</table></div>
+    ${w.story.protagonist?.desc || w.story.cast?.length ? `<dl class="kv" style="margin-top:12px">${w.story.protagonist?.desc ? `<dt>주인공 특징</dt><dd>${esc(w.story.protagonist.desc)}</dd>` : ""}${(w.story.cast || []).filter(c => w.entities[c.key]).map(c => `<dt>${linkHtml(w.entities[c.key].title)}</dt><dd>${esc([c.rel && "관계: " + c.rel, c.desc].filter(Boolean).join(" · ") || "(설명 없음)")}</dd>`).join("")}</dl><p class="note">처음에 정한 주인공 특징과 등장인물입니다. 사용자 확정 설정으로 모든 장과 문서에 반영됩니다.</p>` : ""}
     ${w.story.status === "ended" ? spineHtml(w) : ""}` : ""}
     <h2>작가 지침</h2>
     <label class="lb" for="wGuide">세계관 전체에 걸쳐 지킬 방향 <span class="note" style="font-weight:400">문체와 구성 규칙보다 우선하고, 확정 설정보다는 뒤에 옵니다. 1,000자까지</span></label>
@@ -2940,6 +2968,7 @@ document.addEventListener("click", ev => {
   if (d.focus) { S.focusEnt = d.focus; S.view = { name: "canon" }; renderAll(); return; }
   if (d.filter) { S.canonFilter = d.filter; renderMain(); return; }
   if (d.mode) { S.mode = d.mode === "story" ? "story" : "basic"; renderMain(); return; }
+  if (d.castDel !== undefined) { S.cast.splice(Number(d.castDel), 1); renderMain(); return; }
   if (d.epsec) { const w = S.world; if (!w) return; const pk = w.story.protagonistKey, i = d.epsec; S.view = { name: "article", key: pk }; renderAll(); const el = document.getElementById("s-" + i); if (el) el.scrollIntoView({ block: "start" }); return; }
   switch (d.act) {
     case "home": if (S.view.name === "home") return; S.view = { name: "home" }; if (!S.gen && !S.storyGen && !S.syncing) S.world = null; renderAll(); window.scrollTo({ top: 0 }); break;
@@ -3008,6 +3037,7 @@ document.addEventListener("click", ev => {
     case "rw-no": S.confirmRewrite = null; renderMain(); break;
     case "delpage-no": S.confirmDelPage = null; renderMain(); break;
     case "mg-no": S.confirmMerge = null; renderMain(); break;
+    case "cast-add": if (S.cast.length < 8) { S.cast.push({ name: "", desc: "", rel: "" }); renderMain(); document.querySelector(`[data-cast="${S.cast.length - 1}"][data-cf="name"]`)?.focus(); } break;
     case "ed-save": saveEdit(); break;
     case "ed-save-raw": saveEdit(true); break;
     case "cf-apply": applyConflictChoices(); break;
@@ -3041,6 +3071,8 @@ document.addEventListener("input", ev => {
     }
   }
   if (ev.target.id === "firstIn") S.first = ev.target.value;
+  if (ev.target.id === "protoDesc") S.protoDesc = ev.target.value;
+  if (ev.target.dataset?.cast !== undefined && ev.target.dataset.cf) { const c = S.cast[Number(ev.target.dataset.cast)]; if (c) c[ev.target.dataset.cf] = ev.target.value; }
   if (ev.target.id === "cpDir" && S.compose) S.compose.dir = ev.target.value;
   if (ev.target.id === "guideIn") S.guideIn = ev.target.value;
   if (ev.target.name === "advPick" && S.adv) { S.adv.pick = Number(ev.target.value); renderMain(); if (S.adv.pick === -2) $("#advCustom")?.focus(); }

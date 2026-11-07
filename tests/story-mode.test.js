@@ -129,14 +129,28 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await page.click('[data-mode="story"]');
     assert((await page.locator('label[for="firstIn"]').innerText()).includes("주인공"));
     await page.fill("#seedTa", "녹둔도를 지키는 무관들의 이야기. 여진 해적과 싸운다.");
-    await page.fill("#firstIn", "한서린"); await shot(page, "1-home-story");
+    await page.fill("#firstIn", "한서린");
+    await page.fill("#protoDesc", "활은 잘 쏘지만 겁이 많은 막내 무관");
+    await page.click('[data-act="cast-add"]'); await page.fill('[data-cast="0"][data-cf="name"]', "윤가람");
+    await page.fill('[data-cast="0"][data-cf="rel"]', "소꿉친구이자 맞수"); await page.fill('[data-cast="0"][data-cf="desc"]', "북관 출신 궁수");
+    await page.click('[data-act="cast-add"]'); await page.fill('[data-cast="1"][data-cf="name"]', "지울 사람"); await page.click('[data-cast-del="1"]');
+    assert.strictEqual(await page.locator('[data-cf="name"]').count(), 1, "등장인물 빼기");
+    await shot(page, "1-home-story");
     await page.click('[data-act="create"]');
     await waitArticle(page, "한서린");
     assert((await page.locator(".article .notice").innerText()).includes("진행 중인 사건"), "주인공 문서에 진행 중 안내 틀");
     assert((await sideText(page)).includes("녹둔도의 밤"));
     const pagePrompt = calls.filter(c => c.kind === "page").pop().prompt;
     assert(pagePrompt.includes("이야기 진행 상황") && pagePrompt.includes("녹둔도 습격") && !pagePrompt.includes("결말 의도"), "주인공 문서 프롬프트: 발단 사건 포함, 뼈대 미포함");
-    ok("스토리 모드: 첫 문서가 주인공 문서이고 1장 발단 사건과 진행 중 안내 틀이 나온다");
+    const sb = calls.find(c => c.kind === "storyBible").prompt;
+    assert(sb.includes("활은 잘 쏘지만 겁이 많은 막내 무관") && sb.includes("- 윤가람 — 특징: 북관 출신 궁수 — 주인공과의 관계: 소꿉친구이자 맞수") && !sb.includes("지울 사람"), "주인공 특징과 등장인물이 세계관 생성에 들어간다");
+    assert(pagePrompt.includes("사용자가 정한 주인공의 특징(반드시 지킨다): 활은 잘 쏘지만") && pagePrompt.includes("사용자가 정한 등장인물(윤가람)"));
+    { const w0 = await worldOf(page, "녹둔도 연대기"), gk = Object.keys(w0.entities).find(k => w0.entities[k].title === "윤가람");
+      assert(gk && w0.entities[gk].type === "인물" && w0.entities[gk].facts.some(f => f.src === "user" && f.t === "북관 출신 궁수"), "등장인물이 사용자 확정 사실과 함께 항목으로 생긴다");
+      assert(w0.relations.some(r => r.src === "user" && r.rel === "소꿉친구이자 맞수" && [r.a, r.b].includes(gk)), "주인공과의 관계가 확정 관계로 들어간다");
+      assert(w0.story.cast[0].key === gk && w0.story.protagonist.desc); }
+    assert.strictEqual(await page.inputValue("#protoDesc").catch(() => ""), "", "만든 뒤 입력란은 비운다");
+    ok("스토리 모드: 첫 문서가 주인공 문서이고 1장 발단 사건과 진행 중 안내 틀이 나온다. 주인공 특징과 등장인물이 확정 설정으로 들어간다");
 
     /* 3. 탐험 기록 */
     await clickLink(page, "북관 철령"); await waitArticle(page, "북관 철령");      // 새로 작성
@@ -173,6 +187,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     const planPrompt = calls.filter(c => c.kind === "chapterPlan").pop().prompt;
     assert(planPrompt.includes("「이일」") && planPrompt.includes("「여진 해적단」") && planPrompt.includes("「북관 철령」") && planPrompt.includes("추격한다"), "장 계획 프롬프트에 탐험과 선택이 들어간다");
     assert(planPrompt.includes("발단 의도") && planPrompt.includes("결말 의도"), "장 계획 프롬프트에는 뼈대 전체가 들어간다");
+    assert(planPrompt.includes("## 사용자가 정한 등장인물") && planPrompt.includes("윤가람") && planPrompt.includes("사용자가 정한 특징 (최우선 제약): 활은"), "장 계획에도 주인공 특징과 등장인물이 들어간다");
     assert((await page.locator(".chb").allInnerTexts()).includes("2장"));
     const wove = await page.locator(".stcard").innerText();
     assert(!wove.includes("2장 줄거리") && !wove.includes("이일이 파직되었다"), "새 장 줄거리와 변화 내용은 카드에 보이지 않는다(스포일러)");
