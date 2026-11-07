@@ -1,4 +1,5 @@
 # Cloudflare Worker 배포 설정 (relay/ 폴더 기준)
+# 이 저장소는 Cloudflare Workers Builds와 연결되어 있다: main에 relay/ 변경이 올라오면 자동으로 배포된다 (Root directory: relay)
 # name은 대시보드의 Worker 이름과 같아야 기존 Worker(와 저장된 Secret)를 그대로 덮어쓴다.
 name = "lucky-feather-d3e9"
 main = "worker.js"
