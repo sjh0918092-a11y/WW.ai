@@ -1,0 +1,2340 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>WorldWiki.ai · Gemini</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@600;700&display=swap">
+<style>
+/* Layout: wiki shell — sticky search bar, narrow navigation rail, white article sheet with floated infobox. Red links = 미작성 문서. */
+:root{
+  --paper:#F3F5F8; --sheet:#FFFFFF; --ink:#17202A; --muted:#5D6774; --line:#DBE0E7; --tint:#ECF0F5;
+  --link:#2353BF; --red:#B4372B; --accent:#17202A; --on-accent:#FFFFFF;
+  --warn-bg:#FFF3DC; --warn-fg:#7E4B00; --ok:#2E7A4C; --hl:#FFF4C2;
+  --f-display:"Noto Serif KR","Nanum Myeongjo","Apple SD Gothic Neo",serif;
+  --f-body:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --r:6px;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --paper:#0E1217; --sheet:#151A21; --ink:#E4E9EF; --muted:#98A2AF; --line:#29313B; --tint:#1C232C;
+  --link:#88A9FF; --red:#F08A7D; --accent:#E4E9EF; --on-accent:#0E1217;
+  --warn-bg:#382A10; --warn-fg:#F2C47C; --ok:#6CC491; --hl:#3A3413; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --paper:#0E1217; --sheet:#151A21; --ink:#E4E9EF; --muted:#98A2AF; --line:#29313B; --tint:#1C232C;
+  --link:#88A9FF; --red:#F08A7D; --accent:#E4E9EF; --on-accent:#0E1217;
+  --warn-bg:#382A10; --warn-fg:#F2C47C; --ok:#6CC491; --hl:#3A3413; color-scheme:dark }
+
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--sheet)}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:var(--link)}
+:focus-visible{outline:2px solid var(--link);outline-offset:2px}
+.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+/* top bar */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--sheet);border-bottom:1px solid var(--line)}
+.top-in{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:16px;padding-block:10px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:10px;min-width:0;background:none;border:0;padding:0;cursor:pointer;text-align:left}
+.brand b{font-family:var(--f-display);font-weight:700;font-size:19px;letter-spacing:-.01em;white-space:nowrap}
+.brand span{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40vw}
+.search{position:relative;margin-left:auto;flex:1 1 260px;max-width:420px}
+.search input{width:100%;border:1px solid var(--line);background:var(--paper);border-radius:var(--r);padding:8px 12px;font-size:14px}
+.search input:disabled{opacity:.55}
+.sugg{position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);box-shadow:0 8px 24px rgb(0 0 0 / .12);overflow:hidden}
+.sugg button{display:flex;justify-content:space-between;gap:12px;width:100%;text-align:left;background:none;border:0;padding:8px 12px;cursor:pointer}
+.sugg button:hover,.sugg button:focus-visible{background:var(--tint)}
+.sugg small{font-family:var(--f-mono);color:var(--muted);font-size:11px}
+
+/* shell */
+.shell{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:210px minmax(0,1fr);gap:24px;padding-block:24px 64px}
+.side{display:flex;flex-direction:column;gap:20px;font-size:13.5px}
+.side h4{margin:0 0 6px;font-family:var(--f-mono);font-weight:500;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.side ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.side li button,.side li a{display:block;width:100%;text-align:left;background:none;border:0;padding:3px 0;cursor:pointer;color:var(--link);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.side li button:hover{text-decoration:underline}
+.side li button.cur{color:var(--ink);font-weight:600}
+.stat{font-family:var(--f-mono);font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+.stat em{font-style:normal;color:var(--ink)}
+.genpill{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--link);animation:pulse 1.2s ease-in-out infinite;flex:none}
+@keyframes pulse{50%{opacity:.25}}
+main{min-width:0}
+
+/* sheet */
+.sheet{background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);padding:28px 32px 36px}
+.crumb{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);letter-spacing:.02em;display:flex;gap:10px;flex-wrap:wrap}
+h1.t{font-family:var(--f-display);font-weight:700;font-size:30px;line-height:1.25;letter-spacing:-.015em;margin:6px 0 4px;text-wrap:balance;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 4px}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--sheet);border-radius:var(--r);padding:6px 12px;font-size:13px;cursor:pointer;color:var(--ink)}
+.btn:hover{background:var(--tint)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.pri{background:var(--accent);color:var(--on-accent);border-color:var(--accent);font-weight:600}
+.btn.pri:hover{opacity:.9}
+.btn.dng{color:var(--red)}
+.confirm{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;background:var(--tint);border-radius:var(--r);padding:4px 4px 4px 12px}
+
+.article{font-size:15px;line-height:1.8}
+.lead{margin:18px 0 0}
+.infobox{float:right;width:280px;margin:16px 0 16px 24px;border:1px solid var(--line);border-radius:var(--r);font-size:13px;line-height:1.55;overflow:hidden;background:var(--sheet)}
+.infobox .ih{background:var(--tint);padding:10px 12px;font-family:var(--f-display);font-weight:700;font-size:15px;text-align:center}
+.infobox .ity{font-family:var(--f-mono);font-size:11px;color:var(--muted);text-align:center;padding:4px 0 2px;border-bottom:1px solid var(--line)}
+.infobox table{width:100%;border-collapse:collapse}
+.infobox th,.infobox td{padding:6px 10px;border-top:1px solid var(--line);vertical-align:top;text-align:left}
+.infobox tr:first-child th,.infobox tr:first-child td{border-top:0}
+.infobox th{width:36%;font-weight:600;color:var(--muted);font-size:12.5px}
+.toc{display:inline-block;border:1px solid var(--line);background:var(--paper);border-radius:var(--r);padding:10px 16px 12px;margin:20px 0 4px;font-size:13.5px;min-width:200px;max-width:100%}
+.toc b{font-family:var(--f-mono);font-weight:500;font-size:11px;letter-spacing:.08em;color:var(--muted)}
+.toc ol{margin:6px 0 0;padding-left:20px}
+.toc button{background:none;border:0;padding:1px 0;cursor:pointer;color:var(--link);text-align:left}
+.article h2{font-family:var(--f-display);font-weight:700;font-size:21px;line-height:1.35;margin:30px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--line);text-wrap:balance;clear:none}
+.article h2 .n{color:var(--link);margin-right:8px;font-variant-numeric:tabular-nums}
+.article h3{font-size:16px;margin:18px 0 4px}
+.article p{margin:0 0 12px}
+.article ul{margin:0 0 12px;padding-left:22px}
+.article del{color:var(--muted)}
+.article ul ul{margin:2px 0 4px;padding-left:20px;list-style:circle}
+.article blockquote{display:table;max-width:100%;margin:6px 0 16px;padding:12px 18px;border:1px dashed var(--line);border-radius:var(--r);background:var(--paper);font-family:var(--f-display);font-weight:600;font-size:15px;line-height:1.7}
+.article blockquote cite{display:block;margin-top:8px;padding-top:6px;border-top:1px solid var(--line);font-family:var(--f-body);font-style:normal;font-weight:400;font-size:13px}
+.article h3.sh{font-family:var(--f-display);font-weight:700;font-size:17px;margin:22px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--line)}
+.article h3.sh .n{color:var(--link);margin-right:8px;font-variant-numeric:tabular-nums}
+.ed .ed-2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:0 14px}
+.ed textarea{font-size:14px;line-height:1.7}
+.ed #edBody,.ed #edNavbox,.ed #edInfobox{font-family:var(--f-mono),var(--f-body);font-size:13.5px}
+.ed-help{margin:8px 0 0;font-size:13px}
+.ed-help summary{cursor:pointer;color:var(--link)}
+.ed-help .kv{margin:8px 0 0;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r);background:var(--paper)}
+.ed-help dt{font-family:var(--f-mono);color:var(--ink)}
+@media (max-width:560px){.ed .ed-2{grid-template-columns:minmax(0,1fr)}}
+.cfpanel{margin:14px 0 4px;padding:14px;border:1px solid var(--warn-fg);border-radius:var(--r);background:var(--warn-bg);color:var(--ink);display:flex;flex-direction:column;gap:10px}
+.cfpanel>b{color:var(--warn-fg)}
+.cfpanel .note{margin:0}
+.cf{background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;display:flex;flex-direction:column;gap:4px;font-size:13.5px}
+.cf-h{font-weight:600}
+.cf-old,.cf-new{display:grid;grid-template-columns:52px minmax(0,1fr);gap:8px}
+.cf-old span,.cf-new span{font-family:var(--f-mono);font-size:11px;color:var(--muted);padding-top:2px}
+.cf-old{color:var(--muted)}
+.cf-ch{display:flex;gap:6px;align-items:center;margin-top:6px;font-size:13px}
+.cf .txt{margin-top:2px}
+.rwbox{margin:10px 0 4px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--paper);max-width:640px}
+.rwbox .note{margin:8px 0 0}
+.rels{clear:both;margin-top:28px}
+.rels h3{font-family:var(--f-display);font-size:17px;margin:0 0 8px;padding-bottom:4px;border-bottom:1px solid var(--line)}
+.rels ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.rels li{border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;display:flex;flex-direction:column;gap:4px;font-size:13.5px;min-width:0}
+.rels li.sup{opacity:.55}
+.rels .rel-h{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:baseline;font-weight:600}
+.rels .rel-k{font-weight:400;font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 8px}
+.rels p{margin:0;line-height:1.6}
+.navbox{margin:12px 0 0;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--sheet)}
+.navbox summary{display:flex;align-items:center;justify-content:center;gap:8px;padding:8px 12px;background:var(--tint);cursor:pointer;list-style:none;font-weight:600;font-size:14px;text-align:center}
+.navbox summary::-webkit-details-marker{display:none}
+.navbox .nb-n{font-family:var(--f-mono);font-weight:400;font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 7px}
+.navbox .nb-tog::before{content:"[펼치기]";font-weight:400;font-size:12px;color:var(--link)}
+.navbox[open] .nb-tog::before{content:"[접기]"}
+.nb-body{display:flex;flex-direction:column}
+.nb-row{display:grid;grid-template-columns:minmax(90px,150px) minmax(0,1fr);border-top:1px solid var(--line)}
+.nb-l{padding:8px 10px;background:var(--paper);font-weight:600;font-size:12.5px;color:var(--muted);border-right:1px solid var(--line)}
+.nb-row ul{list-style:none;margin:0;padding:8px 12px;display:flex;flex-wrap:wrap;gap:4px 18px;font-size:13.5px;min-width:0}
+.nb-row li{display:flex;flex-direction:column;line-height:1.35;min-width:0}
+.nb-row li small{color:var(--muted);font-size:11.5px}
+.nb-row li.me b{color:var(--ink)}
+.nb-src{border-top:1px solid var(--line);padding:6px 12px;font-size:12px;text-align:right}
+@media (max-width:560px){.nb-row{grid-template-columns:minmax(0,1fr)}.nb-l{border-right:0;border-bottom:1px solid var(--line)}}
+.nf-h{font-family:var(--f-display);font-weight:700;font-size:20px;margin:20px 0 4px}
+.cats{display:flex;flex-wrap:wrap;gap:4px 0;align-items:center;margin:10px 0 0;padding:6px 10px;border:1px solid var(--line);border-radius:var(--r);font-size:13px}
+.cats b{font-weight:600;margin-right:8px}
+.cats span{color:var(--link)}
+.cats span+span::before{content:"|";color:var(--line);margin:0 8px}
+.toc ul{list-style:none;margin:6px 0 0;padding:0}
+.toc li.sub{padding-left:22px}
+.toc .n{color:var(--link);font-variant-numeric:tabular-nums}
+.notice{display:flex;flex-direction:column;gap:4px;margin:16px 0 0;padding:10px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--tint);font-size:13.5px;line-height:1.6}
+a.wl{text-decoration:none}
+a.wl:hover{text-decoration:underline}
+a.wl.new{color:var(--red);-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+sup.fn a{font-size:11px;text-decoration:none;font-family:var(--f-mono)}
+.fns{clear:both;margin-top:28px;padding-top:12px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
+.fns ol{padding-left:22px;margin:6px 0 0}
+.fns li:target,.fns li.flash{background:var(--hl)}
+.meta-foot{clear:both;margin-top:28px;display:flex;flex-direction:column;gap:10px;font-size:13px}
+.meta-foot .box{border:1px solid var(--line);border-radius:var(--r);padding:8px 12px;background:var(--paper)}
+.meta-foot b{font-weight:600;margin-right:6px}
+.chips{display:inline-flex;gap:6px;flex-wrap:wrap}
+
+.banner{border-radius:var(--r);padding:12px 14px;font-size:13.5px;margin:14px 0}
+.banner.warn{background:var(--warn-bg);color:var(--warn-fg)}
+.banner.ok{background:var(--tint);color:var(--ok)}
+.banner ul{margin:6px 0 0;padding-left:18px}
+.banner li{margin-bottom:4px}
+.banner .sev{font-family:var(--f-mono);font-size:11px;font-weight:500;margin-right:6px}
+
+/* generating */
+.gen-live{font-family:var(--f-mono);font-size:12px;color:var(--muted);display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.promise{margin:18px 0;border:1px dashed var(--line);border-radius:var(--r);padding:12px 14px;font-size:13.5px}
+.promise h5{margin:0 0 6px;font-family:var(--f-mono);font-weight:500;font-size:11px;letter-spacing:.08em;color:var(--muted)}
+.promise ul{margin:0;padding-left:18px}
+.heads{margin:18px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+.heads li{font-family:var(--f-display);font-weight:600;font-size:17px;animation:in .3s ease-out}
+@keyframes in{from{opacity:.2;transform:translateY(4px)}}
+.sk{height:11px;border-radius:4px;background:var(--tint);margin:10px 0;animation:pulse 1.6s ease-in-out infinite}
+.sk:nth-child(2){width:92%}.sk:nth-child(3){width:78%}.sk:nth-child(4){width:85%}
+
+/* home */
+.home{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:24px;align-items:start}
+.home h2{font-family:var(--f-display);font-size:22px;margin:0 0 4px;text-wrap:balance}
+.sub{color:var(--muted);margin:0 0 16px;max-width:60ch}
+label.lb{display:block;font-weight:600;font-size:13px;margin:16px 0 6px}
+input.txt{width:100%;border:1px solid var(--line);background:var(--paper);border-radius:var(--r);padding:9px 12px;font-size:14px}
+textarea{width:100%;border:1px solid var(--line);background:var(--paper);border-radius:var(--r);padding:10px 12px;line-height:1.65;resize:vertical;font-size:14px}
+.stabs{display:flex;flex-direction:column;gap:8px;margin:0 0 8px}
+.stabs-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.stab{border:1px solid var(--line);background:var(--sheet);border-radius:999px;padding:4px 12px;font-size:12.5px;cursor:pointer;color:var(--ink)}
+.stab:hover{background:var(--tint)}
+.stab[aria-selected="true"]{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.stab[data-stab="own"]{font-weight:600}
+.dice{display:flex;flex-direction:column;gap:8px;margin:0 0 10px;padding:12px;border:1px solid var(--line);border-radius:var(--r);background:var(--paper)}
+.die{display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:10px;align-items:center;background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);padding:8px 10px}
+.die-l{font-family:var(--f-mono);font-size:11px;color:var(--muted);letter-spacing:.06em}
+.die-v{font-family:var(--f-display);font-weight:700;font-size:15.5px;line-height:1.4;min-width:0}
+.die-lock{border:1px solid var(--line);background:var(--sheet);border-radius:999px;padding:2px 10px;font-size:12px;cursor:pointer;color:var(--muted)}
+.die-lock[aria-pressed="true"]{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.whatif{margin:0 0 10px}
+.wi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+.wi{display:flex;flex-direction:column;gap:2px;text-align:left;border:1px solid var(--line);background:var(--sheet);border-radius:var(--r);padding:10px 12px;cursor:pointer;color:var(--ink);font-family:var(--f-display);font-weight:600;font-size:14.5px;line-height:1.45}
+.wi span{font-family:var(--f-mono);font-weight:400;font-size:10.5px;color:var(--muted);letter-spacing:.08em}
+.wi:hover:not(:disabled){border-color:var(--ink);background:var(--tint)}
+.wi:disabled{opacity:.5;cursor:not-allowed}
+.stab-sep{font-family:var(--f-mono);font-size:11px;color:var(--muted);letter-spacing:.06em;margin-right:4px}
+.ex{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.chip{border:1px solid var(--line);background:var(--sheet);border-radius:999px;padding:4px 11px;font-size:12.5px;cursor:pointer;color:var(--ink)}
+.chip:hover{background:var(--tint)}
+.chip[aria-pressed="true"]{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:18px}
+.note{font-size:12.5px;color:var(--muted)}
+.wlist{display:flex;flex-direction:column;gap:10px}
+.wcard{border:1px solid var(--line);background:var(--sheet);border-radius:var(--r);padding:14px 16px;display:flex;flex-direction:column;gap:6px}
+.wcard button.open{background:none;border:0;padding:0;text-align:left;cursor:pointer;font-family:var(--f-display);font-weight:700;font-size:17px;color:var(--link)}
+.wcard p{margin:0;color:var(--muted);font-size:13px}
+.wcard .wm{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;font-family:var(--f-mono);font-size:11.5px;color:var(--muted)}
+.empty{border:1px dashed var(--line);border-radius:var(--r);padding:18px;color:var(--muted);font-size:13.5px}
+.how{margin:22px 0 0;padding:0;list-style:none;display:grid;gap:10px;font-size:13px;color:var(--muted)}
+.how li{display:grid;grid-template-columns:22px 1fr;gap:8px}
+.how li span{font-family:var(--f-mono);color:var(--ink)}
+
+/* canon */
+.canon h2{font-family:var(--f-display);font-size:19px;margin:28px 0 8px}
+.canon h2:first-of-type{margin-top:18px}
+.tl{width:100%;border-collapse:collapse;font-size:13.5px}
+.tl td{padding:6px 8px;border-top:1px solid var(--line);vertical-align:top}
+.tl td:first-child{font-family:var(--f-mono);white-space:nowrap;color:var(--muted);width:1%;font-variant-numeric:tabular-nums}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px}
+details.ent{border-top:1px solid var(--line);padding:6px 0}
+details.ent summary{cursor:pointer;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;list-style:none}
+details.ent summary::-webkit-details-marker{display:none}
+details.ent summary::before{content:"▸";color:var(--muted);font-size:11px}
+details.ent[open] summary::before{content:"▾"}
+details.ent .et{font-weight:600}
+details.ent .em{font-family:var(--f-mono);font-size:11.5px;color:var(--muted)}
+.st{font-family:var(--f-mono);font-size:10.5px;padding:1px 7px;border-radius:999px;border:1px solid var(--line)}
+.st.on{color:var(--ok)} .st.off{color:var(--red)}
+details.ent ul{margin:6px 0 4px 22px;padding:0;font-size:13.5px}
+details.ent li{margin-bottom:3px}
+.src{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.memo{margin:14px 0 4px;border:1px solid var(--line);border-radius:var(--r);background:var(--paper);font-size:13.5px}
+.memo summary{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;cursor:pointer;color:var(--muted);list-style:none}
+.memo summary::-webkit-details-marker{display:none}
+.memo summary .src{margin-left:auto}
+.memo[open] summary{border-bottom:1px solid var(--line)}
+.memo ul{margin:0;padding:10px 12px 10px 30px;display:flex;flex-direction:column;gap:8px}
+.memo li{line-height:1.6}
+.memo li.lo{color:var(--muted)}
+.memo-why{display:block;font-size:12.5px;color:var(--muted)}
+.memo-fix{padding:1px 10px;font-size:12px;margin-top:4px}
+.memo-dot{width:7px;height:7px;border-radius:50%;background:var(--line);flex:none}
+.memo-dot.on{background:var(--warn-fg)}
+.memo-foot{padding:0 12px 12px 30px}
+.fx-list{display:flex;flex-direction:column;gap:8px;margin:14px 0}
+.fx-pick{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r);background:var(--paper);cursor:pointer;line-height:1.6;font-size:14px}
+.fx-pick input{margin-top:5px;flex:none}
+.fx-ed{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r);background:var(--paper);font-size:14px;line-height:1.6}
+.fx-ed.off{opacity:.55}
+.fx-ed del{color:var(--muted)}
+.fx-on{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:600;font-size:13px}
+.memo-line{display:flex;align-items:center;gap:8px;margin:12px 0 0;font-size:12.5px;color:var(--muted)}
+.logpre{white-space:pre-wrap;word-break:break-all;font-family:var(--f-mono);font-size:12px;line-height:1.7;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;margin:14px 0 0;max-height:65vh;overflow:auto;-webkit-user-select:text;user-select:text}
+.seedbox{white-space:pre-wrap;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;font-size:13.5px}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;font-size:13.5px}
+.kv dt{color:var(--muted)} .kv dd{margin:0}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--accent);color:var(--on-accent);padding:10px 16px;border-radius:var(--r);font-size:13.5px;box-shadow:0 8px 24px rgb(0 0 0 / .2);z-index:20;max-width:calc(100vw - 32px)}
+.toast button{background:none;border:0;color:inherit;text-decoration:underline;cursor:pointer;margin-left:8px;padding:0}
+
+@media (max-width:900px){
+  .shell{grid-template-columns:minmax(0,1fr);gap:16px;padding-block:16px 48px}
+  .side{flex-direction:row;flex-wrap:wrap;gap:12px 24px}
+  .side section{min-width:0}
+  .side .rec{display:none}
+  .home{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:680px){
+  .sheet{padding:20px 16px 28px}
+  .infobox{float:none;width:100%;margin:16px 0}
+  h1.t{font-size:25px}
+  .brand span{display:none}
+}
+.prov{font-family:var(--f-mono);font-size:10.5px;font-weight:500;color:var(--on-accent);background:var(--accent);border-radius:999px;padding:1px 7px;align-self:center}
+.gset .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.gset .two{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:0 12px}
+.gset select{width:100%;border:1px solid var(--line);background:var(--paper);border-radius:var(--r);padding:9px 10px;font-size:14px}
+.gset .keyrow{display:flex;gap:8px}
+.gset .keyrow input{flex:1;min-width:0}
+.gset .res{margin:10px 0 0;font-size:13px}
+@media (max-width:560px){.gset .two{grid-template-columns:minmax(0,1fr)}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+
+<header class="top wrap">
+  <div class="top-in">
+    <button class="brand" id="brand" data-act="home" type="button"><b>WorldWiki.ai</b><small class="prov">Gemini</small><span id="brandWorld">링크를 누르면 문서가 생깁니다</span></button>
+    <form class="search" id="searchForm" autocomplete="off" role="search">
+      <input id="q" type="search" placeholder="세계관을 열면 검색할 수 있습니다" aria-label="문서 검색 또는 새 문서 만들기" disabled>
+      <div class="sugg" id="sugg" hidden></div>
+    </form>
+  </div>
+</header>
+<div class="wrap"><div class="shell" id="shell">
+  <nav class="side" id="side" aria-label="세계관 탐색"></nav>
+  <main id="main"><div class="sheet"><p class="note">불러오는 중…</p></div></main>
+</div></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function cyrb53(str, seed = 0) { let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed; for (let i = 0; i < str.length; i++) { const ch = str.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); } h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507); h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909); h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507); h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909); return 4294967296 * (2097151 & h2) + (h1 >>> 0); }
+const norm = t => String(t || "").replace(/[「」『』]/g, "").replace(/\s+/g, " ").trim();
+const keyOf = t => "e" + cyrb53(norm(t).toLowerCase()).toString(36);
+const LINK_RE = /\[\[([^\[\]|]+?)(?:\|([^\[\]]+?))?\]\]/g;
+const stripMarks = s => String(s || "").replace(/\[\*[^\]]*\]/g, "").replace(LINK_RE, (m, a, b) => b || a).replace(/\*\*|~~/g, "").trim();
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej({ code: "timeout", message: "응답 시간 초과" }), ms))]);
+const fmtDate = t => { try { return new Date(t).toLocaleDateString("ko-KR", { year: "numeric", month: "short", day: "numeric" }); } catch { return ""; } };
+
+/* ---------- 원안 주사위와 '만약에' 질문 ---------- */
+const DICE = {
+  era: ["기원전 3세기 지중해", "후한 말 삼국시대", "9세기 통일신라", "11세기 고려 개경", "15세기 대항해시대 리스본", "조선 후기 한양", "17세기 에도", "빅토리아 시대 런던", "1920년대 상하이 조계지", "1930년대 대공황기 미국", "1960년대 냉전기 베를린", "1988년 서울", "2049년 근미래 동아시아", "23세기 화성 식민지", "대멸종 300년 뒤의 지구", "빙하기가 다시 온 31세기"],
+  genre: ["하이 판타지", "무협", "스팀펑크", "사이버펑크", "우주 오페라", "메카물", "코즈믹 호러", "느와르", "궁중 암투극", "학원 이능물", "포스트 아포칼립스", "첩보 스릴러", "해양 모험물", "법정 미스터리"],
+  twist: ["꿈을 화폐로 쓴다", "죽은 사람에게도 투표권이 있다", "전쟁은 모두 체스 대국으로 치른다", "모든 계약은 노래로 맺어야 효력이 있다", "용이 국가 공무원으로 일한다", "기억을 사고팔 수 있다", "하루에 한 번 중력이 뒤집힌다", "성인이 되면 이름을 경매에 부친다", "거짓말을 하면 몸에 문신이 생긴다", "도시들이 다리를 달고 걸어 다닌다", "태양이 30년째 뜨지 않는다", "고양이가 귀족 계급이다", "국경을 매년 제비뽑기로 다시 정한다", "마법을 쓰려면 세금을 내야 한다", "죽은 사람의 그림자가 남아 일을 계속한다", "책에 적힌 내용이 현실이 된다", "인구의 절반이 같은 꿈을 꾼다", "바다가 하늘에 떠 있다", "도시마다 시간이 다른 속도로 흐른다", "왕을 매년 퀴즈 대회로 뽑는다"]
+};
+const DICE_LABEL = { era: "시대", genre: "장르", twist: "비틀기" };
+const WHATIFS = ["로마가 멸망하지 않았다면?", "마법이 세금 대상이라면?", "공룡이 멸종하지 않고 문명을 이뤘다면?", "인터넷이 1890년에 발명됐다면?", "사람이 죽으면 정확히 하루 뒤 되살아난다면?", "조선이 신대륙에 먼저 닿았다면?", "달이 두 개라면?", "모든 사람이 자기 수명을 알고 태어난다면?", "신들을 선거로 뽑는다면?", "흑사병이 마법을 퍼뜨렸다면?", "전기가 발견되지 않았다면?", "동물과 말이 통한다면?", "몽골 제국이 분열하지 않았다면?", "꿈속 세계가 실재하는 대륙이라면?", "아무도 거짓말을 할 수 없다면?", "1950년에 외계 신호가 해독됐다면?", "핵무기 대신 용이 억지력이 됐다면?", "시간 여행이 관광 산업이라면?", "바다 밑에 또 하나의 문명이 있다면?", "책을 갖는 것이 금지된 세상이라면?", "모든 국가가 주식회사라면?", "사람이 광합성을 할 수 있다면?", "운명이 공문서로 배달된다면?", "냉전이 지금까지 끝나지 않았다면?", "별자리가 실제 신분 제도라면?", "유령에게 시민권이 있다면?", "임진왜란 때 조선이 증기선을 가졌다면?", "모든 음악이 법으로 금지됐다면?"];
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const shuffle = a => { const b = a.slice(); for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; };
+function rollDice(keep) {
+  const d = S.dice || { locks: {} };
+  for (const k of ["era", "genre", "twist"]) if (!(keep && d.locks[k] && d[k])) { let v; do { v = pick(DICE[k]); } while (DICE[k].length > 1 && v === d[k]); d[k] = v; }
+  S.dice = d;
+}
+const eulReul = w => { const c = w.charCodeAt(w.length - 1); return c >= 0xAC00 && c <= 0xD7A3 ? ((c - 0xAC00) % 28 ? "을" : "를") : "을(를)"; };
+const diceSeed = d => `시대: ${d.era}\n장르: ${d.genre}\n비틀기: ${d.twist}\n\n${d.era}${eulReul(d.era)} 무대로 한 ${d.genre}. 이 세계에서는 ${d.twist}. 이 비틀기가 깊게 바꾼 영역과, 그럼에도 그 시대 그대로 굴러가는 영역이 함께 있는 세계다.`;
+const whatIfSeed = q => `만약 ${q}\n\n이 질문의 답이 '그렇다'인 세계. 역사가 갈라진 시점과 그 이유를 정하고, 그 뒤로 시간이 흘러 그 변화가 기존 질서와 부딪히고 섞인 시점을 무대로 한다. 바뀐 것과 그대로인 것이 함께 있다.`;
+const EXAMPLES = [
+  { label: "체스로 전쟁을 대신한 냉전", text: "1947년, 핵전쟁을 피하기 위해 미국과 소련은 모든 무력 분쟁을 체스 대국으로 대체하는 '제네바 체스 협약'을 맺는다. 영토, 자원, 외교적 지위가 대국 결과로 결정되고, 그랜드마스터는 장군이자 외교관이다. 이 세계의 냉전은 체스판 위에서 벌어지며, 첩보전은 상대국의 오프닝 연구를 훔치는 일이다." },
+  { label: "2049 메가서울 사이버펑크", text: "2049년 대한민국. 수도권 전체가 '메가서울'로 통합되었고, 세 개의 재벌 그룹이 치안·교육·의료를 사실상 대행한다. 뇌-컴퓨터 인터페이스 '넥서스'가 주민등록을 대체했고, 넥서스가 없는 사람은 행정상 존재하지 않는다. 지방은 버려진 '공백지대'로 남아 불법 개조 시술사와 난민 공동체가 모여 산다." },
+  { label: "용이 살아남은 조선", text: "조선 건국 이래 용은 멸종하지 않았고, 왕실과 계약을 맺은 용들이 비를 다스린다. 용과 말을 나누는 '용어역관'은 양반보다 귀한 직업이며, 가뭄은 곧 용과 조정의 외교 실패를 뜻한다. 배경은 18세기 후반, 서양 선박이 처음으로 바다의 용을 포획하려 한 사건 직후이다." },
+  { label: "바다가 마른 지구", text: "23세기, 해수의 대부분이 증발한 지구. 옛 해저는 염전 사막이 되었고, 모래 위를 달리는 풍력 범선 함대가 교역을 지배한다. 남은 물은 '잔해(殘海)'라 불리는 몇 개의 깊은 해구뿐이며, 물 1톤은 국가 화폐의 기준이다." }
+];
+const STYLES = {
+  encyc: {
+    name: "백과사전체", len: "본문 섹션 4~6개(하위 섹션까지 합쳐 10개 이내), 전체 2,000~3,500자. 상한을 넘기지 않으며, 기법을 더 넣으려고 분량을 늘리지 않는다",
+    structure: `첫 섹션은 '개요'. 이후 항목 유형에 맞게 구성한다. 예시:
+  - 인물: 개요 / 특징(이름 붙인 특징별 하위 섹션) / 생애(전환점별 하위 섹션) / 인물(사적인 삶) / 인물 관계 / 사후나 현재
+  - 조직·국가·도시: 개요 / 역사 / 구조 / 활동 / 현황
+  - 사건·전투·전쟁: 개요 / 배경 / 경과(단계별 하위 섹션) / 결과 / 영향
+  - 병기·기체·함선: 개요 / 개발 경위 / 성능과 특징 / 무장(무장별 하위 섹션 가능) / 전투 기록(전투별 하위 섹션) / 파일럿과 운용 부대 / 파생형이나 현황
+  - 기술·물건: 개요 / 개발 / 원리와 특징 / 대표 사용 사례 / 현황
+  - 제도·개념·문화: 개요 / 기원 / 내용 / 시행이나 변천 / 영향
+  마지막 섹션은 현황, 영향, 유산, 파생, 대중문화처럼 항목에 맞는 것으로 끝낸다. '비판과 논쟁', '논란' 섹션은 기본 구성에 없다. 이 항목 자체가 작중에서 이름이 붙을 만큼 공개적으로 다투어진 대상(정치 쟁점, 재판, 스캔들 등)일 때만 추가하며, 대부분의 문서에는 들어가지 않는다. 문서를 평가로 마무리하려고 이 섹션을 쓰지 않는다.`,
+    desc: `작중의 팬들이 공들여 쓴 위키 문체. '~이다'체로 쓰고, 서술자는 감탄하거나 독자에게 말을 걸지 않는다.
+- 서술자는 차갑게, 사건은 뜨겁게 쓴다. 장면의 무게는 수치의 대비(한계와 그것을 넘어선 결과), 치른 대가, 그 자리에 있던 사람들의 반응, 후대가 붙인 별명과 회자되는 방식으로 전한다.
+- 평가어("걸작", "명장면", "압권" 등)는 바로 앞뒤에 그 평가를 뒷받침하는 사실(전과, 수치, 비교)이 있을 때만, 한 문단에 하나까지 쓴다. "전설적인", "압도적인", "최강의", "경이로운"처럼 근거 없이 쓰거나 평가어를 겹쳐 쌓지 않는다.
+- 커뮤니티 말투는 쓰지 않는다. "~인 셈", "~인 듯", "~인 모양이다", 괄호 속 농담이나 혼잣말, 문장 끝의 물음표나 느낌표, 팬덤 은어, "냅다"나 "쩐다" 같은 속어는 쓰지 않는다.
+- 이 장르의 독자가 열광하는 순간(결전, 한계 돌파, 반전, 맞수와의 대면, 몰락)을 비켜 가지 않고 정면으로 쓴다. 그 순간에서는 문장을 짧게 끊어 속도를 올리고, 배경 설명을 끼워 넣지 않는다.
+- 실패나 사고, 반대도 흐름 속에서 구체적으로 기록한다. 다만 행정, 정비, 보급 같은 뒷면이 장면의 긴장을 대신하게 두지 않는다.
+- 수치, 날짜, 인명, 기관명은 장면을 단단하게 만드는 데 쓴다. 제원이나 통계를 장면 한가운데 나열하지 않고 인포박스나 별도 섹션으로 보낸다.`
+  }
+};
+const TYPES = ["인물","국가","조직","지명","사건","기술","제도","문화","개념","물건"];
+const ERR = {
+  not_granted: "권한이 없습니다.",
+  sampling_disabled: "생성 기능을 쓸 수 없습니다.",
+  capability_disabled: "이 화면에서는 생성 기능을 쓸 수 없습니다.",
+  rate_limited: "요청이 몰려 잠시 쉬어야 합니다. 조금 뒤에 다시 시도해 주세요.",
+  session_expired: "로그인이 만료되었습니다. 다시 로그인한 뒤 시도해 주세요.",
+  refused: "이 내용으로는 문서를 작성할 수 없습니다. 원안이나 항목 이름을 바꿔 보세요.",
+  invalid_json: "응답이 너무 길어 끝까지 받지 못했거나 형식이 깨졌습니다. 다시 시도해 주세요. 계속 실패하면 '방향을 정해 작성'에서 분량을 줄여 달라고 적어 주세요.",
+  prompt_too_large: "보낼 설정이 너무 많습니다. 설정 노트의 규칙이나 확정 설정을 줄여 주세요.",
+  empty_completion: "빈 응답이 돌아왔습니다. 다시 시도해 주세요.",
+  upstream_error: "연결이 끊겼습니다. 다시 시도해 주세요.",
+  cancelled: "작성을 중단했습니다.",
+  bad_page: "본문이 없는 응답이 돌아왔습니다. 다시 시도해 주세요.",
+  local_full: "브라우저 저장 공간이 가득 찼습니다.",
+  quota_exceeded: "저장 공간 한도에 도달했습니다. 쓰지 않는 세계관을 삭제해 주세요.",
+  timeout: "저장소가 응답하지 않습니다. 잠시 후 다시 열어 주세요.",
+  no_sample: "Gemini API 키가 없습니다. 왼쪽 'Gemini 설정'에서 키를 넣어 주세요.",
+  bad_key: "Gemini API 키가 올바르지 않거나 권한이 없습니다. 'Gemini 설정'에서 키를 확인해 주세요.",
+  model_not_found: "지정한 Gemini 모델을 찾을 수 없습니다. 'Gemini 설정'에서 모델 이름을 확인해 주세요.",
+  network: "Gemini 서버에 연결하지 못했습니다. 인터넷 연결을 확인하고, 파일을 직접 열었다면 로컬 서버(예: python -m http.server)로 열어 보세요."
+};
+/* ---------- 진단 로그 ---------- */
+/* 문서 작성에 쓸 모델과 생각 깊이 (사용자 지정) */
+const PAGE_MODEL = {};   // 모델과 생각 깊이는 'Gemini 설정'에서 정한다
+
+/* ---------- Gemini API ---------- */
+const GKEY = "wwiki:gemini";
+const GBASE = "https://generativelanguage.googleapis.com/v1beta";
+const GDEF = { key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "" };
+const THINKS = [["", "모델 기본값"], ["minimal", "minimal"], ["low", "low"], ["medium", "medium"], ["high", "high"]];
+let GS = (() => { try { return { ...GDEF, ...(JSON.parse(localStorage.getItem(GKEY) || "{}") || {}) }; } catch { return { ...GDEF }; } })();
+const saveGS = () => { try { localStorage.setItem(GKEY, JSON.stringify(GS)); } catch {} };
+function parseJsonLoose(t) {
+  const tries = [t, t.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "")];
+  const a = t.indexOf("{"), b = t.lastIndexOf("}"); if (a >= 0 && b > a) tries.push(t.slice(a, b + 1));
+  for (const x of tries) { try { return JSON.parse(x); } catch {} }
+  return undefined;
+}
+async function gFetch(path, init) {
+  try { return await fetch(GBASE + path, init); }
+  catch (e) { if (e?.name === "AbortError") throw { code: "cancelled" }; throw { code: "network", message: String(e?.message || e) }; }
+}
+async function gError(res, model) {
+  let msg = ""; try { const j = await res.json(); msg = j?.error?.message || ""; } catch {}
+  const st = res.status;
+  if (st === 401 || st === 403 || /api key/i.test(msg)) return { code: "bad_key", message: msg };
+  if (st === 404) return { code: "model_not_found", message: `${model}: ${msg}` };
+  if (st === 429) return { code: "rate_limited", message: msg };
+  if (st === 413 || /token count|too long|exceeds the maximum/i.test(msg)) return { code: "prompt_too_large", message: msg };
+  if (st >= 500) return { code: "upstream_error", message: msg };
+  return { code: "api_" + st, message: msg || "HTTP " + st };
+}
+const gemini = {
+  async json(prompt, opts = {}) {
+    if (!GS.key) throw { code: "no_sample" };
+    const tier = opts.modelTier === "quick" ? "quick" : "main";
+    const model = (GS[tier] || GDEF[tier]).trim(), think = GS[tier + "Think"] || "";
+    const body = { contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } };
+    if (think) body.generationConfig.thinkingConfig = { thinkingLevel: think };
+    const send = () => gFetch(`/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": GS.key }, body: JSON.stringify(body), signal: opts.signal });
+    let res = await send(), usedThink = think;
+    if (!res.ok && res.status === 400 && body.generationConfig.thinkingConfig) {
+      const err = await gError(res.clone(), model);
+      if (/think/i.test(err.message || "")) { delete body.generationConfig.thinkingConfig; usedThink = ""; res = await send(); }   // 이 모델이 지원하지 않는 생각 깊이면 기본값으로 다시 보낸다
+    }
+    if (!res.ok) throw await gError(res, model);
+    opts.onMeta?.({ model, think: usedThink });
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = "", text = "", finish = "", block = "", usage = null;
+    const handle = line => {
+      if (!line.startsWith("data:")) return;
+      const raw = line.slice(5).trim(); if (!raw || raw === "[DONE]") return;
+      let j; try { j = JSON.parse(raw); } catch { return; }
+      if (j.error) throw { code: "upstream_error", message: j.error.message || "" };
+      if (j.promptFeedback?.blockReason) block = j.promptFeedback.blockReason;
+      if (j.usageMetadata) usage = j.usageMetadata;
+      const c = j.candidates?.[0]; if (!c) return;
+      if (c.finishReason) finish = c.finishReason;
+      let add = ""; for (const p of c.content?.parts || []) if (typeof p.text === "string" && !p.thought) add += p.text;
+      if (add) { text += add; opts.onText?.({ text }); }
+    };
+    try {
+      for (;;) {
+        const { value, done } = await reader.read(); if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i; while ((i = buf.indexOf("\n")) >= 0) { const line = buf.slice(0, i).replace(/\r$/, ""); buf = buf.slice(i + 1); handle(line); }
+      }
+      if (buf.trim()) handle(buf.trim());
+    } catch (e) {
+      if (e?.name === "AbortError" || opts.signal?.aborted) throw { code: "cancelled", text };
+      if (e?.code) throw { ...e, text };
+      throw { code: "upstream_error", message: String(e?.message || e), text };
+    }
+    opts.onMeta?.({ model, think: usedThink, usage });
+    if (block || /SAFETY|PROHIBITED|BLOCKLIST|SPII|RECITATION/.test(finish)) throw { code: "refused", message: block || finish, text };
+    if (!text.trim()) throw { code: "empty_completion", text };
+    const out = parseJsonLoose(text);
+    if (out === undefined) throw { code: "invalid_json", text, message: finish };
+    return out;
+  }
+};
+async function listGeminiModels() {
+  const res = await gFetch(`/models?pageSize=200`, { headers: { "x-goog-api-key": GS.key } });
+  if (!res.ok) throw await gError(res, "");
+  const j = await res.json();
+  return (j.models || []).filter(m => (m.supportedGenerationMethods || []).includes("generateContent") && /gemini/i.test(m.name) && !/image|tts|live|audio|embedding|transcribe|robotics/i.test(m.name))
+    .map(m => ({ id: m.name.replace(/^models\//, ""), label: m.displayName || "" }));
+}
+const LOGK = "wwiki:log";
+const LOG = (() => { try { const v = JSON.parse(localStorage.getItem(LOGK) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })();
+const KIND = { bible: "세계관 생성", page: "문서 작성", tone: "분위기 판별", check: "설정 검사", analyze: "수정 대조", fix: "충돌 고치기" };
+function pushLog(r) {
+  LOG.push(r); if (LOG.length > 40) LOG.splice(0, LOG.length - 40);
+  try { localStorage.setItem(LOGK, JSON.stringify(LOG)); } catch {}
+  try { renderSide(); if (S.view.name === "log") renderMain(); } catch {}
+}
+const PK = "wwiki:lastPrompt";
+let LASTP = (() => { try { const v = JSON.parse(localStorage.getItem(PK) || "null"); return v && typeof v.text === "string" ? v : null; } catch { return null; } })();
+async function callJson(kind, prompt, opts = {}, meta = {}) {
+  if (kind === "page") { LASTP = { at: Date.now(), title: meta.title || "", type: meta.type || "", text: prompt }; try { localStorage.setItem(PK, JSON.stringify(LASTP)); } catch {} }
+  const t0 = performance.now(); let first = null, chars = 0;
+  const user = opts.onText;
+  const rec = { at: Date.now(), kind, tier: opts.modelTier || "default", model: "", effort: "", in: prompt.length, ...meta };
+  const o = { ...opts, onText: u => { if (first === null) first = performance.now(); chars = u.text.length; if (user) user(u); },
+    onMeta: m => { rec.model = m.model; rec.effort = m.think || ""; if (m.usage) rec.tok = { i: m.usage.promptTokenCount || 0, o: m.usage.candidatesTokenCount || 0, t: m.usage.thoughtsTokenCount || 0 }; } };
+  const done = () => { rec.first = first === null ? null : Math.round(first - t0); rec.total = Math.round(performance.now() - t0); rec.out = chars; };
+  try { const r = await S.sample.json(prompt, o); done(); rec.ok = true; pushLog(rec); return r; }
+  catch (e) { if (!chars && typeof e?.text === "string") chars = e.text.length; done(); rec.ok = false; rec.err = e?.code || String(e?.message || e).slice(0, 80); pushLog(rec); throw e; }
+}
+const secs = ms => ms == null ? "-" : (ms / 1000).toFixed(1) + "초";
+function logLine(r) {
+  const t = new Date(r.at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  return `[${t}] ${KIND[r.kind] || r.kind}${r.title ? ` 「${r.title}」` : ""}${"type" in r ? ` (${r.type || "유형 미정"})` : ""} · ${r.model ? `${r.model}/${r.effort || "기본"}` : r.tier}${r.tok ? ` · 토큰 입력 ${r.tok.i.toLocaleString()} / 생각 ${r.tok.t.toLocaleString()} / 출력 ${r.tok.o.toLocaleString()}` : ""} · 입력 ${Number(r.in || 0).toLocaleString()}자 · 첫 글자 ${secs(r.first)} · 총 ${secs(r.total)} · 출력 ${Number(r.out || 0).toLocaleString()}자 · ${r.ok ? "성공" : "실패(" + r.err + ")"}${r.ents ? ` · 세계관 항목 ${r.ents}개` : ""}`;
+}
+const logText = () => ["WorldWiki.ai 진단 로그", `저장 위치: ${Store.mode} · 기록 ${LOG.length}건`, ...LOG.map(logLine)].join("\n");
+function logHtml() {
+  return `<div class="sheet"><div class="crumb"><span>진단</span></div><h1 class="t">진단 로그</h1>
+    <p class="note">Gemini를 부를 때마다 걸린 시간을 기록합니다. '첫 글자'는 요청부터 글이 나오기 시작할 때까지, '총'은 끝날 때까지 걸린 시간입니다. 최근 40건이 이 브라우저에만 남습니다.</p>
+    <div class="tools"><button type="button" class="btn pri" data-act="log-copy" ${LOG.length ? "" : "disabled"}>로그 복사</button><button type="button" class="btn" data-act="log-clear" ${LOG.length ? "" : "disabled"}>지우기</button><button type="button" class="btn" data-act="log-back">돌아가기</button></div>
+    ${LOG.length ? `<pre id="logPre" class="logpre">${esc(logText())}</pre>` : `<p class="note" style="margin-top:12px">아직 기록이 없습니다. 문서를 하나 작성하면 여기에 나타납니다.</p>`}
+    <h2 class="nf-h">다른 모델과 비교</h2>
+    ${LASTP ? `<p class="note">마지막으로 Gemini에게 보낸 문서 작성 프롬프트입니다. 「${esc(LASTP.title)}」${LASTP.type ? ` (${esc(LASTP.type)})` : ""} · ${Number(LASTP.text.length).toLocaleString()}자. 그대로 복사해 다른 모델에 넣으면 같은 조건으로 비교할 수 있습니다. 답은 JSON으로 나옵니다.</p>
+    <div class="tools"><button type="button" class="btn pri" data-act="prompt-copy">프롬프트 복사</button></div>
+    <details class="memo"><summary>프롬프트 펼쳐 보기</summary><pre id="promptPre" class="logpre" style="margin:0;border:0">${esc(LASTP.text)}</pre></details>`
+    : `<p class="note">문서를 하나 작성하거나 다시 쓰면, 그때 보낸 프롬프트를 여기서 복사할 수 있습니다.</p>`}</div>`;
+}
+const errMsg = e => ERR[e?.code] || (e?.message ? "문제가 생겼습니다: " + e.message : ERR.upstream_error);
+
+/* ---------- storage ---------- */
+const LS = {
+  get(k) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } },
+  del(k) { try { localStorage.removeItem(k); } catch {} }
+};
+/* IndexedDB 키-값 저장. 키: "w:<세계관 id>", "p:<세계관 id>:<항목 키>" */
+const IDB = {
+  db: null,
+  open() {
+    return new Promise((res, rej) => {
+      if (!window.indexedDB) return rej(new Error("no idb"));
+      const r = indexedDB.open("worldwiki-gemini", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("kv");
+      r.onsuccess = () => { this.db = r.result; res(); };
+      r.onerror = () => rej(r.error);
+    });
+  },
+  tx(mode, fn) {
+    return new Promise((res, rej) => {
+      const t = this.db.transaction("kv", mode), st = t.objectStore("kv"); let out;
+      Promise.resolve(fn(st, v => { out = v; })).catch(rej);
+      t.oncomplete = () => res(out); t.onerror = () => rej(t.error?.name === "QuotaExceededError" ? { code: "quota_exceeded" } : t.error); t.onabort = t.onerror;
+    });
+  },
+  put(k, v) { return this.tx("readwrite", st => { st.put(v, k); }); },
+  del(k) { return this.tx("readwrite", st => { st.delete(k); }); },
+  delPrefix(p) { return this.tx("readwrite", st => { st.delete(IDBKeyRange.bound(p, p + "￿")); }); },
+  getPrefix(p) {
+    return this.tx("readonly", (st, set) => {
+      const range = IDBKeyRange.bound(p, p + "￿");
+      const kr = st.getAllKeys(range), vr = st.getAll(range);
+      vr.onsuccess = () => set(kr.result.map((k, i) => [k.slice(p.length), vr.result[i]]));
+    });
+  }
+};
+const Store = {
+  mode: "memory", mem: { worlds: {}, pages: {} }, q: Promise.resolve(),
+  async init() {
+    try { await IDB.open(); await IDB.put("probe", 1); this.mode = "idb"; try { await navigator.storage?.persist?.(); } catch {} return; } catch {}
+    this.mode = LS.set("wwiki:probe", 1) ? "local" : "memory";
+  },
+  run(fn) { const p = this.q.then(fn); this.q = p.catch(() => {}); return p; },
+  async listWorlds() {
+    if (this.mode === "idb") return (await IDB.getPrefix("w:")).map(([, w]) => w).filter(w => w && w.kind === "world");
+    if (this.mode === "local") return Object.values(LS.get("wwiki:v1:worlds") || {});
+    return Object.values(this.mem.worlds).map(w => JSON.parse(JSON.stringify(w)));
+  },
+  saveWorld(w) {
+    w.updatedAt = Date.now(); const copy = JSON.parse(JSON.stringify(w));
+    return this.run(async () => {
+      if (this.mode === "idb") return IDB.put("w:" + w.id, copy);
+      if (this.mode === "local") { const all = LS.get("wwiki:v1:worlds") || {}; all[w.id] = copy; if (!LS.set("wwiki:v1:worlds", all)) throw { code: "local_full" }; return; }
+      this.mem.worlds[w.id] = copy;
+    });
+  },
+  async listPages(wid) {
+    if (this.mode === "idb") { const o = {}; for (const [k, p] of await IDB.getPrefix("p:" + wid + ":")) if (p) o[k] = p; return o; }
+    if (this.mode === "local") return LS.get("wwiki:v1:p:" + wid) || {};
+    return JSON.parse(JSON.stringify(this.mem.pages[wid] || {}));
+  },
+  savePage(wid, p) {
+    const copy = JSON.parse(JSON.stringify(p));
+    return this.run(async () => {
+      if (this.mode === "idb") return IDB.put("p:" + wid + ":" + p.key, copy);
+      if (this.mode === "local") { const all = LS.get("wwiki:v1:p:" + wid) || {}; all[p.key] = copy; if (!LS.set("wwiki:v1:p:" + wid, all)) throw { code: "local_full" }; return; }
+      (this.mem.pages[wid] ||= {})[p.key] = copy;
+    });
+  },
+  deletePage(wid, key) {
+    return this.run(async () => {
+      if (this.mode === "idb") return IDB.del("p:" + wid + ":" + key);
+      if (this.mode === "local") { const all = LS.get("wwiki:v1:p:" + wid) || {}; delete all[key]; LS.set("wwiki:v1:p:" + wid, all); return; }
+      if (this.mem.pages[wid]) delete this.mem.pages[wid][key];
+    });
+  },
+  deleteWorld(wid) {
+    return this.run(async () => {
+      if (this.mode === "idb") { await IDB.delPrefix("p:" + wid + ":"); return IDB.del("w:" + wid); }
+      if (this.mode === "local") { const all = LS.get("wwiki:v1:worlds") || {}; delete all[wid]; LS.set("wwiki:v1:worlds", all); LS.del("wwiki:v1:p:" + wid); return; }
+      delete this.mem.worlds[wid]; delete this.mem.pages[wid];
+    });
+  }
+};
+
+/* ---------- 백업 ---------- */
+async function exportAll() {
+  const pages = {};
+  for (const w of S.worlds) pages[w.id] = S.world && S.world.id === w.id ? S.pages : await Store.listPages(w.id);
+  const data = { app: "worldwiki", version: 1, exportedAt: new Date().toISOString(), worlds: S.worlds, pages };
+  const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = `worldwiki-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast(`세계관 ${S.worlds.length}개를 내보냈습니다.`);
+}
+async function importAll(file) {
+  let data; try { data = JSON.parse(await file.text()); } catch { toast("JSON 파일을 읽지 못했습니다."); return; }
+  const worlds = (Array.isArray(data?.worlds) ? data.worlds : []).filter(w => w && w.kind === "world" && w.id && w.entities);
+  if (!worlds.length) { toast("가져올 세계관이 없습니다. WorldWiki 백업 파일인지 확인해 주세요."); return; }
+  let n = 0;
+  try {
+    for (const w of worlds) {
+      const ps = data.pages?.[w.id] || {};
+      for (const p of Object.values(ps)) if (p && p.key) await Store.savePage(w.id, p);
+      await Store.saveWorld(w); n++;
+    }
+  } catch (e) { toast("가져오다 멈췄습니다. " + errMsg(e)); }
+  S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  toast(`세계관 ${n}개를 가져왔습니다. 같은 id의 세계관은 덮어썼습니다.`);
+  renderAll();
+}
+
+/* ---------- state ---------- */
+const S = {
+  ready: false, worlds: [], world: null, pages: {}, view: { name: "home" }, recent: [],
+  gen: null, genErr: null, checking: null, sample: null, sampleReady: false,
+  creating: false, createErr: null, seed: "", seedTab: "own", ownSeed: "", dice: null, whatIfs: null, first: "", guideIn: "",
+  confirmDel: null, confirmRewrite: null, canonFilter: "all", focusEnt: null, nf: new Set(),
+  edit: null, refreshing: null, confirmDelPage: null, compose: null
+};
+
+/* ---------- canon helpers ---------- */
+const newEntity = (title, type, summary) => ({ title: norm(title), type: type || "", summary: summary || "", facts: [], mentions: [], page: false, box: "" });
+function addFact(e, t, src) {
+  t = stripMarks(t).slice(0, 240); if (!t || e.facts.some(f => f.t === t)) return;
+  e.facts.push({ t, src }); if (e.facts.length > 24) e.facts.splice(e.facts.findIndex(f => f.src !== "user"), 1);
+}
+function addMention(e, from, text) {
+  if (!text || e.mentions.some(m => m.from === from && m.text === text)) return;
+  e.mentions.push({ from, text }); if (e.mentions.length > 6) e.mentions.shift();
+}
+/* 링크가 걸린 문장부터 같은 문단의 뒤 문장 두 개까지 (다음 문서가 맥락을 잃지 않게) */
+function sentenceAround(t, idx, len) {
+  const stop = /[.!?。\n]/, end = /[.!?。]/; let a = idx, b = idx + len, n = 0;
+  while (a > 0 && !stop.test(t[a - 1])) a--;
+  while (b < t.length && t[b] !== "\n") { if (end.test(t[b])) { n++; if (n >= 3 || b - a > 380) { b++; break; } } b++; }
+  return stripMarks(t.slice(a, Math.min(t.length, b))).replace(/^[-\s]+/, "").trim().slice(0, 420);
+}
+const yearNum = y => { const m = String(y).match(/-?\d+/); if (!m) return NaN; let n = +m[0]; if (/기원전|BC|B\.C/i.test(y)) n = -Math.abs(n); return n; };
+function addTimeline(w, t, src) {
+  if (!t || !t.year || !t.event) return;
+  const ev = stripMarks(t.event).slice(0, 200), yr = String(t.year).slice(0, 24);
+  if (w.timeline.some(x => x.year === yr && x.event === ev)) return;
+  w.timeline.push({ year: yr, event: ev, src });
+  w.timeline = w.timeline.map((x, i) => [x, i]).sort((a, b) => { const A = yearNum(a[0].year), B = yearNum(b[0].year); if (isNaN(A) && isNaN(B)) return a[1] - b[1]; if (isNaN(A)) return 1; if (isNaN(B)) return -1; return A - B || a[1] - b[1]; }).map(x => x[0]);
+  if (w.timeline.length > 48) w.timeline.splice(w.timeline.findIndex(x => x.src !== "seed"), 1);
+}
+/* 사실과 언급의 상태: sup = 다른 문서의 직접 수정으로 대체됨 (생성에서 제외) */
+const live = x => !x.sup;
+const factLine = f => f.t + (S.pages[f.src]?.editedAt ? " [사용자 확정]" : "");
+/* 인물 관계: {a, b, rel, story, src, sup?} — a, b는 항목 키 */
+function addRelation(w, key, r) {
+  if (!r || !r.a || !r.b || !r.rel) return;
+  const a = keyOf(r.a), b = keyOf(r.b);
+  if (a === b || !w.entities[a] || !w.entities[b]) return;
+  const rel = stripMarks(r.rel).slice(0, 60), story = stripMarks(r.story || "").slice(0, 260);
+  w.relations ||= [];
+  if (w.relations.some(x => x.src === key && ((x.a === a && x.b === b) || (x.a === b && x.b === a)) && x.rel === rel)) return;
+  w.relations.push({ a, b, rel, story, src: key });
+  if (w.relations.length > 500) w.relations.splice(w.relations.findIndex(x => !S.pages[x.src]?.editedAt), 1);
+}
+const relationsOf = (w, k) => (w.relations || []).filter(x => (x.a === k || x.b === k) && w.entities[x.a] && w.entities[x.b]);
+const relLine = (w, x) => `「${w.entities[x.a].title}」–「${w.entities[x.b].title}」: ${x.rel}${x.story ? ". " + x.story : ""}${S.pages[x.src]?.editedAt ? " [사용자 확정]" : ""}`;
+function purge(w, key) {
+  for (const e of Object.values(w.entities)) {
+    e.facts = e.facts.filter(f => f.src !== key); e.mentions = e.mentions.filter(m => m.from !== key);
+    for (const x of [...e.facts, ...e.mentions]) if (x.sup?.by === key) delete x.sup;   // 이 문서가 대체했던 사실은 되살린다
+  }
+  w.timeline.forEach(t => { if (t.sup?.by === key) delete t.sup; });
+  w.relations = (w.relations || []).filter(x => x.src !== key);
+  w.relations.forEach(x => { if (x.sup?.by === key) delete x.sup; });
+  w.timeline = w.timeline.filter(x => x.src !== key);
+}
+/* 다시 쓰기 준비: 이전 버전이 남긴 흔적을 모두 걷어낸다. 실패하면 restoreRewrite로 되돌린다. */
+function prepareRewrite(w, key) {
+  const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [] });
+  purge(w, key);                                   // 이전 버전이 확정한 사실·언급·연표
+  for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === key) delete w.navboxes[id];  // 이전 버전이 만든 틀
+  const e = w.entities[key];
+  e.summary = e.stub?.summary || "";               // 이전 버전이 덮어쓴 정의·유형·인포박스 → 링크 당시의 정의로 복원
+  e.type = e.stub?.type || "";
+  e.box = ""; e.page = false;
+  for (const [k, o] of Object.entries(w.entities))  // 이전 버전만 언급하던 미작성 항목
+    if (k !== key && o.origin === key && !o.page && !o.facts.length && !o.mentions.length) delete w.entities[k];
+  return backup;
+}
+function restoreRewrite(w, backup) { const b = JSON.parse(backup); w.entities = b.entities; w.timeline = b.timeline; w.navboxes = b.navboxes; if (b.relations) w.relations = b.relations; }
+const navboxesFor = (w, key) => Object.entries(w.navboxes || {}).filter(([, nb]) => nb.src === key || (nb.members || []).includes(key));
+function navboxText(nb) {
+  return `### 틀: ${nb.title} (총 ${nb.members.length}개 항목, 「${nb.srcTitle}」 문서에서 확정)\n` + nb.rows.map(r => `- ${r.label}: ${r.items.map(stripMarks).join(" / ")}`).join("\n");
+}
+
+function related(w, key) {
+  const e = w.entities[key]; const blob = [e.summary, ...e.facts.map(f => f.t), ...e.mentions.map(m => m.text)].join(" ");
+  const sc = {};
+  for (const m of e.mentions) { sc[m.from] = (sc[m.from] || 0) + 3; const p = S.pages[m.from]; if (p) for (const l of p.links || []) if (l !== key) sc[l] = (sc[l] || 0) + 1; }
+  const own = S.pages[key]; if (own) for (const l of own.links || []) sc[l] = (sc[l] || 0) + 2;
+  for (const x of relationsOf(w, key)) if (live(x)) { const o = x.a === key ? x.b : x.a; sc[o] = (sc[o] || 0) + 3; }
+  for (const [k, o] of Object.entries(w.entities)) {
+    if (k === key) continue;
+    if (o.title.length >= 2 && blob.includes(o.title)) sc[k] = (sc[k] || 0) + 2;
+    if (e.title.length >= 2 && o.facts.some(f => f.t.includes(e.title))) sc[k] = (sc[k] || 0) + 2;  // 이 항목에 소속되었다고 확정된 항목(구성원 등)
+  }
+  return Object.entries(sc).sort((a, b) => b[1] - a[1]).map(x => x[0]).filter(k => k !== key && w.entities[k]).slice(0, 8);
+}
+function canonBlock(w) {
+  const rules = (w.rules || []).map(r => "- " + r).join("\n") || "- (없음)";
+  const tl = (w.timeline || []).filter(live).map(t => `- ${t.year}: ${t.event}${S.pages[t.src]?.editedAt ? " [사용자 확정]" : ""}`).join("\n") || "- (없음)";
+  return `## 세계관 원안\n${w.seed}\n\n## 핵심 규칙 (절대 위반 금지)\n이 규칙들은 어기면 안 되는 전제일 뿐, 문서마다 언급해야 할 소재가 아니다. 이 항목과 직접 관련된 규칙만 본문에 반영한다.\n${rules}\n\n## 사용자 확정 설정 (최우선. 다른 모든 정보보다 우선한다)\n${(w.userCanon || "").trim() || "(없음)"}\n\n## 연표\n${tl}`;
+}
+function entityBrief(w, k, excludeSrc) {
+  const o = w.entities[k];
+  const facts = o.facts.filter(f => f.src !== excludeSrc && live(f)).slice(-6).map(f => "- " + factLine(f)).join("\n");
+  return `### 「${o.title}」${o.type ? " (" + o.type + ")" : ""}${o.summary ? " — " + o.summary : ""}${o.box ? "\n정보: " + o.box : ""}${facts ? "\n" + facts : ""}`;
+}
+
+/* ---------- prompts ---------- */
+/* ---------- 분위기 ---------- */
+const TONE_SPEC = `분위기 지침(tone)은 이 세계관이 어떤 장르와 문화권의 창작물처럼 읽혀야 하는지를 위키 집필자에게 알려 주는 것이다.
+- label: 장르와 문화권을 한 구절로 (예: "일본 라이트노벨풍 학원 이능 배틀물", "영미권 정통 하이 판타지", "한국 웹소설풍 회귀 무협", "미국 하드 SF", "홍콩 느와르", "근미래 한국 사이버펑크").
+- guide: 6~8개의 구체적인 지침. 각각 한 문장이며 이 세계관에 맞춰 쓴다. 다음을 모두 다룬다.
+  - 인명·지명·조직명·기술명의 작명 방식(어느 언어권의 이름인지, 원어나 한자 병기, 칭호와 별칭을 붙이는 방식)
+  - 어휘의 결(한자어, 고어, 외래어, 전문 용어의 비율과 종류)
+  - 문장의 질감(장중함, 경쾌함, 건조함, 냉소 등)
+  - 이 장르의 독자가 가장 보고 싶어 하는 것(예: 메카물이라면 기체의 강함과 무장과 명승부와 에이스 파일럿, 무협이라면 고수의 무공과 결투, 하이 판타지라면 전설과 예언과 영웅의 여정)
+  - 이 장르의 팬 위키가 즐겨 기록하는 디테일(예: 능력의 이름과 등급, 혈통과 문장(紋章)과 고대어 어원, 형식 번호와 제원, 문파와 초식)
+  - 작중 발언과 인용의 말투
+  - 이 장르에서 오글거림을 부르는 표현(칭호 남발, 서술자의 감탄, 과장된 형용사)과, 그 대신 장면의 무게를 전할 방법
+  - 이 분위기에 어울리지 않아 피할 요소
+  위키는 한국어로 쓴다는 점을 전제로 한다.`;
+function normTone(t, label) {
+  if (!t || typeof t !== "object") return null;
+  const guide = (Array.isArray(t.guide) ? t.guide : []).map(x => stripMarks(x).slice(0, 220)).filter(Boolean).slice(0, 10);
+  const lb = norm(label || t.label || "").slice(0, 60);
+  return lb && guide.length ? { label: lb, guide } : null;
+}
+function toneBlock(w) {
+  if (!w.tone) return "";
+  return `## 세계관의 분위기: ${w.tone.label}
+문서의 형식(백과사전 구조, 3인칭, '~이다'체)은 그대로 두고, 작명, 어휘, 문장의 결, 어떤 디테일을 다룰지, 인용의 말투를 아래 지침에 맞춘다. 이미 확정된 고유명사는 바꾸지 않는다.
+${w.tone.guide.map(g => "- " + g).join("\n")}
+
+`;
+}
+function tonePrompt(w, label) {
+  const titles = Object.values(w.entities).slice(0, 40).map(o => o.title + (o.summary ? ": " + o.summary.slice(0, 50) : "")).join("\n") || "(없음)";
+  return `다음 가상 세계관 위키의 분위기 지침을 만든다.
+
+원안:
+"""
+${w.seed}
+"""
+작중 기준 시점: ${w.era}
+${w.guide ? `작가 지침:\n${w.guide}\n` : ""}핵심 규칙:
+${(w.rules || []).map(r => "- " + r).join("\n") || "(없음)"}
+지금까지의 항목:
+${titles}
+${label ? `\n사용자가 지정한 분위기: "${label}". label은 이것을 글자 그대로 쓰고, guide를 이 분위기에 맞게 만든다.\n` : ""}
+${TONE_SPEC}
+
+JSON 객체 하나만 출력: {"label":"...","guide":["..."]}`;
+}
+async function detectTone(w, label) {
+  const t = await callJson("tone", tonePrompt(w, label), { modelTier: "quick" }, { title: w.title });
+  return normTone(t, label);
+}
+function biblePrompt(seed, first, guide) {
+  return `너는 가상 세계관 위키의 편집장이다. 사용자가 준 원안을 바탕으로 이 세계관 위키의 '설정 노트' 초안을 만든다.
+
+원안:
+"""
+${seed}
+"""
+${guide ? `
+작가 지침 (사용자가 세계관 전체에 걸쳐 지키라고 정한 방향):
+"""
+${guide}
+"""
+이 지침을 세계관 이름, 핵심 규칙, 연표, 분위기 지침에 반영한다. 원안과 어긋나면 원안을 따른다.
+` : ""}
+규칙:
+- 원안의 내용은 모두 그대로 유지하고, 빈 부분만 그럴듯하게 채운다.
+- 작중 기준 시점(era)은 원안의 시대감에 맞게 하나 정한다(예: "1987년", "2049년 가을"). 위키 문서들은 이 시점에 작성된 것으로 취급한다.
+- 원안의 비틀기는 이 세계의 볼거리를 실제로 만들어 내야 한다. 비틀기가 장르의 쾌감(메카물이면 기체가 싸우고, 무협이면 고수가 겨루고, 판타지면 마법이 판을 뒤집는다)을 낳는 무대를 갖추고, 그 쾌감이 역사의 결정적 순간에 실제로 쓰이게 한다. 동시에 새 요소는 기존 질서(강대국의 경쟁, 경제, 종교, 관료제의 관성 등)와 부딪히고 섞이며, 저항과 지역 차가 있다. 비틀기가 깊게 바꾼 영역은 2~4개로 정한다. 원안이 실제 역사를 바탕으로 한다면, 비틀기 때문에 실제와 결과가 달라진 사건을 연표에 적어도 하나 둔다. 실제 역사를 그대로 따라가며 이름만 바꾸지 않는다.
+- 핵심 규칙(rules)은 이 세계가 현실과 다른 점, 사회 구조, 기술 수준, 금기 등 모든 문서가 지켜야 할 대전제 5~8개. 이 중 적어도 하나는 이 세계의 장르적 볼거리를 떠받치는 규칙(예: 기체의 등급 체계, 무공의 경지, 마법의 대가)으로 쓴다. 각각 한 문장. 무난한 일반론 대신 구체적으로 쓰되, 개별 은어나 풍습처럼 문서 하나에서 다룰 만한 세부 소재는 규칙에 넣지 않는다. 그런 것은 나중에 해당 문서가 생길 때 정해진다.
+- 연표(timeline)는 기준 시점까지의 주요 사건 7~12개, 연도 오름차순. year는 연도만(예: "1947"). 거창한 사건만 넣지 말고 추문, 사고, 우스꽝스러운 사건도 섞는다. 사건마다 고유명사를 넣는다.
+- 먼저 원안의 장르와 문화권을 판별해 분위기 지침(tone)을 정하고, 세계관 이름, 핵심 규칙, 연표의 고유명사와 어휘도 그 분위기에 맞춘다.${guide ? ` 아래 작가 지침에 장르나 분위기가 적혀 있으면 tone에 그대로 반영한다.` : ""}
+${TONE_SPEC}
+${first ? `- mainTitle은 사용자가 지정한 "${first}"를 글자 그대로 쓴다. 이 항목이 위키의 첫 문서가 되므로, 핵심 규칙이나 연표 중 하나 이상이 이 항목과 연결되게 한다.` : "- mainTitle은 이 세계를 가장 잘 대표하는 항목 이름(제도·사건·국가·도시 등). 위키의 첫 문서가 된다."}
+
+- historical: 원안이 실재한 국가, 인물, 사건이 있는 현실 역사에서 갈라진 대체역사면 true, 실제 역사와 무관한 가상의 세계면 false.
+
+JSON 객체 하나만 출력:
+{"title":"세계관 이름(2~12자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"timeline":[{"year":"1947","event":"..."}],"mainTitle":"...","tone":{"label":"...","guide":["..."]}}`;
+}
+/* 세계에서 아직 비어 있는 영역: 항목 유형 분포와 연표의 긴 공백 */
+function worldGaps(w) {
+  const cnt = {}; for (const o of Object.values(w.entities)) if (o.type) cnt[o.type] = (cnt[o.type] || 0) + 1;
+  const thin = ["인물", "지명", "조직", "사건", "기술", "문화", "물건"].filter(t => (cnt[t] || 0) <= 1);
+  const ys = w.timeline.filter(live).map(t => yearNum(t.year)).filter(n => !isNaN(n)).sort((a, b) => a - b);
+  let gap = null;
+  for (let i = 0; i + 1 < ys.length; i++) { const d = ys[i + 1] - ys[i]; if (d >= 10 && (!gap || d > gap.d)) gap = { a: ys[i], b: ys[i + 1], d }; }
+  const out = [];
+  if (thin.length && Object.keys(w.entities).length >= 6) out.push(`아직 거의 없는 항목 유형: ${thin.join(", ")}`);
+  if (gap) out.push(`연표에서 ${gap.a}년부터 ${gap.b}년까지 ${gap.d}년간 기록된 사건이 없다`);
+  return out.length ? `- 참고로 이 세계에서 아직 비어 있는 곳은 다음과 같다. 이 항목과 이어질 수 있다면 그쪽으로 넓힌다. 이 항목이 연표의 빈 시기를 살았다면, 그 시기에 이 세계의 큰 사건(전쟁, 반란, 재난 등)을 새로 세우고 이 항목이 그 안에서 한 일을 써도 된다. 이렇게 세운 큰 사건은 연표(timeline)에 넣는다.\n${out.map(x => "  - " + x).join("\n")}` : "";
+}
+/* 항목 유형에 맞는 지시만 보낸다. 유형이 정해지지 않았으면 전부 보낸다. */
+const showFor = (ty, keys) => !ty || keys.includes(ty);
+const STRUCT_KEYS = { "인물": ["인물"], "조직·국가·도시": ["국가", "조직", "지명"], "사건·전투·전쟁": ["사건"], "병기·기체·함선": ["기술", "물건"], "기술·물건": ["기술", "물건"], "제도·개념·문화": ["제도", "문화", "개념"] };
+function structureFor(text, ty) {
+  if (!ty) return text;
+  return text.split("\n").filter(l => { const m = l.match(/^  - ([^:]+):/); return !m || !STRUCT_KEYS[m[1]] || STRUCT_KEYS[m[1]].includes(ty); }).join("\n");
+}
+function pagePrompt(w, key, rewriteDir = null, guide = "") {
+  const e = w.entities[key];
+  const ty = TYPES.includes(e.type) ? e.type : "";
+  const rel = related(w, key);
+  const relText = rel.map(k => entityBrief(w, k, null)).join("\n\n") || "(아직 없음)";
+  const idx = Object.entries(w.entities).filter(([k]) => k !== key && !rel.includes(k))
+    .sort((a, b) => (b[1].page ? 1 : 0) - (a[1].page ? 1 : 0)).slice(0, 60)
+    .map(([, o]) => `- ${o.title}${o.type ? " (" + o.type + ")" : ""}${o.summary ? ": " + o.summary.slice(0, 60) : ""}`).join("\n") || "(아직 없음)";
+  const known = e.facts.length || e.mentions.length || e.summary;
+  const target = known
+    ? `이미 다른 문서에서 확정된 내용이다. 반드시 일치시켜라.\n${e.type ? "유형: " + e.type + "\n" : ""}${e.summary ? "요약: " + e.summary + "\n" : ""}${e.facts.some(live) ? "확정 사실:\n" + e.facts.filter(live).map(f => "- " + factLine(f)).join("\n") + "\n" : ""}${e.mentions.some(live) ? "다른 문서에서의 언급:\n" + e.mentions.filter(live).map(m => `- 「${w.entities[m.from]?.title || "?"}」: "${m.text}"`).join("\n") : ""}`
+    : e.src === "search" ? `검색창에서 직접 입력된 이름이며, 이 세계관의 어떤 문서에서도 언급된 적이 없다. 먼저 이 이름이 아래 셋 중 무엇인지 판정하고 그에 따라 쓴다.
+(가) 현실에도 있는 일반 명사나 고유명사(예: 참치, 우산, 파리, 커피, 나폴레옹): 현실의 의미를 그대로 문서의 주제로 삼는다. 일반적인 설명에 더해, 이 세계의 역사·산업·제도·문화가 그 대상과 맞닿는 지점을 섹션 일부(전체의 절반 이하)로 구체적으로 쓴다. 현실과 갈라진 시점 이후의 역사는 이 세계에 맞게 바꾼다. 이 단어를 세계관 고유의 은어나 전혀 다른 뜻으로 재해석하지 않는다.
+(나) 현실에는 없지만 이름으로 읽히는 말(인물명, 지명, 조직명, 작전명처럼 그럴듯한 조합): 이 세계 안의 새 항목으로 창작한다.
+(다) 의미를 읽어낼 수 없는 문자열(자판을 아무렇게나 두드린 듯한 조합, 무작위 철자, 발음하기도 어려운 나열): 문서를 쓰지 않고 {"notFound": true} 하나만 출력한다.`
+    : e.src === "guided" ? "사용자가 방향을 정해 새로 만들기로 한 항목이다. 아래 '사용자가 요청한 방향'에 맞춰 정의한다. 현실에도 있는 말이면 방향이 달리 말하지 않는 한 현실의 의미를 바탕으로 이 세계에서의 모습을 쓴다."
+    : e.src === "force" ? "사용자가 이 이름으로 항목을 새로 만들기로 했다. 의미 없는 문자열처럼 보여도 이 세계 안의 고유명사(암호명, 인물의 별칭, 지명, 조직명, 제품명 등)로 해석해 창작하고, 그 이름이 왜 그렇게 붙었는지도 설명한다."
+    : "아직 아무 문서에서도 언급되지 않은 새 항목이다. 세계관에 자연스럽게 녹아들도록 정의하라.";
+  const st = STYLES.encyc;
+  return `너는 가상 세계관 위키 「${w.title}」의 집필자다. 이 위키는 실존하지 않는 세계를 다루며, 작중 기준 시점은 ${w.era}이다. 현실 세계, AI, '설정'이라는 단어 등 세계 바깥의 시선은 언급하지 말고 작중의 백과사전처럼 쓴다.
+
+${canonBlock(w)}
+
+${toneBlock(w)}${w.guide ? `## 작가 지침 (사용자 지정)
+${w.guide}
+이 지침은 아래의 문체, 구성, 분량, 기법 규칙보다 우선한다. 다만 핵심 규칙, 연표, 사용자 확정 설정, 다른 문서가 확정한 사실과 부딪히면 그쪽을 따른다.
+
+` : ""}## 작성할 문서: 「${e.title}」
+${target}
+${(() => { const nbs = navboxesFor(w, key).filter(([, nb]) => nb.src !== key); return nbs.length ? `\n이 항목은 아래 틀에 속해 있다. 이름, 번호, 역할, 전·현직 여부와 다른 구성원과의 관계를 틀과 정확히 일치시킨다. 이 틀을 다시 만들지 않는다.\n${nbs.map(([, nb]) => navboxText(nb)).join("\n\n")}` : ""; })()}
+
+${guide ? `## 사용자가 요청한 방향
+${guide}
+이 방향을 최우선으로 따르되, 위의 확정 내용(핵심 규칙, 연표, 사용자 확정 설정, 다른 문서의 사실과 언급)과 충돌하는 부분은 따르지 않는다. 방향이 분량이나 구성에 관한 것이면 아래 작성 규칙의 분량·구성보다 우선한다.
+
+` : ""}${rewriteDir !== null ? `## 다시 쓰기
+이 문서는 이전 버전을 폐기하고 처음부터 새로 쓰는 것이다. 위에 적힌 확정 내용은 모두 다른 문서나 사용자가 정한 것이므로 반드시 지키고, 그 밖의 부분은 이전과 달라도 된다.
+${rewriteDir ? `사용자가 요청한 방향: ${rewriteDir}\n이 방향을 최우선으로 따르되, 확정 내용(핵심 규칙, 연표, 사용자 확정 설정, 다른 문서의 사실과 언급)과 충돌하는 부분은 따르지 않는다. 방향이 분량이나 구성에 관한 것이면 아래 작성 규칙의 분량·구성보다 우선한다.` : ""}
+
+` : ""}${(() => {
+  const mine = relationsOf(w, key).filter(live);
+  const relKeys = new Set(rel);
+  const among = (w.relations || []).filter(x => live(x) && x.a !== key && x.b !== key && relKeys.has(x.a) && relKeys.has(x.b) && w.entities[x.a] && w.entities[x.b]);
+  if (!mine.length && !among.length) return "";
+  return `## 확정된 인물 관계 (모순 금지)
+${mine.length ? `이 항목의 관계:\n${mine.slice(-10).map(x => "- " + relLine(w, x)).join("\n")}\n` : ""}${among.length ? `관련 항목들 사이의 관계:\n${among.slice(-6).map(x => "- " + relLine(w, x)).join("\n")}\n` : ""}
+`;
+})()}## 관련 항목의 확정 설정 (모순 금지)
+아래는 모순을 피하기 위한 참고 자료다. 여기 있는 항목과 사실을 본문에 모두 언급할 필요는 없고, 같은 사고, 같은 절차, 같은 규정을 이 문서에서 되풀이하지 않는다. 다만 세계의 큰 사건을 이 항목의 자리에서 보여 주는 것은 되풀이가 아니다.
+${relText}
+
+## 이미 존재하는 다른 항목 (링크할 때 제목을 정확히 그대로 쓴다)
+이 목록은 이름이 겹치거나 엇갈리지 않게 하려는 색인이다. 목록에 있다는 이유로 본문에 끌어오지 않는다.
+${idx}
+
+## 이 문서의 엔진 (가장 중요)
+쓰기 전에 아래 다섯 가지를 먼저 정하고, 문서 전체를 이것을 중심으로 짠다. 그 아래의 규칙들은 이 엔진을 해치지 않는 범위에서 지키는 품질 기준이다.
+1. 훅: 이 문서를 읽은 사람이 친구에게 "그거 알아?" 하고 전할 만한 사실 하나. 개요의 첫 두 문장 안에 둔다.
+2. 절정: 이 항목이 걸린 가장 극적인 순간 하나. 절정에서는 실제로 무언가가 벌어져야 한다. 긴장만 쌓다가 행정 처리나 협상으로 넘어가지 말고, 이 장르의 핵심 행동(전투, 결투, 능력의 발현, 결정적 결단이나 배신)이 일어나는 순간을 고른다. 이 항목이 인물이면 그 인물이 직접 행동하거나 말하는 순간을 고르고, 주변 인물이 주인공을 대신하게 하지 않는다. 문서에서 가장 넉넉한 분량을 이 순간에 주고, 그때 무엇이 보이고 들렸는지, 그 자리의 사람들이 무엇을 했는지 장면으로 쓴다. 당시의 기록(신문 기사, 일기, 교신)을 직접 인용한다면 여기에 쓰는 것이 좋다. 문서의 나머지는 이 순간으로 가는 길과 그 뒤의 여파다.
+3. 큰길: 이 세계의 가장 큰 비틀기나 사건이 이 항목을 통해 피부에 와닿는 장면을 한 번 이상 쓴다. 다른 문서와 겹치는 설정이라도 이 항목의 자리에서 본 모습이라면 반복이 아니다.
+4. 사람의 끝: 이 문서에 이름이 나온 주요 인물(3~4명까지)은 무엇을 원했고 결국 어떻게 되었는지를 이 문서 안에서 마무리한다. 직함만 있고 사라지는 사람을 남기지 않는다. 이것을 한곳에 모아 정리하지 말고, 각자의 이야기가 끝나는 자리에서 쓴다.
+5. 열린 질문: 이 항목이 세계의 수수께끼에 닿아 있다면, 작중 사람들이 그것을 어떻게 설명하는지(가설, 학파, 종교적 해석, 음모론)와 각각을 누가 믿고 주장하는지 쓴다. 정답을 단정하지 않아도 되지만 가설은 구체적이어야 한다. 이것은 얼버무리는 공백과 다르다.
+그리고 이 장르의 독자가 이 항목에서 가장 보고 싶어 하는 것을 가장 많은 분량으로 쓴다.
+${showFor(ty, ["기술","물건"]) ? `  - 병기·기체·함선: 동시대 다른 기체와 비교한 강함, 대표 전과, 특수 무장과 고유 기능, 명장면, 그것을 몬 파일럿이나 지휘관, 맞수. 이 병기가 전쟁 시기에 존재했다면 절정은 실전으로 고르고, 시험이나 사고는 실전 기록이 없을 때만 절정으로 삼는다. 대표 전투는 결과 요약이 아니라 경과(양측 배치, 전환점, 결정타, 손실)로 쓴다.
+` : ""}${showFor(ty, ["인물"]) ? `  - 인물: 결정적인 선택과 활약, 사랑과 가족, 맞수와 동료, 남긴 것.
+` : ""}${showFor(ty, ["국가","조직"]) ? `  - 조직·국가: 무엇을 해냈고 무엇과 싸웠는지, 대표 인물, 전성기와 몰락.
+` : ""}${showFor(ty, ["기술","물건","제도","문화","개념"]) ? `  - 마법·이능·기술: 원리와 할 수 있는 것, 대가나 한계, 대표 사용자와 사용 장면.
+` : ""}${showFor(ty, ["사건"]) ? `  - 사건: 무엇이 걸려 있었고, 누가 어떻게 움직였고, 결정적 순간이 무엇이었는지.
+` : ""}${showFor(ty, ["지명"]) ? `  - 장소: 그곳에서 벌어진 가장 중요한 일, 그곳에 사는 사람들의 하루, 그곳에만 있는 것.
+` : ""}  제작 공정, 정비, 예산, 행정 처리, 조사위원회 같은 뒷면의 이야기는 그 자체가 핵심인 항목이 아니면 한두 문단의 곁가지로 둔다.
+
+## 세계 넓히기
+확정된 설정은 모순을 피하기 위한 바닥일 뿐 테두리가 아니다. 모순만 아니라면 확정되지 않은 부분은 적극적으로 새로 정한다.
+- 문서 내용의 절반 이상은 아직 어떤 문서에도 없는 새로운 것이어야 한다.
+- 이 문서에서 처음 등장하는 인물을 2명 이상, 장소나 조직을 2개 이상 만들어 링크한다. 새 항목은 이름만 봐도 눌러 보고 싶어야 한다. 사람, 장소, 사람이 움직인 사건을 우선하고, 위원회, 징발, 철거, 지침 같은 행정 항목으로 링크를 채우지 않는다.
+- 확정된 대상에도 새로운 면을 더해도 된다(사건의 뒷이야기, 인물의 다른 시기, 조직의 지부). 이미 확정된 큰 사건도 마찬가지다. 그 사건의 확정된 날짜와 결과는 지키되, 이 항목이 그 안에서 무엇을 했는지는 새로 정해도 된다. 모순이 두려워 큰 사건을 비켜 가거나 배경 설명으로만 넘기지 않는다.
+- 연표에 없던 사건을 1~3개 새로 확정한다.
+- 큰 사건을 피하지 않는다. 전쟁, 반란, 재난, 혁명 같은 큰 사건은 좋은 무대다. 부풀리지 말아야 하는 것은 사건의 크기가 아니라 이 항목이 끼친 영향의 크기다. 이 항목이 영향을 준 범위(어느 나라, 기관, 계층)를 한정하고, 반대하거나 무시하거나 이용한 쪽도 쓴다. "~의 기본 축이 되었다", "~를 중심으로 재편되었다", "모든 ~가 ~에 맞춰졌다" 같은 전면화 문장은 핵심 규칙이 그렇게 정한 경우가 아니면 쓰지 않는다.
+${worldGaps(w)}
+
+${w.historical ? `## 실존 인물
+이 세계는 실제 역사에서 갈라진 대체역사다. 실존 인물을 재해석해 적극적으로 등장시킨다.
+- 세계가 갈라지기 전의 생몰, 출신, 업적은 실제와 맞추고, 갈라진 뒤에 삶이 어떻게 달라졌는지를 쓴다.
+- 이름만 빌리지 말고 그 사람의 실제 성격, 능력, 관계에서 출발해 이 세계의 비틀기와 만나는 지점을 쓴다.
+- 이 항목의 핵심 자리(지휘관, 대표, 맞수, 대국자)에 그 시대와 분야의 실존 인물이 어울리면 창작 인물보다 실존 인물을 먼저 세우고, 그 곁의 부관, 조종사, 참모 같은 자리에는 창작 인물을 둔다.
+- 현실에서 아직 살아 있거나 세상을 떠난 지 오래되지 않은 인물(대략 1990년 이후 사망)은 공적 역할 위주로만 쓰고, 범죄, 추문, 사생활, 연애나 성적인 내용, 실제로 하지 않은 논란성 발언을 지어내지 않는다. 그런 내용이 필요한 자리는 창작 인물로 채운다.
+
+` : ""}## 팬 위키 기법
+잘 쓴 팬 위키 문서는 아래 방식으로 읽는 맛을 낸다. 이 항목에 자연스럽게 맞는 것만 한두 가지 쓰고, 맞지 않으면 쓰지 않는다. 기법을 채우려고 문장을 덧붙이지 않는다.
+- 평가는 남의 입으로: 강함과 위상은 서술자의 평가 대신 작중 인물의 말, 동시대 대상과의 비교, 전과로 보여 준다.
+- 약점과 그 원인: 강점만큼 약점을 쓰고, 왜 생겼는지와 그것이 드러난 장면을 함께 쓴다.
+- 항목마다 장면: 무장, 기술, 업적 같은 하위 항목에는 정의만 적지 말고 실제로 쓰인 장면을 붙인다.
+
+## 문장 기준
+- 구체성은 의미 있는 디테일이다. 숫자는 그 숫자가 무엇을 뜻하는지 드러날 때만 쓰고, 예산 내역이나 인원수 나열로 분량을 채우지 않는다. "다양한", "중요한 역할을 했다", "큰 영향을 미쳤다", "많은 사람들이" 대신 고유명사와 일화를 쓴다. 어떤 디테일이 어울리는지는 분위기 지침을 따른다.
+- 단정형으로 쓴다. "밝혀지지 않았다", "공개되지 않았다", "기밀이다", "기록에 남아 있지 않다", "공식 입장을 내지 않았다", "~라고 전해진다" 같은 얼버무림은 쓰지 않는다. 조직의 반응은 실제로 한 조치(발표, 징계, 해명, 소송)로 쓴다.
+- "~의 근거가 되었다", "~의 계기가 되었다", "~의 시초가 되었다", "~의 토대가 되었다", "~의 상징이 되었다", "오늘날까지 이어지고 있다" 같은 연결 상투구는 문서 전체에서 많아야 한 번이다. 한 일이 다른 일로 이어졌다면 누가 언제 무엇을 했는지 장면으로 쓴다.
+- 발언은 간접 인용으로 내용만 옮기는 것이 기본이다. 본문 중간에 큰따옴표 대사를 넣고 "~라고 말했다"로 받지 않는다. 직접 인용은 문서 전체에서 1~2개. 절정의 순간에 나온 말이나 작중에서 회자되는 한마디를 우선하며, 인물 문서라면 주인공 본인의 말을 우선한다. 인용할 때는 "> " 인용문 상자로 따로 두고 다음 줄에 "> — 화자, 출처"를 붙인다. 격언처럼 다듬은 말은 쓰지 않고 화자의 말투와 상황이 드러나게 한다.
+- "A가 아니라 B였다", "A보다 B였다" 같은 반전 대구는 인용문, 개요, 본문 어디에서도 쓰지 않는다. 이 세계에 없는 현실의 고사나 관용구(아킬레스건, 루비콘 등)도 쓰지 않는다.
+- 개요는 훅과 정의를 중심으로 짧게 쓴다. 진영별 이름, 규모 비교, 후대 평가 같은 정보를 개요에 몰아넣지 않고 맞는 섹션에 둔다.
+- 근거 없는 칭찬은 하지 않되 강한 것은 강하다고 쓴다. 강함은 형용사가 아니라 비교 대상, 전과, 상대가 치른 대가로 보여 준다. 실패와 갈등은 흐름 속에서 쓰고, "~라는 비판이 있다. 반면 ~" 식의 양론 정리는 실제 논쟁이 있을 때만 쓴다.
+- 풍습, 은어, 속설은 이 항목이 직접 원인이거나 핵심 소재일 때만 다루고, 새로 만드는 것은 문서당 많아야 하나다.
+- 같은 정보를 반복하지 않는다. 인포박스의 수치와 날짜를 개요에서 다시 나열하지 않고, 개요에서 생애나 연혁을 요약하지 않는다.
+- 나이, 기간, 금액, 인원처럼 계산이 걸린 수치는 문서 안의 다른 날짜와 수치로 다시 계산해 서로 맞춘다(예: 출생일과 사건 날짜로 그때의 나이를 계산한다). 부대나 기체의 수는 동원, 손실, 격파, 항복, 잔존을 합쳐 처음 숫자와 맞춘다. 비율은 10할(100%)을 넘지 않는다. 개요에서 한 단언(예: 한 발도 쏘지 않았다)은 본문의 사건과 어긋나지 않게 범위를 정확히 쓴다.
+
+${showFor(ty, ["인물"]) ? `## 인물 문서
+이 항목이 인물이면 이력서가 아니라 사람의 이야기로 쓴다. 동물, 기계, 신, 정령처럼 사람이 아닌 존재라면 아래 항목을 그 존재에 맞게 바꿔 적용하고, 맞지 않는 항목(예: 소의 혼인)은 언급하지 않는다.
+- '특징' 섹션: 이 인물을 규정하는 특징 2~3개를 '성격', '능력' 같은 일반적인 말이 아니라 이 인물에게만 붙일 수 있는 소제목으로 쓰고, 각 특징은 "~한 성격이다"라고 단정하는 대신 수치와 일화로 증명한다. 평소와 특정 상황(원수 앞, 집착하는 대상 앞)의 모습이 크게 다르면 그 대비가 좋은 특징이 된다.
+- 강함과 이름: 강함이나 무서움은 적과 맞수가 그를 어떻게 대했는지로 전하고, 이명이 있다면 누가 왜 붙였는지 쓴다.
+- 동기의 뿌리: 이 인물의 힘이나 집착이 어디서 시작되었고 어떻게 바뀌었는지를 생애 안에서 보여 준다.
+- 생애의 하위 섹션은 직책이 아니라 전환점(사건, 결정, 상실, 만남)을 제목으로 삼는다. 각 전환점에서 무엇을 원했고, 어떤 선택지가 있었고, 왜 그쪽을 택했고, 무엇을 잃었는지를 쓴다. 동기는 본인이 남긴 말이나 편지, 주변의 증언, 행동으로 드러낸다.
+- 직책과 연도의 나열은 인포박스로 보낸다.
+- '인물' 섹션의 중심은 사적인 삶이다. 부모와 형제, 사랑한 사람과 그 결말, 결혼 여부와 배우자, 자녀, 가장 가까웠던 친구를 먼저 정하고, 해당하지 않는 것은 빼되 빼는 것도 정한 결과여야 한다(평생 혼인하지 않았다면 그 사정을 쓴다). 사적인 관계가 공적인 선택에 준 영향도 쓴다. 습관, 버릇, 아끼던 물건 같은 생활 디테일은 두세 가지까지 쓰되, 이 인물의 처지(수명, 직업, 과거)에서 나온 이유가 보이는 것을 고른다.
+- '인물 관계' 섹션에서는 주요 인물 3~6명과의 관계를 다루되 가족, 연인이나 배우자, 친구 같은 사적인 관계를 적어도 하나 포함한다. 관계가 어떻게 시작해 어떻게 변했는지 쓰고, 위의 '확정된 인물 관계'와 일치시킨다.
+- 실패, 후회, 풀리지 않은 갈등도 쓴다.
+
+` : ""}${showFor(ty, ["사건"]) ? `## 사건 문서
+이 항목이 전투, 전쟁, 작전, 재난, 반란, 정변 같은 사건이면 줄거리 요약이 아니라 단계마다 긴장이 올라가는 기록으로 쓴다. 아래는 채워야 할 목록이 아니다. 이 사건에 실제로 있었던 것만 흐름 속에 녹여 쓴다.
+- 단계와 긴장: 경과는 단계별 하위 섹션으로 나눈다. 시한이 있으면 남은 시간은 각 단계 첫 문장 안에 자연스럽게 넣고, 굵은 글씨나 따로 떨어진 줄로 표시하지 않는다. 결정적 순간 앞에 실패한 시도가 있었다면 그 실패와 잃은 사람을 이름과 함께 쓴다.
+- 양쪽의 판단: 진 쪽 지휘부가 무엇을 판단했는지 쓰고, 결과를 가른 오판이 있었다면 그 순간을 장면으로 둔다.
+- 교신과 기록: 단계를 짧은 교신이나 명령으로 열 수 있다. 이런 교신은 "> " 인용문 상자로 두고 다음 줄에 "> — 화자, 상황"을 붙이며, 일반 직접 인용과 따로 2개까지 쓴다.
+- 결과와 영향: 지휘부와 파벌의 교체, 제도와 전략의 변화가 다시 무엇을 낳았는지 연쇄로 쓴다. 진영마다 사건을 다르게 부르거나 작중 해석이 갈리면 그 맥락에서 쓴다.
+
+` : ""}## 작성 규칙
+- 문체: ${st.desc}
+- 분량: ${st.len}.
+- 구성: ${structureFor(st.structure, ty)}
+- 하이퍼링크: 다른 항목은 [[제목]] 또는 [[제목|본문에 보일 말]]로 감싼다. 링크는 공격적으로 건다. 본문과 인포박스에 나오는 단어 중 따로 문서가 될 만한 것은 처음 나올 때 모두 링크한다. 이름 있는 인물, 장소, 조직, 사건, 문서나 기록, 물건, 제도, 그리고 이 세계에만 있는 용어(예: 어떤 존재들의 방언, 고유한 직업이나 의식)가 여기에 해당한다. 본문에 이름이 나온 인물, 조직, 장소, 사건은 처음 나올 때 빠짐없이 링크하며, 이 규칙은 아래 개수 목표보다 우선한다. 그 밖의 용어까지 합친 목표는 문서당 12~18개이고, 꼭 눌러 보고 싶은 것부터 건다. 이미 있는 항목도 본문에 자연스럽게 나왔다면 위 목록의 제목을 글자 그대로 써서 링크한다. 다만 링크하려고 기존 항목을 "~의 사례로 꼽힌다", "~와도 관련이 있다"처럼 억지로 끌어오지는 않는다. 현실의 일반 명사(소, 정오, 철도)는 이 세계에서 특별한 의미가 없으면 링크하지 않는다. 자기 자신은 링크하지 않고, 같은 대상은 처음 한 번만 링크한다.
+- 인포박스: 유형에 맞는 4~8개 항목(label/value). value에도 [[링크]]를 쓸 수 있다. 인물이면 해당하는 경우 배우자, 자녀 같은 가족 항목을 넣는다. 전투나 전쟁이면 기간, 장소, 교전 세력, 지휘관(전사한 사람은 이름 뒤에 †), 전력, 피해, 결과를 넣고, 양측이 있는 항목은 value 안에서 "진영 A: … / 진영 B: …"로 나란히 쓴다.
+- 틀(navboxes): 이 항목 자체가 구성원이 정해진 집단(부대, 팀, 중대, 위원회, 내각, 기사단, 밴드, 가문, 왕조, 기수, 함대, 특정 기체 계열 등)이면 구성원 명단을 틀로 만든다.
+  - 구성원이 40명 이하면 한 명도 빼지 않고 전원을 쓴다. 그보다 많으면 지휘부와 주요 구성원, 하위 단위를 정리한다.
+  - 모든 구성원에게 고유한 이름을 붙이고 [[링크]]한다. 각 항목은 "[[이름]] — 짧은 설명" 형식이며, 설명에는 번호, 역할, 현재 상태(전사, 실종, 퇴역, 교체 등) 중 해당하는 것을 쓴다.
+  - 행(rows)은 기수, 시기, 소속, 역할 등 이 집단에 맞는 기준으로 나눈다. 교체되거나 떠난 구성원도 포함한다.
+  - 본문과 인포박스가 말하는 인원수, 번호, 결원과 보충 내역이 틀과 정확히 일치해야 한다. 이미 확정된 구성원 정보(위의 확정 사실과 언급)와도 일치시킨다.
+  - 집단이 아니거나, 이 항목이 다른 틀의 구성원일 뿐이면 빈 배열. 틀의 링크는 본문 링크 개수 제한에 포함하지 않는다.
+- 위의 확정 사실, 언급, 핵심 규칙, 연표, 사용자 확정 설정과 모순되는 내용은 쓰지 않는다. "[사용자 확정]"이 붙은 사실은 다른 문서의 언급과 엇갈리면 이쪽을 따른다. 날짜, 생몰과 나이, 소속, 사건의 결과를 특히 주의한다.
+- 본문 서식: 문단은 빈 줄로 구분, 목록은 "- ", 하위 목록은 "  - ", 인용문은 "> ", 강조는 **굵게**. 각주와 취소선은 쓰지 않는다.
+- 안내 틀(notices)은 빈 배열로 둔다.
+
+## 출력
+JSON 객체 하나만 출력:
+{"title":"${e.title}","type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의(링크 없이)","categories":["분류 3~6개"],"notices":["..."],"infobox":[{"label":"...","value":"..."}],"sections":[{"heading":"개요","level":1,"body":"..."},{"heading":"생애","level":1,"body":""},{"heading":"1959년 데뷔","level":2,"body":"..."}],"facts":[{"about":"항목 제목","fact":"이 문서에서 확정한, 그 항목에 관한 사실 한 문장"}],"relations":[{"a":"인물 제목","b":"인물 제목","rel":"관계 이름(예: 스승과 제자, 맞수, 의절한 부자)","story":"관계가 어떻게 시작해 어떻게 변했는지 한두 문장, 시점 포함"}],"navboxes":[{"title":"틀 제목(예: ○○ 구성원)","rows":[{"label":"행 이름(예: 창설 대원)","items":["[[이름]] — 1번, 역할"]}]}],"newEntities":[{"title":"새로 링크한 항목 제목","type":"유형","summary":"한 문장 정의"}],"timeline":[{"year":"연도","event":"이 문서에서 새로 확정한 주요 사건"}]}
+relations에는 이 문서가 새로 확정한 인물 사이의 관계를 넣는다. 이 항목이 인물이면 주요 관계 3~6개를 반드시 넣고, 부모·형제·배우자·연인·자녀 같은 가족과 사적 관계도 포함한다(rel 예: 부부, 사별한 부부, 이혼한 부부, 첫사랑, 부녀, 의절한 형제). 이미 확정된 관계를 그대로 반복하지 말고, 새로 정한 관계나 관계의 새로운 국면만 넣는다. a와 b는 이 문서의 제목이거나 이 문서가 링크한 항목의 제목을 글자 그대로 쓴다. 인물이 아닌 항목만 다룬 문서라면 빈 배열.
+categories는 위키 하단의 분류처럼 쓴다(예: "1931년 출생", "○○ 출신 인물", "△△의 조직"). 링크 없이 짧게. sections의 level은 1(큰 섹션) 또는 2(바로 앞 큰 섹션의 하위 섹션)이며, 섹션 번호는 쓰지 않는다.
+facts에는 이 문서가 링크한 항목 중 중요한 것(인물, 조직, 사건, 장소 위주) 6~10개에 대해 1개씩 넣되, 이 문서의 절정이나 큰 사건에 등장한 항목은 빠짐없이 포함해 그 사건에서 무엇을 했고 어떻게 되었는지(쓴 무기나 수단, 생사, 결과)를 사실로 남긴다. 그리고 「${e.title}」 자체에 대한 핵심 사실 3~6개를 넣는다. newEntities에는 위 '이미 존재하는 항목' 목록에 없던 링크 대상을 모두 넣되, summary는 40자 안팎의 한 문장으로 짧게 쓴다. timeline에는 이 문서에서 새로 확정한 사건을 1~3개 넣는다. 시간과 무관해 보이는 항목이라도 도입, 발견, 변화, 사고의 시점을 정한다. 이미 연표에 있는 사건은 다시 넣지 않는다.`;
+}
+/* 제목의 표기들: "白頭(백두)"는 "白頭"와 "백두"로도 찾는다 */
+const namesOf = t => { const m = String(t).match(/^(.+?)\((.+)\)$/); return [t, ...(m ? [m[1].trim(), m[2].trim()] : [])].filter(x => x.length >= 2); };
+function checkBrief(w, k, key) {
+  const o = w.entities[k];
+  const ms = o.mentions.filter(m => m.from !== key && live(m)).slice(-2).map(m => `- 「${w.entities[m.from]?.title || "?"}」의 서술: ${m.text}`);
+  const rs = relationsOf(w, k).filter(x => x.src !== key && live(x)).slice(-3).map(x => "- 관계: " + relLine(w, x));
+  return [entityBrief(w, k, key), ...ms, ...rs].join("\n");
+}
+function checkPrompt(w, key) {
+  const p = S.pages[key];
+  const base = [...new Set([...related(w, key), ...(p.links || [])])].filter(k => k !== key && w.entities[k]).slice(0, 10);
+  const plain = [...(p.infobox || []).map(r => stripMarks(r.value)), ...p.sections.map(s => stripMarks(s.body))].join("\n");
+  const named = Object.entries(w.entities).filter(([x, o]) => x !== key && !base.includes(x) && namesOf(o.title).some(n => plain.includes(n)))
+    .sort((a, b) => (b[1].page ? 1 : 0) - (a[1].page ? 1 : 0)).slice(0, 8).map(([x]) => x);   // 링크 없이 이름만 나온 항목도 대조한다
+  const keys = [...base, ...named];
+  const ctx = keys.map(k => checkBrief(w, k, key)).join("\n\n");
+  const own = [...w.entities[key].facts.filter(f => f.src !== key && live(f)).map(f => "- " + factLine(f)), ...w.entities[key].mentions.filter(m => m.from !== key && live(m)).map(m => `- 「${w.entities[m.from]?.title || "?"}」의 서술: ${m.text}`), ...relationsOf(w, key).filter(x => x.src !== key && live(x)).map(x => "- 관계: " + relLine(w, x))].join("\n");
+  const text = [`# ${p.title}`, ...(p.infobox || []).map(r => `${r.label}: ${stripMarks(r.value)}`), ...p.sections.map(s => `## ${s.heading}\n${stripMarks(s.body)}`)].join("\n");
+  return `다음 위키 문서가 세계관의 확정 설정과 모순되는지 검사하라. 확정 설정과 명백히 반대되는 서술만 지적하고, 단순히 새로 추가된 정보나 해석의 차이는 문제 삼지 마라.
+
+${canonBlock({ ...w, timeline: (w.timeline || []).filter(t => t.src !== key) })}
+
+## 이 항목에 대해 다른 문서가 확정한 사실
+${own || "(없음)"}
+
+## 관련 항목의 확정 설정
+${ctx || "(없음)"}
+
+## 검사할 문서
+${text}
+
+JSON 객체 하나만 출력: {"issues":[{"claim":"문서의 해당 서술","conflict":"충돌하는 확정 설정","severity":"high 또는 low"}]}
+문제가 없으면 {"issues":[]}.`;
+}
+
+/* ---------- actions ---------- */
+async function createWorld() {
+  const seed = S.seed.trim();
+  if (seed.length < 10) { toast("원안을 한두 문장 이상 적어 주세요."); return; }
+  if (!S.sample) { S.createErr = ERR.no_sample; renderMain(); return; }
+  S.creating = true; S.createErr = null; renderMain();
+  try {
+    const first = norm(S.first).slice(0, 60);
+    const guide = String(S.guideIn || "").replace(/\r/g, "").trim().slice(0, 1000);
+    const b = await callJson("bible", biblePrompt(seed, first, guide), { modelTier: "default" }, { title: first });
+    if (!b || !b.title) throw { code: "invalid_json" };
+    const w = { kind: "world", id: "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      title: norm(b.title).slice(0, 40), tagline: String(b.tagline || "").slice(0, 160), seed, style: "encyc",
+      era: String(b.era || "미상").slice(0, 40), historical: b.historical === true || b.historical === "true", guide, tone: normTone(b.tone, ""), rules: (Array.isArray(b.rules) ? b.rules : []).map(r => stripMarks(r)).filter(Boolean).slice(0, 10),
+      timeline: [], userCanon: "", entities: {}, mainKey: null, createdAt: Date.now() };
+    for (const t of (Array.isArray(b.timeline) ? b.timeline : [])) addTimeline(w, t, "seed");
+    const mt = first || norm(b.mainTitle || b.title);
+    w.mainKey = keyOf(mt); w.entities[w.mainKey] = newEntity(mt, "", "");
+    await Store.saveWorld(w);
+    S.worlds.unshift(w); S.creating = false;
+    await openWorld(w.id);
+  } catch (e) { S.creating = false; S.createErr = errMsg(e); renderMain(); }
+}
+
+async function openWorld(wid, goKey) {
+  const w = S.worlds.find(x => x.id === wid); if (!w) return;
+  if (S.gen && S.gen.wid !== wid) { toast("다른 세계관의 문서를 작성하는 중입니다. 끝난 뒤 열어 주세요."); return; }
+  S.world = w; S.pages = {}; S.recent = []; S.confirmDel = null; S.nf = new Set(); S.edit = null; S.confirmDelPage = null;
+  S.view = { name: "loading" }; renderAll();
+  try { S.pages = await Store.listPages(w.id); } catch (e) { toast(errMsg(e)); }
+  openEntity(goKey || w.mainKey);
+}
+
+function openEntity(k) {
+  const w = S.world; if (!w || !w.entities[k]) return;
+  S.confirmRewrite = null; S.genErr = S.genErr && S.genErr.key === k ? S.genErr : null;
+  S.view = { name: "article", key: k };
+  S.recent = [k, ...S.recent.filter(x => x !== k)].slice(0, 8);
+  if (!S.pages[k] && !(S.gen && S.gen.key === k) && !S.genErr) { if (S.gen) { renderAll(); toast(`「${S.gen.title}」 문서를 작성하는 중입니다. 끝나면 이 문서를 작성할 수 있습니다.`); return; } generatePage(k); return; }
+  renderAll(); window.scrollTo({ top: 0 });
+}
+
+async function generatePage(k, rewrite, direction) {
+  const w = S.world; const e = w.entities[k];
+  if (!S.sample) { S.genErr = { key: k, msg: ERR.no_sample }; S.view = { name: "article", key: k }; renderAll(); return; }
+  if (S.gen) { toast(`「${S.gen.title}」 문서를 작성하는 중입니다.`); return; }
+  let backup = null, oldPage = null;
+  if (rewrite) { oldPage = S.pages[k]; backup = prepareRewrite(w, k); delete S.pages[k]; }
+  const ctl = new AbortController();
+  S.gen = { key: k, wid: w.id, title: e.title, raw: "", t0: performance.now(), ctl, rewrite: !!rewrite, direction: direction || "" };
+  S.genErr = null; S.confirmRewrite = null; S.view = { name: "article", key: k };
+  renderAll(); window.scrollTo({ top: 0 });
+  try {
+    if (!w.tone && !w.toneTried) {
+      w.toneTried = true;
+      try { const t = await detectTone(w); if (t) { w.tone = t; toast(`분위기를 「${t.label}」(으)로 판별했습니다. 설정 노트에서 고칠 수 있습니다.`); } } catch {}
+      if (ctl.signal.aborted) throw { code: "cancelled" };
+    }
+    const out = await callJson("page", pagePrompt(w, k, rewrite ? (direction || "") : null, rewrite ? "" : (direction || "")), { signal: ctl.signal, modelTier: "default", ...PAGE_MODEL, onText: ({ text }) => { if (S.gen) { S.gen.raw = text; updateGenLive(); } } }, { title: e.title, type: TYPES.includes(e.type) ? e.type : "", ents: Object.keys(w.entities).length });
+    if (out && out.notFound === true && e.src === "search") {
+      S.gen = null;
+      const nf = e.title;
+      if (!e.facts.length && !e.mentions.length) delete w.entities[k];
+      S.nf.add(k); S.recent = S.recent.filter(x => x !== k);
+      if (S.view.name === "article" && S.view.key === k) { S.view = { name: "notfound", title: nf }; renderAll(); }
+      else { renderSide(); toast(`‘${nf}’ 문서를 찾을 수 없습니다.`); }
+      return;
+    }
+    autoLink(w, k, out);   // 링크가 빠진 기존 항목 이름은 조용히 링크한다
+    const page = integrate(w, k, out);
+    let cleared = new Set();
+    if (!rewrite && direction) page.direction = direction;
+    if (rewrite) { page.direction = direction || ""; page.rewrittenAt = Date.now(); cleared = clearBadges(k); }   // 직접 수정본이 사라졌으니 그 수정이 남긴 표시도 지운다
+    if (S.world === w) S.pages[k] = page;
+    S.gen = null;
+    try { await Store.savePage(w.id, page); for (const x of cleared) if (S.pages[x] && x !== k) await Store.savePage(w.id, S.pages[x]); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
+    afterGen(k, true);
+    if (S.world === w && S.pages[k] === page) checkPage(k, true);   // 읽는 동안 뒤에서 설정과 대조한다
+  } catch (err) {
+    S.gen = null;
+    if (rewrite) {
+      restoreRewrite(w, backup); if (S.world === w && oldPage) S.pages[k] = oldPage;
+      toast(err?.code === "cancelled" ? "다시 쓰기를 취소했습니다. 이전 버전을 그대로 둡니다." : "다시 쓰지 못해 이전 버전을 그대로 둡니다. " + errMsg(err));
+    }
+    else if (err?.code !== "cancelled") S.genErr = { key: k, msg: errMsg(err), guide: direction || "" };
+    else S.genErr = { key: k, msg: ERR.cancelled, cancelled: true, guide: direction || "" };
+    afterGen(k, false);
+  }
+}
+function afterGen(k, ok) {
+  const here = S.view.name === "article" && S.view.key === k;
+  if (here) renderAll(); else { renderSide(); if (ok) toast(`「${S.world.entities[k].title}」 문서가 완성되었습니다.`, { label: "열기", fn: () => openEntity(k) }); }
+}
+
+function integrate(w, key, out) {
+  const e = w.entities[key];
+  const sections = (Array.isArray(out?.sections) ? out.sections : []).filter(s => s && (s.body || s.heading)).map(s => ({ heading: String(s.heading || "").replace(/^#+\s*/, "").replace(/^\d+(\.\d+)*\.?\s+/, "").slice(0, 80), level: s.level === 2 ? 2 : 1, body: String(s.body || "") }));
+  if (sections.length && sections[0].level === 2) sections[0].level = 1;
+  if (!sections.some(s => s.body.trim())) throw { code: "bad_page" };
+  const categories = (Array.isArray(out.categories) ? out.categories : []).filter(x => typeof x === "string" && x.trim()).slice(0, 8).map(x => stripMarks(x).slice(0, 40));
+  const infobox = (Array.isArray(out.infobox) ? out.infobox : []).filter(r => r && r.label && r.value).slice(0, 10).map(r => ({ label: String(r.label).slice(0, 30), value: String(r.value).slice(0, 300) }));
+  const type = TYPES.includes(out.type) ? out.type : (String(out.type || "").slice(0, 8) || "개념");
+  const summary = stripMarks(out.summary).slice(0, 220);
+  const notices = (Array.isArray(out.notices) ? out.notices : []).filter(x => typeof x === "string" && x.trim()).slice(0, 3).map(x => x.slice(0, 300));
+  const hints = {}; for (const n of (Array.isArray(out.newEntities) ? out.newEntities : [])) if (n && n.title) hints[keyOf(n.title)] = n;
+  const links = [];
+  for (const t of [...sections.map(s => s.body), ...infobox.map(r => r.value), ...notices]) {
+    for (const m of t.matchAll(LINK_RE)) {
+      const tt = norm(m[1]); if (!tt) continue; const lk = keyOf(tt); if (lk === key) continue;
+      if (!links.includes(lk)) links.push(lk);
+      if (!w.entities[lk]) { const h = hints[lk]; w.entities[lk] = newEntity(tt, h && TYPES.includes(h.type) ? h.type : "", h ? stripMarks(h.summary).slice(0, 200) : ""); w.entities[lk].origin = key; }
+      else if (!w.entities[lk].summary && hints[lk]?.summary) w.entities[lk].summary = stripMarks(hints[lk].summary).slice(0, 200);
+      addMention(w.entities[lk], key, sentenceAround(t, m.index, m[0].length));
+    }
+  }
+  for (const f of (Array.isArray(out.facts) ? out.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = keyOf(f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), key); }
+  for (const r of (Array.isArray(out.relations) ? out.relations : []).slice(0, 12)) addRelation(w, key, r);
+  if (!e.stub) e.stub = { type: e.type || "", summary: e.summary || "" };  // 문서가 생기기 전, 링크로 약속된 정의
+  e.type = type; if (summary) e.summary = summary; e.page = true; delete e.src;
+  e.box = infobox.map(r => r.label + ": " + stripMarks(r.value)).join(" / ").slice(0, 400);
+  for (const t of (Array.isArray(out.timeline) ? out.timeline : [])) addTimeline(w, t, key);
+  w.navboxes ||= {};
+  (Array.isArray(out.navboxes) ? out.navboxes : []).slice(0, 2).forEach((nb, i) => {
+    if (!nb || !Array.isArray(nb.rows)) return;
+    let budget = 80;
+    const rows = nb.rows.filter(r => r && Array.isArray(r.items)).slice(0, 12).map(r => ({
+      label: stripMarks(r.label || "").slice(0, 40),
+      items: r.items.filter(x => typeof x === "string" && x.trim()).slice(0, Math.max(0, budget)).map(x => { budget--; return x.replace(/\[\*[^\]]*\]/g, "").trim().slice(0, 200); })
+    })).filter(r => r.items.length);
+    if (!rows.length) return;
+    const title = stripMarks(nb.title || e.title).slice(0, 60), members = [];
+    for (const r of rows) for (const it of r.items) for (const m of it.matchAll(LINK_RE)) {
+      const tt = norm(m[1]); if (!tt) continue; const lk = keyOf(tt); if (lk === key || members.includes(lk)) continue;
+      members.push(lk);
+      if (!w.entities[lk]) { const h = hints[lk]; w.entities[lk] = newEntity(tt, h && TYPES.includes(h.type) ? h.type : "", h ? stripMarks(h.summary).slice(0, 200) : ""); w.entities[lk].origin = key; }
+      addMention(w.entities[lk], key, `${title} — ${r.label}: ${stripMarks(it)}`);
+      if (!links.includes(lk)) links.push(lk);
+    }
+    w.navboxes[key + "-" + i] = { title, rows, members, src: key, srcTitle: e.title };
+  });
+  return { key, title: e.title, type, summary, categories, notices, infobox, sections, links, createdAt: Date.now(), style: w.style, check: null };
+}
+
+/* auto: 문서가 완성된 직후 자동으로 돌리는 검사. 다른 검사가 돌고 있으면 차례를 기다린다. */
+async function checkPage(k, auto) {
+  if (!S.sample) { if (!auto) toast(ERR.no_sample); return; }
+  if (S.checking) { if (auto) { (S.autoQ ||= []).includes(k) || S.autoQ.push(k); } return; }
+  const w = S.world, p = S.pages[k]; if (!w || !p) return;
+  S.checking = k; renderMain();
+  let found = 0;
+  try {
+    const r = await callJson("check", checkPrompt(w, k), { modelTier: "quick" }, { title: p.title + (auto ? " · 자동" : "") });
+    const issues = (Array.isArray(r?.issues) ? r.issues : []).filter(i => i && i.claim).slice(0, 8).map(i => ({ claim: String(i.claim).slice(0, 300), conflict: String(i.conflict || "").slice(0, 300), severity: i.severity === "high" ? "high" : "low" }));
+    p.check = { at: Date.now(), issues, auto: !!auto }; found = issues.length;
+    try { await Store.savePage(w.id, p); } catch (err) { toast("검사 결과를 저장하지 못했습니다. " + errMsg(err)); }
+  } catch (err) { if (!auto) toast(errMsg(err)); }
+  S.checking = null;
+  const here = S.view.name === "article" && S.view.key === k;
+  if (here) renderMain();
+  else if (auto && found && S.world === w) toast(`「${p.title}」에서 설정 충돌 ${found}건이 발견되었습니다.`, { label: "열기", fn: () => openEntity(k) });
+  while (S.autoQ?.length) {
+    const next = S.autoQ.shift();
+    if (S.world === w && S.pages[next] && !S.pages[next].check) { checkPage(next, true); break; }
+  }
+}
+
+/* ---------- 코드로 하는 교정 ---------- */
+/* 본문에 이름만 나오고 링크가 빠진 기존 항목을 첫 등장 위치에서 링크한다 (생성 직후, 조용히) */
+function autoLink(w, key, out) {
+  if (!Array.isArray(out?.sections)) return 0;
+  const linked = new Set();
+  for (const t of [...out.sections.map(s => String(s?.body || "")), ...(Array.isArray(out.infobox) ? out.infobox : []).map(r => String(r?.value || ""))])
+    for (const m of t.matchAll(LINK_RE)) linked.add(keyOf(norm(m[1])));
+  const cands = [];
+  for (const [k, o] of Object.entries(w.entities)) {
+    if (k === key || linked.has(k)) continue;
+    for (const n of namesOf(o.title)) if (!/^[㐀-鿿]+$/.test(n)) cands.push({ k, n, title: o.title });
+  }
+  cands.sort((a, b) => b.n.length - a.n.length || (b.n === b.title) - (a.n === a.title));
+  const inLink = (t, i) => t.lastIndexOf("[[", i) > t.lastIndexOf("]]", i);
+  let added = 0;
+  for (const c of cands) {
+    if (linked.has(c.k) || added >= 12) continue;
+    for (const sec of out.sections) {
+      if (!sec || typeof sec.body !== "string") continue;
+      let i = sec.body.indexOf(c.n);
+      while (i >= 0 && (inLink(sec.body, i) || /[가-힣A-Za-z0-9]/.test(sec.body[i - 1] || ""))) i = sec.body.indexOf(c.n, i + 1);
+      if (i < 0) continue;
+      const tag = c.n === c.title ? `[[${c.title}]]` : `[[${c.title}|${c.n}]]`;
+      sec.body = sec.body.slice(0, i) + tag + sec.body.slice(i + c.n.length);
+      linked.add(c.k); added++; break;
+    }
+  }
+  return added;
+}
+/* 글자 모양으로 잡히는 문체 실수: 반전 대구, 10할이나 100%를 넘는 비율 */
+function lintPage(p) {
+  const out = [], seen = new Set();
+  const texts = [p.summary || "", ...(p.infobox || []).map(r => r.value), ...(p.sections || []).map(x => x.body)].map(stripMarks);
+  for (const t of texts) for (const m of t.matchAll(/[^.!?。\n]+[.!?。]?/g)) {
+    const sen = m[0].trim(); if (!sen || seen.has(sen)) continue;
+    if (/[가-힣A-Za-z0-9)\]'"’”]\s*(?:이|가)\s+아니라(?!고)\s*[^\s]/.test(sen) || /(?:이|가)\s+아니라(?!고),/.test(sen)) { seen.add(sen); out.push({ claim: sen.slice(0, 300), conflict: "문체 규칙: 'A가 아니라 B' 꼴의 반전 대구는 쓰지 않는다. 뜻은 살리고 대구 없이 고친다.", lint: true }); continue; }
+    const r = [...sen.matchAll(/(\d+(?:\.\d+)?)\s*할(?![인당머])/g)].some(x => +x[1] > 10) || [...sen.matchAll(/(\d+(?:\.\d+)?)\s*(?:%|퍼센트)/g)].some(x => +x[1] > 100);
+    if (r) { seen.add(sen); out.push({ claim: sen.slice(0, 300), conflict: "수치: 비율은 10할(100%)을 넘을 수 없다. 앞뒤 맥락에 맞는 값으로 고친다.", lint: true }); }
+  }
+  return out.slice(0, 6);
+}
+
+/* ---------- 충돌 부분 고치기 ---------- */
+function fixPrompt(w, p, f, issue) {
+  return `다음은 가상 세계관 위키 「${w.title}」(작중 기준 시점 ${w.era})의 문서 「${p.title}」의 원문이다. 설정 검사에서 아래 충돌 하나가 지적되었다. 이 충돌만 해결하도록 원문의 해당 부분을 최소한으로 고친다.
+
+## 지적된 충돌
+- 문서의 서술: ${issue.claim}
+- 충돌하는 확정 설정: ${issue.conflict || "(없음)"}
+
+${canonBlock({ ...w, timeline: (w.timeline || []).filter(t => t.src !== p.key) })}
+
+## 원문
+[summary]
+${f.summary}
+
+[infobox]
+${f.infobox}
+
+[body]
+${f.body}
+
+## 규칙
+- 확정 설정에 맞추어 문서 쪽을 고친다. 확정 설정을 바꾸자고 하지 않는다.
+- 충돌한 서술과, 그것을 고치면 함께 어긋나게 되는 서술만 고친다. 많아야 4곳이다.
+- 고친 부분은 원래 문체('~이다'체), 링크 표기([[...]]), 말투를 그대로 유지한다. 가능하면 모순을 지우기보다 세계의 디테일로 풀어 낸다.
+- old에는 원문에서 고칠 부분을 글자 하나 다르지 않게 복사한다. 문장 하나나 인포박스 한 줄 단위로 잡는다.
+- 이 충돌과 상관없는 부분은 건드리지 않는다.
+
+JSON 객체 하나만 출력:
+{"edits":[{"field":"summary, infobox, body 중 하나","old":"원문 그대로의 일부","new":"고친 내용"}],"note":"무엇을 어떻게 고쳤는지 한 문장"}`;
+}
+async function fixIssue(k, idx) {
+  const w = S.world, p = S.pages[k], issue = S.memo && S.memo.k === k ? S.memo.items[idx] : null;
+  if (!w || !p || !issue || S.fixing) return;
+  if (!S.sample) { toast(ERR.no_sample); return; }
+  if (S.gen && S.gen.key === k) { toast("이 문서를 작성하는 중이라 고칠 수 없습니다."); return; }
+  S.fixing = { key: k, i: idx }; renderMain();
+  const f = pageToSource(w, p);
+  try {
+    const r = await callJson("fix", fixPrompt(w, p, f, issue), { modelTier: "default", ...PAGE_MODEL, effort: "low" }, { title: p.title });
+    const nf = { ...f }, applied = [];
+    for (const ed of (Array.isArray(r?.edits) ? r.edits : []).slice(0, 6)) {
+      const fld = ["summary", "infobox", "body"].includes(ed?.field) ? ed.field : null;
+      let old = String(ed?.old || ""); const nw = String(ed?.new ?? "");
+      if (!fld || !old.trim() || old === nw) continue;
+      let at = nf[fld].indexOf(old);
+      if (at < 0) { old = old.trim(); at = nf[fld].indexOf(old); }
+      if (at < 0) continue;
+      nf[fld] = nf[fld].slice(0, at) + nw + nf[fld].slice(at + old.length);
+      applied.push({ old, new: nw });
+    }
+    S.fixing = null;
+    if (!applied.length) { toast("고칠 곳을 원문에서 찾지 못했습니다. 다시 시도하거나 편집에서 직접 고쳐 주세요."); renderMain(); return; }
+    if (S.world !== w || !S.pages[k]) return;
+    S.edit = { key: k, f: nf, fix: { note: stripMarks(r?.note || "").slice(0, 240), applied } };
+    S.confirmRewrite = null; S.confirmDelPage = null;
+    if (S.view.name === "article" && S.view.key === k) { renderMain(true); window.scrollTo({ top: 0 }); }
+    else toast(`「${p.title}」의 고치기 제안이 준비되었습니다.`, { label: "열기", fn: () => { S.view = { name: "article", key: k }; renderAll(); } });
+  } catch (err) { S.fixing = null; toast(errMsg(err)); renderMain(); }
+}
+
+/* ---------- 교정 페이지: 편집자 메모를 한 번에 고치고, 대조는 뒤에서 ---------- */
+function fixBatchPrompt(w, p, f, issues) {
+  return `다음은 가상 세계관 위키 「${w.title}」(작중 기준 시점 ${w.era})의 문서 「${p.title}」의 원문과, 편집자가 남긴 메모 ${issues.length}개다. 메모마다 지적된 부분만 최소한으로 고친다.
+
+## 메모
+${issues.map((i, n) => `${n + 1}. 문서의 서술: ${i.claim}\n   이유: ${i.conflict || "(없음)"}`).join("\n")}
+
+${canonBlock({ ...w, timeline: (w.timeline || []).filter(t => t.src !== p.key) })}
+
+## 원문
+[summary]
+${f.summary}
+
+[infobox]
+${f.infobox}
+
+[body]
+${f.body}
+
+## 규칙
+- 확정 설정과 문체 규칙에 맞추어 문서 쪽을 고친다. 확정 설정을 바꾸자고 하지 않는다.
+- 메모 하나당 지적된 서술과, 그것을 고치면 함께 어긋나게 되는 서술만 고친다. 메모 하나에 많아야 3곳이다.
+- 고친 부분은 원래 문체('~이다'체), 링크 표기([[...]]), 말투를 그대로 유지한다. 가능하면 모순을 지우기보다 세계의 디테일로 풀어 낸다. 'A가 아니라 B' 꼴의 반전 대구는 쓰지 않는다.
+- old에는 원문에서 고칠 부분을 글자 하나 다르지 않게 복사한다. 문장 하나나 인포박스 한 줄 단위로 잡고, 서로 다른 수정이 같은 문장을 겹쳐 잡지 않게 한다.
+- 메모와 상관없는 부분은 건드리지 않는다. 고칠 필요가 없다고 판단한 메모는 건너뛴다.
+
+JSON 객체 하나만 출력:
+{"edits":[{"memo":1,"field":"summary, infobox, body 중 하나","old":"원문 그대로의 일부","new":"고친 내용"}],"note":"전체적으로 무엇을 고쳤는지 한 문장"}`;
+}
+function openFixView(k, sel, autoRun) {
+  const p = S.pages[k]; if (!p || !S.memo || S.memo.k !== k || !S.memo.items.length) return;
+  S.fixv = { key: k, items: S.memo.items.slice(), sel: new Set(sel), phase: "pick", edits: [], note: "", err: "", skipped: 0 };
+  S.view = { name: "fix", key: k }; renderAll(); window.scrollTo({ top: 0 });
+  if (autoRun && S.fixv.sel.size) runFixBatch();
+}
+async function runFixBatch() {
+  const v = S.fixv, w = S.world, p = v && S.pages[v.key]; if (!v || !p || v.phase === "busy") return;
+  if (!S.sample) { v.err = ERR.no_sample; renderMain(); return; }
+  const picked = [...v.sel].sort((a, b) => a - b); if (!picked.length) return;
+  v.phase = "busy"; v.err = ""; v.t0 = performance.now(); renderMain();
+  const f = pageToSource(w, p);
+  try {
+    const r = await callJson("fix", fixBatchPrompt(w, p, f, picked.map(n => v.items[n])), { modelTier: "default", ...PAGE_MODEL, effort: "low" }, { title: p.title + ` · ${picked.length}곳` });
+    if (S.fixv !== v) return;
+    const edits = [], seen = new Set();
+    for (const ed of (Array.isArray(r?.edits) ? r.edits : []).slice(0, 16)) {
+      const fld = ["summary", "infobox", "body"].includes(ed?.field) ? ed.field : null;
+      let old = String(ed?.old || ""); const nw = String(ed?.new ?? "");
+      if (!fld || !old.trim() || old === nw) continue;
+      if (!f[fld].includes(old)) { old = old.trim(); if (!f[fld].includes(old)) continue; }
+      if (seen.has(fld + "\u0000" + old)) continue; seen.add(fld + "\u0000" + old);
+      const mi = Math.max(1, Math.min(picked.length, parseInt(ed.memo, 10) || 1));
+      edits.push({ n: picked[mi - 1], field: fld, old, new: nw, on: true });
+    }
+    v.edits = edits; v.note = stripMarks(r?.note || "").slice(0, 240);
+    v.skipped = picked.filter(n => !edits.some(e => e.n === n)).length;
+    v.phase = edits.length ? "review" : "pick";
+    if (!edits.length) v.err = "고칠 곳을 원문에서 찾지 못했습니다. 다시 시도하거나 편집에서 직접 고쳐 주세요.";
+  } catch (err) { if (S.fixv !== v) return; v.phase = "pick"; v.err = errMsg(err); }
+  if (S.view.name === "fix" && S.view.key === v.key) renderMain();
+  else if (v.phase === "review") toast(`「${p.title}」의 교정안이 준비되었습니다.`, { label: "열기", fn: () => { S.view = { name: "fix", key: v.key }; renderAll(); } });
+}
+async function applyFix() {
+  const v = S.fixv, w = S.world, k = v?.key, old = k && S.pages[k]; if (!v || !old || v.phase !== "review") return;
+  if (S.gen && S.gen.key === k) { toast("이 문서를 작성하는 중이라 저장할 수 없습니다."); return; }
+  const nf = pageToSource(w, old); let applied = 0, missed = 0;
+  for (const e of v.edits) {
+    if (!e.on) continue;
+    const at = nf[e.field].indexOf(e.old); if (at < 0) { missed++; continue; }
+    nf[e.field] = nf[e.field].slice(0, at) + e.new + nf[e.field].slice(at + e.old.length); applied++;
+  }
+  if (!applied) { toast("적용할 수정이 없습니다."); return; }
+  const out = sourceToOut(nf);
+  if (!out.sections.some(x => x.body.trim())) { toast("본문이 비게 되어 저장하지 않았습니다."); return; }
+  const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [] });
+  let page;
+  try {
+    for (const o of Object.values(w.entities)) o.mentions = o.mentions.filter(m => m.from !== k);   // 링크와 언급은 고친 본문 기준으로 다시 계산
+    for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === k) delete w.navboxes[id];
+    page = integrate(w, k, out);
+  } catch (err) { restoreRewrite(w, backup); toast("저장하지 못했습니다. " + errMsg(err)); return; }
+  Object.assign(page, { createdAt: old.createdAt, rewrittenAt: old.rewrittenAt, direction: old.direction, editedAt: old.editedAt, fixedAt: Date.now(), stale: false, conflicts: old.conflicts, pending: old.pending, check: null });
+  cleanupOrphans(w, k);
+  S.pages[k] = page; S.fixv = null; S.memo = null;
+  S.view = { name: "article", key: k }; renderAll(); window.scrollTo({ top: 0 });
+  try { await Store.savePage(w.id, page); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); return; }
+  toast(`${applied}곳을 고쳤습니다.${missed ? ` 겹쳐서 적용하지 못한 수정 ${missed}곳은 건너뛰었습니다.` : ""}`);
+  bgSync(k);
+}
+/* 고친 본문에서 확정 사실, 연표, 관계를 뒤에서 다시 뽑고, 남은 충돌은 편집자 메모로 돌려준다 */
+async function bgSync(k) {
+  const w = S.world, p = S.pages[k]; if (!w || !p || !S.sample) return;
+  S.bgSync = k; if (S.view.name === "article" && S.view.key === k) renderMain();
+  try {
+    const out = sourceToOut(pageToSource(w, p));
+    const linkKeys = linksOfOut(w, out, k), ctx = conflictContext(w, k, linkKeys);
+    const temp = { key: k, title: p.title, summary: out.summary, infobox: out.infobox, sections: out.sections, navboxes: out.navboxes };
+    const r = await callJson("analyze", analyzePrompt(w, temp, linkKeys, ctx), { modelTier: "quick" }, { title: p.title + " · 교정 후" });
+    if (S.world !== w || S.pages[k] !== p) { S.bgSync = null; return; }
+    const touched = clearBadges(k);
+    for (const o of Object.values(w.entities)) { o.facts = o.facts.filter(f => f.src !== k); for (const x of [...o.facts, ...o.mentions]) if (x.sup?.by === k) delete x.sup; }
+    w.timeline.forEach(t => { if (t.sup?.by === k) delete t.sup; });
+    (w.relations || []).forEach(x => { if (x.sup?.by === k) delete x.sup; });
+    w.timeline = w.timeline.filter(x => x.src !== k);
+    w.relations = (w.relations || []).filter(x => x.src !== k);
+    for (const f of (Array.isArray(r?.facts) ? r.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = keyOf(f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), k); }
+    for (const t of (Array.isArray(r?.timeline) ? r.timeline : [])) addTimeline(w, t, k);
+    for (const x of (Array.isArray(r?.relations) ? r.relations : []).slice(0, 16)) addRelation(w, k, x);
+    for (const n of (Array.isArray(r?.newEntities) ? r.newEntities : [])) {
+      if (!n || !n.title) continue; const o = w.entities[keyOf(n.title)];
+      if (o && !o.page && !o.summary && n.summary) { o.summary = stripMarks(n.summary).slice(0, 200); if (!o.type && TYPES.includes(n.type)) o.type = n.type; }
+    }
+    const issues = [];
+    for (const c of readConflicts(w, r?.conflicts, ctx.refs)) {
+      if (c.ask) { issues.push({ claim: c.claim, conflict: `${conflictLabel(w, c)}: ${c.old}`, severity: "high" }); continue; }
+      const target = c.f || c.m || c.t || c.l; if (!target) continue;
+      target.sup = { by: k }; if (c.src && c.src !== "seed") badge(w, c.src, k, c, touched);
+    }
+    p.check = { at: Date.now(), issues, auto: true }; p.stale = false;
+    await Store.savePage(w.id, p);
+    for (const x of touched) if (S.pages[x]) await Store.savePage(w.id, S.pages[x]);
+    await Store.saveWorld(w);
+  } catch (err) { p.stale = true; try { await Store.savePage(w.id, p); } catch {} }
+  S.bgSync = null;
+  if (S.view.name === "article" && S.view.key === k) renderMain(); else renderSide();
+}
+function fixvHtml(k) {
+  const v = S.fixv, p = S.pages[k], w = S.world;
+  if (!v || v.key !== k || !p) return `<div class="sheet"><p class="note">교정할 문서를 찾을 수 없습니다.</p><div class="tools"><button type="button" class="btn" data-act="fixv-back">돌아가기</button></div></div>`;
+  const head = `<div class="sheet"><div class="crumb"><span>${esc(w.title)}</span><span>교정</span></div><h1 class="t">${esc(p.title)} <span class="note" style="font-family:var(--f-body);font-size:14px;font-weight:400">교정</span></h1>`;
+  if (v.phase === "review") {
+    const on = v.edits.filter(e => e.on).length;
+    return head + `<p class="note">${v.note ? esc(v.note) + " " : ""}고친 문장은 바로 손볼 수 있습니다. 적용하면 즉시 저장되고, 설정과의 대조는 문서를 보는 동안 뒤에서 진행됩니다.</p>
+      <div class="fx-list">${v.edits.map((e, i) => `<div class="fx-ed${e.on ? "" : " off"}">
+        <label class="fx-on"><input type="checkbox" id="fon-${i}" data-fon="${i}" ${e.on ? "checked" : ""}> 적용 <span class="src">메모: ${esc(v.items[e.n].claim.slice(0, 60))}${v.items[e.n].claim.length > 60 ? "…" : ""}</span></label>
+        <del>${esc(e.old)}</del>
+        <textarea id="fnew-${i}" data-fnew="${i}" rows="${Math.min(6, Math.max(2, Math.ceil(e.new.length / 60)))}">${esc(e.new)}</textarea></div>`).join("")}</div>
+      ${v.skipped ? `<p class="note">수정안이 나오지 않은 메모 ${v.skipped}개는 그대로 남습니다.</p>` : ""}
+      <div class="row"><button type="button" class="btn pri" data-act="fixv-apply" ${on ? "" : "disabled"}>${on}곳 적용하고 저장</button><button type="button" class="btn" data-act="fixv-redo">메모 다시 고르기</button><button type="button" class="btn" data-act="fixv-back">취소</button></div></div>`;
+  }
+  const busy = v.phase === "busy", n = v.sel.size;
+  return head + `<p class="note">고칠 메모를 고르면 한 번에 수정안을 만듭니다. 수정안을 확인한 뒤 적용합니다.</p>
+    <div class="fx-list">${v.items.map((i, x) => `<label class="fx-pick"><input type="checkbox" id="fsel-${x}" data-fsel="${x}" ${v.sel.has(x) ? "checked" : ""} ${busy ? "disabled" : ""}><span><span class="sev">${i.lint ? "문체" : i.severity === "high" ? "다듬을 곳" : "참고"}</span>${esc(i.claim)}${i.conflict ? `<span class="memo-why">${esc(i.conflict)}</span>` : ""}</span></label>`).join("")}</div>
+    ${v.err ? `<div class="banner warn">${esc(v.err)}</div>` : ""}
+    <div class="row"><button type="button" class="btn pri" data-act="fixv-run" ${busy || !n || !S.sample ? "disabled" : ""}>${busy ? `수정안을 만드는 중… <span id="fxTick"></span>` : `선택한 ${n}곳 고치기`}</button><button type="button" class="btn" data-act="fixv-back">돌아가기</button></div></div>`;
+}
+
+/* ---------- 직접 편집 ---------- */
+function pageToSource(w, p) {
+  const body = p.sections.map(s => { const m = (s.level || 1) === 2 ? "==" : "="; return `${m} ${s.heading} ${m}\n${s.body.trim()}`; }).join("\n\n");
+  const navbox = Object.values(w.navboxes || {}).filter(nb => nb.src === p.key)
+    .map(nb => `= ${nb.title} =\n` + nb.rows.map(r => `${r.label ? `== ${r.label} ==\n` : ""}${r.items.join("\n")}`).join("\n")).join("\n\n");
+  return { summary: p.summary || "", type: p.type || "", cats: (p.categories || []).join(" | "), notices: (p.notices || []).join("\n"),
+    infobox: (p.infobox || []).map(r => `${r.label}: ${r.value}`).join("\n"), body, navbox };
+}
+function parseHeadings(text) {
+  const pre = [], parts = []; let cur = null;
+  for (const line of String(text || "").replace(/\r/g, "").split("\n")) {
+    const m = line.match(/^(={1,2})\s*(.+?)\s*\1\s*$/);
+    if (m) { cur = { level: m[1].length, heading: m[2].trim(), lines: [] }; parts.push(cur); }
+    else (cur ? cur.lines : pre).push(line);
+  }
+  return { pre: pre.join("\n").trim(), parts: parts.map(p => ({ level: p.level, heading: p.heading, text: p.lines.join("\n").trim() })) };
+}
+function sourceToOut(f) {
+  const b = parseHeadings(f.body), sections = [];
+  if (b.pre) sections.push({ heading: "개요", level: 1, body: b.pre });
+  for (const p of b.parts) sections.push({ heading: p.heading, level: p.level, body: p.text });
+  const infobox = f.infobox.split("\n").map(l => { const i = l.indexOf(":"); return i > 0 ? { label: l.slice(0, i).trim(), value: l.slice(i + 1).trim() } : null; }).filter(r => r && r.label && r.value);
+  const n = parseHeadings(f.navbox), navboxes = []; let box = null;
+  const items = t => t.split("\n").map(s => s.replace(/^\s*[-*•]\s+/, "").trim()).filter(Boolean);
+  if (n.pre) { box = { title: "구성원", rows: [{ label: "", items: items(n.pre) }] }; navboxes.push(box); }
+  for (const p of n.parts) {
+    if (p.level === 1) { box = { title: p.heading, rows: [] }; navboxes.push(box); if (p.text) box.rows.push({ label: "", items: items(p.text) }); }
+    else { if (!box) { box = { title: "구성원", rows: [] }; navboxes.push(box); } box.rows.push({ label: p.heading, items: items(p.text) }); }
+  }
+  return { type: f.type.trim(), summary: f.summary.trim(), categories: f.cats.split(/\s*\|\s*/).map(s => s.trim()).filter(Boolean),
+    notices: f.notices.split("\n").map(s => s.trim()).filter(Boolean), infobox, sections, navboxes, facts: [], timeline: [], newEntities: [] };
+}
+function cleanupOrphans(w, k) {
+  for (const [x, o] of Object.entries(w.entities))
+    if (x !== k && x !== w.mainKey && o.origin === k && !o.page && !o.facts.length && !o.mentions.length && !(S.gen && S.gen.key === x)) delete w.entities[x];
+}
+function docText(p, w, navs) {
+  const keepFn = s => String(s || "").replace(/\[\*\s*([^\]]*)\]/g, " ($1)");
+  const nbs = navs || Object.values(w.navboxes || {}).filter(nb => nb.src === p.key);
+  return [`# ${p.title}`, p.summary ? `정의: ${p.summary}` : "", ...(p.infobox || []).map(r => `${r.label}: ${stripMarks(r.value)}`),
+    ...p.sections.map(s => `${(s.level || 1) === 2 ? "###" : "##"} ${s.heading}\n${stripMarks(keepFn(s.body))}`),
+    ...nbs.map(nb => `### 틀: ${nb.title}\n` + nb.rows.map(r => `- ${r.label ? r.label + ": " : ""}${r.items.map(stripMarks).join(" / ")}`).join("\n"))].filter(Boolean).join("\n");
+}
+/* 수정본이 링크한 기존 항목 */
+function linksOfOut(w, out, k) {
+  const texts = [...out.sections.map(s => s.body), ...out.infobox.map(r => r.value), ...out.notices, ...out.navboxes.flatMap(nb => nb.rows.flatMap(r => r.items))];
+  const ks = [];
+  for (const t of texts) for (const m of String(t).matchAll(LINK_RE)) { const lk = keyOf(m[1]); if (lk !== k && !ks.includes(lk)) ks.push(lk); }
+  return ks;
+}
+/* 수정본과 대조할 기존 설정. 각 항목에 R/U/T/F/M 번호를 붙여 모델이 가리킬 수 있게 한다.
+   이 문서가 앞서 대체했던 사실도 다시 대조 대상에 넣는다(수정으로 되돌렸을 수 있으므로). */
+function conflictContext(w, k, linkKeys) {
+  const refs = {}, R = [], T = [], F = [], M = [];
+  (w.rules || []).forEach((r, i) => { refs["R" + (i + 1)] = { kind: "rule", i }; R.push(`R${i + 1}. ${r}`); });
+  const U = (w.userCanon || "").trim(); if (U) refs.U = { kind: "canon" };
+  let n = 0;
+  for (const t of w.timeline) { if (t.src === k || (t.sup && t.sup.by !== k)) continue; n++; refs["T" + n] = { kind: "timeline", t }; T.push(`T${n}. ${t.year}: ${t.event}`); }
+  const active = x => !x.sup || x.sup.by === k;
+  n = 0;
+  for (const ek of [k, ...linkKeys]) {
+    const o = w.entities[ek]; if (!o) continue;
+    for (const f of o.facts) {
+      if (f.src === k || !active(f) || n >= 40) continue;
+      n++; refs["F" + n] = { kind: "fact", f };
+      F.push(`F${n}. 「${o.title}」에 관해: ${f.t} (출처 「${w.entities[f.src]?.title || "?"}」${S.pages[f.src]?.editedAt ? ", 사용자가 직접 수정한 문서" : ""})`);
+    }
+  }
+  n = 0;
+  for (const m of w.entities[k].mentions) {
+    if (m.from === k || !active(m)) continue;
+    n++; refs["M" + n] = { kind: "mention", m };
+    M.push(`M${n}. 「${w.entities[m.from]?.title || "?"}」 본문: "${m.text}"${S.pages[m.from]?.editedAt ? " (사용자가 직접 수정한 문서)" : ""}`);
+  }
+  const L = []; n = 0;
+  const near = new Set([k, ...linkKeys]);
+  for (const x of (w.relations || [])) {
+    if (x.src === k || !active(x) || !(near.has(x.a) || near.has(x.b)) || !w.entities[x.a] || !w.entities[x.b] || n >= 20) continue;
+    n++; refs["L" + n] = { kind: "relation", l: x };
+    L.push(`L${n}. ${relLine(w, x)} (출처 「${w.entities[x.src]?.title || "?"}」${S.pages[x.src]?.editedAt ? ", 사용자가 직접 수정한 문서" : ""})`);
+  }
+  const text = `### 핵심 규칙\n${R.join("\n") || "(없음)"}\n\n### 사용자 확정 설정 (U)\n${U || "(없음)"}\n\n### 연표\n${T.join("\n") || "(없음)"}\n\n### 다른 문서가 확정한 사실\n${F.join("\n") || "(없음)"}\n\n### 다른 문서 본문에서 이 항목을 언급한 문장\n${M.join("\n") || "(없음)"}\n\n### 확정된 인물 관계\n${L.join("\n") || "(없음)"}`;
+  return { refs, text };
+}
+function analyzePrompt(w, temp, linkKeys, ctx) {
+  const linked = linkKeys.filter(x => w.entities[x]).map(x => `- ${w.entities[x].title}${w.entities[x].page || w.entities[x].summary ? "" : " (정의 없음)"}`).join("\n") || "(없음)";
+  return `다음은 가상 세계관 위키 「${w.title}」(작중 기준 시점 ${w.era})의 문서 「${temp.title}」이며, 사용자가 직접 수정한 최종본이다. 두 가지를 하라.
+1. 이 문서가 확정하는 사실을 추출한다. 문서에 적힌 내용만 쓰고, 새로운 내용을 지어내거나 기존 설정에 맞춰 고치지 않는다.
+2. 이 문서의 서술이 아래 '기존 설정'과 정면으로 모순되는 곳을 모두 찾는다. 같은 대상에 대해 둘 다 참일 수 없는 경우만 해당한다. 새로 추가된 정보, 더 자세해진 정보, 표현이나 해석의 차이는 모순이 아니다.
+
+## 수정된 문서
+${docText(temp, w, temp.navboxes)}
+
+## 이 문서가 링크한 항목
+${linked}
+
+## 기존 설정
+${ctx.text}
+
+JSON 객체 하나만 출력:
+{"facts":[{"about":"항목 제목","fact":"사실 한 문장"}],"timeline":[{"year":"연도","event":"사건"}],"newEntities":[{"title":"항목 제목","type":"${TYPES.join("|")} 중 하나","summary":"이 문서에 근거한 한 문장 정의"}],"relations":[{"a":"인물 제목","b":"인물 제목","rel":"관계 이름","story":"관계의 시작과 변화 한 문장"}],"conflicts":[{"ref":"R1, U, T3, F7, M2, L4 같은 기존 설정 번호 하나","claim":"수정본의 해당 서술","old":"충돌하는 기존 설정 내용","suggest":"ref가 R일 때만: 수정본에 맞게 고친 규칙 한 문장"}]}
+facts에는 링크한 항목 중 중요한 것(인물, 조직, 사건, 장소 위주) 6~10개에 대해 1개씩 넣되, 절정이나 큰 사건에 등장한 항목은 빠짐없이 포함한다. 그리고 「${temp.title}」 자체에 대한 핵심 사실 3~6개를 넣는다. 사실은 모두 한 문장으로 짧게 쓴다. about은 목록의 제목이나 「${temp.title}」를 글자 그대로 쓴다. timeline에는 문서에 연도가 적힌 주요 사건만 넣는다. newEntities에는 '정의 없음'으로 표시된 항목만 넣는다. relations에는 이 문서에 적힌 인물 사이의 주요 관계를 6개까지 넣는다(a, b는 이 문서 제목이나 링크한 항목 제목 그대로). 모순이 없으면 conflicts는 빈 배열.`;
+}
+function readConflicts(w, raw, refs) {
+  const out = [], seen = new Set();
+  for (const c of (Array.isArray(raw) ? raw : [])) {
+    if (!c || !c.ref) continue;
+    const id = String(c.ref).trim().toUpperCase(), ref = refs[id];
+    if (!ref || seen.has(id)) continue; seen.add(id);
+    const x = { id, kind: ref.kind, claim: stripMarks(c.claim).slice(0, 300), old: stripMarks(c.old).slice(0, 300) };
+    if (ref.kind === "rule") Object.assign(x, { i: ref.i, old: x.old || w.rules[ref.i], suggest: stripMarks(c.suggest).slice(0, 300) || w.rules[ref.i] });
+    if (ref.kind === "canon") x.old = x.old || "사용자 확정 설정";
+    if (ref.kind === "fact") Object.assign(x, { f: ref.f, src: ref.f.src, old: x.old || ref.f.t });
+    if (ref.kind === "mention") Object.assign(x, { m: ref.m, src: ref.m.from, old: x.old || ref.m.text });
+    if (ref.kind === "timeline") Object.assign(x, { t: ref.t, src: ref.t.src, old: x.old || `${ref.t.year}: ${ref.t.event}` });
+    if (ref.kind === "relation") Object.assign(x, { l: ref.l, src: ref.l.src, old: x.old || relLine(w, ref.l) });
+    // 사용자 자신이 정한 것(핵심 규칙, 확정 설정, 직접 수정한 문서)과의 충돌은 사용자에게 묻는다
+    x.ask = ref.kind === "rule" || ref.kind === "canon" || !!(x.src && S.pages[x.src]?.editedAt);
+    out.push(x);
+  }
+  return out.slice(0, 24);
+}
+const conflictLabel = (w, c) => c.kind === "rule" ? `핵심 규칙 ${c.id}` : c.kind === "canon" ? "사용자 확정 설정"
+  : c.kind === "timeline" ? `연표${c.src && w.entities[c.src] ? ` (「${w.entities[c.src].title}」)` : ""}` : `「${w.entities[c.src]?.title || "?"}」${S.pages[c.src]?.editedAt ? " (직접 수정한 문서)" : ""}`;
+
+function openEditor(k) {
+  const p = S.pages[k]; if (!p) return;
+  if (!S.edit || S.edit.key !== k) S.edit = { key: k, f: pageToSource(S.world, p) };
+  S.confirmRewrite = null; S.confirmDelPage = null; renderMain(true); window.scrollTo({ top: 0 });
+}
+function edStatus(msg, busy) {
+  const btn = $("#edSave"), err = $("#edErr");
+  if (btn) { btn.disabled = !!busy; btn.textContent = busy ? "설정과 대조하는 중…" : "저장"; }
+  if (err) { err.hidden = !msg; err.innerHTML = msg || ""; }
+}
+async function saveEdit(skipCheck) {
+  const ed = S.edit, w = S.world; if (!ed || !w) return;
+  const k = ed.key, e = w.entities[k];
+  $("#edConflicts") && ($("#edConflicts").innerHTML = "");
+  if (!S.pages[k]) { edStatus("원본 문서를 찾을 수 없습니다."); return; }
+  if (S.gen && S.gen.key === k) { edStatus("이 문서를 작성하는 중이라 저장할 수 없습니다."); return; }
+  const out = sourceToOut(ed.f);
+  if (!out.sections.some(s => s.body.trim())) { edStatus("본문이 비어 있습니다. 섹션 아래에 내용을 적어 주세요."); return; }
+  if (skipCheck || !S.sample) { commitEdit(ed, out, null, [], {}); return; }
+  const snap = JSON.stringify(ed.f);
+  const linkKeys = linksOfOut(w, out, k);
+  const ctx = conflictContext(w, k, linkKeys);
+  const temp = { key: k, title: e.title, summary: out.summary, infobox: out.infobox, sections: out.sections, navboxes: out.navboxes };
+  edStatus("", true);
+  let r;
+  try { r = await callJson("analyze", analyzePrompt(w, temp, linkKeys, ctx), { modelTier: "quick" }, { title: w.entities[k]?.title || "" }); }
+  catch (err) {
+    if (S.edit !== ed) return;
+    edStatus(`설정과 대조하지 못했습니다. ${esc(errMsg(err))} <button type="button" class="btn" data-act="ed-save-raw" style="margin-left:6px;padding:2px 10px">대조 없이 저장</button>`);
+    return;
+  }
+  if (S.edit !== ed || S.world !== w) return;
+  if (JSON.stringify(ed.f) !== snap) { edStatus("대조하는 동안 내용이 바뀌었습니다. 다시 저장해 주세요."); return; }
+  edStatus("");
+  const conflicts = readConflicts(w, r?.conflicts, ctx.refs);
+  const ask = conflicts.filter(c => c.ask);
+  if (!ask.length) { commitEdit(ed, out, r, conflicts, {}); return; }
+  ed.pending = { out, r, conflicts };
+  const box = $("#edConflicts"); if (box) { box.innerHTML = conflictPanelHtml(w, ask); box.scrollIntoView({ block: "start", behavior: "smooth" }); }
+}
+function conflictPanelHtml(w, ask) {
+  return `<div class="cfpanel"><b>수정한 내용이 직접 정한 설정과 충돌합니다</b>
+    <p class="note">AI가 쓴 문서와의 충돌은 저장할 때 자동으로 정리됩니다. 아래는 직접 정하신 설정이라 어느 쪽을 따를지 골라 주세요.</p>
+    ${ask.map(c => `<div class="cf">
+      <div class="cf-h">${esc(conflictLabel(w, c))}</div>
+      <div class="cf-old"><span>기존</span>${esc(c.old)}</div>
+      <div class="cf-new"><span>수정본</span>${esc(c.claim)}</div>
+      ${c.kind === "rule" ? `<label class="cf-ch"><input type="checkbox" id="cf-${c.id}" checked> 이 규칙을 아래처럼 고치기</label><input class="txt" id="cs-${c.id}" value="${esc(c.suggest)}">`
+        : c.kind === "canon" ? `<p class="note" style="margin:6px 0 0">사용자 확정 설정은 설정 노트에서 직접 고쳐 주세요. 이대로 저장하면 이 문서에 충돌 표시가 남습니다.</p>`
+        : `<label class="cf-ch"><input type="checkbox" id="cf-${c.id}" checked> 이 수정을 기준으로 삼고 「${esc(w.entities[c.src]?.title || "?")}」에 충돌 표시하기</label>`}
+    </div>`).join("")}
+    <div class="row"><button type="button" class="btn pri" data-act="cf-apply">선택한 대로 저장</button><button type="button" class="btn" data-act="cf-back">편집으로 돌아가기</button></div></div>`;
+}
+function applyConflictChoices() {
+  const ed = S.edit; if (!ed?.pending) return;
+  const ch = { rules: {}, keep: {} };
+  for (const c of ed.pending.conflicts.filter(c => c.ask)) {
+    const box = document.getElementById("cf-" + c.id);
+    if (c.kind === "rule") { if (box?.checked) { const v = norm(document.getElementById("cs-" + c.id)?.value || ""); if (v) ch.rules[c.id] = v; } }
+    else if (c.kind !== "canon" && box?.checked) ch.keep[c.id] = true;
+  }
+  const { out, r, conflicts } = ed.pending; ed.pending = null;
+  commitEdit(ed, out, r, conflicts, ch);
+}
+function badge(w, src, k, c, touched) {
+  const P = S.pages[src]; if (!P || src === k) return;
+  (P.conflicts ||= []).push({ by: k, byTitle: w.entities[k].title, old: c.old, claim: c.claim });
+  touched.add(src);
+}
+function clearBadges(k) {
+  const touched = new Set();
+  for (const [x, P] of Object.entries(S.pages)) if (P.conflicts?.some(c => c.by === k)) { P.conflicts = P.conflicts.filter(c => c.by !== k); touched.add(x); }
+  return touched;
+}
+async function commitEdit(ed, out, r, conflicts, ch) {
+  const w = S.world, k = ed.key, old = S.pages[k], e = w.entities[k];
+  if (S.edit !== ed || !old) return;
+  const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], rules: w.rules });
+  const touched = clearBadges(k);
+  let page;
+  try {
+    for (const o of Object.values(w.entities)) {
+      o.mentions = o.mentions.filter(m => m.from !== k);              // 링크와 언급은 수정본 기준으로 다시 계산
+      for (const x of [...o.facts, ...o.mentions]) if (x.sup?.by === k) delete x.sup;   // 이전 수정이 대체했던 사실은 이번 대조 결과로 다시 정한다
+    }
+    w.timeline.forEach(t => { if (t.sup?.by === k) delete t.sup; });
+    (w.relations || []).forEach(x => { if (x.sup?.by === k) delete x.sup; });
+    for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === k) delete w.navboxes[id];
+    page = integrate(w, k, out);
+  } catch (err) { const b = JSON.parse(backup); restoreRewrite(w, backup); w.rules = b.rules; edStatus("저장하지 못했습니다. " + esc(errMsg(err))); return; }
+  Object.assign(page, { createdAt: old.createdAt, rewrittenAt: old.rewrittenAt, direction: old.direction, editedAt: Date.now(), stale: !r });
+  if (r) {
+    for (const o of Object.values(w.entities)) o.facts = o.facts.filter(f => f.src !== k);
+    w.timeline = w.timeline.filter(x => x.src !== k);
+    for (const f of (Array.isArray(r.facts) ? r.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = keyOf(f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), k); }
+    for (const t of (Array.isArray(r.timeline) ? r.timeline : [])) addTimeline(w, t, k);
+    w.relations = (w.relations || []).filter(x => x.src !== k);
+    for (const x of (Array.isArray(r.relations) ? r.relations : []).slice(0, 16)) addRelation(w, k, x);
+    for (const n of (Array.isArray(r.newEntities) ? r.newEntities : [])) {
+      if (!n || !n.title) continue; const o = w.entities[keyOf(n.title)];
+      if (o && !o.page && !o.summary && n.summary) { o.summary = stripMarks(n.summary).slice(0, 200); if (!o.type && TYPES.includes(n.type)) o.type = n.type; }
+    }
+  }
+  // 충돌 처리: AI 문서는 자동으로 대체, 직접 정한 설정은 사용자 선택에 따른다
+  const pending = []; let auto = 0, ruled = 0;
+  for (const c of conflicts) {
+    if (c.kind === "rule") { if (ch.rules?.[c.id] && w.rules[c.i] !== undefined) { w.rules[c.i] = ch.rules[c.id]; ruled++; } else pending.push(c); continue; }
+    if (c.kind === "canon") { pending.push(c); continue; }
+    if (c.ask && !ch.keep?.[c.id]) { pending.push(c); continue; }
+    const target = c.f || c.m || c.t || c.l;
+    if (!target) continue;
+    target.sup = { by: k };
+    if (c.src && c.src !== "seed") badge(w, c.src, k, c, touched);
+    if (!c.ask) auto++;
+  }
+  page.pending = pending.map(c => ({ label: conflictLabel(w, c), old: c.old, claim: c.claim }));
+  cleanupOrphans(w, k);
+  S.pages[k] = page; S.edit = null; renderAll(); window.scrollTo({ top: 0 });
+  try {
+    await Store.savePage(w.id, page);
+    for (const x of touched) if (S.pages[x]) await Store.savePage(w.id, S.pages[x]);
+    await Store.saveWorld(w);
+  } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); return; }
+  const parts = [];
+  if (!r) parts.push("설정과 대조하지 않았습니다");
+  if (auto) parts.push(`다른 문서의 서술 ${auto}곳을 이 수정으로 대체하고 표시했습니다`);
+  if (ruled) parts.push(`핵심 규칙 ${ruled}개를 고쳤습니다`);
+  if (pending.length) parts.push(`해결하지 않은 충돌 ${pending.length}건이 남아 있습니다`);
+  toast("저장했습니다." + (parts.length ? " " + parts.join(". ") + "." : ""));
+}
+async function deletePage(k) {
+  const w = S.world, e = w.entities[k], p = S.pages[k]; if (!e || !p) return;
+  if (S.gen && S.gen.key === k) { toast("작업 중인 문서는 삭제할 수 없습니다."); return; }
+  purge(w, k);                                       // 이 문서가 대체했던 다른 문서의 사실도 되살아난다
+  const touched = clearBadges(k);
+  for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === k) delete w.navboxes[id];
+  e.page = false; e.summary = e.stub?.summary || ""; e.type = e.stub?.type || ""; e.box = "";
+  delete S.pages[k]; touched.delete(k); if (S.edit && S.edit.key === k) S.edit = null;
+  cleanupOrphans(w, k);
+  const keep = k === w.mainKey || e.facts.length || e.mentions.length;
+  if (!keep) { delete w.entities[k]; S.recent = S.recent.filter(x => x !== k); }
+  S.confirmDelPage = null; S.genErr = null;
+  S.view = { name: "article", key: keep ? k : w.mainKey }; renderAll(); window.scrollTo({ top: 0 });
+  try {
+    await Store.deletePage(w.id, k);
+    for (const x of touched) if (S.pages[x]) await Store.savePage(w.id, S.pages[x]);
+    await Store.saveWorld(w); toast(`「${e.title}」 문서를 삭제했습니다.`);
+  } catch (err) { toast("삭제를 저장하지 못했습니다. " + errMsg(err)); }
+}
+async function dismissNotes(k, field) {
+  const p = S.pages[k]; if (!p) return;
+  p[field] = []; renderMain();
+  try { await Store.savePage(S.world.id, p); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
+}
+
+async function saveCanon() {
+  const w = S.world;
+  w.rules = $("#rulesTa").value.split("\n").map(s => s.replace(/^[-•\s]+/, "").trim()).filter(Boolean).slice(0, 20);
+  w.userCanon = $("#userTa").value.trim().slice(0, 4000);
+  const nt = norm($("#wTitle")?.value || "").slice(0, 40); if (nt) w.title = nt;
+  if ($("#wTag")) w.tagline = norm($("#wTag").value).slice(0, 160);
+  if ($("#wHist")) w.historical = $("#wHist").checked;
+  if ($("#wGuide")) w.guide = $("#wGuide").value.replace(/\r/g, "").trim().slice(0, 1000);
+  renderTop();
+  const tl = norm($("#toneLabel")?.value || "").slice(0, 60);
+  const tg = ($("#toneGuide")?.value || "").split("\n").map(x => x.replace(/^[-•\s]+/, "").trim()).filter(Boolean).slice(0, 12);
+  w.tone = tl && tg.length ? { label: tl, guide: tg } : (tl || tg.length ? { label: tl || "지정한 분위기", guide: tg } : null);
+  if (!w.tone) w.toneTried = true;
+  try { await Store.saveWorld(w); toast("설정 노트를 저장했습니다. 이후 작성되는 문서부터 반영됩니다."); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
+}
+
+async function deleteWorld(wid) {
+  try { await Store.deleteWorld(wid); S.worlds = S.worlds.filter(w => w.id !== wid); S.confirmDel = null; renderMain(); toast("세계관을 삭제했습니다."); }
+  catch (err) { toast("삭제하지 못했습니다. " + errMsg(err)); }
+}
+
+/* ---------- rendering: text ---------- */
+function linkHtml(target, label) {
+  const w = S.world; const t = norm(target); const k = keyOf(t);
+  const e = w && w.entities[k]; const has = !!S.pages[k];
+  const tip = has ? (e?.summary || t) : "아직 작성되지 않은 문서입니다. 누르면 바로 작성하고, 두 번 누르거나(PC) 길게 누르면(모바일) 방향을 정해 작성합니다.";
+  return `<a class="wl${has ? "" : " new"}" href="#" data-k="${k}" data-t="${esc(t)}" title="${esc(tip)}">${esc(label || t)}</a>`;
+}
+function inline(raw) {
+  let out = "", last = 0;
+  for (const m of raw.matchAll(LINK_RE)) { out += fmt(raw.slice(last, m.index)) + linkHtml(m[1], m[2]); last = m.index + m[0].length; }
+  out += fmt(raw.slice(last));
+  return out.replace(/\u0001(\d+)\u0002/g, (m, n) => `<sup class="fn"><a href="#fn-${n}" id="fnr-${n}" data-fn="${n}">[${n}]</a></sup>`);
+}
+const fmt = s => esc(s).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/~~([^~]+)~~/g, "<del>$1</del>");
+function extractFootnotes(src, fns) {
+  let text = "", i = 0;
+  while (i < src.length) {
+    if (src[i] === "[" && src[i + 1] === "*") { let d = 1, j = i + 2; while (j < src.length && d > 0) { if (src[j] === "[") d++; else if (src[j] === "]") d--; j++; } if (d === 0) { fns.push(src.slice(i + 2, j - 1).trim()); text += "\u0001" + fns.length + "\u0002"; i = j; continue; } }
+    text += src[i]; i++;
+  }
+  return text;
+}
+function blocks(body, fns) {
+  const text = extractFootnotes(String(body), fns);
+  let html = "";
+  for (const blk of text.split(/\n{2,}/)) {
+    const lines = blk.split("\n").map(l => l.replace(/\s+$/, "")).filter(l => l.trim());
+    let para = [], list = [], quote = [];
+    const flushP = () => { if (para.length) { html += `<p>${para.map(inline).join("<br>")}</p>`; para = []; } };
+    const flushQ = () => {
+      if (!quote.length) return;
+      let by = "";
+      if (quote.length > 1 && /^[—―–-]{1,2}\s*/.test(quote[quote.length - 1])) by = quote.pop().replace(/^[—―–-]{1,2}\s*/, "");
+      html += `<blockquote><div>${quote.map(inline).join("<br>")}</div>${by ? `<cite>${inline(by)}</cite>` : ""}</blockquote>`; quote = [];
+    };
+    const flushL = () => {
+      if (!list.length) return;
+      html += `<ul>${list.map(it => `<li>${inline(it.t)}${it.kids.length ? `<ul>${it.kids.map(k => `<li>${inline(k)}</li>`).join("")}</ul>` : ""}</li>`).join("")}</ul>`;
+      list = [];
+    };
+    for (const l of lines) {
+      const lm = l.match(/^(\s*)(?:[-*•]|--)\s+(.*)$/);
+      if (lm) {
+        flushP(); flushQ();
+        const sub = lm[1].replace(/\t/g, "  ").length >= 2 || /^\s*--\s/.test(l);
+        if (sub && list.length) list[list.length - 1].kids.push(lm[2]); else list.push({ t: lm[2], kids: [] });
+      }
+      else if (/^\s*>\s?/.test(l)) { flushP(); flushL(); quote.push(l.replace(/^\s*>\s?/, "")); }
+      else if (/^#{2,4}\s+/.test(l)) { flushP(); flushL(); flushQ(); html += `<h3>${inline(l.replace(/^#+\s+/, ""))}</h3>`; }
+      else { flushL(); flushQ(); para.push(l.trim()); }
+    }
+    flushP(); flushL(); flushQ();
+  }
+  return html;
+}
+
+/* ---------- rendering: views ---------- */
+function renderAll() { renderTop(); renderSide(); renderMain(); }
+function renderTop() {
+  const w = S.world;
+  $("#brandWorld").textContent = w ? `${w.title} · 작중 ${w.era}` : "링크를 누르면 문서가 생깁니다";
+  const q = $("#q"); q.disabled = !w; q.placeholder = w ? `「${w.title}」에서 검색하거나 새 항목 만들기` : "세계관을 열면 검색할 수 있습니다";
+}
+function renderSide() {
+  const side = $("#side"), w = S.world;
+  if (!w || S.view.name === "home") {
+    side.innerHTML = `<section><h4>WorldWiki.ai</h4><ul><li><button type="button" class="cur" data-act="home">세계관 목록</button></li></ul></section>
+      <section class="stat"><h4>저장 위치</h4><span>${esc(storeLabel())}</span></section><section><h4>도구</h4><ul><li><button type="button" data-act="gset" class="${S.view.name === "gset" ? "cur" : ""}">Gemini 설정${GS.key ? "" : " ⚠"}</button></li><li><button type="button" data-act="log" class="${S.view.name === "log" ? "cur" : ""}">로그 보기 (${LOG.length})</button></li></ul></section>`;
+    return;
+  }
+  const ents = Object.values(w.entities); const done = ents.filter(e => e.page).length;
+  const cur = S.view.name === "article" ? S.view.key : null;
+  const rec = S.recent.filter(k => w.entities[k] && k !== w.mainKey).slice(0, 6);
+  side.innerHTML = `
+    <section><h4>둘러보기</h4><ul>
+      <li><button type="button" data-k="${w.mainKey}" class="${cur === w.mainKey ? "cur" : ""}">대문: ${esc(w.entities[w.mainKey]?.title || w.title)}</button></li>
+      <li><button type="button" data-act="canon" class="${S.view.name === "canon" ? "cur" : ""}">설정 노트</button></li>
+      <li><button type="button" data-act="home">다른 세계관</button></li>
+    </ul></section>
+    <section class="stat"><h4>문서 현황</h4><span>작성된 문서 <em>${done}</em></span><span>미작성 항목 <em>${ents.length - done}</em></span><span>연표 사건 <em>${w.timeline.length}</em></span></section>
+    ${S.gen ? `<section><h4>작성 중</h4><div class="genpill"><span class="dot"></span><button type="button" class="btn" data-k="${S.gen.key}" style="padding:2px 8px">${esc(S.gen.title)}</button></div></section>` : ""}
+    <section><h4>도구</h4><ul><li><button type="button" data-act="gset" class="${S.view.name === "gset" ? "cur" : ""}">Gemini 설정${GS.key ? "" : " ⚠"}</button></li><li><button type="button" data-act="log" class="${S.view.name === "log" ? "cur" : ""}">로그 보기 (${LOG.length})</button></li></ul></section>
+    ${rec.length ? `<section class="rec"><h4>최근 본 문서</h4><ul>${rec.map(k => `<li><button type="button" data-k="${k}" class="${k === cur ? "cur" : ""}">${esc(w.entities[k].title)}</button></li>`).join("")}</ul></section>` : ""}`;
+}
+const storeLabel = () => ({ idb: "이 브라우저 IndexedDB (다른 기기와 공유되지 않음)", local: "이 브라우저 localStorage (용량 약 5MB)", memory: "임시 (새로고침하면 사라짐)" }[Store.mode]);
+
+function gsetHtml() {
+  const opt = v => THINKS.map(([x, l]) => `<option value="${x}" ${v === x ? "selected" : ""}>${esc(l)}</option>`).join("");
+  const dl = `<datalist id="gmodels">${(S.gmodels || []).map(m => `<option value="${esc(m.id)}">${esc(m.label)}</option>`).join("")}</datalist>`;
+  return `<div class="sheet gset"><div class="crumb"><span>도구</span></div><h1 class="t">Gemini 설정</h1>
+    <p class="note">키와 모델 설정은 이 브라우저의 localStorage에 평문으로 저장되며, 요청은 브라우저에서 Google로 바로 갑니다. 공용 컴퓨터에서는 쓰지 마세요.</p>
+    <h2 class="nf-h">API 키</h2>
+    <label class="lb" for="gKey">Gemini API 키 <span class="note" style="font-weight:400">Google AI Studio에서 발급</span></label>
+    <div class="keyrow"><input id="gKey" class="txt" type="password" autocomplete="off" spellcheck="false" value="${esc(GS.key)}" placeholder="AIza…"><button type="button" class="btn" data-act="gkey-show">보기</button></div>
+    <h2 class="nf-h">모델</h2>
+    <div class="two"><div><label class="lb" for="gMain">기본 모델 <span class="note" style="font-weight:400">세계관 생성, 문서 작성, 충돌 고치기</span></label><input id="gMain" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.main)}"></div>
+      <div><label class="lb" for="gMainT">생각 깊이</label><select id="gMainT">${opt(GS.mainThink)}</select></div></div>
+    <div class="two"><div><label class="lb" for="gQuick">빠른 모델 <span class="note" style="font-weight:400">분위기 판별, 설정 검사, 수정 대조</span></label><input id="gQuick" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.quick)}"></div>
+      <div><label class="lb" for="gQuickT">생각 깊이</label><select id="gQuickT">${opt(GS.quickThink)}</select></div></div>
+    ${dl}
+    <p class="note" style="margin-top:8px">모델이 지원하지 않는 생각 깊이를 고르면 그 요청은 모델 기본값으로 다시 보냅니다. 응답은 JSON 모드로 받습니다.</p>
+    <div class="row"><button type="button" class="btn pri" data-act="gset-save">저장</button><button type="button" class="btn" data-act="gset-test">연결 시험</button><button type="button" class="btn" data-act="gset-models">모델 목록 불러오기</button></div>
+    <p class="res" id="gRes">${esc(S.gres || "")}</p>
+    <h2 class="nf-h">백업</h2>
+    <p class="note">세계관과 문서를 JSON 파일 하나로 내보내거나, 그 파일에서 가져옵니다. 같은 id의 세계관은 가져온 내용으로 덮어씁니다. 저장 위치: ${esc(storeLabel())}</p>
+    <div class="row"><button type="button" class="btn" data-act="export" ${S.worlds.length ? "" : "disabled"}>내보내기</button><button type="button" class="btn" data-act="import">가져오기</button><input type="file" id="importFile" accept="application/json,.json" hidden></div>
+  </div>`;
+}
+function readGsetForm() {
+  const v = id => ($("#" + id)?.value ?? "").trim();
+  GS = { ...GS, key: v("gKey"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT") };
+  saveGS(); S.sample = GS.key ? gemini : null;
+}
+function setGres(t) { S.gres = t; const el = $("#gRes"); if (el) el.textContent = t; }
+
+function renderMain(force) {
+  const m = $("#main");
+  if (S.ready && S.view.name === "article" && S.edit && S.edit.key === S.view.key && S.pages[S.view.key]) {
+    if (!force && m.dataset.ed === S.edit.key) return;   // 편집 중에는 다른 갱신으로 입력란을 다시 그리지 않는다
+    m.innerHTML = editHtml(S.view.key); m.dataset.ed = S.edit.key; return;
+  }
+  m.dataset.ed = "";
+  if (!S.ready || S.view.name === "loading") { m.innerHTML = `<div class="sheet"><p class="note">불러오는 중…</p><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>`; return; }
+  if (S.view.name === "home") m.innerHTML = homeHtml();
+  else if (S.view.name === "canon") m.innerHTML = canonHtml();
+  else if (S.view.name === "notfound") m.innerHTML = notFoundHtml(S.view.title);
+  else if (S.view.name === "log") m.innerHTML = logHtml();
+  else if (S.view.name === "gset") m.innerHTML = gsetHtml();
+  else if (S.view.name === "fix") m.innerHTML = fixvHtml(S.view.key);
+  else if (S.view.name === "compose") m.innerHTML = composeHtml(S.view.key);
+  else m.innerHTML = articleHtml(S.view.key);
+  if (S.view.name === "canon" && S.focusEnt) { const d = document.getElementById("ent-" + S.focusEnt); if (d) { d.open = true; d.scrollIntoView({ block: "center" }); } S.focusEnt = null; }
+}
+
+function homeHtml() {
+  const tab = (id, label) => `<button type="button" role="tab" class="stab" data-stab="${id}" aria-selected="${S.seedTab === id}">${esc(label)}</button>`;
+  const ex = `<div class="stabs-row">${tab("own", "직접 작성") + tab("dice", "원안 주사위") + tab("whatif", "만약에")}</div><div class="stabs-row"><span class="stab-sep" aria-hidden="true">예시</span>${EXAMPLES.map((x, i) => tab(String(i), x.label)).join("")}</div>`;
+  const list = S.worlds.length ? S.worlds.map(w => {
+    const ents = Object.values(w.entities || {}); const done = ents.filter(e => e.page).length;
+    return `<article class="wcard"><button type="button" class="open" data-world="${w.id}">${esc(w.title)}</button>
+      ${w.tagline ? `<p>${esc(w.tagline)}</p>` : ""}
+      <div class="wm"><span>${w.tone ? esc(w.tone.label) + " · " : ""}작중 ${esc(w.era)} · 문서 ${done} · 미작성 ${ents.length - done}</span>
+      ${S.confirmDel === w.id ? `<span class="confirm">문서까지 모두 지울까요?<button type="button" class="btn dng" data-del-yes="${w.id}">삭제</button><button type="button" class="btn" data-act="del-no">취소</button></span>` : `<button type="button" class="btn" data-del="${w.id}" style="padding:2px 10px">삭제</button>`}</div></article>`;
+  }).join("") : `<div class="empty">아직 만든 세계관이 없습니다. 왼쪽에 원안을 적고 <b>세계관 만들기</b>를 누르면 설정 노트와 첫 문서가 만들어집니다.</div>`;
+  return `<div class="home">
+    <section class="sheet">
+      <h2>새 세계관 만들기</h2>
+      <p class="sub">원안 몇 문장으로 위키를 엽니다. 본문의 빨간 링크를 누를 때마다 그 항목의 문서가 새로 작성되고, 앞서 확정된 설정은 설정 노트에 쌓여 다음 문서의 제약이 됩니다.</p>
+      <label class="lb" for="seedTa">원안</label>
+      <div class="stabs" role="tablist" aria-label="원안 고르기">${ex}</div>
+      ${S.seedTab === "dice" && S.dice ? `<div class="dice" aria-label="원안 주사위">
+        ${["era", "genre", "twist"].map(k => `<div class="die"><span class="die-l">${DICE_LABEL[k]}</span><span class="die-v">${esc(S.dice[k])}</span><button type="button" class="die-lock" data-lock="${k}" aria-pressed="${!!S.dice.locks[k]}" title="이 칸은 다시 굴려도 그대로 둡니다">${S.dice.locks[k] ? "고정됨" : "고정"}</button></div>`).join("")}
+        <div class="row" style="margin-top:2px"><button type="button" class="btn" data-act="roll" ${S.creating ? "disabled" : ""}>다시 굴리기</button><span class="note">고정한 칸은 그대로 두고 나머지만 바꿉니다. 아래 원안을 고쳐 써도 됩니다.</span></div></div>` : ""}
+      ${S.seedTab === "whatif" && S.whatIfs ? `<div class="whatif">
+        <p class="note" style="margin:0 0 8px">질문을 고르면 그 질문으로 바로 세계관을 만듭니다. 아래 첫 문서와 작가 지침 칸도 함께 반영됩니다.</p>
+        <div class="wi-grid">${S.whatIfs.map(q => `<button type="button" class="wi" data-whatif="${esc(q)}" ${S.creating || !S.sample ? "disabled" : ""}><span>만약</span>${esc(q)}</button>`).join("")}</div>
+        <div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="whatif-more" ${S.creating ? "disabled" : ""}>다른 질문 보기</button></div></div>` : ""}
+      <textarea id="seedTa" rows="7" ${S.creating ? "disabled" : ""} ${S.seedTab === "whatif" ? "hidden" : ""} placeholder="어떤 세계인지 몇 문장으로 적어 주세요. 무엇이 현실과 다른지, 언제 어디가 무대인지, 누가 무엇을 두고 다투는지가 있으면 좋습니다.&#10;&#10;예: 1947년, 핵전쟁을 피하려고 미국과 소련이 모든 분쟁을 체스 대국으로 대신하기로 한 세계.">${esc(S.seed)}</textarea>
+      ${/^\d+$/.test(S.seedTab) ? `<p class="note" style="margin:6px 0 0">예시 원안입니다. 고쳐 쓰면 직접 작성 탭으로 옮겨집니다.</p>` : ""}
+      <label class="lb" for="firstIn">첫 문서 <span class="note" style="font-weight:400">비워 두면 세계관을 대표하는 항목으로 자동 선택</span></label>
+      <input id="firstIn" class="txt" type="text" maxlength="60" value="${esc(S.first)}" placeholder="예: 제네바 체스 협약, 한서린, 공백지대" ${S.creating ? "disabled" : ""}>
+      <label class="lb" for="guideIn">작가 지침 <span class="note" style="font-weight:400">선택 · 세계관 전체에 걸쳐 지킬 방향. 모든 문서에 함께 전달됩니다</span></label>
+      <textarea id="guideIn" rows="3" maxlength="1000" placeholder="예: 홍콩 느와르풍으로. 실존 인물을 많이 등장시킨다. 잔혹한 묘사는 피한다. 주인공 격인 인물은 체스 기자 한서린." ${S.creating ? "disabled" : ""}>${esc(S.guideIn)}</textarea>
+      <div class="row" ${S.seedTab === "whatif" && !S.creating && !S.createErr ? "hidden" : ""}>
+        <button type="button" class="btn pri" data-act="create" ${S.creating || !S.sampleReady ? "disabled" : ""}>${S.creating ? "설정 노트를 만드는 중…" : "세계관 만들기"}</button>
+        ${S.creating ? `<span class="genpill"><span class="dot"></span>핵심 규칙과 연표를 정리하고 있습니다</span>` : ""}
+        ${!S.sampleReady ? `<span class="note">생성 기능을 준비하는 중…</span>` : (!S.sample ? `<span class="note">${esc(ERR.no_sample)}</span>` : "")}
+      </div>
+      ${S.createErr ? `<div class="banner warn">${esc(S.createErr)}</div>` : ""}
+      <ol class="how">
+        <li><span>1</span>원안에서 핵심 규칙, 연표, 작중 기준 시점을 뽑아 설정 노트를 만듭니다.</li>
+        <li><span>2</span>문서를 쓸 때 링크한 항목마다 한 줄 정의와 언급 문장을 미리 기록합니다.</li>
+        <li><span>3</span>그 항목을 열면 기록된 내용을 반드시 지키도록 문서를 작성합니다.</li>
+      </ol>
+    </section>
+    <section><h2 style="font-family:var(--f-display);font-size:18px;margin:4px 0 12px">내 세계관</h2><div class="wlist">${list}</div></section>
+  </div>`;
+}
+
+function articleHtml(k) {
+  const w = S.world, e = w.entities[k], p = S.pages[k];
+  if (!e) return `<div class="sheet"><p>문서를 찾을 수 없습니다.</p></div>`;
+  const crumb = `<div class="crumb"><span>${esc(w.title)}</span><span>작중 기준 ${esc(w.era)}</span>${e.type ? `<span>분류: ${esc(e.type)}</span>` : ""}${p ? `<span>작성 ${fmtDate(p.createdAt)}</span>` : ""}${p?.editedAt ? `<span>직접 수정 ${fmtDate(p.editedAt)}</span>` : ""}</div>`;
+  if (S.gen && S.gen.key === k) {
+    return `<div class="sheet">${crumb}<h1 class="t">${esc(e.title)}</h1>
+      <div class="gen-live"><span class="dot"></span><span id="genCount">문서를 작성하는 중</span><button type="button" class="btn" data-act="stop">작성 중단</button></div>
+      ${S.gen.direction ? `<p class="src" style="margin:10px 0 0">${S.gen.rewrite ? "다시 쓰기" : "작성"} 방향: ${esc(S.gen.direction)}</p>` : ""}
+      ${promiseHtml(w, e, "이 문서가 지켜야 할 확정 내용")}
+      <ul class="heads" id="genHeads"></ul>
+      <div style="margin-top:14px"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div></div>`;
+  }
+  if (!p) {
+    const er = S.genErr && S.genErr.key === k ? S.genErr : null;
+    return `<div class="sheet">${crumb}<h1 class="t">${esc(e.title)}</h1>
+      ${er ? `<div class="banner warn">${esc(er.msg)}</div>` : `<p class="note">아직 작성되지 않은 문서입니다.</p>`}
+      ${promiseHtml(w, e, "이미 확정된 내용")}
+      <div class="tools"><button type="button" class="btn pri" data-gen="${k}" ${S.gen || !S.sample ? "disabled" : ""}>이 문서 작성하기</button><button type="button" class="btn" data-compose="${k}">방향을 정해 작성</button></div></div>`;
+  }
+  const fns = [];
+  const box = p.infobox?.length ? `<aside class="infobox"><div class="ih">${esc(p.title)}</div><div class="ity">${esc(p.type)}</div><table>${p.infobox.map(r => `<tr><th>${esc(r.label)}</th><td>${blocks(r.value, fns).replace(/^<p>|<\/p>$/g, "")}</td></tr>`).join("")}</table></aside>` : "";
+  let n1 = 0, n2 = 0;
+  const nums = p.sections.map(s => { if ((s.level || 1) === 2 && n1) { n2++; return `${n1}.${n2}.`; } n1++; n2 = 0; return `${n1}.`; });
+  const secs = p.sections.map((s, i) => { const sub = nums[i].split(".").length > 2; return `<${sub ? "h3" : "h2"} id="s-${i}" class="${sub ? "sh" : ""}"><span class="n">${nums[i]}</span>${esc(s.heading)}</${sub ? "h3" : "h2"}>${blocks(s.body, fns)}`; }).join("");
+  const toc = p.sections.length > 2 ? `<nav class="toc" aria-label="목차"><b>목차</b><ul>${p.sections.map((s, i) => `<li class="${nums[i].split(".").length > 2 ? "sub" : ""}"><span class="n">${nums[i]}</span> <button type="button" data-sec="${i}">${esc(s.heading)}</button></li>`).join("")}</ul></nav>` : "";
+  const fnHtml = fns.length ? `<section class="fns"><b>각주</b><ol>${fns.map((f, i) => `<li id="fn-${i + 1}">${inline(f)}</li>`).join("")}</ol></section>` : "";
+  const back = [...new Set(e.mentions.map(m => m.from))].filter(x => w.entities[x] && x !== k);
+  const out = (p.links || []).filter(x => w.entities[x]);
+  const newOut = out.filter(x => !S.pages[x]).length;
+  const chk = p.check;
+  const hi = (chk?.issues || []).filter(i => i.severity === "high"), lo = [...(chk?.issues || []).filter(i => i.severity !== "high"), ...lintPage(p)];
+  S.memo = { k, items: [...hi, ...lo] };
+  const fixBtn = n => `<button type="button" class="btn memo-fix" data-fix="${n}" data-fixk="${k}" ${S.fixing || (S.gen && S.gen.key === k) || !S.sample ? "disabled" : ""}>${S.fixing && S.fixing.key === k && S.fixing.i === n ? "고치는 중…" : "고치기"}</button>`;
+  const item = (i, n, cls) => `<li class="${cls}">${esc(i.claim)}${i.conflict ? `<span class="memo-why">${esc(i.conflict)}</span>` : ""}${fixBtn(n)}</li>`;
+  const chkHtml = (S.checking === k || S.bgSync === k) ? `<p class="memo-line"><span class="dot"></span>설정 노트와 맞춰 보는 중</p>`
+    : (hi.length || lo.length) ? `<details class="memo"${hi.length ? " open" : ""}><summary><span class="memo-dot${hi.length ? " on" : ""}"></span>편집자 메모${hi.length ? ` · 다듬을 곳 ${hi.length}` : ""}${lo.length ? ` · 참고 ${lo.length}` : ""}${chk ? `<span class="src">${fmtDate(chk.at)}</span>` : ""}</summary><ul>${hi.map((i, n) => item(i, n, "")).join("")}${lo.map((i, n) => item(i, hi.length + n, "lo")).join("")}</ul>${hi.length + lo.length > 1 ? `<div class="memo-foot"><button type="button" class="btn" data-act="fixv-open" ${S.gen && S.gen.key === k ? "disabled" : ""}>여러 곳 한꺼번에 교정하기</button></div>` : ""}</details>`
+    : chk ? `<p class="memo-line">설정 노트와 맞춰 봤습니다 <span class="src">${fmtDate(chk.at)}</span></p>` : "";
+  const rw = `<button type="button" class="btn" data-rw="${k}" aria-expanded="${S.confirmRewrite === k}" ${S.gen || !S.sample ? "disabled" : ""}>다시 쓰기</button>`;
+  const binding = e.mentions.filter(m => m.from !== k).length + e.facts.filter(f => f.src !== k).length;
+  const rwBox = S.confirmRewrite === k ? `<div class="rwbox">
+      <label class="lb" for="rwDir">다시 쓰기 방향 <span class="note" style="font-weight:400">선택</span></label>
+      <input id="rwDir" class="txt" type="text" maxlength="300" placeholder="예: 생애는 줄이고 1972년 대국을 중심으로, 분량은 절반 정도">
+      <p class="note">이 문서의 이전 버전과 이전 버전이 확정한 사실은 참고하지 않고 새로 씁니다. 다른 문서가 이 항목에 대해 확정한 내용 ${binding}건은 그대로 지킵니다.${p.editedAt ? " 직접 수정한 내용도 사라집니다." : ""} 실패하거나 중단하면 이전 버전이 유지됩니다.</p>
+      <div class="row" style="margin-top:6px"><button type="button" class="btn pri" data-rw-yes="${k}">다시 쓰기</button><button type="button" class="btn" data-act="rw-no">취소</button></div>
+    </div>` : "";
+  return `<article class="sheet">${crumb}<h1 class="t">${esc(p.title)}</h1>
+    ${p.categories?.length ? `<div class="cats"><b>분류</b>${p.categories.map(c => `<span>${esc(c)}</span>`).join("")}</div>` : ""}
+    ${navboxesFor(w, k).map(([, nb]) => navboxHtml(nb, nb.src === k, k)).join("")}
+    <div class="tools"><button type="button" class="btn" data-edit="${k}">편집</button><button type="button" class="btn" data-check="${k}" ${S.checking || !S.sample ? "disabled" : ""}>설정 검사</button>${rw}<button type="button" class="btn" data-focus="${k}">설정 노트에서 보기</button><button type="button" class="btn dng" data-delpage="${k}" aria-expanded="${S.confirmDelPage === k}">삭제</button></div>
+    ${S.confirmDelPage === k ? `<div class="rwbox"><p style="margin:0">「${esc(p.title)}」 문서를 삭제할까요?</p>
+      <p class="note">문서와 이 문서가 확정한 사실, 틀, 연표 항목이 지워집니다. 다른 문서가 이 항목을 언급한 내용은 남고, 그 링크는 미작성 문서로 돌아갑니다. 되돌릴 수 없습니다.</p>
+      <div class="row" style="margin-top:6px"><button type="button" class="btn dng" data-delpage-yes="${k}">삭제</button><button type="button" class="btn" data-act="delpage-no">취소</button></div></div>` : ""}
+    ${p.stale ? `<div class="banner warn">직접 수정한 내용을 설정과 대조하지 못해, 설정 노트에 이전 버전의 사실이 남아 있을 수 있습니다. <button type="button" class="btn" data-refresh="${k}" style="margin-left:6px;padding:2px 10px" ${!S.sample ? "disabled" : ""}>설정과 대조해 다시 저장</button></div>` : ""}
+    ${p.conflicts?.length ? `<div class="banner warn"><b>「${esc(p.conflicts[0].byTitle)}」${p.conflicts.some(c => c.byTitle !== p.conflicts[0].byTitle) ? " 등" : ""} 문서가 직접 수정되어, 이 문서의 서술 ${p.conflicts.length}곳이 설정과 맞지 않습니다.</b>
+      <ul>${p.conflicts.map(c => `<li>${esc(c.old)} <span class="src">→ ${linkHtml(c.byTitle)}: ${esc(c.claim)}</span></li>`).join("")}</ul>
+      <div class="row" style="margin-top:4px"><button type="button" class="btn" data-edit="${k}">편집해서 고치기</button><button type="button" class="btn" data-rw="${k}" ${S.gen || !S.sample ? "disabled" : ""}>다시 쓰기</button><button type="button" class="btn" data-dismiss="${k}" data-field="conflicts">표시 지우기</button></div></div>` : ""}
+    ${p.pending?.length ? `<div class="banner warn"><b>이 문서의 수정 내용이 직접 정한 설정과 충돌한 채 저장되었습니다.</b>
+      <ul>${p.pending.map(c => `<li><span class="sev">${esc(c.label)}</span>${esc(c.old)} <span class="src">↔ 수정본: ${esc(c.claim)}</span></li>`).join("")}</ul>
+      <div class="row" style="margin-top:4px"><button type="button" class="btn" data-edit="${k}">편집</button><button type="button" class="btn" data-act="canon">설정 노트 열기</button><button type="button" class="btn" data-dismiss="${k}" data-field="pending">표시 지우기</button></div></div>` : ""}
+    ${rwBox}${chkHtml}
+    ${p.rewrittenAt ? `<p class="src" style="margin:8px 0 0">${fmtDate(p.rewrittenAt)} 다시 씀${p.direction ? ` · 방향: ${esc(p.direction)}` : ""}</p>` : p.direction ? `<p class="src" style="margin:8px 0 0">작성 방향: ${esc(p.direction)}</p>` : ""}
+    <div class="article">${p.notices?.length ? `<div class="notice">${p.notices.map(n => `<div>${blocks(n, fns).replace(/^<p>|<\/p>$/g, "")}</div>`).join("")}</div>` : ""}${box}${toc}${secs}${fnHtml}</div>
+    ${(() => {
+      const rs = relationsOf(w, k);
+      if (!rs.length) return "";
+      return `<section class="rels"><h3>인물 관계</h3><ul>${rs.map(x => { const o = x.a === k ? x.b : x.a; return `<li class="${x.sup ? "sup" : ""}"><div class="rel-h">${linkHtml(w.entities[o].title)}<span class="rel-k">${esc(x.rel)}</span></div>${x.story ? `<p>${esc(x.story)}</p>` : ""}<span class="src">출처 ${esc(w.entities[x.src]?.title || "?")}${S.pages[x.src]?.editedAt ? " (직접 수정)" : ""}${x.sup ? ` · 「${esc(w.entities[x.sup.by]?.title || "?")}」 수정으로 대체됨` : ""}</span></li>`; }).join("")}</ul></section>`;
+    })()}
+    <div class="meta-foot">
+      <div class="box"><b>이 문서를 언급한 문서</b>${back.length ? back.map(x => linkHtml(w.entities[x].title)).join(" · ") : `<span class="src">없음 (첫 문서)</span>`}</div>
+      <div class="box"><b>이 문서의 링크</b><span class="src">${out.length}개 중 미작성 ${newOut}개</span></div>
+    </div></article>`;
+}
+function editHtml(k) {
+  const w = S.world, f = S.edit.f, e = w.entities[k];
+  const ta = (id, ef, rows, ph) => `<textarea id="${id}" data-ef="${ef}" rows="${rows}" ${ph ? `placeholder="${esc(ph)}"` : ""}>${esc(f[ef])}</textarea>`;
+  return `<div class="sheet ed"><div class="crumb"><span>${esc(w.title)}</span><span>문서 편집</span></div>
+    <h1 class="t">${esc(e.title)} <span class="note" style="font-family:var(--f-body);font-size:14px;font-weight:400">편집 중</span></h1>
+    ${S.edit.fix ? `<div class="banner warn"><b>고치기 제안</b>${S.edit.fix.note ? " · " + esc(S.edit.fix.note) : ""}<ul>${S.edit.fix.applied.map(a => `<li><del>${esc(stripMarks(a.old))}</del><br>→ ${esc(stripMarks(a.new))}</li>`).join("")}</ul>아래 편집 칸에 이미 반영해 두었습니다. 확인하고 저장을 누르면 설정과 대조한 뒤 확정 사실과 연표도 새로 정리합니다.</div>` : ""}
+    <label class="lb" for="edSummary">한 줄 정의</label><input id="edSummary" class="txt" data-ef="summary" value="${esc(f.summary)}">
+    <div class="ed-2">
+      <div><label class="lb" for="edType">유형</label><input id="edType" class="txt" data-ef="type" list="typeList" value="${esc(f.type)}"><datalist id="typeList">${TYPES.map(t => `<option value="${t}"></option>`).join("")}</datalist></div>
+      <div><label class="lb" for="edCats">분류 <span class="note" style="font-weight:400">| 로 구분</span></label><input id="edCats" class="txt" data-ef="cats" value="${esc(f.cats)}"></div>
+    </div>
+    <label class="lb" for="edNotices">안내 틀 <span class="note" style="font-weight:400">한 줄에 하나</span></label>${ta("edNotices", "notices", 2)}
+    <label class="lb" for="edInfobox">인포박스 <span class="note" style="font-weight:400">한 줄에 "항목: 값"</span></label>${ta("edInfobox", "infobox", Math.min(10, f.infobox.split("\n").length + 1))}
+    <label class="lb" for="edBody">본문</label>${ta("edBody", "body", 26)}
+    <details class="ed-help"><summary>문법 안내</summary><dl class="kv">
+      <dt>= 제목 =</dt><dd>섹션</dd><dt>== 제목 ==</dt><dd>하위 섹션</dd>
+      <dt>[[항목]]</dt><dd>링크. 보이는 말을 바꾸려면 [[항목|보일 말]]</dd>
+      <dt>**굵게** ~~취소선~~</dt><dd>강조와 취소선</dd><dt>[* 내용]</dt><dd>각주</dd>
+      <dt>- 항목</dt><dd>목록. 앞에 공백 두 칸을 넣으면 하위 목록</dd><dt>&gt; 문장</dt><dd>인용문. 다음 줄에 "&gt; — 화자"</dd>
+    </dl></details>
+    <label class="lb" for="edNavbox">틀 <span class="note" style="font-weight:400">구성원 명단 등. 없으면 비워 둡니다</span></label>${ta("edNavbox", "navbox", Math.max(4, Math.min(14, f.navbox.split("\n").length + 1)), "= 독수리 중대 대원 =\n== 창설 대원 ==\n[[캡틴 리버티]] — 1번, 개문 임무\n[[레드 호크]] — 2번")}
+    <p class="note" style="margin-top:12px">문서 제목은 바꿀 수 없습니다. 저장하면 수정본을 기존 설정과 대조한 뒤 반영합니다. AI가 쓴 문서와 충돌하면 이 수정이 기준이 되고 해당 문서에 표시가 붙습니다. 핵심 규칙이나 직접 수정한 다른 문서와 충돌하면 어느 쪽을 따를지 묻습니다.</p>
+    <div id="edConflicts"></div>
+    <div class="banner warn" id="edErr" hidden></div>
+    <div class="row"><button type="button" class="btn pri" id="edSave" data-act="ed-save">저장</button><button type="button" class="btn" data-act="ed-cancel">취소</button></div></div>`;
+}
+function navboxHtml(nb, open, cur) {
+  const item = it => {
+    const i = it.indexOf(" — "); const name = i >= 0 ? it.slice(0, i) : it, desc = i >= 0 ? it.slice(i + 3) : "";
+    const self = [...name.matchAll(LINK_RE)].some(m => keyOf(m[1]) === cur);
+    return `<li class="${self ? "me" : ""}">${self ? `<b>${esc(stripMarks(name))}</b>` : inline(name)}${desc ? `<small>${inline(desc)}</small>` : ""}</li>`;
+  };
+  return `<details class="navbox"${open ? " open" : ""}><summary><span class="nb-t">${esc(nb.title)}</span><span class="nb-n">${nb.members.length}</span><span class="nb-tog" aria-hidden="true"></span></summary>
+    <div class="nb-body">${nb.rows.map(r => `<div class="nb-row">${r.label ? `<div class="nb-l">${esc(r.label)}</div>` : ""}<ul>${r.items.map(item).join("")}</ul></div>`).join("")}
+    ${nb.src !== cur ? `<div class="nb-src">${linkHtml(nb.srcTitle, nb.srcTitle + " 문서")}</div>` : ""}</div></details>`;
+}
+function openCompose(k) {
+  const w = S.world; if (!w || !w.entities[k]) return;
+  if (S.pages[k]) { openEntity(k); return; }
+  if (!S.compose || S.compose.key !== k) S.compose = { key: k, type: "", dir: "" };
+  S.view = { name: "compose", key: k }; renderAll(); window.scrollTo({ top: 0 });
+  if (!lp.touch) setTimeout(() => $("#cpDir")?.focus(), 0);
+}
+function composeHtml(k) {
+  const w = S.world, e = w.entities[k], c = S.compose;
+  if (!e) return `<div class="sheet"><p>문서를 찾을 수 없습니다.</p></div>`;
+  const busy = S.gen && S.gen.key !== k;
+  return `<div class="sheet"><div class="crumb"><span>${esc(w.title)}</span><span>새 문서 작성</span></div>
+    <h1 class="t">${esc(e.title)}</h1>
+    ${promiseHtml(w, e, "이미 확정된 내용")}
+    <label class="lb" for="cpType">유형</label>
+    <select id="cpType" class="txt"><option value="">자동으로 정하기</option>${TYPES.map(t => `<option value="${t}"${c.type === t ? " selected" : ""}>${t}</option>`).join("")}</select>
+    <label class="lb" for="cpDir">작성 방향</label>
+    <textarea id="cpDir" rows="6" maxlength="1200" placeholder="예: 1388년 회군에서의 활약을 중심으로. 특수 무장 두 가지와 파일럿 강만택의 맞수 관계를 자세히. 분량은 길게.">${esc(c.dir)}</textarea>
+    <p class="note">확정된 내용과 핵심 규칙은 그대로 지키고, 그 안에서 이 방향을 가장 먼저 따릅니다. 분량이나 구성에 관한 요청도 반영됩니다.</p>
+    ${busy ? `<div class="banner warn">「${esc(S.gen.title)}」 문서를 작성하는 중입니다. 끝난 뒤 작성할 수 있습니다.</div>` : ""}
+    <div class="row"><button type="button" class="btn pri" data-compose-go="${k}" ${busy || !S.sample ? "disabled" : ""}>이 방향으로 작성</button><button type="button" class="btn" data-act="compose-cancel">취소</button></div></div>`;
+}
+function startCompose(k) {
+  const c = S.compose; if (!c || c.key !== k) return;
+  const dir = norm(c.dir).slice(0, 1200), guide = [c.type ? `유형: ${c.type}` : "", dir].filter(Boolean).join("\n");
+  if (S.world.entities[k].src === "search") S.world.entities[k].src = "guided";
+  S.compose = null; S.genErr = null;
+  S.recent = [k, ...S.recent.filter(x => x !== k)].slice(0, 8);
+  generatePage(k, false, guide);
+}
+function notFoundHtml(t) {
+  const w = S.world, tl = t.toLowerCase();
+  const sim = Object.values(w.entities).filter(o => o.title.length >= 2 && (o.title.toLowerCase().includes(tl) || tl.includes(o.title.toLowerCase()))).slice(0, 6);
+  return `<div class="sheet"><div class="crumb"><span>${esc(w.title)}</span><span>검색</span></div>
+    <h1 class="t">${esc(t)}</h1>
+    <p class="nf-h">문서를 찾을 수 없습니다!</p>
+    <p class="note">‘${esc(t)}’에 해당하는 항목이 「${esc(w.title)}」에 없고, 새 항목으로 쓸 만한 이름으로도 읽히지 않습니다.</p>
+    ${sim.length ? `<p>비슷한 문서: ${sim.map(o => linkHtml(o.title)).join(" · ")}</p>` : ""}
+    <div class="tools"><button type="button" class="btn" data-force="${esc(t)}" ${S.gen || !S.sample ? "disabled" : ""}>그래도 이 이름으로 새 문서 만들기</button></div></div>`;
+}
+function leadHtml(p) {
+  const s = p.summary;
+  if (s.startsWith(p.title)) return `<strong>${esc(p.title)}</strong>${esc(s.slice(p.title.length))}`;
+  return `<strong>${esc(p.title)}</strong> — ${esc(s)}`;
+}
+function promiseHtml(w, e, head) {
+  const items = [...(e.summary ? [`<li><b>정의</b> ${esc(e.summary)}</li>`] : []), ...e.facts.filter(live).map(f => `<li>${esc(f.t)} <span class="src">· ${esc(w.entities[f.src]?.title || "사용자")}</span></li>`), ...e.mentions.filter(live).map(m => `<li>“${esc(m.text)}” <span class="src">· 「${esc(w.entities[m.from]?.title || "?")}」에서 언급</span></li>`)];
+  if (!items.length) return `<div class="promise"><h5>${esc(head)}</h5><span class="note">아직 확정된 내용이 없는 새 항목입니다. 핵심 규칙과 연표만 지키며 자유롭게 작성합니다.</span></div>`;
+  return `<div class="promise"><h5>${esc(head)} · ${items.length}건</h5><ul>${items.join("")}</ul></div>`;
+}
+function updateGenLive() {
+  if (!S.gen || S.view.name !== "article" || S.view.key !== S.gen.key) return;
+  const c = $("#genCount"), h = $("#genHeads"); if (!c || !h) return;
+  const raw = S.gen.raw;
+  const el = Math.floor((performance.now() - (S.gen.t0 || performance.now())) / 1000);
+  c.textContent = raw ? `문서를 작성하는 중 · ${raw.length.toLocaleString()}자 · ${el}초` : `생각하는 중 · ${el}초`;
+  const heads = [...raw.matchAll(/"heading"\s*:\s*"([^"]*)"/g)].map(m => m[1]);
+  if (heads.length !== h.children.length) h.innerHTML = heads.map((x, i) => `<li>${i + 1}. ${esc(x)}</li>`).join("");
+}
+
+function canonHtml() {
+  const w = S.world; const ents = Object.entries(w.entities);
+  const f = S.canonFilter;
+  const shown = ents.filter(([, o]) => f === "all" || (f === "done" ? o.page : !o.page)).sort((a, b) => a[1].title.localeCompare(b[1].title, "ko"));
+  const tab = (id, l, n) => `<button type="button" class="chip" data-filter="${id}" aria-pressed="${f === id}">${l} ${n}</button>`;
+  return `<div class="sheet canon"><div class="crumb"><span>${esc(w.title)}</span><span>설정 노트</span></div>
+    <h1 class="t">설정 노트</h1>
+    <p class="note">문서를 작성할 때마다 아래 내용이 함께 전달됩니다. 사용자 확정 설정은 다른 모든 설정보다 우선합니다.</p>
+    <h2>기본 정보</h2>
+    <label class="lb" for="wTitle">세계관 이름</label><input id="wTitle" class="txt" maxlength="40" value="${esc(w.title)}">
+    <label class="lb" for="wTag">한 줄 소개</label><input id="wTag" class="txt" maxlength="160" value="${esc(w.tagline || "")}">
+    <dl class="kv" style="margin-top:12px"><dt>작중 기준 시점</dt><dd>${esc(w.era)}</dd><dt>저장 위치</dt><dd>${esc(storeLabel())}</dd></dl>
+    <label class="lb" for="wHist" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="wHist" ${w.historical ? "checked" : ""}>실제 역사에서 갈라진 대체역사 <span class="note">실존 인물을 재해석해 등장시킵니다</span></label>
+    <label class="lb">원안</label><div class="seedbox">${esc(w.seed)}</div>
+    <h2>작가 지침</h2>
+    <label class="lb" for="wGuide">세계관 전체에 걸쳐 지킬 방향 <span class="note" style="font-weight:400">문체와 구성 규칙보다 우선하고, 확정 설정보다는 뒤에 옵니다. 1,000자까지</span></label>
+    <textarea id="wGuide" rows="4" maxlength="1000" placeholder="예: 실존 인물을 많이 등장시킨다. 개그는 줄이고 첩보물처럼 쓴다.">${esc(w.guide || "")}</textarea>
+    <h2>분위기</h2>
+    <label class="lb" for="toneLabel">장르와 문화권</label>
+    <input id="toneLabel" class="txt" maxlength="60" value="${esc(w.tone?.label || "")}" placeholder="아직 판별하지 않았습니다. 예: 영미권 정통 하이 판타지">
+    <label class="lb" for="toneGuide">문체 지침 <span class="note" style="font-weight:400">한 줄에 하나</span></label>
+    <textarea id="toneGuide" rows="${Math.min(10, (w.tone?.guide.length || 4) + 1)}">${esc((w.tone?.guide || []).join("\n"))}</textarea>
+    <div class="row"><button type="button" class="btn" data-act="tone-detect" id="toneBtn" ${!S.sample ? "disabled" : ""}>지침 다시 만들기</button><span class="note">장르와 문화권 칸에 적힌 분위기로 지침을 만듭니다. 비워 두면 원안에서 판별합니다. 결과를 확인한 뒤 아래 '설정 저장'을 눌러 주세요.</span></div>
+    <h2>핵심 규칙</h2>
+    <label class="lb" for="rulesTa">한 줄에 하나씩</label>
+    <textarea id="rulesTa" rows="${Math.min(12, (w.rules.length || 3) + 2)}">${esc(w.rules.join("\n"))}</textarea>
+    <label class="lb" for="userTa">사용자 확정 설정</label>
+    <textarea id="userTa" rows="4" placeholder="예: 주인공 한서린은 1962년 대국에서 진 적이 없다. 메가서울의 경찰 조직 이름은 '청람'이다.">${esc(w.userCanon || "")}</textarea>
+    <div class="row"><button type="button" class="btn pri" data-act="save-canon">설정 저장</button><span class="note">저장 후 새로 작성하는 문서부터 반영됩니다.</span></div>
+    ${Object.keys(w.navboxes || {}).length ? `<h2>틀</h2><ul style="margin:0;padding-left:20px">${Object.values(w.navboxes).map(nb => `<li>${esc(nb.title)} <span class="src">· ${nb.members.length}개 항목 · ${linkHtml(nb.srcTitle)}</span></li>`).join("")}</ul>` : ""}
+    ${(w.relations || []).length ? `<h2>인물 관계</h2><div style="overflow-x:auto"><table class="tl">${w.relations.filter(x => w.entities[x.a] && w.entities[x.b]).map(x => `<tr><td>${esc(x.rel)}</td><td>${linkHtml(w.entities[x.a].title)} – ${linkHtml(w.entities[x.b].title)}${x.story ? ` <span class="${x.sup ? "" : "note"}">${x.sup ? `<del>${esc(x.story)}</del>` : esc(x.story)}</span>` : ""} <span class="src">· ${esc(w.entities[x.src]?.title || "?")}${x.sup ? " · 대체됨" : ""}</span></td></tr>`).join("")}</table></div>` : ""}
+    <h2>연표</h2>
+    <div style="overflow-x:auto"><table class="tl">${w.timeline.map(t => `<tr><td>${esc(t.year)}</td><td>${t.sup ? `<del>${esc(t.event)}</del> <span class="src">· 「${esc(w.entities[t.sup.by]?.title || "?")}」 수정으로 대체됨</span>` : esc(t.event)}${t.src && t.src !== "seed" && w.entities[t.src] ? `<span class="src">· ${linkHtml(w.entities[t.src].title)}</span>` : ""}</td></tr>`).join("") || `<tr><td></td><td class="note">없음</td></tr>`}</table></div>
+    <h2>항목별 확정 사실</h2>
+    <div class="tabs">${tab("all", "전체", ents.length)}${tab("done", "작성됨", ents.filter(x => x[1].page).length)}${tab("stub", "미작성", ents.filter(x => !x[1].page).length)}</div>
+    ${shown.map(([k, o]) => `<details class="ent" id="ent-${k}"><summary><span class="et">${esc(o.title)}</span><span class="st ${o.page ? "on" : "off"}">${o.page ? "작성됨" : "미작성"}</span><span class="em">${esc(o.type || "유형 미정")} · 사실 ${o.facts.length} · 언급 ${o.mentions.length}</span></summary>
+      ${o.summary ? `<p style="margin:6px 0 0 22px">${esc(o.summary)}</p>` : ""}
+      <ul>${o.facts.map(x => `<li>${x.sup ? `<del>${esc(x.t)}</del>` : esc(x.t)} <span class="src">· ${esc(w.entities[x.src]?.title || "사용자")}${S.pages[x.src]?.editedAt ? " (직접 수정)" : ""}${x.sup ? ` · 「${esc(w.entities[x.sup.by]?.title || "?")}」 수정으로 대체됨` : ""}</span></li>`).join("")}${o.mentions.map(x => `<li>${x.sup ? `<del>“${esc(x.text)}”</del>` : `“${esc(x.text)}”`} <span class="src">· 「${esc(w.entities[x.from]?.title || "?")}」${x.sup ? ` · 「${esc(w.entities[x.sup.by]?.title || "?")}」 수정으로 대체됨` : ""}</span></li>`).join("")}</ul>
+      <div style="margin:4px 0 6px 22px">${linkHtml(o.title, o.page ? "문서 열기" : "문서 작성하기")}</div></details>`).join("")}
+  </div>`;
+}
+
+/* ---------- search ---------- */
+function renderSugg() {
+  const box = $("#sugg"), q = norm($("#q").value), w = S.world;
+  if (!w || !q) { box.hidden = true; box.innerHTML = ""; return; }
+  const ql = q.toLowerCase();
+  const hits = Object.entries(w.entities).filter(([, o]) => o.title.toLowerCase().includes(ql)).sort((a, b) => (b[1].page - a[1].page) || a[1].title.length - b[1].title.length).slice(0, 7);
+  const exact = hits.some(([, o]) => o.title.toLowerCase() === ql);
+  box.innerHTML = hits.map(([k, o]) => `<button type="button" data-sk="${k}"><span>${esc(o.title)}</span><small>${o.page ? "문서" : "미작성"}</small></button>`).join("")
+    + (exact ? "" : `<button type="button" data-snew="${esc(q)}"><span>「${esc(q)}」 문서 찾기</span><small>없으면 새로 작성</small></button><button type="button" data-scompose="${esc(q)}"><span>「${esc(q)}」 방향을 정해 새로 만들기</span><small>작성 페이지</small></button>`);
+  box.hidden = false;
+}
+function composeFromSearch(title) {
+  const w = S.world; const t = norm(title); if (!w || !t) return;
+  const k = keyOf(t);
+  if (!w.entities[k]) { w.entities[k] = newEntity(t, "", ""); w.entities[k].src = "guided"; }
+  S.nf.delete(k);
+  $("#q").value = ""; renderSugg(); $("#q").blur(); openCompose(k);
+}
+function goSearch(title) {
+  const w = S.world; const t = norm(title); if (!w || !t) return;
+  const k = keyOf(t);
+  if (!w.entities[k] && S.nf.has(k)) { $("#q").value = ""; renderSugg(); $("#q").blur(); S.view = { name: "notfound", title: t }; renderAll(); window.scrollTo({ top: 0 }); return; }
+  if (!w.entities[k]) { w.entities[k] = newEntity(t, "", ""); w.entities[k].src = "search"; }
+  $("#q").value = ""; renderSugg(); $("#q").blur(); openEntity(k);
+}
+
+/* ---------- toast ---------- */
+let toastT;
+function toast(msg, action) {
+  const t = $("#toast"); t.innerHTML = esc(msg) + (action ? `<button type="button" id="toastAct">${esc(action.label)}</button>` : "");
+  t.hidden = false; if (action) $("#toastAct").onclick = () => { t.hidden = true; action.fn(); };
+  clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, action ? 7000 : 3600);
+}
+
+/* ---------- events ---------- */
+document.addEventListener("click", ev => {
+  if (!ev.target.closest(".search")) $("#sugg").hidden = true;
+  const el = ev.target.closest("button, a"); if (!el) return;
+  const d = el.dataset;
+  if (el.matches("a.wl.new")) {
+    ev.preventDefault();
+    if (lp.fired) { lp.fired = false; return; }               // 길게 누르기로 이미 작성 페이지를 열었음
+    const w = S.world; if (!w) return;
+    const k = d.k; if (!w.entities[k] && d.t) w.entities[k] = newEntity(d.t, "", "");
+    if (lp.touch) { openEntity(k); return; }                   // 터치는 짧게 누르면 바로 작성
+    if (ev.detail >= 2) { clearTimeout(lp.clickT); lp.clickT = null; openCompose(k); return; }
+    clearTimeout(lp.clickT); lp.clickT = setTimeout(() => { lp.clickT = null; openEntity(k); }, 260);
+    return;
+  }
+  if (el.matches("a.wl") || (el.tagName === "BUTTON" && d.k)) { ev.preventDefault(); const w = S.world; if (!w) return; let k = d.k; if (!w.entities[k] && d.t) w.entities[k] = newEntity(d.t, "", ""); openEntity(k); return; }
+  if (d.fn) { ev.preventDefault(); const li = document.getElementById("fn-" + d.fn); if (li) { li.scrollIntoView({ block: "center", behavior: "smooth" }); li.classList.add("flash"); setTimeout(() => li.classList.remove("flash"), 1600); } return; }
+  if (d.sec) { document.getElementById("s-" + d.sec)?.scrollIntoView({ behavior: "smooth" }); return; }
+  if (d.sk) { $("#q").value = ""; $("#sugg").hidden = true; openEntity(d.sk); return; }
+  if (d.snew) { goSearch(d.snew); return; }
+  if (d.scompose) { composeFromSearch(d.scompose); return; }
+  if (d.compose) { openCompose(d.compose); return; }
+  if (d.composeGo) { startCompose(d.composeGo); return; }
+  if (d.force) { const w = S.world; if (!w) return; const t = norm(d.force), k = keyOf(t); S.nf.delete(k); if (!w.entities[k]) w.entities[k] = newEntity(t, "", ""); w.entities[k].src = "force"; S.genErr = null; openEntity(k); return; }
+  if (d.stab) {
+    S.seedTab = d.stab;
+    if (d.stab === "own") S.seed = S.ownSeed;
+    else if (d.stab === "dice") { if (!S.dice) rollDice(); S.seed = diceSeed(S.dice); }
+    else if (d.stab === "whatif") { if (!S.whatIfs) S.whatIfs = shuffle(WHATIFS).slice(0, 8); }
+    else S.seed = EXAMPLES[+d.stab].text;
+    renderMain(); return;
+  }
+  if (d.lock) { S.dice.locks[d.lock] = !S.dice.locks[d.lock]; renderMain(); return; }
+  if (d.whatif) { S.seed = whatIfSeed(d.whatif); createWorld(); return; }
+  if (d.world) { openWorld(d.world); return; }
+  if (d.del) { S.confirmDel = d.del; renderMain(); return; }
+  if (d.delYes) { deleteWorld(d.delYes); return; }
+  if (d.gen) { const g = S.genErr?.key === d.gen ? S.genErr.guide || "" : ""; S.genErr = null; generatePage(d.gen, false, g); return; }
+  if (d.rw) { S.confirmRewrite = S.confirmRewrite === d.rw ? null : d.rw; renderMain(); if (S.confirmRewrite) $("#rwDir")?.focus(); return; }
+  if (d.rwYes) { const dir = norm($("#rwDir")?.value || "").slice(0, 300); generatePage(d.rwYes, true, dir); return; }
+  if (d.check) { checkPage(d.check); return; }
+  if (d.fixk) { openFixView(d.fixk, [Number(d.fix)], true); return; }
+  if (d.edit) { openEditor(d.edit); return; }
+  if (d.delpage) { S.confirmDelPage = S.confirmDelPage === d.delpage ? null : d.delpage; S.confirmRewrite = null; renderMain(); return; }
+  if (d.delpageYes) { deletePage(d.delpageYes); return; }
+  if (d.refresh) { openEditor(d.refresh); saveEdit(); return; }
+  if (d.dismiss) { dismissNotes(d.dismiss, d.field); return; }
+  if (d.focus) { S.focusEnt = d.focus; S.view = { name: "canon" }; renderAll(); return; }
+  if (d.filter) { S.canonFilter = d.filter; renderMain(); return; }
+  switch (d.act) {
+    case "home": if (S.view.name === "home") return; S.view = { name: "home" }; if (!S.gen) S.world = null; renderAll(); window.scrollTo({ top: 0 }); break;
+    case "fixv-open": { const k = S.view.key, m = S.memo; if (m && m.k === k) openFixView(k, m.items.map((x, i) => i).filter(i => m.items[i].severity === "high"), false); break; }
+    case "fixv-run": runFixBatch(); break;
+    case "fixv-apply": applyFix(); break;
+    case "fixv-redo": if (S.fixv) { S.fixv.phase = "pick"; S.fixv.edits = []; S.fixv.err = ""; renderMain(); } break;
+    case "fixv-back": { const k = S.fixv?.key || S.view.key; S.fixv = null; S.view = S.world && S.world.entities[k] ? { name: "article", key: k } : { name: "home" }; renderAll(); break; }
+    case "log": S.view = { name: "log" }; renderAll(); window.scrollTo({ top: 0 }); break;
+    case "gset": S.view = { name: "gset" }; S.gres = ""; renderAll(); window.scrollTo({ top: 0 }); break;
+    case "gkey-show": { const i = $("#gKey"); if (i) i.type = i.type === "password" ? "text" : "password"; break; }
+    case "gset-save": readGsetForm(); setGres(""); renderSide(); toast(GS.key ? "Gemini 설정을 저장했습니다." : "키가 비어 있어 생성 기능이 꺼집니다."); break;
+    case "gset-test": (async () => {
+      readGsetForm(); renderSide(); if (!GS.key) { setGres("키를 먼저 넣어 주세요."); return; }
+      const out = [];
+      for (const tier of ["main", "quick"]) {
+        setGres([...out, `${GS[tier]} 시험 중…`].join(" / "));
+        const t0 = performance.now();
+        try { const r = await gemini.json('JSON 객체 하나만 출력: {"ok":true}', { modelTier: tier === "main" ? "default" : "quick" }); out.push(`${GS[tier]}: ${r && r.ok === true ? "성공" : "응답은 왔지만 형식이 다름"} (${((performance.now() - t0) / 1000).toFixed(1)}초)`); }
+        catch (e) { out.push(`${GS[tier]}: 실패 · ${errMsg(e)}${e?.message ? " (" + e.message + ")" : ""}`); }
+      }
+      setGres(out.join(" / "));
+    })(); break;
+    case "gset-models": (async () => {
+      readGsetForm(); if (!GS.key) { setGres("키를 먼저 넣어 주세요."); return; }
+      setGres("모델 목록을 불러오는 중…");
+      try { S.gmodels = await listGeminiModels(); S.gres = `텍스트 생성 모델 ${S.gmodels.length}개를 불러왔습니다. 모델 칸을 누르면 고를 수 있습니다.`; renderMain(); }
+      catch (e) { setGres("불러오지 못했습니다. " + errMsg(e)); }
+    })(); break;
+    case "export": exportAll().catch(e => toast("내보내지 못했습니다. " + errMsg(e))); break;
+    case "import": $("#importFile")?.click(); break;
+    case "log-back": S.view = S.world ? { name: "article", key: (S.recent.find(x => S.world.entities[x]) || S.world.mainKey) } : { name: "home" }; renderAll(); break;
+    case "log-clear": LOG.length = 0; try { localStorage.removeItem(LOGK); } catch {} renderAll(); break;
+    case "prompt-copy": {
+      if (!LASTP) break;
+      const pick = () => { const d = $("#promptPre")?.closest("details"); if (d) d.open = true; const pre = $("#promptPre"); if (!pre) return; const r = document.createRange(); r.selectNodeContents(pre); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); };
+      try { navigator.clipboard.writeText(LASTP.text).then(() => toast("프롬프트를 복사했습니다."), () => { pick(); toast("자동 복사가 막혀 있어 프롬프트를 선택해 두었습니다. 직접 복사해 주세요."); }); }
+      catch { pick(); toast("자동 복사가 막혀 있어 프롬프트를 선택해 두었습니다. 직접 복사해 주세요."); }
+      break;
+    }
+    case "log-copy": {
+      const txt = logText();
+      const pick = () => { const pre = $("#logPre"); if (!pre) return; const r = document.createRange(); r.selectNodeContents(pre); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); };
+      try { navigator.clipboard.writeText(txt).then(() => toast("로그를 복사했습니다."), () => { pick(); toast("자동 복사가 막혀 있어 로그를 선택해 두었습니다. 직접 복사해 주세요."); }); }
+      catch { pick(); toast("자동 복사가 막혀 있어 로그를 선택해 두었습니다. 직접 복사해 주세요."); }
+      break;
+    }
+    case "canon": S.view = { name: "canon" }; renderAll(); window.scrollTo({ top: 0 }); break;
+    case "create": { const ta = $("#seedTa"); if (ta) S.seed = ta.value; createWorld(); break; }
+    case "stop": S.gen?.ctl.abort(); break;
+    case "del-no": S.confirmDel = null; renderMain(); break;
+    case "rw-no": S.confirmRewrite = null; renderMain(); break;
+    case "delpage-no": S.confirmDelPage = null; renderMain(); break;
+    case "ed-save": saveEdit(); break;
+    case "ed-save-raw": saveEdit(true); break;
+    case "cf-apply": applyConflictChoices(); break;
+    case "cf-back": if (S.edit) S.edit.pending = null; $("#edConflicts").innerHTML = ""; $("#edBody")?.focus(); break;
+    case "ed-cancel": S.edit = null; renderMain(); window.scrollTo({ top: 0 }); break;
+    case "save-canon": saveCanon(); break;
+    case "roll": rollDice(true); S.seed = diceSeed(S.dice); renderMain(); break;
+    case "whatif-more": { const shown = new Set(S.whatIfs || []); const rest = shuffle(WHATIFS.filter(q => !shown.has(q))); S.whatIfs = (rest.length >= 8 ? rest : shuffle(WHATIFS)).slice(0, 8); renderMain(); break; }
+    case "compose-cancel": { const k = S.view.key; S.compose = null; if (k && S.world?.entities[k] && (S.world.entities[k].facts.length || S.world.entities[k].mentions.length)) { S.genErr = null; S.view = { name: "article", key: k }; } else { S.view = { name: "article", key: S.world.mainKey }; } renderAll(); break; }
+    case "tone-detect": (async () => {
+      const btn = $("#toneBtn"); if (!S.sample || !S.world) return;
+      const w = S.world, label = norm($("#toneLabel")?.value || "");
+      if (btn) { btn.disabled = true; btn.textContent = "만드는 중…"; }
+      try {
+        const t = await detectTone(w, label);
+        if (!t) throw { code: "invalid_json" };
+        if (S.world === w && $("#toneLabel")) { $("#toneLabel").value = t.label; $("#toneGuide").value = t.guide.join("\n"); $("#toneGuide").rows = Math.min(10, t.guide.length + 1); }
+        toast("분위기 지침을 채웠습니다. '설정 저장'을 눌러야 반영됩니다.");
+      } catch (err) { toast("분위기 지침을 만들지 못했습니다. " + errMsg(err)); }
+      if (btn) { btn.disabled = false; btn.textContent = "지침 다시 만들기"; }
+    })(); break;
+  }
+});
+document.addEventListener("input", ev => {
+  if (ev.target.id === "seedTa") {
+    S.seed = S.ownSeed = ev.target.value;
+    if (S.seedTab !== "own") {   // 예시나 주사위 결과를 고쳐 쓰면 내 원안이 된다
+      S.seedTab = "own";
+      const pos = ev.target.selectionStart; renderMain();
+      const ta = $("#seedTa"); if (ta) { ta.focus(); try { ta.setSelectionRange(pos, pos); } catch {} }
+    }
+  }
+  if (ev.target.id === "firstIn") S.first = ev.target.value;
+  if (ev.target.id === "cpDir" && S.compose) S.compose.dir = ev.target.value;
+  if (ev.target.id === "guideIn") S.guideIn = ev.target.value;
+  if (S.fixv && ev.target.dataset?.fsel !== undefined) { const x = Number(ev.target.dataset.fsel); ev.target.checked ? S.fixv.sel.add(x) : S.fixv.sel.delete(x); renderMain(); }
+  if (S.fixv && ev.target.dataset?.fon !== undefined) { const e = S.fixv.edits[Number(ev.target.dataset.fon)]; if (e) { e.on = ev.target.checked; renderMain(); } }
+  if (S.fixv && ev.target.dataset?.fnew !== undefined) { const e = S.fixv.edits[Number(ev.target.dataset.fnew)]; if (e) e.new = ev.target.value; }
+  if (ev.target.dataset?.ef && S.edit) S.edit.f[ev.target.dataset.ef] = ev.target.value;
+  if (ev.target.id === "q") renderSugg();
+});
+$("#q").addEventListener("focus", renderSugg);
+$("#searchForm").addEventListener("submit", ev => {
+  ev.preventDefault(); const q = norm($("#q").value); if (!q || !S.world) return;
+  const hit = Object.entries(S.world.entities).find(([, o]) => o.title.toLowerCase() === q.toLowerCase());
+  if (hit) { $("#q").value = ""; $("#sugg").hidden = true; openEntity(hit[0]); } else goSearch(q);
+});
+document.addEventListener("change", ev => {
+  if (ev.target.id === "cpType" && S.compose) S.compose.type = ev.target.value;
+  if (ev.target.id === "importFile" && ev.target.files?.[0]) { const f = ev.target.files[0]; ev.target.value = ""; importAll(f); }
+});
+/* 길게 누르기 감지: 터치로 빨간 링크를 0.5초 누르면 작성 페이지 */
+const lp = { timer: null, fired: false, touch: false, x: 0, y: 0, clickT: null };
+document.addEventListener("pointerdown", ev => {
+  lp.touch = ev.pointerType === "touch" || ev.pointerType === "pen"; lp.fired = false;
+  const a = ev.target.closest?.("a.wl.new"); clearTimeout(lp.timer);
+  if (!a || !lp.touch) return;
+  lp.x = ev.clientX; lp.y = ev.clientY;
+  lp.timer = setTimeout(() => {
+    const w = S.world; if (!w) return;
+    const k = a.dataset.k; if (!w.entities[k] && a.dataset.t) w.entities[k] = newEntity(a.dataset.t, "", "");
+    lp.fired = true; lp.firedAt = Date.now(); try { navigator.vibrate?.(15); } catch {}
+    openCompose(k);
+  }, 500);
+});
+document.addEventListener("pointermove", ev => { if (lp.timer && Math.hypot(ev.clientX - lp.x, ev.clientY - lp.y) > 10) { clearTimeout(lp.timer); lp.timer = null; } });
+["pointerup", "pointercancel"].forEach(t => document.addEventListener(t, () => { clearTimeout(lp.timer); lp.timer = null; }));
+document.addEventListener("click", ev => {   // 길게 누른 뒤 손을 뗄 때 생기는 클릭이 작성 페이지의 버튼을 누르지 않게 한다
+  if (lp.fired && Date.now() - (lp.firedAt || 0) < 900) { ev.stopPropagation(); ev.preventDefault(); lp.fired = false; }
+}, true);
+document.addEventListener("contextmenu", ev => { if (ev.target.closest?.("a.wl.new")) ev.preventDefault(); });
+document.addEventListener("keydown", ev => { if (ev.key === "Escape") $("#sugg").hidden = true; });
+
+/* ---------- boot ---------- */
+(async function boot() {
+  renderAll();
+  setInterval(() => { if (S.gen) updateGenLive(); const t = $("#fxTick"); if (t && S.fixv?.t0) t.textContent = Math.floor((performance.now() - S.fixv.t0) / 1000) + "초"; }, 1000);
+  S.sample = GS.key ? gemini : null; S.sampleReady = true;
+  await Store.init();
+  try { S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)); }
+  catch (e) { toast("세계관 목록을 불러오지 못했습니다. " + errMsg(e)); }
+  S.ready = true; S.view = GS.key ? { name: "home" } : { name: "gset" }; renderAll();
+})();
+})();
+</script>
+
+
+</body></html>
