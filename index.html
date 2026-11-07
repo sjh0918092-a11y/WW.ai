@@ -315,7 +315,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v1.4 · 2026-11-07";
+const APP_VERSION = "v1.5 · 2026-11-07";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1089,6 +1089,7 @@ async function createWorld() {
     w.mainKey = keyOf(mt); w.entities[w.mainKey] = newEntity(mt, "", "");
     await Store.saveWorld(w);
     S.worlds.unshift(w); S.creating = false;
+    S.seed = S.ownSeed = S.first = S.guideIn = ""; S.seedTab = "own"; S.dice = null; S.whatIfs = null;   // 만들고 나면 입력란을 모두 비운다
     await openWorld(w.id);
   } catch (e) { S.creating = false; S.createErr = errMsg(e); renderMain(); }
 }
@@ -2235,6 +2236,7 @@ document.addEventListener("click", ev => {
   if (d.force) { const w = S.world; if (!w) return; const t = norm(d.force), k = keyOf(t); S.nf.delete(k); if (!w.entities[k]) w.entities[k] = newEntity(t, "", ""); w.entities[k].src = "force"; S.genErr = null; openEntity(k); return; }
   if (d.stab) {
     S.seedTab = d.stab;
+    if (!/^\d+$/.test(d.stab) && EXAMPLES.some(x => x.guide && x.guide === S.guideIn)) S.guideIn = "";   // 예시가 채운 작가 지침은 다른 탭으로 옮기면 비운다(직접 고친 지침은 둔다)
     if (d.stab === "own") S.seed = S.ownSeed;
     else if (d.stab === "dice") { if (!S.dice) rollDice(); S.seed = diceSeed(S.dice); }
     else if (d.stab === "whatif") { if (!S.whatIfs) S.whatIfs = shuffle(WHATIFS).slice(0, 8); }
