@@ -1,0 +1,12 @@
+# Cloudflare Worker 배포 설정 (relay/ 폴더 기준)
+# name은 대시보드의 Worker 이름과 같아야 기존 Worker(와 저장된 Secret)를 그대로 덮어쓴다.
+name = "lucky-feather-d3e9"
+main = "worker.js"
+compatibility_date = "2025-09-01"
+# 대시보드에서 넣은 일반 변수(ALLOWED_ORIGINS 등)를 배포할 때 지우지 않는다. Secret은 원래 유지된다.
+keep_vars = true
+
+# Worker를 미국 동부 근처에서 실행하도록 고정한다.
+# 친구 요청이 홍콩(HKG)처럼 Gemini가 막는 지역의 데이터센터로 가면 "User location is not supported"가 나기 때문이다.
+[placement]
+region = "gcp:us-east4"

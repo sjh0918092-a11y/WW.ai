@@ -38,8 +38,12 @@ export default {
     });
 
     if (request.method === "OPTIONS") return originOk ? new Response(null, { status: 204, headers: cors }) : fail(403, "허용되지 않은 사이트입니다.");
-    // 배포 확인용: 주소를 브라우저로 열면 이 응답이 보인다
-    if (url.pathname === "/" && request.method === "GET") return new Response(JSON.stringify({ ok: true, service: "WorldWiki relay", keyConfigured: !!env.GEMINI_KEY, passwordsConfigured: !!env.PASSWORDS }), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
+    // 배포 확인용: 주소를 브라우저로 열면 이 응답이 보인다.
+    // runsIn은 이 Worker가 Google로 요청을 내보내는 Cloudflare 데이터센터(공항 코드)와 나라다. HKG(홍콩) 등이면 Gemini가 막는다.
+    if (url.pathname === "/" && request.method === "GET") {
+      const where = await egress();
+      return new Response(JSON.stringify({ ok: true, service: "WorldWiki relay", keyConfigured: !!env.GEMINI_KEY, passwordsConfigured: !!env.PASSWORDS, receivedAt: request.cf?.colo || null, runsIn: where }), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
+    }
 
     if (!originOk) return fail(403, "허용되지 않은 사이트입니다. ALLOWED_ORIGINS 설정을 확인하세요.");
     if (!env.GEMINI_KEY || !env.PASSWORDS) return fail(500, "중계 서버에 GEMINI_KEY 또는 PASSWORDS가 설정되지 않았습니다.");
@@ -66,6 +70,14 @@ export default {
       });
     } catch (e) { return fail(502, "Gemini 서버에 연결하지 못했습니다: " + (e?.message || e)); }
 
+    if (up.status === 400 || up.status === 403) {   // 지역 제한이면 어느 데이터센터에서 나갔는지 덧붙인다
+      const t = await up.text();
+      if (/location is not supported/i.test(t)) {
+        const where = await egress();
+        return fail(400, `User location is not supported (중계 서버가 ${where ? where.colo + "/" + where.loc : "알 수 없는 곳"}에서 실행됨)`);
+      }
+      return new Response(t, { status: up.status, headers: { ...cors, "Content-Type": up.headers.get("Content-Type") || "application/json", "Cache-Control": "no-store" } });
+    }
     const h = new Headers(cors);
     h.set("Content-Type", up.headers.get("Content-Type") || "application/json");
     h.set("Cache-Control", "no-store");
@@ -87,4 +99,13 @@ async function passOk(pass, list) {
     if (same) ok = true;
   }
   return ok;
+}
+
+// Worker가 바깥으로 요청을 내보내는 위치(데이터센터 코드와 나라)
+async function egress() {
+  try {
+    const t = await (await fetch("https://www.cloudflare.com/cdn-cgi/trace")).text();
+    const g = k => (t.match(new RegExp("^" + k + "=(.*)$", "m")) || [])[1] || "";
+    return { colo: g("colo"), loc: g("loc") };
+  } catch { return null; }
 }

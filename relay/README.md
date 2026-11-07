@@ -65,4 +65,31 @@ Worker 주소(`https://worldwiki-relay.<내 계정>.workers.dev`)를 브라우�
 | "접속 암호가 올바르지 않거나…" | `PASSWORDS` 에 그 암호가 없거나 오타 |
 | "허용되지 않은 사이트입니다" | 앱을 다른 주소에서 열었음. 그 주소를 `ALLOWED_ORIGINS` 에 추가 |
 | "GEMINI_KEY 또는 PASSWORDS가 설정되지 않았습니다" | 2단계 값이 비어 있거나 저장(Deploy)하지 않음 |
-| `User location is not supported` | 요청이 Gemini 미지원 지역의 Cloudflare 서버를 거침. 다른 네트워크에서 다시 시도 |
+| `User location is not supported` | Worker가 Gemini 미지원 지역(예: 홍콩 HKG)의 데이터센터에서 실행됨. 아래 '실행 지역 고정' 참고 |
+
+## 실행 지역 고정 (User location is not supported 해결)
+
+Cloudflare는 Worker를 **요청한 사람과 가까운 데이터센터**에서 실행합니다. 한국 통신사에 따라 홍콩(HKG)으로 연결되기도 하는데, Gemini API는 홍콩을 지원하지 않아 이 오류가 납니다.
+Worker 주소를 열었을 때 `runsIn` 의 `colo` 가 그 사람의 요청이 나가는 데이터센터입니다(친구가 직접 열어야 친구 기준 값이 보입니다).
+
+`wrangler.toml` 의 `[placement] region = "gcp:us-east4"` 가 Worker를 미국 동부 근처에서 실행하도록 고정합니다.
+이 설정은 대시보드의 코드 편집기로는 들어가지 않고, 아래 방법 중 하나로 배포해야 적용됩니다.
+
+### 방법 A. GitHub 저장소와 연결 (권장, 명령어 없음)
+
+1. Worker 화면 → **Settings** → **Build** → **Connect** → GitHub 에서 `WW.ai` 저장소를 고릅니다.
+2. 브랜치는 `main`, **Root directory**(경로)는 `relay` 로 둡니다. 배포 명령은 기본값(`npx wrangler deploy`) 그대로 둡니다.
+3. 저장하면 바로 한 번 배포되고, 이후 `relay/` 가 바뀔 때마다 자동으로 다시 배포됩니다.
+
+### 방법 B. 내 컴퓨터에서 직접 배포
+
+Node.js 를 설치한 뒤 저장소의 `relay` 폴더에서:
+
+```
+npx wrangler login
+npx wrangler deploy
+```
+
+두 방법 모두 대시보드에 넣은 `GEMINI_KEY`, `PASSWORDS` 는 그대로 유지됩니다.
+배포 후 Worker 주소를 다시 열어 `runsIn` 이 미국 쪽 코드(예: IAD, EWR)로 바뀌었는지 확인하세요.
+배치는 Cloudflare가 지키려고 노력하는 "힌트"라서 드물게 다른 곳에서 실행될 수도 있습니다.

@@ -315,7 +315,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v1.9 · 2026-11-07";
+const APP_VERSION = "v2.0 · 2026-11-07";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -388,6 +388,7 @@ const ERR = {
   quota_exceeded: "저장 공간 한도에 도달했습니다. 쓰지 않는 세계관을 삭제해 주세요.",
   timeout: "저장소가 응답하지 않습니다. 잠시 후 다시 열어 주세요.",
   no_sample: "Gemini 연결 설정이 없습니다. 왼쪽 'Gemini 설정'에서 API 키나 중계 서버 주소와 접속 암호를 넣어 주세요.",
+  region: "Gemini가 지금 요청이 나간 지역을 지원하지 않습니다. 중계 서버를 쓰는 중이라면 서버 관리자에게 알려 주세요(중계 서버의 실행 지역 설정 필요). 직접 연결 중이라면 VPN을 끄거나 다른 네트워크에서 시도해 주세요.",
   bad_key: "API 키나 중계 서버 접속 암호가 올바르지 않거나 권한이 없습니다. 'Gemini 설정'에서 확인해 주세요.",
   model_not_found: "지정한 Gemini 모델을 찾을 수 없습니다. 'Gemini 설정'에서 모델 이름을 확인해 주세요.",
   network: "Gemini 서버에 연결하지 못했습니다. 인터넷 연결을 확인하고, 파일을 직접 열었다면 로컬 서버(예: python -m http.server)로 열어 보세요."
@@ -429,6 +430,7 @@ async function gFetch(path, init) {
 async function gError(res, model) {
   let msg = ""; try { const j = await res.json(); msg = j?.error?.message || ""; } catch {}
   const st = res.status;
+  if (/location is not supported/i.test(msg)) return { code: "region", message: msg };
   if (st === 401 || st === 403 || /api key/i.test(msg)) return { code: "bad_key", message: msg };
   if (st === 404) return { code: "model_not_found", message: `${model}: ${msg}` };
   if (st === 429) return { code: "rate_limited", message: msg };
