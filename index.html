@@ -347,7 +347,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v5.0 · 2026-11-08";
+const APP_VERSION = "v5.1 · 2026-11-08";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1862,8 +1862,16 @@ function numericIssues(w, k) {
   const KIN = /아버지|어머니|부친|모친|부모|아내|남편|배우자|형제|자매|형이|형은|동생|아들|딸|자녀|손자|조부|할아버지|할머니|삼촌|이모|고모|가족|연인|약혼/;
   const named = Object.keys(w.entities).filter(x => S.pages[x] || w.entities[x].type === "인물").map(x => [x, refNames(w, x)]);
   const onlyAbout = (sen, E) => named.every(([x, ns]) => x === E || !ns.some(n => sen.includes(n)));   // 다른 항목 이름이 함께 나오면 누구 이야기인지 알 수 없어 비교하지 않는다
+  /* 어느 쪽이 기준인가: 한쪽만 직접 수정했으면 그쪽, 아니면 먼저 쓴 문서. true면 항목 E의 인포박스가 기준 */
+  const eIsRef = (P, E) => {
+    if (P === E) return true;
+    const e = S.pages[E], q = S.pages[P];
+    if (!!e.editedAt !== !!q.editedAt) return !!e.editedAt;
+    return (e.createdAt || 0) <= (q.createdAt || 0);
+  };
   const compare = (P, E) => {   // 문서 P의 문장들을 항목 E의 인포박스 기준값과 비교한다
     const pe = S.pages[E]; if (!pe) return;
+    const ref = eIsRef(P, E), why = P === E ? "" : ref ? (pe.editedAt && !S.pages[P].editedAt ? "직접 수정한 " : "먼저 쓴 ") : (S.pages[P].editedAt && !pe.editedAt ? "직접 수정한 " : "먼저 쓴 ");
     const f = numFacts(pe); if (!f.birth && !f.death && !f.origin) return;
     const names = refNames(w, E);
     const ibox = new Set((pe.infobox || []).map(r => `${r.label}: ${stripMarks(r.value)}`));
@@ -1875,16 +1883,28 @@ function numericIssues(w, k) {
         const base = f[K.kind]; if (!base || !K.verb.test(sen) || (K.kind !== "origin" && KIN.test(sen))) continue;
         if (ys.length === 1 && Math.abs(ys[0] - base.y) >= 1 && !NUM_KINDS.some(O => O !== K && O.verb.test(sen))) {
           const who = P === E ? "이 문서" : `「${pe.title}」 문서`;
-          if (P === k) push(sen, `${who} 인포박스 ${base.line}`, `「${pe.title}」의 ${K.name} 연도가 ${ys[0]}년으로 적혀 있지만 ${who} 인포박스에는 ${base.y}년이다.`, "high");
-          else push(base.line, `「${S.pages[P].title}」의 서술: ${sen}`, `「${S.pages[P].title}」 문서가 이 항목의 ${K.name} 연도를 ${ys[0]}년으로 적었다. 틀린 쪽이 그 문서라면 그 문서를 고친다.`, "low");
+          const pt = S.pages[P].title;
+          if (ref) {   // 항목 문서의 인포박스가 기준: 다르게 적은 P가 고칠 쪽
+            if (P === k) push(sen, `${why}${who} 인포박스 ${base.line}`, `「${pe.title}」의 ${K.name} 연도가 ${ys[0]}년으로 적혀 있지만 ${why}${who} 인포박스에는 ${base.y}년이다. 이 문서를 그에 맞춘다.`, "high");
+            else push(base.line, `「${pt}」의 서술: ${sen}`, `「${pt}」 문서가 이 항목의 ${K.name} 연도를 ${ys[0]}년으로 적었다. 이 문서가 기준이므로 고칠 쪽은 「${pt}」 문서다.`, "low");
+          } else {     // 먼저 쓴(또는 직접 수정한) P가 기준: 항목 문서 E의 인포박스가 고칠 쪽
+            if (E === k) push(base.line, `${why}「${pt}」 문서: ${sen}`, `${why}「${pt}」 문서가 이 항목의 ${K.name} 연도를 ${ys[0]}년으로 확정했는데 이 문서 인포박스는 ${base.y}년이다. 이 문서의 인포박스와 그와 얽힌 서술을 ${ys[0]}년에 맞춘다.`, "high");
+            else push(sen, `「${pe.title}」 인포박스 ${base.line}`, `「${pe.title}」 문서가 ${K.name} 연도를 ${base.y}년으로 적었지만 ${why}이 문서가 기준이므로 고칠 쪽은 「${pe.title}」 문서다.`, "low");
+          }
         }
       }
       const am = /(?:향년\s*)?(\d{1,3})\s*세/.exec(sen);
       if (am && f.birth && f.death && NUM_KINDS[1].verb.test(sen) && !KIN.test(sen) && !/\d{1,3}\s*세[가-힣]*\s*(때|무렵|에)\b/.test(sen)) {
         const a = +am[1], d = f.death.y - f.birth.y;
         if (Math.abs(a - d) > 1) {
-          if (P === k) push(sen, `「${pe.title}」 인포박스 ${f.birth.line} / ${f.death.line}`, `사망 나이가 ${a}세로 적혀 있지만 인포박스의 출생·사망 연도로 계산하면 ${d - 1}~${d}세다.`, "high");
-          else push(f.death.line, `「${S.pages[P].title}」의 서술: ${sen}`, `「${S.pages[P].title}」 문서가 사망 나이를 ${a}세로 적었지만 이 문서의 연도로 계산하면 ${d - 1}~${d}세다.`, "low");
+          const pt = S.pages[P].title, lines = `${f.birth.line} / ${f.death.line}`;
+          if (ref) {
+            if (P === k) push(sen, `${why}「${pe.title}」 인포박스 ${lines}`, `사망 나이가 ${a}세로 적혀 있지만 ${why}「${pe.title}」 인포박스의 출생·사망 연도로 계산하면 ${d - 1}~${d}세다. 이 문서를 그에 맞춘다.`, "high");
+            else push(f.death.line, `「${pt}」의 서술: ${sen}`, `「${pt}」 문서가 사망 나이를 ${a}세로 적었지만 이 문서의 연도로 계산하면 ${d - 1}~${d}세다. 이 문서가 기준이므로 고칠 쪽은 「${pt}」 문서다.`, "low");
+          } else {
+            if (E === k) push(f.death.line, `${why}「${pt}」 문서: ${sen}`, `${why}「${pt}」 문서가 사망 나이를 ${a}세로 확정했는데 이 문서의 출생·사망 연도로는 ${d - 1}~${d}세다. 이 문서의 연도를 그 나이에 맞춘다.`, "high");
+            else push(sen, `「${pe.title}」 인포박스 ${lines}`, `「${pe.title}」 문서의 연도로 계산하면 ${d - 1}~${d}세지만 ${why}이 문서가 기준이므로 고칠 쪽은 「${pe.title}」 문서다.`, "low");
+          }
         }
       }
     }

@@ -616,8 +616,17 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
       assert(memo27.includes("숫자 대조: 「갑 인물」의 사망 연도가 1931년으로 적혀 있지만") && !memo27.includes("1920"), "다른 항목의 연도를 다르게 적으면 띄우기 전에 고친다(가족 이야기는 비교하지 않음)"); }
     assert((await page.locator(".article").innerText()).includes("1934년 사망했다"));
     await page.fill("#q", "갑 인물"); await page.press("#q", "Enter"); await waitArticle(page, "갑 인물");
+    ctl.pageOverride["병 사건"] = { type: "사건", sections: [{ heading: "개요", level: 1, body: "[[정 인물]]은 1931년 사망했다." }] };
+    ctl.pageOverride["정 인물"] = { type: "인물", infobox: [{ label: "출생", value: "1890년" }, { label: "사망", value: "1934년" }] };
+    await page.fill("#q", "병 사건"); await page.press("#q", "Enter"); await waitArticle(page, "병 사건");
+    ctl.fixEdits = [{ memo: 1, field: "infobox", old: "사망: 1934년", new: "사망: 1931년" }];
+    const n27b = calls.length;
+    await clickLink(page, "정 인물"); await waitArticle(page, "정 인물"); ctl.fixEdits = null;
+    { const fx = calls.slice(n27b).find(c => c.kind === "fix"), memo = (fx?.prompt.split("## 원문")[0] || "");
+      assert(memo.includes("먼저 쓴 「병 사건」 문서가 이 항목의 사망 연도를 1931년으로 확정했는데 이 문서 인포박스는 1934년이다"), "먼저 쓴 문서가 기준이 되어 나중에 쓴 인물 문서를 고친다"); }
+    assert((await page.locator(".infobox").innerText()).includes("1931년"));
     ctl.pageOverride = {};
-    ok("숫자 대조: 다른 항목의 사망 연도를 인포박스와 다르게 적으면 잡아서 띄우기 전에 고친다");
+    ok("숫자 대조: 다른 항목의 사망 연도를 인포박스와 다르게 적으면 잡아서 띄우기 전에 고친다. 먼저 쓴 문서가 기준이다");
 
     await ctx.close();
     console.log(`\n모두 통과 (${step}개). Gemini 호출 ${calls.length}회: ` + Object.entries(calls.reduce((a, c) => (a[c.kind] = (a[c.kind] || 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
