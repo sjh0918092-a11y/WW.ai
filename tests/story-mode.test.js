@@ -15,12 +15,13 @@ const server = http.createServer((req, res) => {
 
 /* ---------- 가짜 Gemini ---------- */
 const calls = [];           // { kind, prompt }
-const ctl = { planDelay: 0, planBad: false, planN: 1, checkIssues: null, checkDelay: 0, fixEdits: null, analyzeConflicts: null, readIssues: null, readFail: false };
+const ctl = { planDelay: 0, planBad: false, planN: 1, checkIssues: null, checkDelay: 0, fixEdits: null, analyzeConflicts: null, readIssues: null, readFail: false, emptyChoices: false };
 const count = k => calls.filter(c => c.kind === k).length;
 function kindOf(p) {
   if (p.includes("## 이야기 뼈대")) return "storyBible";
   if (p.includes("## 장 계획 작성")) return "chapterPlan";
   if (p.includes("## 장 섹션 작성")) return "chapterBlock";
+  if (p.includes("## 다음 행동 후보 만들기")) return "choices";
   if (p.includes("## 문서 읽기 검사")) return "read";
   if (p.includes("검사하라")) return "check";
   if (p.includes("편집자가 남긴 메모")) return "fix";
@@ -47,7 +48,7 @@ function planJson(p) {
     protagonistBlock: { heading: `${n}장 사건명`, sections: [{ heading: "출전", level: 1, body: `한서린은 [[이일(인물)]]과 함께 출전했다. (${n}장)` }, { heading: "귀환", level: 1, body: "한서린은 돌아왔다." }], infoboxPatch: [{ label: "상태", value: `${n}장 상태` }], summaryPatch: "" },
     affected, newEntities: [{ title: "원균 함대", type: "조직", summary: "새 함대" }], wove: [{ title: "이일", how: "이일이 출전의 계기가 되었다." }, { title: "여진 해적단(조직)", how: "해적단이 철령을 포위했다." }],
     facts: [{ about: "이일", fact: `이일은 ${n}장에 움직였다.` }], relations: [], spineRevise: n === 2 ? [{ n: 4, intent: "수정된 절정" }] : [],
-    nextChoices: last ? [] : ["진격한다", "후퇴한다", "협상한다"], ending: last ? { epilogue: "한서린은 고향으로 돌아갔다." } : null };
+    nextChoices: last ? [] : ctl.emptyChoices ? [{}, { score: 3 }] : n === 2 ? [{ action: "진격한다", reason: "적이 약하다" }, { text: "후퇴한다" }, "협상한다"] : ["진격한다", "후퇴한다", "협상한다"], ending: last ? { epilogue: "한서린은 고향으로 돌아갔다." } : null };
 }
 function blockJson(p) {
   const chs = (/## 덧붙일 장 \(([\d, ]+)장\)/.exec(p) || [, ""])[1].split(",").map(x => +x.trim()).filter(Boolean);
@@ -62,6 +63,7 @@ function answer(kind, p) {
   if (kind === "chapterBlock") return blockJson(p);
   if (kind === "check") return { issues: ctl.checkIssues || [] };
   if (kind === "read") return { issues: ctl.readIssues || [] };
+  if (kind === "choices") return { nextChoices: ["새 후보 하나", "새 후보 둘", "새 후보 셋"] };
   if (kind === "fix") return { edits: ctl.fixEdits || [], note: "어긋난 연도를 고쳤다." };
   if (kind === "analyze") return { facts: [], timeline: [], newEntities: [], relations: [], conflicts: ctl.analyzeConflicts || [] };
   if (kind === "tone") return TONE;
@@ -280,6 +282,9 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     ok("affected 문서는 열 때 장 섹션이 생기고, 아닌 문서는 호출 없이 열린다");
 
     /* 6. 롤백: 중단과 실패 */
+    await page.click('[data-act="story-next"]'); await page.waitForSelector('input[name="advPick"]');
+    assert.deepStrictEqual((await page.locator(".fx-pick span").allInnerTexts()).slice(0, 3), ["진격한다", "후퇴한다", "협상한다"], "선택지가 묶음으로 와도 글로 보인다");
+    await page.click('[data-act="story-back"]');
     const snap = JSON.stringify(await worldOf(page, "녹둔도 연대기")), psnap = JSON.stringify(await pageOf(page, sw, "한서린"));
     ctl.planDelay = 4000;
     await page.click('[data-act="story-next"]'); await page.click('[data-act="story-skip"]');
@@ -479,7 +484,14 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert.strictEqual(w7.story.total, 7); assert.strictEqual(w7.story.spine.length, 7);
     assert.deepStrictEqual(w7.story.spine.map(x => x.beat), ["발단", "전개 1/2", "전개 2/2", "위기 1/2", "위기 2/2", "절정", "결말"]);
     assert((await sideText(page)).includes("/ 7장"));
+    ctl.emptyChoices = true;
     await page.click('[data-act="story-next"]'); await page.click('[data-act="story-skip"]'); await page.waitForSelector(".stcard", { timeout: 15000 }); await settle(page);
+    ctl.emptyChoices = false;
+    await page.click('[data-act="story-next"]'); await page.waitForSelector('[data-act="choices-regen"]');
+    assert.strictEqual(await page.locator('input[name="advPick"]').count(), 1, "쓸 수 있는 선택지가 없으면 직접 정하기만 남는다");
+    await page.click('[data-act="choices-regen"]'); await page.waitForFunction(() => document.querySelectorAll('input[name="advPick"]').length === 4, null, { timeout: 15000 });
+    assert.deepStrictEqual((await page.locator(".fx-pick span").allInnerTexts()).slice(0, 3), ["새 후보 하나", "새 후보 둘", "새 후보 셋"], "선택지 다시 만들기");
+    await page.click('[data-act="story-back"]');
     const p7 = calls.filter(c => c.kind === "chapterPlan").pop().prompt;
     assert(p7.includes("전체 7장 중 2장") && p7.includes("이번 장에서 결말을 내거나 갈등을 미리 정리하지 않는다") && !p7.includes('"epilogue"'), "2장 계획은 결말을 내지 않는다");
     w7.story = (await idbAll(page)).map(x => x[1]).find(v => v?.id === w7.id).story;

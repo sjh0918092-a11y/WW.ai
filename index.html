@@ -347,7 +347,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v4.8 · 2026-11-08";
+const APP_VERSION = "v4.9 · 2026-11-08";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -355,6 +355,9 @@ function cyrb53(str, seed = 0) { let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ s
 const norm = t => String(t || "").replace(/[「」『』]/g, "").replace(/\s+/g, " ").trim();
 const keyOf = t => "e" + cyrb53(norm(t).toLowerCase()).toString(36);
 const LINK_RE = /\[\[([^\[\]|]+?)(?:\|([^\[\]]+?))?\]\]/g;
+/* 모델이 글 대신 {"action": "...", "reason": "..."} 같은 묶음을 보낼 때가 있다. 그 안의 글을 꺼낸다 */
+const asText = x => typeof x === "string" ? x : (x && typeof x === "object") ? (["text", "choice", "action", "label", "title", "content", "description", "desc", "summary", "value", "rule", "guide"].map(k => x[k]).find(v => typeof v === "string" && v.trim()) || Object.values(x).filter(v => typeof v === "string").join(" — ")) : (x == null ? "" : String(x));
+const isBroken = t => /\[object Object\]/.test(String(t || ""));
 const stripMarks = s => String(s || "").replace(/\[\*[^\]]*\]/g, "").replace(LINK_RE, (m, a, b) => b || a).replace(/\*\*|~~/g, "").trim();
 const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej({ code: "timeout", message: "응답 시간 초과" }), ms))]);
 const fmtDate = t => { try { return new Date(t).toLocaleDateString("ko-KR", { year: "numeric", month: "short", day: "numeric" }); } catch { return ""; } };
@@ -585,7 +588,7 @@ async function listGeminiModels() {
 }
 const LOGK = "wwiki:log";
 const LOG = (() => { try { const v = JSON.parse(localStorage.getItem(LOGK) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })();
-const KIND = { read: "문서 읽기 검사", bible: "세계관 생성", storyBible: "스토리 세계관 생성", chapterPlan: "장 계획", chapterBlock: "장 섹션", page: "문서 작성", tone: "분위기 판별", check: "설정 검사", analyze: "수정 대조", fix: "충돌 고치기" };
+const KIND = { choices: "행동 후보", read: "문서 읽기 검사", bible: "세계관 생성", storyBible: "스토리 세계관 생성", chapterPlan: "장 계획", chapterBlock: "장 섹션", page: "문서 작성", tone: "분위기 판별", check: "설정 검사", analyze: "수정 대조", fix: "충돌 고치기" };
 function pushLog(r) {
   LOG.push(r); if (LOG.length > 40) LOG.splice(0, LOG.length - 40);
   try { localStorage.setItem(LOGK, JSON.stringify(LOG)); } catch {}
@@ -1047,7 +1050,7 @@ ${choice ? `주인공의 다음 행동으로 독자가 고른 것: ${choice.cust
 - ${need ? `탐험 반영 의무: 위 탐험 목록에서 최소 ${need}개, 가능하면 3개를 줄거리의 인과에 실제로 엮는다. 이름만 언급하는 것은 반영이 아니다. 그 항목이 사건의 원인, 수단, 장애물, 조력자, 장소 중 하나가 되어야 한다. '직접 고침'과 '검색해서 만듦'인 항목을 우선한다. 엮은 항목은 wove에 적는다.` : "독자가 탐험한 항목이 없으니 뼈대대로 진행한다. wove는 빈 배열로 둔다."}
 - ${choice ? "주인공의 이번 장 행동은 독자의 선택에서 출발한다. 결과는 선택대로 되지 않아도 된다." : "독자의 선택이 없으니 주인공의 행동은 지금까지의 흐름에서 자연스럽게 정한다."}
 - 탐험 결과 때문에 뒤의 뼈대 단계를 바꿔야 하면 spineRevise로 바꾼다. ${N}단계는 항상 결말로 남겨 둔다. 바꿀 필요가 없으면 빈 배열.
-- ${last ? `이번 장이 마지막 장이다. 결말을 낸다. 주인공이 바라는 것과 결핍이나 상처에 답을 주고, 지금까지 열린 갈등을 정리한다. ending.epilogue에 결말 이후를 3~5문장으로 쓴다. nextChoices는 빈 배열.` : `nextChoices에는 ${nextN}장이 끝날 때 주인공이 할 수 있는 다음 행동 후보 3개를 한 문장씩 쓴다. 서로 방향이 달라야 한다. ending은 null.`}
+- ${last ? `이번 장이 마지막 장이다. 결말을 낸다. 주인공이 바라는 것과 결핍이나 상처에 답을 주고, 지금까지 열린 갈등을 정리한다. ending.epilogue에 결말 이후를 3~5문장으로 쓴다. nextChoices는 빈 배열.` : `nextChoices에는 ${nextN}장이 끝날 때 주인공이 할 수 있는 다음 행동 후보 3개를 한 문장씩 쓴다. 각 후보는 객체가 아니라 문자열 하나다. 서로 방향이 달라야 한다. ending은 null.`}
 - 주인공이 죽을 수도 있다. 주인공이 죽으면 이후 장은 그 죽음의 여파와 유산을 중심으로 진행하고, 주인공 문서의 장 섹션은 사후 사건으로 쓴다.
 - title과 heading에는 "${nextN}장", "제${nextN}장" 같은 장 번호를 넣지 않는다. 장 번호는 앱이 따로 붙인다.
 - era는 이 장의 작중 시점이다. 이전 장(${cur.era})보다 같거나 뒤여야 한다.
@@ -1117,7 +1120,7 @@ const TONE_SPEC = `분위기 지침(tone)은 이 세계관이 어떤 장르와 �
   위키는 한국어로 쓴다는 점을 전제로 한다.`;
 function normTone(t, label) {
   if (!t || typeof t !== "object") return null;
-  const guide = (Array.isArray(t.guide) ? t.guide : []).map(x => stripMarks(x).slice(0, 220)).filter(Boolean).slice(0, 10);
+  const guide = (Array.isArray(t.guide) ? t.guide : []).map(x => stripMarks(asText(x)).slice(0, 220)).filter(Boolean).slice(0, 10);
   const lb = norm(label || t.label || "").slice(0, 60);
   return lb && guide.length ? { label: lb, guide } : null;
 }
@@ -1473,7 +1476,7 @@ async function createWorld() {
     if (story && !(b.chapter1 && b.chapter1.summary)) throw { code: "invalid_json" };
     const w = { kind: "world", id: "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       title: norm(b.title).slice(0, 40), tagline: String(b.tagline || "").slice(0, 160), seed, style: "encyc",
-      era: String(b.era || "미상").slice(0, 40), historical: b.historical === true || b.historical === "true", guide, tone: normTone(b.tone, ""), rules: (Array.isArray(b.rules) ? b.rules : []).map(r => stripMarks(r)).filter(Boolean).slice(0, 10),
+      era: String(b.era || "미상").slice(0, 40), historical: b.historical === true || b.historical === "true", guide, tone: normTone(b.tone, ""), rules: (Array.isArray(b.rules) ? b.rules : []).map(r => stripMarks(asText(r))).filter(Boolean).slice(0, 10),
       timeline: [], userCanon: "", entities: {}, mainKey: null, createdAt: Date.now() };
     for (const t of (Array.isArray(b.timeline) ? b.timeline : [])) addTimeline(w, t, "seed");
     const mt = first || norm(b.mainTitle || b.title);
@@ -1508,7 +1511,7 @@ function setupStory(w, b, user = {}) {
     protagonist: { summary: e.summary, want: stripMarks(pr.want || "").slice(0, 200), wound: stripMarks(pr.wound || "").slice(0, 200) },
     chapters: [{ n: 1, title: chTitle(c1.title || "발단").slice(0, 60), era, summary: stripMarks(c1.summary).slice(0, 800), incident: stripMarks(c1.incident || "").slice(0, 240),
       startedAt: Date.now(), explore: emptyExplore(), choice: null, wove: [], affected: [], auto: [],
-      nextChoices: (Array.isArray(c1.nextChoices) ? c1.nextChoices : []).map(x => stripMarks(x).slice(0, 200)).filter(Boolean).slice(0, 3) }] };
+      nextChoices: (Array.isArray(c1.nextChoices) ? c1.nextChoices : []).map(x => stripMarks(asText(x)).slice(0, 200)).filter(Boolean).slice(0, 3) }] };
   // 사용자가 정한 주인공 특징과 등장인물은 '사용자 확정' 설정으로 남긴다
   if (user.desc) { w.story.protagonist.desc = user.desc; addFact(e, "주인공의 특징(사용자 지정): " + user.desc, "user"); }
   w.story.cast = [];
@@ -1617,9 +1620,13 @@ async function cleanAiSupersede(w) {
 }
 /* 이미 저장된 장 제목과 장 섹션 제목에서 장 번호를 뗀다 */
 async function cleanChapterTitles(w) {
-  if (!isStory(w)) return;
+  if (!isStory(w)) { if ((w.rules || []).some(isBroken)) { w.rules = w.rules.filter(x => !isBroken(x)); try { await Store.saveWorld(w); } catch {} } return; }
   let ws = false; const pg = [];
-  for (const c of w.story.chapters) { const t = chTitle(c.title); if (t !== c.title) { c.title = t; ws = true; } }
+  for (const c of w.story.chapters) {
+    const t = chTitle(c.title); if (t !== c.title) { c.title = t; ws = true; }
+    if ((c.nextChoices || []).some(isBroken)) { c.nextChoices = c.nextChoices.filter(x => !isBroken(x)); ws = true; }   // 예전 버전에서 깨져 저장된 선택지
+  }
+  if ((w.rules || []).some(isBroken)) { w.rules = w.rules.filter(x => !isBroken(x)); ws = true; }
   for (const [k, p] of Object.entries(S.pages)) {
     let ch = false;
     for (const sec of p.sections) if (sec.ch) { const h = stripHead(sec.heading); if (h && h !== sec.heading) { sec.heading = h; ch = true; } }
@@ -2509,7 +2516,7 @@ function applyChapter(w, n, out, choice) {
     s.intent = stripMarks(r.intent).slice(0, 300); s.revised = true;
   }
   st.chapters.push({ n, title: chTitle(out.title).slice(0, 60), era, summary: stripMarks(out.summary).slice(0, 800), startedAt: Date.now(), explore: emptyExplore(), choice,
-    wove, affected, auto, nextChoices: n >= totalOf(w) ? [] : (Array.isArray(out.nextChoices) ? out.nextChoices : []).map(x => stripMarks(x).slice(0, 200)).filter(Boolean).slice(0, 3) });
+    wove, affected, auto, nextChoices: n >= totalOf(w) ? [] : (Array.isArray(out.nextChoices) ? out.nextChoices : []).map(x => stripMarks(asText(x)).slice(0, 200)).filter(Boolean).slice(0, 3) });
   st.chapter = n; w.era = era;
   if (n >= totalOf(w)) { st.status = "ended"; st.endedAt = Date.now(); st.epilogue = stripMarks(out.ending?.epilogue || "").slice(0, 1200) || stripMarks(out.summary).slice(0, 800); }
   const secs = blockToSections(n, pb.heading || out.title, pb.sections);
@@ -2526,7 +2533,7 @@ async function advanceChapter(skip) {
   const st = w.story, pk = st.protagonistKey, oldP = S.pages[pk];
   if (!oldP) { toast("주인공 문서가 완성된 뒤 다음 장으로 넘어갈 수 있습니다."); return; }
   const a = S.adv || (S.adv = { pick: -1, custom: "", err: "" }), cur = curCh(w);
-  const picked = !skip && a.pick >= 0 ? (cur.nextChoices || [])[a.pick] || "" : "", custom = skip ? "" : norm(a.custom || "").slice(0, 300);
+  const picked = !skip && a.pick >= 0 ? (cur.nextChoices || []).filter(x => typeof x === "string" && x.trim() && !isBroken(x))[a.pick] || "" : "", custom = skip ? "" : norm(a.custom || "").slice(0, 300);
   const choice = picked || custom ? { picked, custom } : null;
   const n = st.chapter + 1;
   const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], story: st, era: w.era });
@@ -2559,6 +2566,36 @@ async function advanceChapter(skip) {
     window.scrollTo({ top: 0 }); if (el) setTimeout(() => el.scrollIntoView({ block: "start", behavior: "smooth" }), 400);
   }
   checkPage(pk, true); drainSync();
+}
+/* 다음 행동 후보가 없거나 깨졌을 때 다시 만든다 */
+function choicesPrompt(w) {
+  const st = w.story, c = curCh(w), pk = st.protagonistKey, pr = st.protagonist || {}, n = st.chapter + 1;
+  return `## 다음 행동 후보 만들기
+가상 세계관 위키 「${w.title}」에서 주인공 「${w.entities[pk].title}」의 이야기가 ${totalOf(w)}장 중 ${st.chapter}장까지 진행되었다. ${n}장으로 넘어가기 전에 독자가 고를 주인공의 다음 행동 후보 3개를 만든다.
+
+주인공: ${w.entities[pk].summary || ""}${pr.want ? `\n바라는 것: ${pr.want}` : ""}${pr.wound ? `\n결핍이나 상처: ${pr.wound}` : ""}${pr.desc ? `\n사용자가 정한 특징: ${pr.desc}` : ""}
+
+지금까지의 장:
+${st.chapters.map(x => `- ${x.n}장 「${x.title}」 (${x.era}): ${x.summary}`).join("\n")}
+
+규칙:
+- 각 후보는 ${c.n}장이 끝난 지금 주인공이 할 수 있는 구체적인 행동 한 문장이다. 서로 방향이 달라야 한다(예: 맞선다 / 피한다 / 다른 길을 찾는다).
+- 결과를 미리 쓰지 않는다. 지금까지의 사건과 인물을 이름으로 짚는다.
+
+JSON 객체 하나만 출력: {"nextChoices":["행동 한 문장","행동 한 문장","행동 한 문장"]}`;
+}
+async function regenChoices() {
+  const w = S.world; if (!storyOn(w) || S.adv?.regen) return;
+  if (!S.sample) { toast(ERR.no_sample); return; }
+  const a = S.adv || (S.adv = { pick: -1, custom: "", err: "" }); a.regen = true; a.err = ""; renderMain();
+  try {
+    const r = await callJson("choices", choicesPrompt(w), { modelTier: "default" }, { title: w.entities[w.story.protagonistKey].title, ch: w.story.chapter });
+    const list = (Array.isArray(r?.nextChoices) ? r.nextChoices : []).map(x => stripMarks(asText(x)).slice(0, 200)).filter(x => x && !isBroken(x)).slice(0, 3);
+    if (!list.length) throw { code: "invalid_json" };
+    curCh(w).nextChoices = list; a.pick = -1;
+    try { await Store.saveWorld(w); } catch {}
+  } catch (err) { a.err = "선택지를 만들지 못했습니다. " + errMsg(err); }
+  a.regen = false; if (S.view.name === "advance") renderMain();
 }
 function updateStoryLive() {
   const g = S.storyGen, c = $("#stCount"); if (!g || !c) return;
@@ -3058,12 +3095,13 @@ function advanceHtml() {
     <div style="margin-top:14px"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div></div>`;
   if (st.status === "ended") return head + `<p class="note">이야기가 끝났습니다.</p><div class="row"><button type="button" class="btn pri" data-act="epilogue">에필로그 보기</button></div></div>`;
   const ex = exploreScores(w, c);
-  const choices = c.nextChoices || [];
+  const choices = (c.nextChoices || []).filter(x => typeof x === "string" && x.trim() && !isBroken(x));
   return head + `<p class="note">${c.n}장 「${esc(c.title)}」 · 작중 ${esc(c.era)}</p>
     <h2 class="nf-h">이번 장에 탐험한 곳</h2>
     ${ex.length ? `<ul class="adv-list">${ex.slice(0, 12).map(x => `<li><span>${linkHtml(w.entities[x.k].title)}</span><span class="src">${esc(x.kinds.join(" · "))}</span></li>`).join("")}</ul>${ex.length > 8 ? `<p class="note">점수가 높은 8곳까지 다음 장 줄거리에 넘깁니다. 직접 고친 문서와 검색해서 만든 문서가 가장 무겁게 반영됩니다.</p>` : `<p class="note">직접 고친 문서와 검색해서 만든 문서가 가장 무겁게 반영됩니다.</p>`}` : ""}
     ${ex.length <= 1 ? `<div class="banner warn">아직 탐험한 곳이 적습니다. 이대로 진행하면 이야기가 뼈대대로만 흘러갑니다.</div>` : ""}
     <h2 class="nf-h">주인공의 다음 행동</h2>
+    ${!choices.length ? `<div class="row" style="margin:6px 0 4px"><button type="button" class="btn" data-act="choices-regen" ${!S.sample || a.regen ? "disabled" : ""}>${a.regen ? "선택지를 만드는 중…" : "선택지 다시 만들기"}</button><span class="note">이 장의 행동 후보가 없습니다. 지금까지의 줄거리로 새로 만들 수 있습니다. 직접 정하거나 선택 없이 진행해도 됩니다.</span></div>` : ""}
     <div class="fx-list">${choices.map((x, i) => `<label class="fx-pick"><input type="radio" name="advPick" value="${i}" ${a.pick === i ? "checked" : ""}><span>${esc(x)}</span></label>`).join("")}
       <label class="fx-pick"><input type="radio" name="advPick" value="-2" ${a.pick === -2 ? "checked" : ""}><span>직접 정하기</span></label></div>
     <textarea id="advCustom" rows="3" maxlength="300" placeholder="예: 원균을 찾아가 함대 지휘권을 돌려 달라고 요구한다" ${a.pick === -2 ? "" : "hidden"}>${esc(a.custom || "")}</textarea>
@@ -3236,6 +3274,7 @@ document.addEventListener("click", ev => {
     case "story-next": openAdvance(); break;
     case "story-go": { const ta = $("#advCustom"); if (ta && S.adv) S.adv.custom = ta.value; advanceChapter(false); break; }
     case "story-skip": advanceChapter(true); break;
+    case "choices-regen": regenChoices(); break;
     case "story-stop": S.storyGen?.ctl.abort(); break;
     case "story-back": { const w = S.world; if (!w) break; S.view = { name: "article", key: S.recent.find(x => w.entities[x]) || w.mainKey }; renderAll(); break; }
     case "epilogue": S.view = { name: "epilogue" }; renderAll(); window.scrollTo({ top: 0 }); break;
