@@ -15,7 +15,7 @@ const server = http.createServer((req, res) => {
 
 /* ---------- 가짜 Gemini ---------- */
 const calls = [];           // { kind, prompt }
-const ctl = { planDelay: 0, planBad: false, planN: 1, checkIssues: null, checkDelay: 0, fixEdits: null };
+const ctl = { planDelay: 0, planBad: false, planN: 1, checkIssues: null, checkDelay: 0, fixEdits: null, analyzeConflicts: null };
 const count = k => calls.filter(c => c.kind === k).length;
 function kindOf(p) {
   if (p.includes("## 이야기 뼈대")) return "storyBible";
@@ -61,7 +61,7 @@ function answer(kind, p) {
   if (kind === "chapterBlock") return blockJson(p);
   if (kind === "check") return { issues: ctl.checkIssues || [] };
   if (kind === "fix") return { edits: ctl.fixEdits || [], note: "어긋난 연도를 고쳤다." };
-  if (kind === "analyze") return { facts: [], timeline: [], newEntities: [], relations: [], conflicts: [] };
+  if (kind === "analyze") return { facts: [], timeline: [], newEntities: [], relations: [], conflicts: ctl.analyzeConflicts || [] };
   if (kind === "tone") return TONE;
   return { ok: true };
 }
@@ -506,6 +506,25 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert(!calls.slice(n0).some(c => c.kind === "fix"), "건너뛰면 고치지 않는다");
     assert(calls.slice(n0).filter(c => c.kind === "check").length >= 2, "건너뛰면 검사는 뒤에서 다시 돈다");
     ok("'검사 건너뛰고 보기'를 누르면 바로 문서를 보여 주고, 검사는 뒤에서 돈다");
+
+    /* 23. 다른 문서의 직접 수정과 어긋난 서술을 AI로 고치기 */
+    await page.fill("#q", "한서린"); await page.press("#q", "Enter"); await waitArticle(page, "한서린");
+    await page.click('[data-edit]'); await page.waitForSelector("#edBody");
+    await page.fill("#edBody", (await page.inputValue("#edBody")) + "\n\n= 덧붙임 =\n한서린은 검사 대상과 무관하다.");
+    ctl.analyzeConflicts = [{ ref: "M1", claim: "한서린은 검사 대상과 무관하다.", old: "검사 대상은 한서린와 얽힌 항목이다." }];
+    await page.click("#edSave"); await waitArticle(page, "한서린"); ctl.analyzeConflicts = null;
+    await page.fill("#q", "검사 대상"); await page.press("#q", "Enter"); await waitArticle(page, "검사 대상");
+    assert((await page.locator("#main").innerText()).includes("직접 수정되어, 이 문서의 서술 1곳이 설정과 맞지 않습니다"), "충돌 표시가 붙는다");
+    ctl.fixEdits = [{ memo: 1, field: "body", old: "얽힌 항목이다", new: "한때 얽혔으나 지금은 무관한 항목이다" }];
+    const nfix = count("fix");
+    await page.click("[data-cfix]");
+    await page.waitForSelector('[data-act="fixv-apply"]', { timeout: 15000 }); ctl.fixEdits = null;
+    assert.strictEqual(count("fix"), nfix + 1);
+    assert(calls.filter(c => c.kind === "fix").pop().prompt.includes("사용자가 직접 수정해 이렇게 확정했다: 한서린은 검사 대상과 무관하다."), "직접 수정한 내용을 기준으로 고치게 한다");
+    await page.click('[data-act="fixv-apply"]'); await waitArticle(page, "검사 대상");
+    const t23 = await page.locator("#main").innerText();
+    assert(t23.includes("지금은 무관한 항목이다") && !t23.includes("설정과 맞지 않습니다"), "고치면 본문이 바뀌고 충돌 표시가 사라진다");
+    ok("다른 문서의 직접 수정과 어긋난 서술을 'AI로 고치기'로 고치면 충돌 표시가 사라진다");
 
     await ctx.close();
     console.log(`\n모두 통과 (${step}개). Gemini 호출 ${calls.length}회: ` + Object.entries(calls.reduce((a, c) => (a[c.kind] = (a[c.kind] || 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
