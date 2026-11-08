@@ -347,7 +347,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v4.3 · 2026-11-08";
+const APP_VERSION = "v4.4 · 2026-11-08";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1402,10 +1402,7 @@ function checkPrompt(w, key) {
 - 문장 하나가 스스로 말이 안 되는 곳(예: "귀환한 400명 중 절반만 살아남았다").
 문서 안의 모순은 evidence에 claim과 어긋나는 문서 안의 다른 서술을 글자 그대로 적는다. 두 서술을 모두 인용할 수 없으면 지적하지 않는다. 이런 모순의 severity는 high다.
 
-문서 안의 모순은 멀리 떨어진 섹션 사이에 숨어 있는 경우가 많다(예: 생애 섹션과 인물 관계 섹션, 분류와 인포박스). 그래서 issues를 쓰기 전에 ledger(대조표)를 먼저 채운다.
-- 이 문서에서 두 곳 이상(분류, 인포박스, 한 줄 정의, 섹션 제목, 각 섹션 본문)에 나오는 사건, 인물, 관계, 소속, 무기·물건, 숫자를 빠짐없이 subject로 잡는다.
-- subject마다 그것을 언급한 곳을 모두 적고(where: 섹션 제목이나 '분류', '인포박스'), 그곳이 말하는 내용을 짧게 요약한다(says). 누가, 언제, 어디서, 무엇을, 결과를 놓치지 않는다.
-- 다 적은 뒤 subject마다 says를 서로 맞춰 보고, 둘이 동시에 참일 수 없으면 issues에 넣는다.
+문서 안의 모순은 멀리 떨어진 섹션 사이에 숨어 있는 경우가 많다(예: 생애 섹션과 인물 관계 섹션, 분류와 인포박스). 아래 '반드시 맞춰 볼 것'의 대상마다, 적힌 위치들이 그 대상에 대해 말하는 내용(누가, 언제, 어디서, 무엇을, 결과, 관계, 소속)을 생각하는 단계에서 하나씩 나란히 놓고 맞춰 본다. 대조 과정은 출력하지 않고, 찾은 모순만 issues에 쓴다.
 
 ${canonBlock({ ...w, timeline: (w.timeline || []).filter(t => t.src !== key) })}
 ${isStory(w) ? `\n${storyBlock(w, key)}\n이 문서는 ${p.baseAsOf || 1}~${p.syncedTo || p.baseAsOf || 1}장 시점에 작성되었다. 이 문서가 그 시점 이후의 일을 아는 것처럼 서술하면 모순으로 본다. 제목 앞에 [n장]이 붙은 섹션은 그 장에 일어난 일을 기록한 섹션이다.\n` : ""}
@@ -1417,12 +1414,12 @@ ${ctx || "(없음)"}
 
 ## 반드시 맞춰 볼 것 (앱이 찾은, 이 문서의 두 곳 이상에 나오는 대상과 그 위치)
 ${crossRefs(w, p) || "(없음)"}
-위 대상마다 ledger에 subject로 넣고, 적힌 위치들이 그 대상에 대해 말하는 내용(누가, 언제, 어디서, 무엇을, 결과, 관계, 소속)을 하나씩 맞춰 본다. 분류는 항목 하나하나를 인포박스와 본문에 맞춰 본다.
+위 대상마다 적힌 위치들의 서술을 맞춰 본다. 분류는 항목 하나하나를 인포박스와 본문에 맞춰 본다.
 
 ## 검사할 문서
 ${text}
 
-JSON 객체 하나만 출력(ledger를 먼저 쓴다): {"ledger":[{"subject":"사건이나 인물(예: 1924년 부두 저격)","mentions":[{"where":"섹션 제목, 분류, 인포박스 등","says":"그곳이 말하는 내용 요약"}]}],"issues":[{"claim":"문서의 해당 서술(문서에서 글자 그대로)","evidence":"근거가 된 확정 설정이나 문서 안의 다른 서술(글자 그대로)","conflict":"둘이 왜 동시에 참일 수 없는지 한 문장","severity":"high 또는 low"}]}
+JSON 객체 하나만 출력: {"issues":[{"claim":"문서의 해당 서술(문서에서 글자 그대로)","evidence":"근거가 된 확정 설정이나 문서 안의 다른 서술(글자 그대로)","conflict":"둘이 왜 동시에 참일 수 없는지 한 문장","severity":"high 또는 low"}]}
 문제가 없으면 issues는 빈 배열.`;
 }
 
@@ -1821,7 +1818,7 @@ async function checkPage(k, auto) {
   if (!S.sample) { if (!auto) toast(ERR.no_sample); return; }
   if (S.checking) { if (auto) { (S.autoQ ||= []).includes(k) || S.autoQ.push(k); } return; }
   const w = S.world, p = S.pages[k]; if (!w || !p) return;
-  S.checking = k; renderMain();
+  S.checking = k; S.checkT0 = performance.now(); renderMain();
   let found = 0;
   try {
     const r = await callJson("check", checkPrompt(w, k), { modelTier: "check" }, { title: p.title + (auto ? " · 자동" : "") });
@@ -2821,7 +2818,7 @@ function articleHtml(k) {
   S.memo = { k, items: [...hi, ...lo] };
   const fixBtn = n => `<button type="button" class="btn memo-fix" data-fix="${n}" data-fixk="${k}" ${S.fixing || (S.gen && S.gen.key === k) || !S.sample ? "disabled" : ""}>${S.fixing && S.fixing.key === k && S.fixing.i === n ? "고치는 중…" : "고치기"}</button>`;
   const item = (i, n, cls) => `<li class="${cls}">${esc(i.claim)}${i.conflict ? `<span class="memo-why">${esc(i.conflict)}</span>` : ""}${fixBtn(n)}</li>`;
-  const chkHtml = (S.checking === k || S.bgSync === k) ? `<p class="memo-line"><span class="dot"></span>설정 노트와 맞춰 보는 중</p>`
+  const chkHtml = (S.checking === k || S.bgSync === k) ? `<p class="memo-line"><span class="dot"></span>설정 노트와 맞춰 보는 중 <span class="src" id="chkTick"></span></p>`
     : (hi.length || lo.length) ? `<details class="memo"${hi.length ? " open" : ""}><summary><span class="memo-dot${hi.length ? " on" : ""}"></span>편집자 메모${hi.length ? ` · 다듬을 곳 ${hi.length}` : ""}${lo.length ? ` · 참고 ${lo.length}` : ""}${chk ? `<span class="src">${fmtDate(chk.at)}</span>` : ""}</summary><ul>${hi.map((i, n) => item(i, n, "")).join("")}${lo.map((i, n) => item(i, hi.length + n, "lo")).join("")}</ul>${hi.length + lo.length > 1 ? `<div class="memo-foot"><button type="button" class="btn" data-act="fixv-open" ${S.gen && S.gen.key === k ? "disabled" : ""}>여러 곳 한꺼번에 교정하기</button></div>` : ""}</details>`
     : chk ? `<p class="memo-line">설정 노트와 맞춰 봤습니다 <span class="src">${fmtDate(chk.at)}</span></p>` : "";
   const rw = `<button type="button" class="btn" data-rw="${k}" aria-expanded="${S.confirmRewrite === k}" ${S.gen || S.storyGen || S.syncing === k || !S.sample ? "disabled" : ""}>다시 쓰기</button>`;
@@ -3333,7 +3330,7 @@ document.addEventListener("keydown", ev => {
 /* ---------- boot ---------- */
 (async function boot() {
   renderAll();
-  setInterval(() => { if (S.gen) updateGenLive(); if (S.storyGen) updateStoryLive(); const t = $("#fxTick"); if (t && S.fixv?.t0) t.textContent = Math.floor((performance.now() - S.fixv.t0) / 1000) + "초"; }, 1000);
+  setInterval(() => { if (S.gen) updateGenLive(); if (S.storyGen) updateStoryLive(); const ct = $("#chkTick"); if (ct && S.checking && S.checkT0) ct.textContent = Math.floor((performance.now() - S.checkT0) / 1000) + "초"; const t = $("#fxTick"); if (t && S.fixv?.t0) t.textContent = Math.floor((performance.now() - S.fixv.t0) / 1000) + "초"; }, 1000);
   const inv = /(?:^#|&)relay=([^&]+)/.exec(location.hash || "");   // 초대 링크(#relay=주소)로 들어오면 중계 서버 주소를 채운다
   let invited = false;
   if (inv) { const u = normRelay(decodeURIComponent(inv[1])); if (/^https:\/\//i.test(u)) { const same = GS.mode === "relay" && GS.relay === u; GS = { ...GS, mode: "relay", relay: u, pass: same ? GS.pass : "" }; saveGS(); invited = !GS.pass; } history.replaceState(null, "", location.pathname + location.search); }
