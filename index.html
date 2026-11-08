@@ -343,7 +343,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v3.3 · 2026-11-08";
+const APP_VERSION = "v3.4 · 2026-11-08";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -361,17 +361,21 @@ const DICE = {
   genre: ["하이 판타지", "무협", "스팀펑크", "사이버펑크", "우주 오페라", "메카물", "코즈믹 호러", "느와르", "궁중 암투극", "학원 이능물", "포스트 아포칼립스", "첩보 스릴러", "해양 모험물", "법정 미스터리"],
   twist: ["꿈을 화폐로 쓴다", "죽은 사람에게도 투표권이 있다", "전쟁은 모두 체스 대국으로 치른다", "모든 계약은 노래로 맺어야 효력이 있다", "용이 국가 공무원으로 일한다", "기억을 사고팔 수 있다", "하루에 한 번 중력이 뒤집힌다", "성인이 되면 이름을 경매에 부친다", "거짓말을 하면 몸에 문신이 생긴다", "도시들이 다리를 달고 걸어 다닌다", "태양이 30년째 뜨지 않는다", "고양이가 귀족 계급이다", "국경을 매년 제비뽑기로 다시 정한다", "마법을 쓰려면 세금을 내야 한다", "죽은 사람의 그림자가 남아 일을 계속한다", "책에 적힌 내용이 현실이 된다", "인구의 절반이 같은 꿈을 꾼다", "바다가 하늘에 떠 있다", "도시마다 시간이 다른 속도로 흐른다", "왕을 매년 퀴즈 대회로 뽑는다"]
 };
-const DICE_LABEL = { era: "시대", genre: "장르", twist: "비틀기" };
+DICE.plot = ["몰락한 집안의 막내가 가문을 무너뜨린 자의 밑에서 일하게 된다", "쫓기던 도망자가 자신을 쫓던 추격자를 지켜야 하는 처지가 된다", "평범한 기록관이 누군가 지워 버린 역사 한 줄을 발견한다", "은퇴한 최강자가 마지막 제자를 받는다", "서로를 죽여야 하는 두 사람이 같은 편에 서게 된다", "배신자로 낙인찍힌 자가 누명을 벗으려 한다", "계승 서열 맨 끝의 후계자가 갑자기 권좌에 오른다", "오래전 약속을 지키러 돌아온 자가 모든 것이 변한 고향을 마주한다", "적에게 사로잡힌 지휘관이 적장과 묘한 우정을 쌓는다", "사기꾼이 진짜 영웅으로 오해받는다", "실패한 반란의 마지막 생존자가 다시 사람을 모은다", "금지된 것을 몰래 가르치던 스승이 발각된다", "죽은 줄 알았던 형제가 적의 수장으로 나타난다", "신참 수사관이 자기 상관이 얽힌 사건을 맡는다", "몰락한 영웅의 자식이 부모가 끝내지 못한 임무를 이어받는다", "서로 이름도 모르는 두 사람이 같은 비밀을 쫓는다", "평화 협상의 통역관이 양쪽 모두를 속여야 한다", "기억을 잃은 자가 자신이 저지른 일을 하나씩 알아 간다", "시골 출신 신참이 엘리트만 모인 곳에 들어간다", "마지막 남은 장인이 사라져 가는 기술을 지키려 한다", "평생을 복수에 바친 자가 원수의 아이를 만난다", "숨어 살던 이단자가 세상을 구할 유일한 열쇠가 된다"];   // 스토리 모드용 한 줄 줄거리(어느 시대와 장르에도 붙도록 이름 없이)
+const DICE_LABEL = { era: "시대", genre: "장르", twist: "비틀기", plot: "줄거리" };
+const diceKeys = () => S.mode === "story" ? ["era", "genre", "plot"] : ["era", "genre", "twist"];   // 스토리 모드는 비틀기 대신 줄거리
 const WHATIFS = ["로마가 멸망하지 않았다면?", "마법이 세금 대상이라면?", "공룡이 멸종하지 않고 문명을 이뤘다면?", "인터넷이 1890년에 발명됐다면?", "사람이 죽으면 정확히 하루 뒤 되살아난다면?", "조선이 신대륙에 먼저 닿았다면?", "달이 두 개라면?", "모든 사람이 자기 수명을 알고 태어난다면?", "신들을 선거로 뽑는다면?", "흑사병이 마법을 퍼뜨렸다면?", "전기가 발견되지 않았다면?", "동물과 말이 통한다면?", "몽골 제국이 분열하지 않았다면?", "꿈속 세계가 실재하는 대륙이라면?", "아무도 거짓말을 할 수 없다면?", "1950년에 외계 신호가 해독됐다면?", "핵무기 대신 용이 억지력이 됐다면?", "시간 여행이 관광 산업이라면?", "바다 밑에 또 하나의 문명이 있다면?", "책을 갖는 것이 금지된 세상이라면?", "모든 국가가 주식회사라면?", "사람이 광합성을 할 수 있다면?", "운명이 공문서로 배달된다면?", "냉전이 지금까지 끝나지 않았다면?", "별자리가 실제 신분 제도라면?", "유령에게 시민권이 있다면?", "임진왜란 때 조선이 증기선을 가졌다면?", "모든 음악이 법으로 금지됐다면?"];
 const pick = a => a[Math.floor(Math.random() * a.length)];
 const shuffle = a => { const b = a.slice(); for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; };
 function rollDice(keep) {
   const d = S.dice || { locks: {} };
-  for (const k of ["era", "genre", "twist"]) if (!(keep && d.locks[k] && d[k])) { let v; do { v = pick(DICE[k]); } while (DICE[k].length > 1 && v === d[k]); d[k] = v; }
+  for (const k of diceKeys()) if (!(keep && d.locks[k] && d[k])) { let v; do { v = pick(DICE[k]); } while (DICE[k].length > 1 && v === d[k]); d[k] = v; }
   S.dice = d;
 }
 const eulReul = w => { const c = w.charCodeAt(w.length - 1); return c >= 0xAC00 && c <= 0xD7A3 ? ((c - 0xAC00) % 28 ? "을" : "를") : "을(를)"; };
-const diceSeed = d => `시대: ${d.era}\n장르: ${d.genre}\n비틀기: ${d.twist}\n\n${d.era}${eulReul(d.era)} 무대로 한 ${d.genre}. 이 세계에서는 ${d.twist}. 이 비틀기가 깊게 바꾼 영역과, 그럼에도 그 시대 그대로 굴러가는 영역이 함께 있는 세계다.`;
+const diceSeedTwist = d => `시대: ${d.era}\n장르: ${d.genre}\n비틀기: ${d.twist}\n\n${d.era}${eulReul(d.era)} 무대로 한 ${d.genre}. 이 세계에서는 ${d.twist}. 이 비틀기가 깊게 바꾼 영역과, 그럼에도 그 시대 그대로 굴러가는 영역이 함께 있는 세계다.`;
+const diceSeedPlot = d => `시대: ${d.era}\n장르: ${d.genre}\n줄거리: ${d.plot}\n\n${d.era}${eulReul(d.era)} 무대로 한 ${d.genre}. ${d.plot}. 이 한 줄에서 출발해, 그 시대와 장르에 맞는 주인공과 세계를 만든다.`;
+function diceSeed(d) { if (S.mode === "story" && !d.plot) d.plot = pick(DICE.plot); if (S.mode !== "story" && !d.twist) d.twist = pick(DICE.twist); return S.mode === "story" ? diceSeedPlot(d) : diceSeedTwist(d); }
 const whatIfSeed = q => `만약 ${q}\n\n이 질문의 답이 '그렇다'인 세계. 역사가 갈라진 시점과 그 이유를 정하고, 그 뒤로 시간이 흘러 그 변화가 기존 질서와 부딪히고 섞인 시점을 무대로 한다. 바뀐 것과 그대로인 것이 함께 있다.`;
 const EXAMPLES = [
   { label: "기동갑주 아머드 조선",
@@ -2602,7 +2606,7 @@ function homeHtml() {
       <label class="lb" for="seedTa">원안</label>
       <div class="stabs" role="tablist" aria-label="원안 고르기">${ex}</div>
       ${S.seedTab === "dice" && S.dice ? `<div class="dice" aria-label="원안 주사위">
-        ${["era", "genre", "twist"].map(k => `<div class="die"><span class="die-l">${DICE_LABEL[k]}</span><span class="die-v">${esc(S.dice[k])}</span><button type="button" class="die-lock" data-lock="${k}" aria-pressed="${!!S.dice.locks[k]}" title="이 칸은 다시 굴려도 그대로 둡니다">${S.dice.locks[k] ? "고정됨" : "고정"}</button></div>`).join("")}
+        ${diceKeys().map(k => `<div class="die"><span class="die-l">${DICE_LABEL[k]}</span><span class="die-v">${esc(S.dice[k])}</span><button type="button" class="die-lock" data-lock="${k}" aria-pressed="${!!S.dice.locks[k]}" title="이 칸은 다시 굴려도 그대로 둡니다">${S.dice.locks[k] ? "고정됨" : "고정"}</button></div>`).join("")}
         <div class="row" style="margin-top:2px"><button type="button" class="btn" data-act="roll" ${S.creating ? "disabled" : ""}>다시 굴리기</button><span class="note">고정한 칸은 그대로 두고 나머지만 바꿉니다. 아래 원안을 고쳐 써도 됩니다.</span></div></div>` : ""}
       ${S.seedTab === "whatif" && S.whatIfs ? `<div class="whatif">
         <p class="note" style="margin:0 0 8px">질문을 고르면 그 질문으로 바로 세계관을 만듭니다. 아래 첫 문서와 작가 지침 칸도 함께 반영됩니다.</p>
@@ -3034,7 +3038,7 @@ document.addEventListener("click", ev => {
   if (d.dismiss) { dismissNotes(d.dismiss, d.field); return; }
   if (d.focus) { S.focusEnt = d.focus; S.view = { name: "canon" }; renderAll(); return; }
   if (d.filter) { S.canonFilter = d.filter; renderMain(); return; }
-  if (d.mode) { S.mode = d.mode === "story" ? "story" : "basic"; renderMain(); return; }
+  if (d.mode) { S.mode = d.mode === "story" ? "story" : "basic"; if (S.seedTab === "dice" && S.dice) S.seed = diceSeed(S.dice); renderMain(); return; }   // 주사위 원안은 모드에 맞게 다시 쓴다
   if (d.chn) { S.storyN = Math.min(STORY_MAX, Math.max(STORY_MIN, +d.chn)); renderMain(); return; }
   if (d.castDel !== undefined) { S.cast.splice(Number(d.castDel), 1); renderMain(); return; }
   if (d.epsec) { const w = S.world; if (!w) return; const pk = w.story.protagonistKey, i = d.epsec; S.view = { name: "article", key: pk }; renderAll(); const el = document.getElementById("s-" + i); if (el) el.scrollIntoView({ block: "start" }); return; }
