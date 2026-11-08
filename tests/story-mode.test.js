@@ -188,6 +188,11 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
       assert(w0.relations.some(r => r.src === "user" && r.rel === "소꿉친구이자 맞수" && [r.a, r.b].includes(gk)), "주인공과의 관계가 확정 관계로 들어간다");
       assert(w0.story.cast[0].key === gk && w0.story.protagonist.desc); }
     assert.strictEqual(await page.inputValue("#protoDesc").catch(() => ""), "", "만든 뒤 입력란은 비운다");
+    { const sel = await page.evaluate(() => { const a = document.querySelector('.article a.wl.new'); const p = a.closest("p"); const r = document.createRange(); r.selectNodeContents(p); const g = getSelection(); g.removeAllRanges(); g.addRange(r); const t = g.toString(); g.removeAllRanges(); return { t, red: a.textContent }; });
+      assert(sel.t.includes(sel.red), "드래그로 긁으면 빨간 링크 글자도 함께 선택된다");
+      const lp = await page.evaluate(() => { const a = document.querySelector('.article a.wl.new'); const o = { bubbles: true, pointerType: "touch", clientX: 1, clientY: 1 };
+        a.dispatchEvent(new PointerEvent("pointerdown", o)); const during = getComputedStyle(a).userSelect; document.dispatchEvent(new PointerEvent("pointercancel", o)); return { during, after: getComputedStyle(a).userSelect }; });
+      assert.strictEqual(lp.during, "none", "길게 누르는 동안에는 선택을 막는다"); assert.notStrictEqual(lp.after, "none", "손을 떼면 다시 선택된다"); }
     ok("스토리 모드: 첫 문서가 주인공 문서이고 1장 발단 사건과 진행 중 안내 틀이 나온다. 주인공 특징과 등장인물이 확정 설정으로 들어간다");
 
     /* 3. 탐험 기록 */

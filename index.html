@@ -151,7 +151,8 @@ h1.t{font-family:var(--f-display);font-weight:700;font-size:30px;line-height:1.2
 .notice{display:flex;flex-direction:column;gap:4px;margin:16px 0 0;padding:10px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--tint);font-size:13.5px;line-height:1.6}
 a.wl{text-decoration:none}
 a.wl:hover{text-decoration:underline}
-a.wl.new{color:var(--red);-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+a.wl.new{color:var(--red);-webkit-touch-callout:none}
+a.wl.new.pressing{-webkit-user-select:none;user-select:none}   /* 길게 누르는 동안에만 글자 선택을 막는다. 드래그 선택에는 빨간 링크도 들어간다 */
 sup.fn a{font-size:11px;text-decoration:none;font-family:var(--f-mono)}
 .fns{clear:both;margin-top:28px;padding-top:12px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
 .fns ol{padding-left:22px;margin:6px 0 0}
@@ -346,7 +347,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v3.6 · 2026-11-08";
+const APP_VERSION = "v3.7 · 2026-11-08";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -3199,6 +3200,7 @@ document.addEventListener("pointerdown", ev => {
   lp.touch = ev.pointerType === "touch" || ev.pointerType === "pen"; lp.fired = false;
   const a = ev.target.closest?.("a.wl.new"); clearTimeout(lp.timer);
   if (!a || !lp.touch) return;
+  a.classList.add("pressing");
   lp.x = ev.clientX; lp.y = ev.clientY;
   lp.timer = setTimeout(() => {
     const w = S.world; if (!w) return;
@@ -3208,7 +3210,7 @@ document.addEventListener("pointerdown", ev => {
   }, 500);
 });
 document.addEventListener("pointermove", ev => { if (lp.timer && Math.hypot(ev.clientX - lp.x, ev.clientY - lp.y) > 10) { clearTimeout(lp.timer); lp.timer = null; } });
-["pointerup", "pointercancel"].forEach(t => document.addEventListener(t, () => { clearTimeout(lp.timer); lp.timer = null; }));
+["pointerup", "pointercancel"].forEach(t => document.addEventListener(t, () => { clearTimeout(lp.timer); lp.timer = null; document.querySelectorAll("a.wl.pressing").forEach(x => x.classList.remove("pressing")); }));
 document.addEventListener("click", ev => {   // 길게 누른 뒤 손을 뗄 때 생기는 클릭이 작성 페이지의 버튼을 누르지 않게 한다
   if (lp.fired && Date.now() - (lp.firedAt || 0) < 900) { ev.stopPropagation(); ev.preventDefault(); lp.fired = false; }
 }, true);
