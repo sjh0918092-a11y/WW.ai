@@ -347,7 +347,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v3.7 · 2026-11-08";
+const APP_VERSION = "v3.8 · 2026-11-08";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -437,7 +437,7 @@ const PAGE_MODEL = {};   // 모델과 생각 깊이는 'Gemini 설정'에서 정
 const GKEY = "wwiki:gemini";
 const GBASE = "https://generativelanguage.googleapis.com/v1beta";
 const DEFAULT_RELAY = "https://lucky-feather-d3e9.sjh0918092.workers.dev";   // 기본 중계 서버. 주소는 공개돼도 되고, 접속 암호가 있어야 쓸 수 있다
-const GDEF = { mode: "key", relay: DEFAULT_RELAY, pass: "", key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "", check: "", checkThink: "medium" };   // check: 설정 검사·수정 대조. 비우면 기본 모델
+const GDEF = { mode: "key", relay: DEFAULT_RELAY, pass: "", key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "", check: "", checkThink: "medium", preCheck: true };   // check: 설정 검사·수정 대조. 비우면 기본 모델
 const THINKS = [["", "모델 기본값"], ["minimal", "minimal"], ["low", "low"], ["medium", "medium"], ["high", "high"]];
 let GS = (() => {
   let st = {}; try { st = JSON.parse(localStorage.getItem(GKEY) || "{}") || {}; } catch {}
@@ -1650,10 +1650,15 @@ async function generatePage(k, rewrite, direction) {
     if (!rewrite && direction) page.direction = direction;
     if (rewrite) { page.direction = direction || ""; page.rewrittenAt = Date.now(); cleared = clearBadges(k); }   // 직접 수정본이 사라졌으니 그 수정이 남긴 표시도 지운다
     if (S.world === w) S.pages[k] = page;
+    const pre = GS.preCheck !== false && S.world === w ? await preCheck(w, k, page) : null;   // 보여 주기 전에 검사하고 고친다
+    const fin = pre?.page || page;
     S.gen = null;
-    try { await Store.savePage(w.id, page); for (const x of cleared) if (S.pages[x] && x !== k) await Store.savePage(w.id, S.pages[x]); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
+    try { await Store.savePage(w.id, fin); for (const x of cleared) if (S.pages[x] && x !== k) await Store.savePage(w.id, S.pages[x]); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
     afterGen(k, true);
-    if (S.world === w && S.pages[k] === page) checkPage(k, true);   // 읽는 동안 뒤에서 설정과 대조한다
+    if (S.world === w && S.pages[k] === fin) {
+      if (pre?.fixed) { toast(`설정과 어긋난 ${pre.fixed}곳을 고쳐서 보여 드립니다.`); bgSync(k, pre.keep); }   // 고친 본문 기준으로 확정 사실을 다시 정리
+      else if (!pre?.done) checkPage(k, true);   // 사전 검사를 끄거나 건너뛰었으면 읽는 동안 뒤에서 대조한다
+    }
   } catch (err) {
     S.gen = null;
     if (rewrite) {
@@ -1725,6 +1730,51 @@ function integrate(w, key, out) {
 }
 
 /* auto: 문서가 완성된 직후 자동으로 돌리는 검사. 다른 검사가 돌고 있으면 차례를 기다린다. */
+function parseIssues(r) {
+  return (Array.isArray(r?.issues) ? r.issues : []).filter(i => i && i.claim && (i.evidence || i.conflict)).slice(0, 8)   // 근거 없는 지적은 버린다
+    .map(i => ({ claim: String(i.claim).slice(0, 300), conflict: [i.evidence ? `근거: ${stripMarks(i.evidence)}` : "", stripMarks(i.conflict || "")].filter(Boolean).join(" · ").slice(0, 400), severity: i.severity === "high" ? "high" : "low" }));
+}
+/* 작성 직후, 문서를 보여 주기 전에 설정 검사를 돌리고 '다듬을 곳'은 자동으로 고친다.
+   실패하거나 사용자가 건너뛰면 작성된 문서를 그대로 쓴다. 고쳤으면 { page: 고친 문서, fixed, keep: 남은 지적 } */
+async function preCheck(w, k, page) {
+  const g = S.gen, res = { page, fixed: 0, keep: null, done: false };
+  const show = () => { if (S.view.name === "article" && S.view.key === k) renderMain(); else renderSide(); };
+  try {
+    g.phase = "check"; show();
+    const r = await callJson("check", checkPrompt(w, k), { modelTier: "check", signal: g.ctl.signal }, { title: page.title + " · 작성 직후" });
+    const issues = parseIssues(r), high = issues.filter(i => i.severity === "high");
+    page.check = { at: Date.now(), issues, auto: true }; res.done = true;
+    if (!high.length || S.world !== w || S.pages[k] !== page) return res;
+    g.phase = "fix"; g.nFix = high.length; show();
+    const f = pageToSource(w, page);
+    const fr = await callJson("fix", fixBatchPrompt(w, page, f, high), { modelTier: "default", ...PAGE_MODEL, signal: g.ctl.signal }, { title: page.title + ` · 자동 ${high.length}곳` });
+    if (S.world !== w || S.pages[k] !== page) return res;
+    const nf = { ...f }, fixedMemo = new Set(); let applied = 0;
+    for (const ed of (Array.isArray(fr?.edits) ? fr.edits : []).slice(0, 16)) {
+      const fld = ["summary", "infobox", "body"].includes(ed?.field) ? ed.field : null;
+      let old = String(ed?.old || ""); const nw = String(ed?.new ?? "");
+      if (!fld || !old.trim() || old === nw) continue;
+      let at = nf[fld].indexOf(old); if (at < 0) { old = old.trim(); at = nf[fld].indexOf(old); } if (at < 0) continue;
+      nf[fld] = nf[fld].slice(0, at) + nw + nf[fld].slice(at + old.length); applied++;
+      fixedMemo.add(Math.max(1, Math.min(high.length, parseInt(ed.memo, 10) || 1)));
+    }
+    if (!applied) return res;
+    const out = sourceToOut(nf); if (!out.sections.some(x => x.body.trim())) return res;
+    const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [] });
+    let np;
+    try {
+      for (const o of Object.values(w.entities)) o.mentions = o.mentions.filter(m => m.from !== k);   // 링크와 언급은 고친 본문 기준으로 다시 계산
+      for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === k) delete w.navboxes[id];
+      np = integrate(w, k, out);
+    } catch { restoreRewrite(w, backup); return res; }
+    for (const x of PAGE_KEEP) if (page[x] !== undefined) np[x] = page[x];
+    const keep = [...high.filter((_, i) => !fixedMemo.has(i + 1)), ...issues.filter(i => i.severity !== "high")];
+    np.check = { at: Date.now(), issues: keep, auto: true }; np.autoFixed = { at: Date.now(), n: fixedMemo.size };
+    cleanupOrphans(w, k);
+    S.pages[k] = np; Object.assign(res, { page: np, fixed: fixedMemo.size, keep });
+  } catch (err) { /* 건너뛰었거나 실패: 작성된 문서를 그대로 보여 주고, 검사는 뒤에서 다시 돌린다 */ }
+  return res;
+}
 async function checkPage(k, auto) {
   if (!S.sample) { if (!auto) toast(ERR.no_sample); return; }
   if (S.checking) { if (auto) { (S.autoQ ||= []).includes(k) || S.autoQ.push(k); } return; }
@@ -1733,8 +1783,7 @@ async function checkPage(k, auto) {
   let found = 0;
   try {
     const r = await callJson("check", checkPrompt(w, k), { modelTier: "check" }, { title: p.title + (auto ? " · 자동" : "") });
-    const issues = (Array.isArray(r?.issues) ? r.issues : []).filter(i => i && i.claim && (i.evidence || i.conflict)).slice(0, 8)   // 근거 없는 지적은 버린다
-      .map(i => ({ claim: String(i.claim).slice(0, 300), conflict: [i.evidence ? `근거: ${stripMarks(i.evidence)}` : "", stripMarks(i.conflict || "")].filter(Boolean).join(" · ").slice(0, 400), severity: i.severity === "high" ? "high" : "low" }));
+    const issues = parseIssues(r);
     if (S.pages[k] === p) {   // 검사하는 동안 문서가 바뀌었으면(장 반영 등) 옛 문서를 저장하지 않는다
       p.check = { at: Date.now(), issues, auto: !!auto }; found = issues.length;
       try { await Store.savePage(w.id, p); } catch (err) { toast("검사 결과를 저장하지 못했습니다. " + errMsg(err)); }
@@ -1931,7 +1980,7 @@ async function applyFix() {
   bgSync(k);
 }
 /* 고친 본문에서 확정 사실, 연표, 관계를 뒤에서 다시 뽑고, 남은 충돌은 편집자 메모로 돌려준다 */
-async function bgSync(k) {
+async function bgSync(k, keep) {
   const w = S.world, p = S.pages[k]; if (!w || !p || !S.sample) return;
   S.bgSync = k; if (S.view.name === "article" && S.view.key === k) renderMain();
   try {
@@ -1959,7 +2008,7 @@ async function bgSync(k) {
       const target = c.f || c.m || c.t || c.l; if (!target) continue;
       target.sup = { by: k }; if (c.src && c.src !== "seed") badge(w, c.src, k, c, touched);
     }
-    p.check = { at: Date.now(), issues, auto: true }; p.stale = false;
+    p.check = { at: Date.now(), issues: [...(keep || []), ...issues], auto: true }; p.stale = false;
     await Store.savePage(w.id, p);
     for (const x of touched) if (S.pages[x]) await Store.savePage(w.id, S.pages[x]);
     await Store.saveWorld(w);
@@ -2558,7 +2607,8 @@ function gsetHtml() {
       <div><label class="lb" for="gQuickT">생각 깊이</label><select id="gQuickT">${opt(GS.quickThink)}</select></div></div>
     <div class="two"><div><label class="lb" for="gCheck">검사 모델 <span class="note" style="font-weight:400">설정 검사, 수정 대조 · 비워 두면 기본 모델</span></label><input id="gCheck" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.check || "")}" placeholder="${esc(GS.main || GDEF.main)} (기본 모델)"></div>
       <div><label class="lb" for="gCheckT">생각 깊이</label><select id="gCheckT">${opt(GS.checkThink ?? GDEF.checkThink)}</select></div></div>
-    <p class="note" style="margin-top:6px">설정 검사는 문서가 완성될 때마다 뒤에서 자동으로 돕니다. 검사 모델을 높이거나 생각 깊이를 올리면 헛짚는 지적이 줄지만, 검사가 느려지고 사용량이 늘어납니다.</p>
+    <label class="lb" for="gPre" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="gPre" ${GS.preCheck !== false ? "checked" : ""}>문서를 띄우기 전에 설정 검사를 하고, 어긋난 곳은 고쳐서 보여 주기 <span class="note">끄면 문서가 더 빨리 뜨고, 검사는 읽는 동안 뒤에서 돕니다</span></label>
+    <p class="note" style="margin-top:6px">설정 검사는 문서가 완성될 때마다 자동으로 돕니다. 검사 모델을 높이거나 생각 깊이를 올리면 헛짚는 지적이 줄지만, 검사가 느려지고 사용량이 늘어납니다.</p>
     ${dl}
     <p class="note" style="margin-top:8px">모델이 지원하지 않는 생각 깊이를 고르면 그 요청은 모델 기본값으로 다시 보냅니다. 응답은 JSON 모드로 받습니다.</p>
     <div class="row"><button type="button" class="btn pri" data-act="gset-save">저장</button><button type="button" class="btn" data-act="gset-test">연결 시험</button><button type="button" class="btn" data-act="gset-models">모델 목록 불러오기</button></div>
@@ -2570,7 +2620,7 @@ function gsetHtml() {
 }
 function readGsetForm() {
   const v = id => ($("#" + id)?.value ?? "").trim();
-  GS = { ...GS, mode: v("gMode") === "relay" ? "relay" : "key", key: v("gKey"), relay: normRelay(v("gRelay")) || DEFAULT_RELAY, pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT"), check: v("gCheck"), checkThink: v("gCheckT") };
+  GS = { ...GS, mode: v("gMode") === "relay" ? "relay" : "key", key: v("gKey"), relay: normRelay(v("gRelay")) || DEFAULT_RELAY, pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT"), check: v("gCheck"), checkThink: v("gCheckT"), preCheck: !!$("#gPre")?.checked };
   saveGS(); S.sample = gReady() ? gemini : null;
 }
 function setGres(t) { S.gres = t; const el = $("#gRes"); if (el) el.textContent = t; }
@@ -2668,7 +2718,7 @@ function articleHtml(k) {
   const crumb = `<div class="crumb"><span>${esc(w.title)}</span><span>작중 기준 ${esc(w.era)}</span>${e.type ? `<span>분류: ${esc(e.type)}</span>` : ""}${p ? `<span>작성 ${fmtDate(p.createdAt)}</span>` : ""}${p?.editedAt ? `<span>직접 수정 ${fmtDate(p.editedAt)}</span>` : ""}</div>`;
   if (S.gen && S.gen.key === k) {
     return `<div class="sheet">${crumb}<h1 class="t">${esc(e.title)}</h1>
-      <div class="gen-live"><span class="dot"></span><span id="genCount">문서를 작성하는 중</span><button type="button" class="btn" data-act="stop">작성 중단</button></div>
+      <div class="gen-live"><span class="dot"></span><span id="genCount">${S.gen.phase === "check" ? "설정과 맞춰 보는 중" : S.gen.phase === "fix" ? `설정과 어긋난 ${S.gen.nFix}곳을 고치는 중` : "문서를 작성하는 중"}</span><button type="button" class="btn" data-act="stop">${S.gen.phase ? "검사 건너뛰고 보기" : "작성 중단"}</button></div>
       ${S.gen.direction ? `<p class="src" style="margin:10px 0 0">${S.gen.rewrite ? "다시 쓰기" : "작성"} 방향: ${esc(S.gen.direction)}</p>` : ""}
       ${promiseHtml(w, e, "이 문서가 지켜야 할 확정 내용")}
       <ul class="heads" id="genHeads"></ul>
@@ -2740,7 +2790,7 @@ function articleHtml(k) {
     ${p.pending?.length ? `<div class="banner warn"><b>이 문서의 수정 내용이 직접 정한 설정과 충돌한 채 저장되었습니다.</b>
       <ul>${p.pending.map(c => `<li><span class="sev">${esc(c.label)}</span>${esc(c.old)} <span class="src">↔ 수정본: ${esc(c.claim)}</span></li>`).join("")}</ul>
       <div class="row" style="margin-top:4px"><button type="button" class="btn" data-edit="${k}">편집</button><button type="button" class="btn" data-act="canon">설정 노트 열기</button><button type="button" class="btn" data-dismiss="${k}" data-field="pending">표시 지우기</button></div></div>` : ""}
-    ${rwBox}${syncHtml}${chkHtml}
+    ${rwBox}${syncHtml}${p.autoFixed && Date.now() - p.autoFixed.at < 864e5 ? `<p class="memo-line">작성 직후 설정과 어긋난 ${p.autoFixed.n}곳을 자동으로 고쳤습니다 <span class="src">${fmtDate(p.autoFixed.at)}</span></p>` : ""}${chkHtml}
     ${p.rewrittenAt ? `<p class="src" style="margin:8px 0 0">${fmtDate(p.rewrittenAt)} 다시 씀${p.direction ? ` · 방향: ${esc(p.direction)}` : ""}</p>` : p.direction ? `<p class="src" style="margin:8px 0 0">작성 방향: ${esc(p.direction)}</p>` : ""}
     <div class="article">${stNotice}${p.notices?.length ? `<div class="notice">${p.notices.map(n => `<div>${blocks(n, fns).replace(/^<p>|<\/p>$/g, "")}</div>`).join("")}</div>` : ""}${box}${toc}${secs}${fnHtml}</div>
     ${(() => {
@@ -2845,7 +2895,8 @@ function updateGenLive() {
   const raw = S.gen.raw;
   const el = Math.floor((performance.now() - (S.gen.t0 || performance.now())) / 1000);
   const rt = S.gen.retry ? ` · 연결이 끊겨 ${S.gen.retry.mode === "continue" ? "이어 받는 중" : "다시 받는 중"}(${S.gen.retry.n}/${G_RETRY})` : "";
-  c.textContent = (raw ? `문서를 작성하는 중 · ${raw.length.toLocaleString()}자 · ${el}초` : `생각하는 중 · ${el}초`) + rt;
+  c.textContent = S.gen.phase === "check" ? `설정과 맞춰 보는 중 · ${el}초` : S.gen.phase === "fix" ? `설정과 어긋난 ${S.gen.nFix}곳을 고치는 중 · ${el}초`
+    : (raw ? `문서를 작성하는 중 · ${raw.length.toLocaleString()}자 · ${el}초` : `생각하는 중 · ${el}초`) + rt;
   const heads = [...raw.matchAll(/"heading"\s*:\s*"([^"]*)"/g)].map(m => m[1]);
   if (heads.length !== h.children.length) h.innerHTML = heads.map((x, i) => `<li>${i + 1}. ${esc(x)}</li>`).join("");
 }

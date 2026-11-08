@@ -15,13 +15,14 @@ const server = http.createServer((req, res) => {
 
 /* ---------- 가짜 Gemini ---------- */
 const calls = [];           // { kind, prompt }
-const ctl = { planDelay: 0, planBad: false, planN: 1, checkIssues: null };
+const ctl = { planDelay: 0, planBad: false, planN: 1, checkIssues: null, checkDelay: 0, fixEdits: null };
 const count = k => calls.filter(c => c.kind === k).length;
 function kindOf(p) {
   if (p.includes("## 이야기 뼈대")) return "storyBible";
   if (p.includes("## 장 계획 작성")) return "chapterPlan";
   if (p.includes("## 장 섹션 작성")) return "chapterBlock";
   if (p.includes("검사하라")) return "check";
+  if (p.includes("편집자가 남긴 메모")) return "fix";
   if (p.includes("사용자가 직접 수정한 최종본")) return "analyze";
   if (p.includes("분위기 지침을 만든다")) return "tone";
   if (p.includes("편집장")) return "bible";
@@ -59,6 +60,7 @@ function answer(kind, p) {
   if (kind === "chapterPlan") return ctl.planBad ? { title: "불완전" } : planJson(p);
   if (kind === "chapterBlock") return blockJson(p);
   if (kind === "check") return { issues: ctl.checkIssues || [] };
+  if (kind === "fix") return { edits: ctl.fixEdits || [], note: "어긋난 연도를 고쳤다." };
   if (kind === "analyze") return { facts: [], timeline: [], newEntities: [], relations: [], conflicts: [] };
   if (kind === "tone") return TONE;
   return { ok: true };
@@ -69,6 +71,7 @@ async function route(r) {
   const kind = kindOf(prompt), model = decodeURIComponent((/models\/([^:]+):/.exec(r.request().url()) || [])[1] || "");
   calls.push({ kind, prompt, model, think: body.generationConfig?.thinkingConfig?.thinkingLevel || "" });
   if (kind === "chapterPlan" && ctl.planDelay) await new Promise(res => setTimeout(res, ctl.planDelay));
+  if (kind === "check" && ctl.checkDelay) await new Promise(res => setTimeout(res, ctl.checkDelay));
   const text = JSON.stringify(answer(kind, prompt));
   const sse = `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text }] }, finishReason: "STOP" }], usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 } })}\n\n`;
   try { await r.fulfill({ status: 200, headers: { "Content-Type": "text/event-stream", "Access-Control-Allow-Origin": "*" }, body: sse }); } catch {}
@@ -476,6 +479,34 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     w7.story = (await idbAll(page)).map(x => x[1]).find(v => v?.id === w7.id).story;
     assert.strictEqual(w7.story.status, "active"); assert.strictEqual(w7.story.chapter, 2);
     ok("장 수를 7장으로 고르면 7단계 뼈대가 생기고, 중간 장은 결말을 내지 않는다");
+    /* 21. 작성 직후 검사와 자동 고치기 */
+    await page.click('[data-act="home"]'); await page.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(page, "대문 항목");
+    ctl.checkIssues = [{ claim: "검사 대상의 역사는 1586년에 시작되었다.", evidence: "규칙 하나", conflict: "연도가 맞지 않는다", severity: "high" }, { claim: "참고만 할 지적", evidence: "규칙 둘", conflict: "가벼운 차이", severity: "low" }];
+    ctl.fixEdits = [{ memo: 1, field: "body", old: "1586년에 시작되었다", new: "1599년에 시작되었다" }];
+    ctl.checkDelay = 1200;
+    let n0 = calls.length;
+    await page.fill("#q", "검사 대상"); await page.press("#q", "Enter");
+    await page.waitForFunction(() => document.querySelector("#genCount")?.textContent.includes("설정과 맞춰 보는 중"), null, { timeout: 15000 });
+    assert.strictEqual((await page.locator('[data-act="stop"]').innerText()).trim(), "검사 건너뛰고 보기");
+    await waitArticle(page, "검사 대상"); ctl.checkIssues = null; ctl.fixEdits = null; ctl.checkDelay = 0;
+    await page.waitForTimeout(800);
+    const seq = calls.slice(n0).map(c => c.kind);
+    assert.deepStrictEqual(seq.slice(0, 4), ["page", "check", "fix", "analyze"], "작성 → 검사 → 고치기 → (뒤에서) 사실 정리: " + seq.join(","));
+    const body21 = await page.locator(".article").innerText();
+    assert(body21.includes("1599년에 시작되었다") && !body21.includes("1586년에 시작되었다"), "고친 본문으로 보여 준다");
+    const memo21 = await page.locator("#main").textContent();
+    assert(memo21.includes("자동으로 고쳤습니다") && memo21.includes("참고만 할 지적") && !memo21.includes("검사 대상의 역사는 1586년"), "고친 지적은 빠지고 참고 지적은 남는다");
+    ok("문서를 띄우기 전에 설정 검사를 돌리고, 어긋난 곳을 고친 본문으로 보여 준다");
+    ctl.checkIssues = [{ claim: "아무 지적", evidence: "근거", conflict: "x", severity: "high" }]; ctl.checkDelay = 2500;
+    n0 = calls.length;
+    await page.fill("#q", "건너뛸 문서"); await page.press("#q", "Enter");
+    await page.waitForFunction(() => document.querySelector("#genCount")?.textContent.includes("설정과 맞춰 보는 중"), null, { timeout: 15000 });
+    await page.click('[data-act="stop"]'); await waitArticle(page, "건너뛸 문서"); ctl.checkDelay = 0;
+    await page.waitForTimeout(1500); ctl.checkIssues = null;
+    assert(!calls.slice(n0).some(c => c.kind === "fix"), "건너뛰면 고치지 않는다");
+    assert(calls.slice(n0).filter(c => c.kind === "check").length >= 2, "건너뛰면 검사는 뒤에서 다시 돈다");
+    ok("'검사 건너뛰고 보기'를 누르면 바로 문서를 보여 주고, 검사는 뒤에서 돈다");
+
     await ctx.close();
     console.log(`\n모두 통과 (${step}개). Gemini 호출 ${calls.length}회: ` + Object.entries(calls.reduce((a, c) => (a[c.kind] = (a[c.kind] || 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
   } catch (e) {
