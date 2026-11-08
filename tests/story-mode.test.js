@@ -122,6 +122,8 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     const bp = calls.filter(c => c.kind === "page").pop().prompt;
     assert(!bp.includes("열린 질문") && bp.includes("해석이 엇갈린다, 평가가 갈린다, 논쟁을 낳고 있다는 식의 섹션"), "문서 프롬프트가 해석·논쟁 섹션을 막는다");
     assert(calls.filter(c => c.kind === "check").pop().prompt.includes("문체, 어투, 표현 방식은 지적하지 않는다"));
+    assert(bp.includes("기준 시점에 1학년(신입생)인 인물은 그 전 해들에는 아직 입학 전"), "문서 프롬프트에 학년·연도 역산 규칙");
+    assert(calls.filter(c => c.kind === "check").pop().prompt.includes("연도·나이·학년·기수·재직 기간이 서로 맞지 않는 곳도 모순으로 지적한다"), "설정 검사가 문서 안의 연도 모순도 잡는다");
     ok("기본 모드 세계관 생성, 문서 작성, 새로고침 후 복원이 그대로 된다");
 
     /* 2. 스토리 모드 생성 */
@@ -141,6 +143,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert((await page.locator(".article .notice").innerText()).includes("진행 중인 사건"), "주인공 문서에 진행 중 안내 틀");
     assert((await sideText(page)).includes("녹둔도의 밤"));
     const pagePrompt = calls.filter(c => c.kind === "page").pop().prompt;
+    assert(pagePrompt.includes("'1장', '2장', '장', '이야기', '주인공' 같은 이야기 바깥의 구분은 본문에 쓰지 않는다"), "스토리 문서에 장 표기를 쓰지 말라는 규칙");
     assert(pagePrompt.includes("이야기 진행 상황") && pagePrompt.includes("녹둔도 습격") && !pagePrompt.includes("결말 의도"), "주인공 문서 프롬프트: 발단 사건 포함, 뼈대 미포함");
     const sb = calls.find(c => c.kind === "storyBible").prompt;
     assert(sb.includes("활은 잘 쏘지만 겁이 많은 막내 무관") && sb.includes("- 윤가람 — 특징: 북관 출신 궁수 — 주인공과의 관계: 소꿉친구이자 맞수") && !sb.includes("지울 사람"), "주인공 특징과 등장인물이 세계관 생성에 들어간다");
