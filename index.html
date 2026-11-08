@@ -347,7 +347,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v4.2 · 2026-11-08";
+const APP_VERSION = "v4.3 · 2026-11-08";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1365,7 +1365,7 @@ function crossRefs(w, p) {
     if (o.type === "인물") for (const t of o.title.replace(/\(.*\)$/, "").split(/[\s·]+/)) if (t.length >= 2) names.add(t);   // 성이나 이름만 쓴 경우
     subj.set(o.title, [...names]);
   }
-  const years = new Set(); for (const x of parts) for (const m of x.text.matchAll(/(?<!\d)(1\d{3}|20\d{2})년/g)) years.add(m[1] + "년");
+  const years = new Set(); for (const x of parts) for (const m of x.text.matchAll(/(^|\D)(1\d{3}|20\d{2})년/g)) years.add(m[2] + "년");   // 뒤돌아보기 정규식은 오래된 Safari가 못 읽어 쓰지 않는다
   for (const y of years) subj.set(y, [y]);
   const out = [];
   for (const [label, names] of subj) {
