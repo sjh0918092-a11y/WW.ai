@@ -196,6 +196,9 @@ textarea{width:100%;border:1px solid var(--line);background:var(--paper);border-
 .die{display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:10px;align-items:center;background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);padding:8px 10px}
 .die-l{font-family:var(--f-mono);font-size:11px;color:var(--muted);letter-spacing:.06em}
 .die-v{font-family:var(--f-display);font-weight:700;font-size:15.5px;line-height:1.4;min-width:0}
+textarea.die-v{display:block;width:100%;border:1px solid transparent;border-radius:4px;background:transparent;padding:3px 6px;margin:-3px 0;color:var(--ink);resize:none;overflow:hidden;font-size:15.5px;line-height:1.4;field-sizing:content;word-break:keep-all}
+textarea.die-v:hover{border-color:var(--line)}
+textarea.die-v:focus{border-color:var(--link);background:var(--paper);outline:none}
 .die-lock{border:1px solid var(--line);background:var(--sheet);border-radius:999px;padding:2px 10px;font-size:12px;cursor:pointer;color:var(--muted)}
 .die-lock[aria-pressed="true"]{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
 .whatif{margin:0 0 10px}
@@ -343,7 +346,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v3.4 · 2026-11-08";
+const APP_VERSION = "v3.5 · 2026-11-08";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -375,7 +378,7 @@ function rollDice(keep) {
 const eulReul = w => { const c = w.charCodeAt(w.length - 1); return c >= 0xAC00 && c <= 0xD7A3 ? ((c - 0xAC00) % 28 ? "을" : "를") : "을(를)"; };
 const diceSeedTwist = d => `시대: ${d.era}\n장르: ${d.genre}\n비틀기: ${d.twist}\n\n${d.era}${eulReul(d.era)} 무대로 한 ${d.genre}. 이 세계에서는 ${d.twist}. 이 비틀기가 깊게 바꾼 영역과, 그럼에도 그 시대 그대로 굴러가는 영역이 함께 있는 세계다.`;
 const diceSeedPlot = d => `시대: ${d.era}\n장르: ${d.genre}\n줄거리: ${d.plot}\n\n${d.era}${eulReul(d.era)} 무대로 한 ${d.genre}. ${d.plot}. 이 한 줄에서 출발해, 그 시대와 장르에 맞는 주인공과 세계를 만든다.`;
-function diceSeed(d) { if (S.mode === "story" && !d.plot) d.plot = pick(DICE.plot); if (S.mode !== "story" && !d.twist) d.twist = pick(DICE.twist); return S.mode === "story" ? diceSeedPlot(d) : diceSeedTwist(d); }
+function diceSeed(d) { if (S.mode === "story" && d.plot == null) d.plot = pick(DICE.plot); if (S.mode !== "story" && d.twist == null) d.twist = pick(DICE.twist); return S.mode === "story" ? diceSeedPlot(d) : diceSeedTwist(d); }
 const whatIfSeed = q => `만약 ${q}\n\n이 질문의 답이 '그렇다'인 세계. 역사가 갈라진 시점과 그 이유를 정하고, 그 뒤로 시간이 흘러 그 변화가 기존 질서와 부딪히고 섞인 시점을 무대로 한다. 바뀐 것과 그대로인 것이 함께 있다.`;
 const EXAMPLES = [
   { label: "기동갑주 아머드 조선",
@@ -2560,6 +2563,8 @@ function readGsetForm() {
 }
 function setGres(t) { S.gres = t; const el = $("#gRes"); if (el) el.textContent = t; }
 
+/* 주사위 칸은 내용 길이에 맞춰 높이를 늘린다 (field-sizing을 지원하지 않는 브라우저용) */
+function fitDie(el) { el.style.height = "auto"; el.style.height = el.scrollHeight + 2 + "px"; }
 function renderMain(force) {
   const m = $("#main");
   if (S.ready && S.view.name === "article" && S.edit && S.edit.key === S.view.key && S.pages[S.view.key]) {
@@ -2578,6 +2583,7 @@ function renderMain(force) {
   else if (S.view.name === "advance") m.innerHTML = advanceHtml();
   else if (S.view.name === "epilogue") m.innerHTML = epilogueHtml();
   else m.innerHTML = articleHtml(S.view.key);
+  document.querySelectorAll("textarea.die-v").forEach(fitDie);
   if (S.view.name === "canon" && S.focusEnt) { const d = document.getElementById("ent-" + S.focusEnt); if (d) { d.open = true; d.scrollIntoView({ block: "center" }); } S.focusEnt = null; }
 }
 
@@ -2606,8 +2612,8 @@ function homeHtml() {
       <label class="lb" for="seedTa">원안</label>
       <div class="stabs" role="tablist" aria-label="원안 고르기">${ex}</div>
       ${S.seedTab === "dice" && S.dice ? `<div class="dice" aria-label="원안 주사위">
-        ${diceKeys().map(k => `<div class="die"><span class="die-l">${DICE_LABEL[k]}</span><span class="die-v">${esc(S.dice[k])}</span><button type="button" class="die-lock" data-lock="${k}" aria-pressed="${!!S.dice.locks[k]}" title="이 칸은 다시 굴려도 그대로 둡니다">${S.dice.locks[k] ? "고정됨" : "고정"}</button></div>`).join("")}
-        <div class="row" style="margin-top:2px"><button type="button" class="btn" data-act="roll" ${S.creating ? "disabled" : ""}>다시 굴리기</button><span class="note">고정한 칸은 그대로 두고 나머지만 바꿉니다. 아래 원안을 고쳐 써도 됩니다.</span></div></div>` : ""}
+        ${diceKeys().map(k => `<div class="die"><span class="die-l">${DICE_LABEL[k]}</span><textarea class="die-v" rows="1" data-die="${k}" maxlength="80" aria-label="${DICE_LABEL[k]} (직접 고쳐 쓸 수 있습니다)" title="눌러서 직접 고쳐 쓸 수 있습니다" ${S.creating ? "disabled" : ""}>${esc(S.dice[k])}</textarea><button type="button" class="die-lock" data-lock="${k}" aria-pressed="${!!S.dice.locks[k]}" title="이 칸은 다시 굴려도 그대로 둡니다">${S.dice.locks[k] ? "고정됨" : "고정"}</button></div>`).join("")}
+        <div class="row" style="margin-top:2px"><button type="button" class="btn" data-act="roll" ${S.creating ? "disabled" : ""}>다시 굴리기</button><span class="note">고정한 칸은 그대로 두고 나머지만 바꿉니다. 칸을 눌러 직접 고쳐 쓸 수 있고, 고쳐 쓴 칸은 고정됩니다. 아래 원안을 고쳐 써도 됩니다.</span></div></div>` : ""}
       ${S.seedTab === "whatif" && S.whatIfs ? `<div class="whatif">
         <p class="note" style="margin:0 0 8px">질문을 고르면 그 질문으로 바로 세계관을 만듭니다. 아래 첫 문서와 작가 지침 칸도 함께 반영됩니다.</p>
         <div class="wi-grid">${S.whatIfs.map(q => `<button type="button" class="wi" data-whatif="${esc(q)}" ${S.creating || !S.sample ? "disabled" : ""}><span>만약</span>${esc(q)}</button>`).join("")}</div>
@@ -3144,6 +3150,13 @@ document.addEventListener("input", ev => {
       const ta = $("#seedTa"); if (ta) { ta.focus(); try { ta.setSelectionRange(pos, pos); } catch {} }
     }
   }
+  if (ev.target.dataset?.die && S.dice) {   // 주사위 칸을 직접 고쳐 쓰면 그 칸을 고정하고 원안을 다시 쓴다(입력 중이라 화면은 다시 그리지 않는다)
+    if (/\n/.test(ev.target.value)) ev.target.value = ev.target.value.replace(/\s*\n\s*/g, " ");   // 한 줄로
+    fitDie(ev.target);
+    const k = ev.target.dataset.die; S.dice[k] = ev.target.value; S.dice.locks[k] = true; S.seed = diceSeed(S.dice);
+    const ta = $("#seedTa"); if (ta) ta.value = S.seed;
+    const lb = document.querySelector(`[data-lock="${k}"]`); if (lb) { lb.setAttribute("aria-pressed", "true"); lb.textContent = "고정됨"; }
+  }
   if (ev.target.id === "firstIn") S.first = ev.target.value;
   if (ev.target.id === "protoDesc") S.protoDesc = ev.target.value;
   if (ev.target.id === "regenKeep" && S.regen) { S.regen.keep = ev.target.checked; renderMain(); }
@@ -3189,7 +3202,10 @@ document.addEventListener("click", ev => {   // 길게 누른 뒤 손을 뗄 때
   if (lp.fired && Date.now() - (lp.firedAt || 0) < 900) { ev.stopPropagation(); ev.preventDefault(); lp.fired = false; }
 }, true);
 document.addEventListener("contextmenu", ev => { if (ev.target.closest?.("a.wl.new")) ev.preventDefault(); });
-document.addEventListener("keydown", ev => { if (ev.key === "Escape") $("#sugg").hidden = true; });
+document.addEventListener("keydown", ev => {
+  if (ev.key === "Escape") $("#sugg").hidden = true;
+  if (ev.key === "Enter" && ev.target.matches?.("textarea.die-v")) { ev.preventDefault(); ev.target.blur(); }   // 주사위 칸은 한 줄. Enter는 입력을 마친다
+});
 
 /* ---------- boot ---------- */
 (async function boot() {

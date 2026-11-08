@@ -113,15 +113,20 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await page.click('[data-stab="dice"]');
     assert.deepStrictEqual(await page.locator(".die-l").allInnerTexts(), ["시대", "장르", "비틀기"]);
     assert((await page.inputValue("#seedTa")).includes("비틀기: "));
-    await page.click('[data-lock="era"]'); const era0 = await page.locator(".die-v").first().innerText();
+    await page.click('[data-lock="era"]'); const era0 = await page.inputValue('[data-die="era"]');
     await page.click('[data-mode="story"]');
     assert.deepStrictEqual(await page.locator(".die-l").allInnerTexts(), ["시대", "장르", "줄거리"], "스토리 모드 주사위는 줄거리");
     const ss = await page.inputValue("#seedTa");
     assert(ss.includes("줄거리: ") && !ss.includes("비틀기") && ss.includes("이 한 줄에서 출발해"), "원안도 줄거리 기준으로 바뀐다");
-    await page.click('[data-act="roll"]'); assert.strictEqual(await page.locator(".die-v").first().innerText(), era0, "고정한 칸은 그대로");
+    await page.click('[data-act="roll"]'); assert.strictEqual(await page.inputValue('[data-die="era"]'), era0, "고정한 칸은 그대로");
+    await page.fill('[data-die="plot"]', "말단 서기가 왕의 가짜 유언장을 손에 넣는다");
+    assert.strictEqual(await page.getAttribute('[data-lock="plot"]', "aria-pressed"), "true", "직접 고친 칸은 자동으로 고정");
+    assert((await page.inputValue("#seedTa")).includes("줄거리: 말단 서기가 왕의 가짜 유언장을 손에 넣는다"), "고쳐 쓰는 대로 원안이 바뀐다");
+    await page.click('[data-act="roll"]');
+    assert.strictEqual(await page.inputValue('[data-die="plot"]'), "말단 서기가 왕의 가짜 유언장을 손에 넣는다", "다시 굴려도 고친 칸은 그대로");
     await page.click('[data-mode="basic"]'); assert((await page.inputValue("#seedTa")).includes("비틀기: "));
     await page.click('[data-stab="own"]');
-    ok("원안 주사위: 스토리 모드에서는 비틀기 대신 한 줄 줄거리를 굴린다");
+    ok("원안 주사위: 스토리 모드에서는 비틀기 대신 한 줄 줄거리를 굴리고, 칸을 직접 고쳐 쓰면 고정되어 원안에 반영된다");
 
     /* 1. 기본 모드 회귀 */
     await page.fill("#seedTa", "기본 모드 테스트 원안입니다. 아무 일도 없는 세계.");
