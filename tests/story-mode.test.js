@@ -166,6 +166,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await page.click('#side [data-act="gset"]'); await page.fill("#gCheck", ""); await page.selectOption("#gCheckT", "medium"); await page.click('[data-act="gset-save"]');
     await page.click('#side [data-act="home"]');
     assert(bp.includes("기준 시점에 1학년(신입생)인 인물은 그 전 해들에는 아직 입학 전"), "문서 프롬프트에 학년·연도 역산 규칙");
+    assert(bp.includes("## 절제 (아래 모든 규칙에 먼저 적용한다)") && bp.includes("개요의 첫 문장은 이 항목이 무엇인지 밝히는 정의") && bp.includes("핵심 숫자 3~5개만") && bp.includes("한자어 압축 명사구") && bp.includes("상투적 감각 표현") && bp.includes("예고편 대사처럼") && !bp.includes("수치의 대비"), "과장·숫자·클리셰를 누르는 절제 규칙");
     assert(calls.filter(c => c.kind === "read").pop().prompt.includes("연도·나이·학년·기수·재직 기간이 서로 맞지 않는 곳(예: 기준 시점에 1학년인"), "설정 검사가 문서 안의 연도 모순도 잡는다");
     ok("기본 모드 세계관 생성, 문서 작성, 새로고침 후 복원이 그대로 된다");
 
@@ -259,6 +260,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert(after.sections.some(s => s.body.includes("[[이일]]")) && await page.locator('.article a.wl[data-t="이일"]:not(.new)').count() > 0, "유형이 붙은 링크는 원래 문서로 이어진다");
     assert(sw.story.chapters[1].affected.some(a => a.key === kOf("이일")) && sw.story.chapters[1].wove.some(a => a.key === kOf("여진 해적단")));
     assert(planPrompt.includes("새 항목: 이번 장에서 처음 등장하는 항목을 3~5개 만든다"), "장마다 새 항목을 요구한다");
+    assert(planPrompt.includes("- 절제: 규칙은 방향이지 최대치가 아니다") && planPrompt.includes("과장 수식어("), "장 계획에도 절제 규칙");
     assert(planPrompt.includes("이미 다른 인물이 가진 특징:\n  - 이일: 아날로그 무전기 집착"), "장 계획의 새 인물도 기존 인물 특징과 겹치지 않게");
     assert(wove.includes("이번 장에 새로 등장") && /이번 장에 새로 등장\s*원균 함대/.test(wove), "안내 카드에 새로 등장한 항목");
     assert(sw.story.chapters[1].fresh.includes(kOf("원균 함대")));
