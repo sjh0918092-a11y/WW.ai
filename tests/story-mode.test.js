@@ -167,6 +167,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await page.click('#side [data-act="home"]');
     assert(bp.includes("기준 시점에 1학년(신입생)인 인물은 그 전 해들에는 아직 입학 전"), "문서 프롬프트에 학년·연도 역산 규칙");
     assert(bp.includes("## 절제 (아래 모든 규칙에 먼저 적용한다)") && bp.includes("개요의 첫 문장은 이 항목이 무엇인지 밝히는 정의") && bp.includes("핵심 숫자 3~5개만") && bp.includes("한자어 압축 명사구") && bp.includes("상투적 감각 표현") && bp.includes("예고편 대사처럼") && !bp.includes("수치의 대비"), "과장·숫자·클리셰를 누르는 절제 규칙");
+    assert(bp.includes("전칭·극단 표현은 정말 예외가 없을 때만") && bp.includes("최대치 결말로 맺지 않는다") && bp.includes("좋은 예(그 자리의 말)") && bp.includes("숫자를 줄인다고 구체성까지 줄이지 않는다"), "전칭 표현, 결말, 인용 예시, 구체성 규칙");
     assert(calls.filter(c => c.kind === "read").pop().prompt.includes("연도·나이·학년·기수·재직 기간이 서로 맞지 않는 곳(예: 기준 시점에 1학년인"), "설정 검사가 문서 안의 연도 모순도 잡는다");
     ok("기본 모드 세계관 생성, 문서 작성, 새로고침 후 복원이 그대로 된다");
 
