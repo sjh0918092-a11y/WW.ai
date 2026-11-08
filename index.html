@@ -343,7 +343,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v2.8 · 2026-11-08";
+const APP_VERSION = "v2.9 · 2026-11-08";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -735,7 +735,7 @@ const S = {
   creating: false, createErr: null, seed: "", seedTab: "own", ownSeed: "", dice: null, whatIfs: null, first: "", guideIn: "",
   confirmDel: null, confirmRewrite: null, canonFilter: "all", focusEnt: null, nf: new Set(),
   edit: null, refreshing: null, confirmDelPage: null, confirmMerge: null, compose: null,
-  mode: "basic", protoDesc: "", cast: [], storyGen: null, syncQ: [], syncing: null, syncErr: null, adv: null, storyCard: null
+  mode: "basic", protoDesc: "", cast: [], regen: null, storyGen: null, syncQ: [], syncing: null, syncErr: null, adv: null, storyCard: null
 };
 
 /* ---------- canon helpers ---------- */
@@ -1371,8 +1371,17 @@ async function createWorld() {
     const mt = first || norm(b.mainTitle || b.title);
     w.mainKey = keyOf(mt); w.entities[w.mainKey] = newEntity(mt, "", "");
     if (story) setupStory(w, b, user);
+    w.input = { first, ...(story ? { protoDesc: user.desc, cast: user.cast } : {}) };   // 다시 만들기에 쓰는 처음 입력값
+    const rg = S.regen && !S.regen.keep ? S.worlds.find(x => x.id === S.regen.wid) : null;
+    if (rg) {   // 다시 만들기: 새 설정 노트가 나온 뒤에야 기존 세계관과 문서를 지운다(실패하면 아무것도 지우지 않는다)
+      if (S.gen?.wid === rg.id || ((S.storyGen || S.syncing) && S.world?.id === rg.id)) throw { code: "busy", message: "이 세계관에서 작성 중인 문서가 있습니다. 끝난 뒤 다시 만들어 주세요." };
+      w.id = rg.id; w.createdAt = rg.createdAt || w.createdAt;
+      await Store.deleteWorld(rg.id);
+      S.worlds = S.worlds.filter(x => x.id !== rg.id);
+      if (S.world?.id === rg.id) { S.world = null; S.pages = {}; }
+    }
     await Store.saveWorld(w);
-    S.worlds.unshift(w); S.creating = false;
+    S.worlds.unshift(w); S.creating = false; S.regen = null;
     S.seed = S.ownSeed = S.first = S.guideIn = S.protoDesc = ""; S.cast = []; S.seedTab = "own"; S.dice = null; S.whatIfs = null;   // 만들고 나면 입력란을 모두 비운다
     await openWorld(w.id);
   } catch (e) { S.creating = false; S.createErr = errMsg(e); renderMain(); }
@@ -1512,6 +1521,28 @@ async function notSame(k, other) {
   const w = S.world, e = w?.entities[k]; if (!e) return;
   (e.notSame ||= []).includes(other) || e.notSame.push(other);
   renderMain(); try { await Store.saveWorld(w); } catch {}
+}
+
+/* 다시 만들기: 처음 입력값을 세계관 만들기 화면에 채워 연다 */
+function openRegen() {
+  const w = S.world; if (!w) return;
+  if (S.gen?.wid === w.id || S.storyGen || S.syncing) { toast("작성 중인 문서가 끝난 뒤 다시 만들어 주세요."); return; }
+  const story = isStory(w), inp = w.input || {};
+  S.regen = { wid: w.id, title: w.title, keep: false };
+  S.mode = story ? "story" : "basic";
+  S.seed = S.ownSeed = w.seed || ""; S.seedTab = "own"; S.dice = null; S.whatIfs = null;
+  S.guideIn = w.guide || "";
+  S.first = inp.first ?? (story ? w.entities[w.story.protagonistKey]?.title || "" : "");
+  S.protoDesc = story ? (inp.protoDesc ?? w.story.protagonist?.desc ?? "") : "";
+  S.cast = story ? (inp.cast || (w.story.cast || []).map(c => ({ name: w.entities[c.key]?.title || c.name, desc: c.desc || "", rel: c.rel || "" }))).map(c => ({ ...c })) : [];
+  S.createErr = null;
+  S.view = { name: "home" }; renderAll(); window.scrollTo({ top: 0 });
+}
+function cancelRegen() {
+  const wid = S.regen?.wid; S.regen = null;
+  S.seed = S.ownSeed = S.first = S.guideIn = S.protoDesc = ""; S.cast = []; S.createErr = null;
+  if (wid && S.worlds.some(x => x.id === wid)) { if (S.world?.id === wid) { S.view = { name: "canon" }; renderAll(); } else openWorld(wid); }
+  else renderMain();
 }
 
 async function openWorld(wid, goKey) {
@@ -2535,7 +2566,10 @@ function homeHtml() {
   }).join("") : `<div class="empty">아직 만든 세계관이 없습니다. 왼쪽에 원안을 적고 <b>세계관 만들기</b>를 누르면 설정 노트와 첫 문서가 만들어집니다.</div>`;
   return `<div class="home">
     <section class="sheet">
-      <h2>새 세계관 만들기</h2>
+      <h2>${S.regen ? "세계관 다시 만들기" : "새 세계관 만들기"}</h2>
+      ${S.regen ? `<div class="banner warn">「${esc(S.regen.title)}」을(를) 처음부터 다시 만듭니다. 아래는 처음에 넣은 입력값이며, 고쳐도 됩니다. 연표, 핵심 규칙, 분위기${S.mode === "story" ? ", 이야기 뼈대와 1장" : ""}이 새로 만들어집니다.
+        <label style="display:flex;gap:8px;align-items:center;margin-top:8px;color:var(--ink)"><input type="checkbox" id="regenKeep" ${S.regen.keep ? "checked" : ""} ${S.creating ? "disabled" : ""}>기존 세계관도 남겨 두기 <span class="note">체크하지 않으면 기존 문서는 모두 지워집니다. 새로 만들기에 실패하면 아무것도 지우지 않습니다</span></label>
+        <div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="regen-cancel" ${S.creating ? "disabled" : ""}>다시 만들기 취소</button></div></div>` : ""}
       <p class="sub">원안 몇 문장으로 위키를 엽니다. 본문의 빨간 링크를 누를 때마다 그 항목의 문서가 새로 작성되고, 앞서 확정된 설정은 설정 노트에 쌓여 다음 문서의 제약이 됩니다.</p>
       <label class="lb">방식</label>
       <div class="stabs-row" role="group" aria-label="세계관 방식"><button type="button" class="chip" data-mode="basic" aria-pressed="${S.mode !== "story"}" ${S.creating ? "disabled" : ""}>기본 모드</button><button type="button" class="chip" data-mode="story" aria-pressed="${S.mode === "story"}" ${S.creating ? "disabled" : ""}>스토리 모드</button></div>
@@ -2566,7 +2600,7 @@ function homeHtml() {
       <label class="lb" for="guideIn">작가 지침 <span class="note" style="font-weight:400">선택 · 세계관 전체에 걸쳐 지킬 방향. 모든 문서에 함께 전달됩니다</span></label>
       <textarea id="guideIn" rows="3" maxlength="1000" placeholder="예: 일본 거대 로봇 메카닉 SF풍으로. 네임드 파일럿에게는 전용기를 준다. 양산기 바리에이션을 풍부하게. 잔혹한 묘사는 피한다." ${S.creating ? "disabled" : ""}>${esc(S.guideIn)}</textarea>
       <div class="row" ${S.seedTab === "whatif" && !S.creating && !S.createErr ? "hidden" : ""}>
-        <button type="button" class="btn pri" data-act="create" ${S.creating || !S.sampleReady ? "disabled" : ""}>${S.creating ? "설정 노트를 만드는 중…" : S.mode === "story" ? "이야기 시작하기" : "세계관 만들기"}</button>
+        <button type="button" class="btn pri" data-act="create" ${S.creating || !S.sampleReady ? "disabled" : ""}>${S.creating ? "설정 노트를 만드는 중…" : S.regen ? (S.regen.keep ? "새 세계관으로 다시 만들기" : "지우고 다시 만들기") : S.mode === "story" ? "이야기 시작하기" : "세계관 만들기"}</button>
         ${S.creating ? `<span class="genpill"><span class="dot"></span>${S.mode === "story" ? "핵심 규칙, 연표, 주인공과 1장을 정리하고 있습니다" : "핵심 규칙과 연표를 정리하고 있습니다"}</span>` : ""}
         ${!S.sampleReady ? `<span class="note">생성 기능을 준비하는 중…</span>` : (!S.sample ? `<span class="note">${esc(ERR.no_sample)}</span>` : "")}
       </div>
@@ -2849,6 +2883,7 @@ function canonHtml() {
     <dl class="kv" style="margin-top:12px"><dt>작중 기준 시점</dt><dd>${esc(w.era)}</dd><dt>저장 위치</dt><dd>${esc(storeLabel())}</dd></dl>
     <label class="lb" for="wHist" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="wHist" ${w.historical ? "checked" : ""}>실제 역사에서 갈라진 대체역사 <span class="note">실존 인물을 재해석해 등장시킵니다</span></label>
     <label class="lb">원안</label><div class="seedbox">${esc(w.seed)}</div>
+    <div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="regen-open" ${S.gen || S.storyGen || S.syncing ? "disabled" : ""}>이 원안으로 다시 만들기</button><span class="note">연표, 핵심 규칙, 분위기${isStory(w) ? ", 이야기" : ""}를 처음부터 새로 만듭니다. 처음 입력값을 고쳐서 만들 수도 있습니다.</span></div>
     ${isStory(w) ? `<h2>이야기</h2>
     <p class="note">주인공 ${linkHtml(w.entities[w.story.protagonistKey].title)} · ${w.story.status === "ended" ? "완결" : `현재 ${w.story.chapter}장 / ${STORY_N}장`}. 이야기의 뼈대는 ${w.story.status === "ended" ? "아래 '숨겨진 뼈대 보기'에서" : "결말이 난 뒤에"} 볼 수 있습니다.</p>
     <div style="overflow-x:auto"><table class="tl">${w.story.chapters.map(c => `<tr><td>${c.n}장</td><td><b>${esc(c.title)}</b> <span class="src">· ${esc(c.era)}</span><br>${c.n < w.story.chapter || w.story.status === "ended" ? esc(c.summary) : `<span class="note">진행 중인 장입니다. 줄거리는 다음 장으로 넘어가면 공개됩니다.</span>`}</td></tr>`).join("")}</table></div>
@@ -3040,6 +3075,8 @@ document.addEventListener("click", ev => {
     case "rw-no": S.confirmRewrite = null; renderMain(); break;
     case "delpage-no": S.confirmDelPage = null; renderMain(); break;
     case "mg-no": S.confirmMerge = null; renderMain(); break;
+    case "regen-open": openRegen(); break;
+    case "regen-cancel": cancelRegen(); break;
     case "cast-add": if (S.cast.length < 8) { S.cast.push({ name: "", desc: "", rel: "" }); renderMain(); document.querySelector(`[data-cast="${S.cast.length - 1}"][data-cf="name"]`)?.focus(); } break;
     case "ed-save": saveEdit(); break;
     case "ed-save-raw": saveEdit(true); break;
@@ -3075,6 +3112,7 @@ document.addEventListener("input", ev => {
   }
   if (ev.target.id === "firstIn") S.first = ev.target.value;
   if (ev.target.id === "protoDesc") S.protoDesc = ev.target.value;
+  if (ev.target.id === "regenKeep" && S.regen) { S.regen.keep = ev.target.checked; renderMain(); }
   if (ev.target.dataset?.cast !== undefined && ev.target.dataset.cf) { const c = S.cast[Number(ev.target.dataset.cast)]; if (c) c[ev.target.dataset.cf] = ev.target.value; }
   if (ev.target.id === "cpDir" && S.compose) S.compose.dir = ev.target.value;
   if (ev.target.id === "guideIn") S.guideIn = ev.target.value;

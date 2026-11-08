@@ -378,6 +378,35 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert.strictEqual(await q.locator('[data-mg]').count(), 0, "대문 문서에는 합치기 버튼이 없다");
     ok("합치기 버튼으로 별명 같은 다른 이름의 문서를 직접 고른 문서에 합칠 수 있다");
     await fourth.ctx.close();
+
+    /* 16. 세계관 다시 만들기 */
+    await page.click('#side [data-act="home"]').catch(() => {}); await page.click('[data-act="home"]').catch(() => {});
+    await page.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(page, "대문 항목");
+    const oldBasic = await worldOf(page, "기본 세계"), nBible = count("bible");
+    await page.click('#side [data-act="canon"]'); await page.click('[data-act="regen-open"]');
+    assert.strictEqual(await page.inputValue("#seedTa"), "기본 모드 테스트 원안입니다. 아무 일도 없는 세계.", "처음 원안이 채워진다");
+    assert((await page.locator('[data-act="create"]').innerText()).includes("지우고 다시 만들기"));
+    await page.click('[data-act="create"]'); await waitArticle(page, "대문 항목");
+    const newBasic = await worldOf(page, "기본 세계"), keys16 = (await idbAll(page)).map(x => x[0]).filter(k => k.startsWith("p:" + oldBasic.id + ":"));
+    assert.strictEqual(newBasic.id, oldBasic.id, "같은 세계관 자리에 다시 만든다");
+    assert.strictEqual(count("bible"), nBible + 1);
+    assert(!Object.values(newBasic.entities).some(o => o.title === "마커스 벡") && keys16.length === 1, "기존 문서는 모두 지워지고 첫 문서만 남는다");
+    assert.strictEqual((await page.locator(".wcard").count().catch(() => 0)), 0);
+    ok("세계관 다시 만들기: 처음 원안으로 연표와 설정을 새로 만들고 기존 문서를 지운다");
+    await page.click('[data-act="home"]'); await page.click('.wcard button.open:has-text("녹둔도 연대기")'); await waitArticle(page, "한서린");
+    await page.click('#side [data-act="canon"]'); await page.click('[data-act="regen-open"]');
+    assert.strictEqual(await page.inputValue("#firstIn"), "한서린");
+    assert.strictEqual(await page.inputValue("#protoDesc"), "활은 잘 쏘지만 겁이 많은 막내 무관");
+    assert.strictEqual(await page.inputValue('[data-cast="0"][data-cf="name"]'), "윤가람");
+    assert.strictEqual(await page.inputValue('[data-cast="0"][data-cf="rel"]'), "소꿉친구이자 맞수");
+    await page.check("#regenKeep");
+    const nWorlds = (await idbAll(page)).filter(x => x[1]?.kind === "world").length;
+    await page.click('[data-act="create"]'); await waitArticle(page, "한서린");
+    const ws16 = (await idbAll(page)).map(x => x[1]).filter(v => v?.kind === "world");
+    assert.strictEqual(ws16.length, nWorlds + 1, "'기존 세계관도 남겨 두기'면 새 세계관이 따로 생긴다");
+    assert.strictEqual(ws16.filter(v => v.title === "녹둔도 연대기").length, 2);
+    assert(ws16.some(v => v.title === "녹둔도 연대기" && v.story.status === "ended"), "기존 이야기는 그대로 남는다");
+    ok("스토리 세계관 다시 만들기: 주인공, 특징, 등장인물이 채워지고, 남겨 두기를 고르면 기존 세계관이 그대로 남는다");
     await ctx.close();
     console.log(`\n모두 통과 (${step}개). Gemini 호출 ${calls.length}회: ` + Object.entries(calls.reduce((a, c) => (a[c.kind] = (a[c.kind] || 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
   } catch (e) {
