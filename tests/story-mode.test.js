@@ -208,7 +208,16 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert(!Object.values(sw.entities).some(o => /\((인물|조직)\)$/.test(o.title)), "모델이 '이일(인물)'처럼 써도 중복 항목을 만들지 않는다");
     assert(after.sections.some(s => s.body.includes("[[이일]]")) && await page.locator('.article a.wl[data-t="이일"]:not(.new)').count() > 0, "유형이 붙은 링크는 원래 문서로 이어진다");
     assert(sw.story.chapters[1].affected.some(a => a.key === kOf("이일")) && sw.story.chapters[1].wove.some(a => a.key === kOf("여진 해적단")));
+    assert(planPrompt.includes("새 항목: 이번 장에서 처음 등장하는 항목을 3~5개 만든다"), "장마다 새 항목을 요구한다");
+    assert(wove.includes("이번 장에 새로 등장") && /이번 장에 새로 등장\s*원균 함대/.test(wove), "안내 카드에 새로 등장한 항목");
+    assert(sw.story.chapters[1].fresh.includes(kOf("원균 함대")));
+    assert((await sideText(page)).includes("새로 등장 1곳 · 안 읽음 1"), "사이드바에 새로 등장한 항목");
     ok("다음 장으로 → 선택 → 주인공 문서에 2장 블록이 붙고, 기존 본문은 그대로이며, 탐험이 반영된다");
+
+    await page.locator('#side button[data-k]', { hasText: "원균 함대" }).click(); await waitArticle(page, "원균 함대");
+    assert((await sideText(page)).includes("새로 등장 1곳") && !(await sideText(page)).includes("안 읽음") && (await sideText(page)).includes("이번 장 탐험 1곳"), "새 항목을 읽으면 탐험으로 센다");
+    await page.click('#side [data-k]:has-text("주인공 문서")'); await waitArticle(page, "한서린");
+    ok("장마다 새로 등장한 항목이 사이드바에 보이고, 읽으면 이번 장 탐험으로 센다");
 
     /* 5. 지연 갱신 */
     let nb = count("chapterBlock");
