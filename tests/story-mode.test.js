@@ -533,6 +533,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     ctl.checkIssues = null; ctl.fixEdits = null;
     { const ck = calls.filter(c => c.kind === "check" && c.prompt.includes("# 검사 분류")).shift().prompt;
       assert(ck.includes("분류: 테스트") && ck.includes("한 줄 정의: 검사 분류은 테스트 항목이다."), "검사에 분류와 한 줄 정의가 들어간다");
+      assert(ck.includes("## 반드시 맞춰 볼 것") && /- 1586년: 「역사」/.test(ck) === false && ck.includes("분류는 항목 하나하나를 인포박스와 본문에 맞춰 본다"), "앱이 찾은 대조 대상 목록이 들어간다");
       assert(ck.includes("ledger(대조표)를 먼저 채운다") && ck.includes('{"ledger":[{"subject"'), "섹션끼리 맞춰 보도록 대조표를 먼저 쓰게 한다");
       assert(ck.includes("같은 사건을 섹션마다 다르게 쓴 곳") && ck.includes("섹션 제목이 본문과 어긋나는 곳") && ck.includes("두 서술을 모두 인용할 수 없으면 지적하지 않는다"), "문서 안의 앞뒤 모순도 검사한다");
       assert(calls.filter(c => c.kind === "fix").pop().prompt.includes("[cats] (분류, | 로 구분)\n테스트"), "고치기에 분류가 들어간다"); }

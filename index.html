@@ -347,7 +347,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v4.1 · 2026-11-08";
+const APP_VERSION = "v4.2 · 2026-11-08";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1351,6 +1351,30 @@ function checkBrief(w, k, key) {
   const rs = relationsOf(w, k).filter(x => x.src !== key && live(x)).slice(-3).map(x => "- 관계: " + relLine(w, x));
   return [entityBrief(w, k, key), ...ms, ...rs].join("\n");
 }
+/* 문서 안에서 두 곳 이상에 나오는 대상(항목 이름, 연도)과 그 위치. 검사 모델이 무엇을 맞춰 볼지 고르지 않아도 되게 앱이 먼저 짚어 준다 */
+function crossRefs(w, p) {
+  const parts = [];
+  if (p.summary) parts.push({ name: "한 줄 정의", text: p.summary });
+  if (p.categories?.length) parts.push({ name: "분류", text: p.categories.join(" | ") });
+  if (p.infobox?.length) parts.push({ name: "인포박스", text: p.infobox.map(r => `${r.label}: ${stripMarks(r.value)}`).join("\n") });
+  for (const s of p.sections) parts.push({ name: s.heading, text: s.heading + "\n" + stripMarks(s.body) });
+  const subj = new Map();   // 표시 이름 → 검색어들
+  for (const [k, o] of Object.entries(w.entities)) {
+    if (k === p.key) continue;
+    const names = new Set(namesOf(o.title));
+    if (o.type === "인물") for (const t of o.title.replace(/\(.*\)$/, "").split(/[\s·]+/)) if (t.length >= 2) names.add(t);   // 성이나 이름만 쓴 경우
+    subj.set(o.title, [...names]);
+  }
+  const years = new Set(); for (const x of parts) for (const m of x.text.matchAll(/(?<!\d)(1\d{3}|20\d{2})년/g)) years.add(m[1] + "년");
+  for (const y of years) subj.set(y, [y]);
+  const out = [];
+  for (const [label, names] of subj) {
+    const where = parts.filter(x => names.some(n => x.text.includes(n))).map(x => x.name);
+    if (where.length >= 2) out.push({ label, where });
+  }
+  out.sort((a, b) => b.where.length - a.where.length);
+  return out.slice(0, 30).map(x => `- ${x.label}: ${x.where.map(n => `「${n}」`).join(", ")}`).join("\n");
+}
 function checkPrompt(w, key) {
   const p = S.pages[key];
   const base = [...new Set([...related(w, key), ...(p.links || [])])].filter(k => k !== key && w.entities[k]).slice(0, 10);
@@ -1390,6 +1414,10 @@ ${own || "(없음)"}
 
 ## 관련 항목의 확정 설정
 ${ctx || "(없음)"}
+
+## 반드시 맞춰 볼 것 (앱이 찾은, 이 문서의 두 곳 이상에 나오는 대상과 그 위치)
+${crossRefs(w, p) || "(없음)"}
+위 대상마다 ledger에 subject로 넣고, 적힌 위치들이 그 대상에 대해 말하는 내용(누가, 언제, 어디서, 무엇을, 결과, 관계, 소속)을 하나씩 맞춰 본다. 분류는 항목 하나하나를 인포박스와 본문에 맞춰 본다.
 
 ## 검사할 문서
 ${text}
