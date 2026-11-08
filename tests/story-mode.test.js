@@ -15,12 +15,13 @@ const server = http.createServer((req, res) => {
 
 /* ---------- 가짜 Gemini ---------- */
 const calls = [];           // { kind, prompt }
-const ctl = { planDelay: 0, planBad: false, planN: 1, checkIssues: null, checkDelay: 0, fixEdits: null, analyzeConflicts: null };
+const ctl = { planDelay: 0, planBad: false, planN: 1, checkIssues: null, checkDelay: 0, fixEdits: null, analyzeConflicts: null, readIssues: null, readFail: false };
 const count = k => calls.filter(c => c.kind === k).length;
 function kindOf(p) {
   if (p.includes("## 이야기 뼈대")) return "storyBible";
   if (p.includes("## 장 계획 작성")) return "chapterPlan";
   if (p.includes("## 장 섹션 작성")) return "chapterBlock";
+  if (p.includes("## 문서 읽기 검사")) return "read";
   if (p.includes("검사하라")) return "check";
   if (p.includes("편집자가 남긴 메모")) return "fix";
   if (p.includes("사용자가 직접 수정한 최종본")) return "analyze";
@@ -60,6 +61,7 @@ function answer(kind, p) {
   if (kind === "chapterPlan") return ctl.planBad ? { title: "불완전" } : planJson(p);
   if (kind === "chapterBlock") return blockJson(p);
   if (kind === "check") return { issues: ctl.checkIssues || [] };
+  if (kind === "read") return { issues: ctl.readIssues || [] };
   if (kind === "fix") return { edits: ctl.fixEdits || [], note: "어긋난 연도를 고쳤다." };
   if (kind === "analyze") return { facts: [], timeline: [], newEntities: [], relations: [], conflicts: ctl.analyzeConflicts || [] };
   if (kind === "tone") return TONE;
@@ -71,7 +73,8 @@ async function route(r) {
   const kind = kindOf(prompt), model = decodeURIComponent((/models\/([^:]+):/.exec(r.request().url()) || [])[1] || "");
   calls.push({ kind, prompt, model, think: body.generationConfig?.thinkingConfig?.thinkingLevel || "" });
   if (kind === "chapterPlan" && ctl.planDelay) await new Promise(res => setTimeout(res, ctl.planDelay));
-  if (kind === "check" && ctl.checkDelay) await new Promise(res => setTimeout(res, ctl.checkDelay));
+  if ((kind === "check" || kind === "read") && ctl.checkDelay) await new Promise(res => setTimeout(res, ctl.checkDelay));
+  if (kind === "read" && ctl.readFail) { try { await r.fulfill({ status: 400, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }, body: JSON.stringify({ error: { code: 400, message: "test failure" } }) }); } catch {} return; }
   const text = JSON.stringify(answer(kind, prompt));
   const sse = `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text }] }, finishReason: "STOP" }], usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 } })}\n\n`;
   try { await r.fulfill({ status: 200, headers: { "Content-Type": "text/event-stream", "Access-Control-Allow-Origin": "*" }, body: sse }); } catch {}
@@ -161,7 +164,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await page.click('#side [data-act="gset"]'); await page.fill("#gCheck", ""); await page.selectOption("#gCheckT", "medium"); await page.click('[data-act="gset-save"]');
     await page.click('#side [data-act="home"]');
     assert(bp.includes("기준 시점에 1학년(신입생)인 인물은 그 전 해들에는 아직 입학 전"), "문서 프롬프트에 학년·연도 역산 규칙");
-    assert(calls.filter(c => c.kind === "check").pop().prompt.includes("연도·나이·학년·기수·재직 기간이 서로 맞지 않는 곳(예: 기준 시점에 1학년인"), "설정 검사가 문서 안의 연도 모순도 잡는다");
+    assert(calls.filter(c => c.kind === "read").pop().prompt.includes("연도·나이·학년·기수·재직 기간이 서로 맞지 않는 곳(예: 기준 시점에 1학년인"), "설정 검사가 문서 안의 연도 모순도 잡는다");
     ok("기본 모드 세계관 생성, 문서 작성, 새로고침 후 복원이 그대로 된다");
 
     /* 2. 스토리 모드 생성 */
@@ -491,7 +494,8 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await waitArticle(page, "검사 대상"); ctl.checkIssues = null; ctl.fixEdits = null; ctl.checkDelay = 0;
     await page.waitForTimeout(800);
     const seq = calls.slice(n0).map(c => c.kind);
-    assert.deepStrictEqual(seq.slice(0, 4), ["page", "check", "fix", "analyze"], "작성 → 검사 → 고치기 → (뒤에서) 사실 정리: " + seq.join(","));
+    assert.strictEqual(seq[0], "page"); assert.deepStrictEqual(seq.slice(1, 3).sort(), ["check", "read"], "설정 대조와 문서 읽기를 동시에: " + seq.join(","));
+    assert.deepStrictEqual(seq.slice(3, 5), ["fix", "analyze"], "작성 → 검사 → 고치기 → (뒤에서) 사실 정리: " + seq.join(","));
     const body21 = await page.locator(".article").innerText();
     assert(body21.includes("1599년에 시작되었다") && !body21.includes("1586년에 시작되었다"), "고친 본문으로 보여 준다");
     const memo21 = await page.locator("#main").textContent();
@@ -526,20 +530,26 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert(t23.includes("지금은 무관한 항목이다") && !t23.includes("설정과 맞지 않습니다"), "고치면 본문이 바뀌고 충돌 표시가 사라진다");
     ok("다른 문서의 직접 수정과 어긋난 서술을 'AI로 고치기'로 고치면 충돌 표시가 사라진다");
 
-    /* 24. 문서 안의 앞뒤 모순 검사, 분류도 고치기 */
-    ctl.checkIssues = [{ claim: "### 분류: 테스트", evidence: "검사 분류의 역사는 1586년에 시작되었다.", conflict: "분류가 본문과 맞지 않는다", severity: "high" }];
+    /* 24. 설정 대조와 문서 읽기를 따로, 동시에 돌리고 합친다 */
+    ctl.readIssues = [{ claim: "### 분류: 테스트", evidence: "검사 분류의 역사는 1586년에 시작되었다.", conflict: "분류가 본문과 맞지 않는다", severity: "high" }];
+    ctl.checkIssues = [{ claim: "분류: 테스트", evidence: "규칙 하나", conflict: "설정과도 어긋난다", severity: "low" }];
     ctl.fixEdits = [{ memo: 1, field: "cats", old: "테스트", new: "고친 분류" }];
     await page.fill("#q", "검사 분류"); await page.press("#q", "Enter"); await waitArticle(page, "검사 분류");
-    ctl.checkIssues = null; ctl.fixEdits = null;
-    { const ck = calls.filter(c => c.kind === "check" && c.prompt.includes("# 검사 분류")).shift().prompt;
-      assert(ck.includes("분류: 테스트") && ck.includes("한 줄 정의: 검사 분류은 테스트 항목이다."), "검사에 분류와 한 줄 정의가 들어간다");
-      assert(ck.includes("## 반드시 맞춰 볼 것") && /- 1586년: 「역사」/.test(ck) === false && ck.includes("분류는 항목 하나하나를 인포박스와 본문에 맞춰 본다"), "앱이 찾은 대조 대상 목록이 들어간다");
-      assert(ck.includes("[2] 문서 안의 모순: 위 [1]의 기준은 적용하지 않는다") && ck.includes("severity low로 지적하고, conflict에 어떻게 읽으면 둘 다 참이 되는지도 적는다"), "설정 충돌과 문서 안의 모순은 기준을 따로 둔다");
-      assert(ck.includes("대조 과정은 출력하지 않고, 찾은 모순만 issues에 쓴다") && !ck.includes("ledger"), "대조는 생각 단계에서 하고 출력은 지적만 (속도)");
-      assert(ck.includes("같은 사건을 섹션마다 다르게 쓴 곳") && ck.includes("섹션 제목이 본문과 어긋나는 곳") && ck.includes("두 서술을 모두 인용할 수 없으면 지적하지 않는다"), "문서 안의 앞뒤 모순도 검사한다");
-      assert(calls.filter(c => c.kind === "fix").pop().prompt.includes("[cats] (분류, | 로 구분)\n테스트"), "고치기에 분류가 들어간다"); }
+    ctl.checkIssues = null; ctl.readIssues = null; ctl.fixEdits = null;
+    { const rd = calls.filter(c => c.kind === "read" && c.prompt.includes("# 검사 분류")).shift().prompt, ck = calls.filter(c => c.kind === "check" && c.prompt.includes("# 검사 분류")).shift().prompt;
+      assert(rd.includes("분류: 테스트") && rd.includes("한 줄 정의: 검사 분류은 테스트 항목이다."), "검사에 분류와 한 줄 정의가 들어간다");
+      assert(rd.includes("## 반드시 맞춰 볼 것") && rd.includes("분류는 항목 하나하나를 인포박스와 본문에 맞춰 본다") && rd.includes("대조 과정은 출력하지 않고"), "문서 읽기에 앱이 찾은 대조 대상 목록이 들어간다");
+      assert(rd.includes("앞에서 정한 능력, 한계, 제약과 뒤의 실제 행적이 맞지 않는 곳") && rd.includes("같은 사건을 섹션마다 다르게 쓴 곳"), "능력 설정 대 실전 기록 같은 문서 안의 모순을 본다");
+      assert(!rd.includes("## 핵심 규칙") && !rd.includes("## 관련 항목의 확정 설정"), "문서 읽기에는 설정 자료를 넣지 않는다");
+      assert(ck.includes("## 핵심 규칙") && ck.includes("문서 안의 앞뒤 모순은 다른 검사가 따로 보므로") && !ck.includes("## 반드시 맞춰 볼 것"), "설정 대조는 설정과의 충돌만 본다");
+      assert(calls.filter(c => c.kind === "fix").pop().prompt.includes("[cats] (분류, | 로 구분)\n테스트"), "고치기에 분류가 들어간다");
+      assert.strictEqual((calls.filter(c => c.kind === "fix").pop().prompt.match(/문서의 서술: 분류: 테스트/g) || []).length, 1, "두 검사가 같은 문장을 지적하면 하나로 합친다"); }
     assert.strictEqual((await page.locator(".cats span").allInnerTexts()).join(","), "고친 분류", "분류도 자동으로 고친다");
-    ok("설정 검사가 문서 안의 앞뒤 모순(분류·인포박스·섹션끼리)도 잡고, 분류까지 고친다");
+    ctl.readFail = true; ctl.checkIssues = [{ claim: "역사는 1586년에", evidence: "규칙 하나", conflict: "x", severity: "low" }];
+    await page.click('[data-check]'); await page.waitForSelector("details.memo", { timeout: 20000 });
+    ctl.readFail = false; ctl.checkIssues = null;
+    assert((await page.locator("details.memo").textContent()).includes("역사는 1586년에"), "한 검사가 실패해도 다른 검사 결과는 보여 준다");
+    ok("설정 대조와 문서 읽기 검사를 동시에 돌려 합치고(같은 지적은 하나로), 하나가 실패해도 다른 결과를 쓰며, 분류까지 고친다");
 
     await ctx.close();
     console.log(`\n모두 통과 (${step}개). Gemini 호출 ${calls.length}회: ` + Object.entries(calls.reduce((a, c) => (a[c.kind] = (a[c.kind] || 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
