@@ -271,6 +271,10 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
       await page.waitForSelector(".stcard", { timeout: 15000 }); await settle(page);
     }
     assert.strictEqual((await page.locator("h1.t").innerText()).trim(), "한서린", "마지막 장도 주인공 문서부터 보여 준다");
+    { const plans = calls.filter(c => c.kind === "chapterPlan").map(c => c.prompt), byN = n => plans.filter(x => x.includes(`다음 장(${n}장)`)).pop();
+      assert(byN(3).includes("처음 등장하는 항목을 3~5개 만든다"), "위기까지는 새 항목 3~5개");
+      assert(byN(4).includes("이번 장은 절정이다. 새 인물은 만들지 않는다") && !byN(4).includes("3~5개 만든다"), "절정에는 새 인물을 만들지 않는다");
+      assert(byN(5).includes("이번 장은 결말이다. 새 인물이나 새 항목을 만들지 않는다"), "결말에는 새 항목을 만들지 않는다"); }
     assert((await page.locator(".article h2 .chb").allInnerTexts()).includes("5장"));
     assert.strictEqual(await page.locator('.stcard [data-act="epilogue"]').count(), 1, "안내 카드 위에 '에필로그로' 버튼");
     await page.evaluate(() => window.scrollTo(0, 0)); await shot(page, "6-final-chapter");
