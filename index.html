@@ -343,7 +343,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v2.9 · 2026-11-08";
+const APP_VERSION = "v3.0 · 2026-11-08";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -735,7 +735,7 @@ const S = {
   creating: false, createErr: null, seed: "", seedTab: "own", ownSeed: "", dice: null, whatIfs: null, first: "", guideIn: "",
   confirmDel: null, confirmRewrite: null, canonFilter: "all", focusEnt: null, nf: new Set(),
   edit: null, refreshing: null, confirmDelPage: null, confirmMerge: null, compose: null,
-  mode: "basic", protoDesc: "", cast: [], regen: null, storyGen: null, syncQ: [], syncing: null, syncErr: null, adv: null, storyCard: null
+  mode: "basic", storyN: 5, protoDesc: "", cast: [], regen: null, storyGen: null, syncQ: [], syncing: null, syncErr: null, adv: null, storyCard: null
 };
 
 /* ---------- canon helpers ---------- */
@@ -866,8 +866,16 @@ function entityBrief(w, k, excludeSrc) {
 /* ---------- 스토리 모드: 상태와 탐험 기록 ---------- */
 /* 스토리 모드 세계관에만 w.mode = "story"와 w.story가 있다. 없으면 기본 모드로 동작한다.
    장 섹션은 문서의 sections 안에 ch 표시를 붙여 둔다. 그래서 편집, 검사, 대조, 고치기가 장 섹션도 함께 다룬다. */
-const STORY_N = 5;
+const STORY_DEF = 5, STORY_MIN = 5, STORY_MAX = 10;   // 장 수는 세계관을 만들 때 5~10장 중에서 고른다
 const BEATS = ["발단", "전개", "위기", "절정", "결말"];
+const totalOf = w => Math.min(STORY_MAX, Math.max(STORY_MIN, +w?.story?.total || STORY_DEF));
+/* 장 수에 맞춰 다섯 구간에 장을 나눈다. 늘어난 장은 전개, 위기, 절정 순으로 하나씩 더한다 (예: 8장 → 1·2·2·2·1) */
+function beatsFor(total) {
+  const cnt = [1, 1, 1, 1, 1], order = [1, 2, 3];
+  for (let i = 0; i < Math.max(0, total - 5); i++) cnt[order[i % 3]]++;
+  const out = []; cnt.forEach((c, b) => { for (let j = 0; j < c; j++) out.push(c > 1 ? `${BEATS[b]} ${j + 1}/${c}` : BEATS[b]); });
+  return out;
+}
 const isStory = w => !!(w && w.mode === "story" && w.story);
 const storyOn = w => isStory(w) && w.story.status !== "ended";
 const curCh = w => w.story.chapters[w.story.chapter - 1] || w.story.chapters[w.story.chapters.length - 1];
@@ -948,8 +956,9 @@ function storyBlock(w, key, forPage) {
     extra = `\n\n이 문서는 이야기의 주인공 문서다.${pr.desc ? ` 사용자가 정한 주인공의 특징(반드시 지킨다): ${pr.desc}.` : ""}${st.cast?.length ? ` 사용자가 정한 등장인물(${st.cast.map(c => w.entities[c.key]?.title || c.name).join(", ")})은 정해진 관계대로 본문과 인물 관계 섹션에 링크해 다룬다.` : ""}${pr.want ? ` 주인공이 바라는 것: ${pr.want}.` : ""}${pr.wound ? ` 주인공의 결핍이나 상처: ${pr.wound}.` : ""} 기본 프로필(출신, 가족, 능력, 동기)을 모두 쓴다. `
       + (n === 1 && !ended ? `마지막 큰 섹션은 1장 발단 사건 「${st.chapters[0].incident || st.chapters[0].title}」을 다룬다. 이 사건은 아직 끝나지 않았다.` : `생애 섹션의 끝부분에서 1장부터 ${n}장까지의 사건을 차례로 다룬다.`);
   }
-  return `## 이야기 진행 상황 (${ended ? `완결 · ${STORY_N}장` : `현재 ${n}장 / ${STORY_N}장`}, 작중 시점 ${w.era})
-이 위키는 「${pt}」을(를) 주인공으로 하는 이야기를 다룬다. ${ended ? `이야기는 ${STORY_N}장에서 끝났다. 결말: ${st.epilogue}\n이 문서는 결말 직후 시점에 작성된다.` : `이 문서는 ${n}장 시점에 작성된다.`}
+  const N = totalOf(w);
+  return `## 이야기 진행 상황 (${ended ? `완결 · ${N}장` : `현재 ${n}장 / ${N}장`}, 작중 시점 ${w.era})
+이 위키는 「${pt}」을(를) 주인공으로 하는 이야기를 다룬다. ${ended ? `이야기는 ${N}장에서 끝났다. 결말: ${st.epilogue}\n이 문서는 결말 직후 시점에 작성된다.` : `이 문서는 ${n}장 시점에 작성된다.`}
 지금까지의 줄거리:
 ${lines}
 
@@ -974,8 +983,8 @@ function chapterPlanPrompt(w, nextN, choice) {
   const st = w.story, pk = st.protagonistKey, pp = S.pages[pk], pr = st.protagonist || {}, cur = curCh(w);
   const top = exploreScores(w, cur).slice(0, 8);
   const ex = top.map((x, i) => `### ${i + 1}. 「${w.entities[x.k].title}」 · 점수 ${x.s} · ${x.kinds.join(", ")}\n${entityBrief(w, x.k, null)}${firstPara(S.pages[x.k]) ? "\n개요: " + firstPara(S.pages[x.k]) : ""}`).join("\n\n");
-  const need = Math.min(2, top.length), last = nextN === STORY_N;
-  return `너는 가상 세계관 위키 「${w.title}」의 이야기 편집장이다. 이 위키는 주인공 「${w.entities[pk].title}」을(를) 중심으로 ${STORY_N}장짜리 이야기가 진행된다. 지금 ${nextN - 1}장이 끝났고, 다음 장(${nextN}장)의 계획을 세운다. 이 계획은 위키의 문서들에 반영된다.
+  const N = totalOf(w), need = Math.min(2, top.length), last = nextN >= N;
+  return `너는 가상 세계관 위키 「${w.title}」의 이야기 편집장이다. 이 위키는 주인공 「${w.entities[pk].title}」을(를) 중심으로 ${N}장짜리 이야기가 진행된다. 지금 ${nextN - 1}장이 끝났고, 다음 장(${nextN}장)의 계획을 세운다. 이 계획은 위키의 문서들에 반영된다.
 
 ## 장 계획 작성
 
@@ -1002,10 +1011,10 @@ ${ex || "(없음)"}
 ${choice ? `주인공의 다음 행동으로 독자가 고른 것: ${choice.custom || choice.picked}` : "(독자가 선택하지 않았다)"}
 
 ## 규칙
-- 이번 장은 뼈대의 ${nextN}단계(${st.spine[nextN - 1]?.beat || BEATS[nextN - 1]}) 의도를 수행한다: ${st.spine[nextN - 1]?.intent || ""}
+- 이번 장은 전체 ${N}장 중 ${nextN}장이며, 뼈대의 ${nextN}단계(${st.spine[nextN - 1]?.beat || ""}) 의도를 수행한다: ${st.spine[nextN - 1]?.intent || ""}${last ? "" : `\n- 이야기는 ${N}장까지 이어진다. 이번 장에서 결말을 내거나 갈등을 미리 정리하지 않는다. 남은 ${N - nextN}개 장이 다룰 거리를 남겨 둔다.`}
 - ${need ? `탐험 반영 의무: 위 탐험 목록에서 최소 ${need}개, 가능하면 3개를 줄거리의 인과에 실제로 엮는다. 이름만 언급하는 것은 반영이 아니다. 그 항목이 사건의 원인, 수단, 장애물, 조력자, 장소 중 하나가 되어야 한다. '직접 고침'과 '검색해서 만듦'인 항목을 우선한다. 엮은 항목은 wove에 적는다.` : "독자가 탐험한 항목이 없으니 뼈대대로 진행한다. wove는 빈 배열로 둔다."}
 - ${choice ? "주인공의 이번 장 행동은 독자의 선택에서 출발한다. 결과는 선택대로 되지 않아도 된다." : "독자의 선택이 없으니 주인공의 행동은 지금까지의 흐름에서 자연스럽게 정한다."}
-- 탐험 결과 때문에 뒤의 뼈대 단계를 바꿔야 하면 spineRevise로 바꾼다. ${STORY_N}단계는 항상 결말로 남겨 둔다. 바꿀 필요가 없으면 빈 배열.
+- 탐험 결과 때문에 뒤의 뼈대 단계를 바꿔야 하면 spineRevise로 바꾼다. ${N}단계는 항상 결말로 남겨 둔다. 바꿀 필요가 없으면 빈 배열.
 - ${last ? `이번 장이 마지막 장이다. 결말을 낸다. 주인공이 바라는 것과 결핍이나 상처에 답을 주고, 지금까지 열린 갈등을 정리한다. ending.epilogue에 결말 이후를 3~5문장으로 쓴다. nextChoices는 빈 배열.` : `nextChoices에는 ${nextN}장이 끝날 때 주인공이 할 수 있는 다음 행동 후보 3개를 한 문장씩 쓴다. 서로 방향이 달라야 한다. ending은 null.`}
 - 주인공이 죽을 수도 있다. 주인공이 죽으면 이후 장은 그 죽음의 여파와 유산을 중심으로 진행하고, 주인공 문서의 장 섹션은 사후 사건으로 쓴다.
 - title과 heading에는 "${nextN}장", "제${nextN}장" 같은 장 번호를 넣지 않는다. 장 번호는 앱이 따로 붙인다.
@@ -1139,14 +1148,14 @@ ${story ? (first ? `- mainTitle은 사용자가 지정한 주인공 "${first}"�
 - historical: 원안이 실재한 국가, 인물, 사건이 있는 현실 역사에서 갈라진 대체역사면 true, 실제 역사와 무관한 가상의 세계면 false.
 ${story ? `
 ## 이야기 뼈대
-이 위키는 주인공 한 명을 중심으로 ${STORY_N}장짜리 이야기가 진행되는 스토리 모드다. 독자가 위키를 탐험한 내용이 다음 장의 줄거리에 엮인다. 설정 노트와 함께 다음을 정한다.
+이 위키는 주인공 한 명을 중심으로 ${user.total || STORY_DEF}장짜리 이야기가 진행되는 스토리 모드다. 독자가 위키를 탐험한 내용이 다음 장의 줄거리에 엮인다. 설정 노트와 함께 다음을 정한다.
 ${user.desc ? `- 사용자가 정한 주인공의 특징(그대로 지키고, 바라는 것과 상처도 여기서 끌어낸다): ${user.desc}\n` : ""}${user.cast?.length ? `- 사용자가 정한 등장인물(이름은 글자 그대로 쓰고, 특징과 주인공과의 관계를 지킨다. 뼈대와 1장 줄거리에 자연스럽게 등장시킨다):\n${castText(user.cast)}\n` : ""}- protagonist: 주인공의 한 문장 정의(summary), 주인공이 바라는 것(want), 주인공의 결핍이나 상처(wound).
-- spine: 발단·전개·위기·절정·결말 ${STORY_N}단계의 의도. 각 단계는 주인공의 want와 wound를 건드려야 한다. 결말 단계는 방향만 정하고 구체적인 결과를 확정하지 않는다. 독자의 탐험이 결말을 바꿀 여지를 남기기 위해서다. 이 뼈대는 독자에게 공개하지 않는다.
+- spine: ${user.total || STORY_DEF}장 각각의 의도. 발단·전개·위기·절정·결말 다섯 구간을 장에 나눠 배치했다(${beatsFor(user.total || STORY_DEF).map((b, i) => `${i + 1}장 ${b}`).join(", ")}). 같은 구간에 장이 여럿이면 그 안에서도 사건이 한 단계씩 커져야 한다. 각 단계는 주인공의 want와 wound를 건드려야 한다. 결말 단계는 방향만 정하고 구체적인 결과를 확정하지 않는다. 독자의 탐험이 결말을 바꿀 여지를 남기기 위해서다. 이 뼈대는 독자에게 공개하지 않는다.
 - chapter1: 1장(발단)의 작중 사건명(title, "1장"이나 "제1장" 같은 장 번호는 넣지 않는다), 1장의 작중 시점(era), 공개 줄거리 3~5문장(summary), 주인공의 일상을 깨는 발단 사건 한 문장(incident), 1장이 끝날 때 주인공이 할 수 있는 다음 행동 후보 3개(nextChoices, 서로 방향이 다르게).
 - era(세계관 기준 시점)는 chapter1.era와 같게 한다. 연표는 1장 시점까지만 만든다.
 
 JSON 객체 하나만 출력:
-{"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"timeline":[{"year":"1947","event":"..."}],"mainTitle":"주인공 이름","tone":{"label":"...","guide":["..."]},"protagonist":{"summary":"한 문장 정의","want":"주인공이 바라는 것","wound":"주인공의 결핍이나 상처"},"spine":[{"n":1,"beat":"발단","intent":"..."},{"n":2,"beat":"전개","intent":"..."},{"n":3,"beat":"위기","intent":"..."},{"n":4,"beat":"절정","intent":"..."},{"n":5,"beat":"결말","intent":"결말의 방향만"}],"chapter1":{"title":"작중 사건명","era":"1장 작중 시점","summary":"공개 줄거리 3~5문장","incident":"발단 사건 한 문장","nextChoices":["...","...","..."]}}` : `
+{"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"timeline":[{"year":"1947","event":"..."}],"mainTitle":"주인공 이름","tone":{"label":"...","guide":["..."]},"protagonist":{"summary":"한 문장 정의","want":"주인공이 바라는 것","wound":"주인공의 결핍이나 상처"},"spine":[${beatsFor(user.total || STORY_DEF).map((b, i) => `{"n":${i + 1},"beat":"${b}","intent":"${i === (user.total || STORY_DEF) - 1 ? "결말의 방향만" : "..."}"}`).join(",")}],"chapter1":{"title":"작중 사건명","era":"1장 작중 시점","summary":"공개 줄거리 3~5문장","incident":"발단 사건 한 문장","nextChoices":["...","...","..."]}}` : `
 JSON 객체 하나만 출력:
 {"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"timeline":[{"year":"1947","event":"..."}],"mainTitle":"...","tone":{"label":"...","guide":["..."]}}`}`;
 }
@@ -1359,7 +1368,7 @@ async function createWorld() {
   try {
     const first = norm(S.first).slice(0, 60), story = S.mode === "story";
     const guide = String(S.guideIn || "").replace(/\r/g, "").trim().slice(0, 1000);
-    const user = story ? { desc: String(S.protoDesc || "").replace(/\r/g, "").trim().slice(0, 500), cast: (S.cast || []).map(c => ({ name: norm(c.name).slice(0, 40), desc: norm(c.desc).slice(0, 300), rel: norm(c.rel).slice(0, 120) })).filter(c => c.name).slice(0, 8) } : {};
+    const user = story ? { total: Math.min(STORY_MAX, Math.max(STORY_MIN, +S.storyN || STORY_DEF)), desc: String(S.protoDesc || "").replace(/\r/g, "").trim().slice(0, 500), cast: (S.cast || []).map(c => ({ name: norm(c.name).slice(0, 40), desc: norm(c.desc).slice(0, 300), rel: norm(c.rel).slice(0, 120) })).filter(c => c.name).slice(0, 8) } : {};
     const b = await callJson(story ? "storyBible" : "bible", biblePrompt(seed, first, guide, story, user), { modelTier: "default" }, { title: first });
     if (!b || !b.title) throw { code: "invalid_json" };
     if (story && !(b.chapter1 && b.chapter1.summary)) throw { code: "invalid_json" };
@@ -1371,7 +1380,7 @@ async function createWorld() {
     const mt = first || norm(b.mainTitle || b.title);
     w.mainKey = keyOf(mt); w.entities[w.mainKey] = newEntity(mt, "", "");
     if (story) setupStory(w, b, user);
-    w.input = { first, ...(story ? { protoDesc: user.desc, cast: user.cast } : {}) };   // 다시 만들기에 쓰는 처음 입력값
+    w.input = { first, ...(story ? { total: user.total, protoDesc: user.desc, cast: user.cast } : {}) };   // 다시 만들기에 쓰는 처음 입력값
     const rg = S.regen && !S.regen.keep ? S.worlds.find(x => x.id === S.regen.wid) : null;
     if (rg) {   // 다시 만들기: 새 설정 노트가 나온 뒤에야 기존 세계관과 문서를 지운다(실패하면 아무것도 지우지 않는다)
       if (S.gen?.wid === rg.id || ((S.storyGen || S.syncing) && S.world?.id === rg.id)) throw { code: "busy", message: "이 세계관에서 작성 중인 문서가 있습니다. 끝난 뒤 다시 만들어 주세요." };
@@ -1391,11 +1400,12 @@ async function createWorld() {
 function setupStory(w, b, user = {}) {
   const pr = b.protagonist && typeof b.protagonist === "object" ? b.protagonist : {};
   const sp = Array.isArray(b.spine) ? b.spine : [];
-  const spine = BEATS.map((beat, i) => { const x = sp.find(y => +y?.n === i + 1) || sp[i] || {}; return { n: i + 1, beat, intent: stripMarks(x.intent || "").slice(0, 300) || `${beat}: 주인공의 바람과 상처를 건드리는 사건`, revised: false }; });
+  const total = Math.min(STORY_MAX, Math.max(STORY_MIN, +user.total || STORY_DEF));
+  const spine = beatsFor(total).map((beat, i) => { const x = sp.find(y => +y?.n === i + 1) || sp[i] || {}; return { n: i + 1, beat, intent: stripMarks(x.intent || "").slice(0, 300) || `${beat}: 주인공의 바람과 상처를 건드리는 사건`, revised: false }; });
   const c1 = b.chapter1, era = norm(c1.era || b.era || w.era).slice(0, 40) || w.era;
   const e = w.entities[w.mainKey]; e.type = "인물"; e.summary = stripMarks(pr.summary || "").slice(0, 200);
   w.mode = "story"; w.era = era;
-  w.story = { protagonistKey: w.mainKey, chapter: 1, status: "active", spine, endedAt: null, epilogue: "",
+  w.story = { protagonistKey: w.mainKey, chapter: 1, total, status: "active", spine, endedAt: null, epilogue: "",
     protagonist: { summary: e.summary, want: stripMarks(pr.want || "").slice(0, 200), wound: stripMarks(pr.wound || "").slice(0, 200) },
     chapters: [{ n: 1, title: chTitle(c1.title || "발단").slice(0, 60), era, summary: stripMarks(c1.summary).slice(0, 800), incident: stripMarks(c1.incident || "").slice(0, 240),
       startedAt: Date.now(), explore: emptyExplore(), choice: null, wove: [], affected: [], auto: [],
@@ -1534,6 +1544,7 @@ function openRegen() {
   S.guideIn = w.guide || "";
   S.first = inp.first ?? (story ? w.entities[w.story.protagonistKey]?.title || "" : "");
   S.protoDesc = story ? (inp.protoDesc ?? w.story.protagonist?.desc ?? "") : "";
+  if (story) S.storyN = totalOf(w);
   S.cast = story ? (inp.cast || (w.story.cast || []).map(c => ({ name: w.entities[c.key]?.title || c.name, desc: c.desc || "", rel: c.rel || "" }))).map(c => ({ ...c })) : [];
   S.createErr = null;
   S.view = { name: "home" }; renderAll(); window.scrollTo({ top: 0 });
@@ -2303,9 +2314,9 @@ function applyChapter(w, n, out, choice) {
     s.intent = stripMarks(r.intent).slice(0, 300); s.revised = true;
   }
   st.chapters.push({ n, title: chTitle(out.title).slice(0, 60), era, summary: stripMarks(out.summary).slice(0, 800), startedAt: Date.now(), explore: emptyExplore(), choice,
-    wove, affected, auto, nextChoices: n >= STORY_N ? [] : (Array.isArray(out.nextChoices) ? out.nextChoices : []).map(x => stripMarks(x).slice(0, 200)).filter(Boolean).slice(0, 3) });
+    wove, affected, auto, nextChoices: n >= totalOf(w) ? [] : (Array.isArray(out.nextChoices) ? out.nextChoices : []).map(x => stripMarks(x).slice(0, 200)).filter(Boolean).slice(0, 3) });
   st.chapter = n; w.era = era;
-  if (n >= STORY_N) { st.status = "ended"; st.endedAt = Date.now(); st.epilogue = stripMarks(out.ending?.epilogue || "").slice(0, 1200) || stripMarks(out.summary).slice(0, 800); }
+  if (n >= totalOf(w)) { st.status = "ended"; st.endedAt = Date.now(); st.epilogue = stripMarks(out.ending?.epilogue || "").slice(0, 1200) || stripMarks(out.summary).slice(0, 800); }
   const secs = blockToSections(n, pb.heading || out.title, pb.sections);
   const np = rebuildPage(w, pk, S.pages[pk], secs, { infoboxPatch: pb.infoboxPatch, summaryPatch: pb.summaryPatch });
   np.syncedTo = n; np.storyNotice = st.status !== "ended"; np.check = null;
@@ -2561,7 +2572,7 @@ function homeHtml() {
     const ents = Object.values(w.entities || {}); const done = ents.filter(e => e.page).length;
     return `<article class="wcard"><button type="button" class="open" data-world="${w.id}">${esc(w.title)}</button>
       ${w.tagline ? `<p>${esc(w.tagline)}</p>` : ""}
-      <div class="wm"><span>${isStory(w) ? (w.story.status === "ended" ? "스토리 완결 · " : `스토리 ${w.story.chapter}/${STORY_N}장 · `) : ""}${w.tone ? esc(w.tone.label) + " · " : ""}작중 ${esc(w.era)} · 문서 ${done} · 미작성 ${ents.length - done}</span>
+      <div class="wm"><span>${isStory(w) ? (w.story.status === "ended" ? "스토리 완결 · " : `스토리 ${w.story.chapter}/${totalOf(w)}장 · `) : ""}${w.tone ? esc(w.tone.label) + " · " : ""}작중 ${esc(w.era)} · 문서 ${done} · 미작성 ${ents.length - done}</span>
       ${S.confirmDel === w.id ? `<span class="confirm">문서까지 모두 지울까요?<button type="button" class="btn dng" data-del-yes="${w.id}">삭제</button><button type="button" class="btn" data-act="del-no">취소</button></span>` : `<button type="button" class="btn" data-del="${w.id}" style="padding:2px 10px">삭제</button>`}</div></article>`;
   }).join("") : `<div class="empty">아직 만든 세계관이 없습니다. 왼쪽에 원안을 적고 <b>세계관 만들기</b>를 누르면 설정 노트와 첫 문서가 만들어집니다.</div>`;
   return `<div class="home">
@@ -2573,7 +2584,9 @@ function homeHtml() {
       <p class="sub">원안 몇 문장으로 위키를 엽니다. 본문의 빨간 링크를 누를 때마다 그 항목의 문서가 새로 작성되고, 앞서 확정된 설정은 설정 노트에 쌓여 다음 문서의 제약이 됩니다.</p>
       <label class="lb">방식</label>
       <div class="stabs-row" role="group" aria-label="세계관 방식"><button type="button" class="chip" data-mode="basic" aria-pressed="${S.mode !== "story"}" ${S.creating ? "disabled" : ""}>기본 모드</button><button type="button" class="chip" data-mode="story" aria-pressed="${S.mode === "story"}" ${S.creating ? "disabled" : ""}>스토리 모드</button></div>
-      <p class="note" style="margin:6px 0 0">${S.mode === "story" ? `주인공 한 명의 ${STORY_N}장짜리 이야기가 위키 위에서 진행됩니다. 장마다 둘러보고 만들고 고친 문서가 다음 장 줄거리에 엮입니다.` : "링크를 따라 자유롭게 문서를 늘려 가는 위키입니다."}</p>
+      <p class="note" style="margin:6px 0 0">${S.mode === "story" ? `주인공 한 명의 ${S.storyN}장짜리 이야기가 위키 위에서 진행됩니다. 장마다 둘러보고 만들고 고친 문서가 다음 장 줄거리에 엮입니다.` : "링크를 따라 자유롭게 문서를 늘려 가는 위키입니다."}</p>
+      ${S.mode === "story" ? `<label class="lb">장 수 <span class="note" style="font-weight:400">이야기의 길이. 시작한 뒤에는 바꿀 수 없습니다. 장이 많을수록 생성 횟수와 시간이 늘어납니다</span></label>
+      <div class="stabs-row" role="group" aria-label="장 수">${Array.from({ length: STORY_MAX - STORY_MIN + 1 }, (_, i) => STORY_MIN + i).map(n => `<button type="button" class="chip" data-chn="${n}" aria-pressed="${S.storyN === n}" ${S.creating ? "disabled" : ""}>${n}장</button>`).join("")}</div>` : ""}
       <label class="lb" for="seedTa">원안</label>
       <div class="stabs" role="tablist" aria-label="원안 고르기">${ex}</div>
       ${S.seedTab === "dice" && S.dice ? `<div class="dice" aria-label="원안 주사위">
@@ -2809,10 +2822,10 @@ function storySideHtml(w) {
   const ex = exploreScores(w, c);
   const busy = S.storyGen ? `<div class="genpill" style="margin-top:8px"><span class="dot"></span><button type="button" class="btn" data-act="story-next" style="padding:2px 8px">${S.storyGen.n}장을 쓰는 중</button></div>` : "";
   return `<section class="story-side"><h4>이야기</h4>
-    <div class="stat"><span><em>${ended ? "완결" : `${st.chapter}장`}</em> 「${esc(c.title)}」</span><span>작중 ${esc(c.era)}</span></div>
+    <div class="stat"><span><em>${ended ? "완결" : `${st.chapter}장`}</em><span class="src"> / ${totalOf(w)}장</span> 「${esc(c.title)}」</span><span>작중 ${esc(c.era)}</span></div>
     <ul><li><button type="button" data-k="${pk}" class="${S.view.name === "article" && S.view.key === pk ? "cur" : ""}">주인공 문서</button></li></ul>
     ${ended ? "" : `<details><summary>이번 장 탐험 ${ex.length}곳</summary>${ex.length ? `<ul>${ex.map(x => `<li><button type="button" data-k="${x.k}" title="${esc(x.kinds.join(", "))}">${esc(w.entities[x.k].title)}</button></li>`).join("")}</ul>` : `<p class="note" style="margin:4px 0 0">아직 없습니다. 문서를 열고, 만들고, 고치면 쌓입니다.</p>`}</details>`}
-    ${busy || (ended ? `<button type="button" class="btn pri" data-act="epilogue">에필로그 보기</button>` : `<button type="button" class="btn pri" data-act="story-next" ${!S.pages[pk] ? "disabled title=\"주인공 문서가 완성된 뒤 넘어갈 수 있습니다\"" : ""}>${st.chapter + 1 >= STORY_N ? "마지막 장으로" : "다음 장으로"}</button>`)}
+    ${busy || (ended ? `<button type="button" class="btn pri" data-act="epilogue">에필로그 보기</button>` : `<button type="button" class="btn pri" data-act="story-next" ${!S.pages[pk] ? "disabled title=\"주인공 문서가 완성된 뒤 넘어갈 수 있습니다\"" : ""}>${st.chapter + 1 >= totalOf(w) ? "마지막 장으로" : "다음 장으로"}</button>`)}
   </section>`;
 }
 /* 장이 넘어간 직후 주인공 문서 위에 띄우는 카드. 이번 장 줄거리와 변화 내용은 스포일러라 보여 주지 않고,
@@ -2831,7 +2844,7 @@ function storyCardHtml(w, n) {
 function advanceHtml() {
   const w = S.world; if (!isStory(w)) return `<div class="sheet"><p class="note">스토리 모드 세계관이 아닙니다.</p></div>`;
   const st = w.story, c = curCh(w), n = st.chapter + 1, a = S.adv || { pick: -1, custom: "", err: "" }, g = S.storyGen;
-  const head = `<div class="sheet"><div class="crumb"><span>${esc(w.title)}</span><span>이야기</span></div><h1 class="t">${n >= STORY_N ? "마지막 장으로" : `${n}장으로`}</h1>`;
+  const head = `<div class="sheet"><div class="crumb"><span>${esc(w.title)}</span><span>이야기</span></div><h1 class="t">${n >= totalOf(w) ? "마지막 장으로" : `${n}장으로`}</h1>`;
   if (g) return head + `<div class="gen-live" style="margin-top:14px"><span class="dot"></span><span id="stCount">${g.n}장 줄거리를 구상하는 중</span><button type="button" class="btn" data-act="story-stop">중단</button></div>
     <p class="note">이번 장의 탐험과 고른 행동을 엮어 ${g.n}장 줄거리를 정하고, 주인공 문서에 ${g.n}장 섹션을 덧붙입니다. 중단하거나 실패하면 지금 상태 그대로 남습니다.</p>
     <div style="margin-top:14px"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div></div>`;
@@ -2848,7 +2861,7 @@ function advanceHtml() {
     <textarea id="advCustom" rows="3" maxlength="300" placeholder="예: 원균을 찾아가 함대 지휘권을 돌려 달라고 요구한다" ${a.pick === -2 ? "" : "hidden"}>${esc(a.custom || "")}</textarea>
     ${a.err ? `<div class="banner warn">${esc(a.err)}</div>` : ""}
     <div class="row"><button type="button" class="btn pri" data-act="story-go" ${!S.sample || (a.pick === -1) || (a.pick === -2 && !norm(a.custom)) ? "disabled" : ""}>이 행동으로 ${n}장 진행</button><button type="button" class="btn" data-act="story-skip" ${!S.sample ? "disabled" : ""}>선택 없이 진행</button><button type="button" class="btn" data-act="story-back">돌아가기</button></div>
-    <p class="note" style="margin-top:10px">${n >= STORY_N ? "마지막 장에서 결말이 납니다. 이후에도 세계관은 '결말 이후' 시점으로 계속 탐험할 수 있습니다." : `주인공 문서에 ${n}장 섹션이 덧붙고, 이번 장에서 영향을 받은 문서는 열 때 ${n}장의 변화가 반영됩니다.`}${S.sample ? "" : " " + esc(ERR.no_sample)}</p></div>`;
+    <p class="note" style="margin-top:10px">${n >= totalOf(w) ? "마지막 장에서 결말이 납니다. 이후에도 세계관은 '결말 이후' 시점으로 계속 탐험할 수 있습니다." : `주인공 문서에 ${n}장 섹션이 덧붙고, 이번 장에서 영향을 받은 문서는 열 때 ${n}장의 변화가 반영됩니다.`}${S.sample ? "" : " " + esc(ERR.no_sample)}</p></div>`;
 }
 function spineHtml(w) {
   return `<details class="memo"><summary>숨겨진 뼈대 보기</summary><ol class="spine">${w.story.spine.map(s => `<li><b>${esc(s.beat)}</b> — ${esc(s.intent)}${s.revised && s.orig ? `<br><span class="src">처음 계획: <del>${esc(s.orig)}</del> · 탐험 때문에 바뀜</span>` : ""}</li>`).join("")}</ol></details>`;
@@ -2885,7 +2898,7 @@ function canonHtml() {
     <label class="lb">원안</label><div class="seedbox">${esc(w.seed)}</div>
     <div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="regen-open" ${S.gen || S.storyGen || S.syncing ? "disabled" : ""}>이 원안으로 다시 만들기</button><span class="note">연표, 핵심 규칙, 분위기${isStory(w) ? ", 이야기" : ""}를 처음부터 새로 만듭니다. 처음 입력값을 고쳐서 만들 수도 있습니다.</span></div>
     ${isStory(w) ? `<h2>이야기</h2>
-    <p class="note">주인공 ${linkHtml(w.entities[w.story.protagonistKey].title)} · ${w.story.status === "ended" ? "완결" : `현재 ${w.story.chapter}장 / ${STORY_N}장`}. 이야기의 뼈대는 ${w.story.status === "ended" ? "아래 '숨겨진 뼈대 보기'에서" : "결말이 난 뒤에"} 볼 수 있습니다.</p>
+    <p class="note">주인공 ${linkHtml(w.entities[w.story.protagonistKey].title)} · ${w.story.status === "ended" ? "완결" : `현재 ${w.story.chapter}장 / ${totalOf(w)}장`}. 이야기의 뼈대는 ${w.story.status === "ended" ? "아래 '숨겨진 뼈대 보기'에서" : "결말이 난 뒤에"} 볼 수 있습니다.</p>
     <div style="overflow-x:auto"><table class="tl">${w.story.chapters.map(c => `<tr><td>${c.n}장</td><td><b>${esc(c.title)}</b> <span class="src">· ${esc(c.era)}</span><br>${c.n < w.story.chapter || w.story.status === "ended" ? esc(c.summary) : `<span class="note">진행 중인 장입니다. 줄거리는 다음 장으로 넘어가면 공개됩니다.</span>`}</td></tr>`).join("")}</table></div>
     ${w.story.protagonist?.desc || w.story.cast?.length ? `<dl class="kv" style="margin-top:12px">${w.story.protagonist?.desc ? `<dt>주인공 특징</dt><dd>${esc(w.story.protagonist.desc)}</dd>` : ""}${(w.story.cast || []).filter(c => w.entities[c.key]).map(c => `<dt>${linkHtml(w.entities[c.key].title)}</dt><dd>${esc([c.rel && "관계: " + c.rel, c.desc].filter(Boolean).join(" · ") || "(설명 없음)")}</dd>`).join("")}</dl><p class="note">처음에 정한 주인공 특징과 등장인물입니다. 사용자 확정 설정으로 모든 장과 문서에 반영됩니다.</p>` : ""}
     ${w.story.status === "ended" ? spineHtml(w) : ""}` : ""}
@@ -3006,6 +3019,7 @@ document.addEventListener("click", ev => {
   if (d.focus) { S.focusEnt = d.focus; S.view = { name: "canon" }; renderAll(); return; }
   if (d.filter) { S.canonFilter = d.filter; renderMain(); return; }
   if (d.mode) { S.mode = d.mode === "story" ? "story" : "basic"; renderMain(); return; }
+  if (d.chn) { S.storyN = Math.min(STORY_MAX, Math.max(STORY_MIN, +d.chn)); renderMain(); return; }
   if (d.castDel !== undefined) { S.cast.splice(Number(d.castDel), 1); renderMain(); return; }
   if (d.epsec) { const w = S.world; if (!w) return; const pk = w.story.protagonistKey, i = d.epsec; S.view = { name: "article", key: pk }; renderAll(); const el = document.getElementById("s-" + i); if (el) el.scrollIntoView({ block: "start" }); return; }
   switch (d.act) {

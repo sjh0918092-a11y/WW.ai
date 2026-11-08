@@ -399,6 +399,8 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert.strictEqual(await page.inputValue("#protoDesc"), "활은 잘 쏘지만 겁이 많은 막내 무관");
     assert.strictEqual(await page.inputValue('[data-cast="0"][data-cf="name"]'), "윤가람");
     assert.strictEqual(await page.inputValue('[data-cast="0"][data-cf="rel"]'), "소꿉친구이자 맞수");
+    assert.strictEqual(await page.getAttribute('[data-chn="5"]', "aria-pressed"), "true", "다시 만들 때 원래 장 수가 골라져 있다");
+    await page.click('[data-chn="7"]');
     await page.check("#regenKeep");
     const nWorlds = (await idbAll(page)).filter(x => x[1]?.kind === "world").length;
     await page.click('[data-act="create"]'); await waitArticle(page, "한서린");
@@ -407,6 +409,20 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert.strictEqual(ws16.filter(v => v.title === "녹둔도 연대기").length, 2);
     assert(ws16.some(v => v.title === "녹둔도 연대기" && v.story.status === "ended"), "기존 이야기는 그대로 남는다");
     ok("스토리 세계관 다시 만들기: 주인공, 특징, 등장인물이 채워지고, 남겨 두기를 고르면 기존 세계관이 그대로 남는다");
+
+    /* 18. 장 수 고르기 (7장) */
+    const sb7 = calls.filter(c => c.kind === "storyBible").pop().prompt;
+    assert(sb7.includes("7장짜리 이야기") && sb7.includes("7장 결말") && sb7.includes("2장 전개 1/2") && sb7.includes('"n":7,"beat":"결말"'), "세계관 생성에 7장 뼈대를 요청한다");
+    const w7 = (await idbAll(page)).map(x => x[1]).find(v => v?.kind === "world" && v.title === "녹둔도 연대기" && v.story.status === "active");
+    assert.strictEqual(w7.story.total, 7); assert.strictEqual(w7.story.spine.length, 7);
+    assert.deepStrictEqual(w7.story.spine.map(x => x.beat), ["발단", "전개 1/2", "전개 2/2", "위기 1/2", "위기 2/2", "절정", "결말"]);
+    assert((await sideText(page)).includes("/ 7장"));
+    await page.click('[data-act="story-next"]'); await page.click('[data-act="story-skip"]'); await page.waitForSelector(".stcard", { timeout: 15000 }); await settle(page);
+    const p7 = calls.filter(c => c.kind === "chapterPlan").pop().prompt;
+    assert(p7.includes("전체 7장 중 2장") && p7.includes("이번 장에서 결말을 내거나 갈등을 미리 정리하지 않는다") && !p7.includes('"epilogue"'), "2장 계획은 결말을 내지 않는다");
+    w7.story = (await idbAll(page)).map(x => x[1]).find(v => v?.id === w7.id).story;
+    assert.strictEqual(w7.story.status, "active"); assert.strictEqual(w7.story.chapter, 2);
+    ok("장 수를 7장으로 고르면 7단계 뼈대가 생기고, 중간 장은 결말을 내지 않는다");
     await ctx.close();
     console.log(`\n모두 통과 (${step}개). Gemini 호출 ${calls.length}회: ` + Object.entries(calls.reduce((a, c) => (a[c.kind] = (a[c.kind] || 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
   } catch (e) {
