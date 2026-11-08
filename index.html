@@ -347,7 +347,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v4.9 · 2026-11-08";
+const APP_VERSION = "v5.0 · 2026-11-08";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1827,16 +1827,89 @@ function integrate(w, key, out) {
 }
 
 /* auto: 문서가 완성된 직후 자동으로 돌리는 검사. 다른 검사가 돌고 있으면 차례를 기다린다. */
+/* ---------- 숫자 대조: 연도와 나이를 문서끼리 기계적으로 비교한다 (AI 호출 없음) ---------- */
+const NUM_KINDS = [
+  { kind: "birth", name: "출생", label: /출생|탄생|생년/, verb: /태어|출생|탄생|\d년생/ },
+  { kind: "death", name: "사망", label: /사망|전사|서거|몰년|별세/, verb: /사망|숨[지을]|숨졌|전사|죽[었은]|서거|처형|별세|순직|요절/ },
+  { kind: "origin", name: "기원", label: /설립|창설|창립|제정|시행|도입|결성|건국|창간|발족|성립|개교|창단|기원/, verb: /설립|창설|창립|제정|시행|도입|결성|건국|창간|발족|성립|개교|창단/ }];
+const yearsOf = t => [...String(t).matchAll(/(^|\D)(1\d{3}|20\d{2})\s*년/g)].map(m => +m[2]);
+const sentencesOf = t => [...String(t).matchAll(/[^.!?。\n]+[.!?。]?/g)].map(m => m[0].trim()).filter(x => x.length > 4);
+/* 항목 문서의 인포박스에서 뽑은 기준값 { birth, death, origin } 과 그 근거 줄 */
+function numFacts(p) {
+  const f = {};
+  for (const r of p.infobox || []) {
+    const v = stripMarks(r.value), ys = yearsOf(v), line = `${r.label}: ${v}`;
+    if (!ys.length) continue;
+    if (/생몰/.test(r.label)) { f.birth ||= { y: ys[0], line }; if (ys[1]) f.death ||= { y: ys[1], line }; continue; }
+    for (const K of NUM_KINDS) if (K.label.test(r.label) && !f[K.kind]) f[K.kind] = { y: ys[0], line };
+  }
+  return f;
+}
+/* 문장에서 항목을 가리키는 이름들: 제목과 괄호 표기, 인물은 겹치지 않는 성이나 이름 */
+function refNames(w, k) {
+  const o = w.entities[k], out = new Set(namesOf(o.title));
+  if (o.type === "인물") for (const t of o.title.replace(/\(.*\)$/, "").split(/[\s·]+/)) if (t.length >= 2 && nameOwner(w, t) === k) out.add(t);
+  return [...out];
+}
+function pageTexts(p) {
+  return [p.summary || "", ...(p.infobox || []).map(r => `${r.label}: ${stripMarks(r.value)}`), ...p.sections.map(s => stripMarks(s.body))];
+}
+/* 이 문서(k)와 관련된 숫자 모순. 이 문서가 다른 항목을 다르게 적었거나(high), 다른 문서가 이 항목을 다르게 적었거나(low), 이 문서 안에서 다르다(high) */
+function numericIssues(w, k) {
+  const out = [], seen = new Set(), here = S.pages[k]; if (!here) return out;
+  const push = (claim, evidence, conflict, severity) => { const key = claim + "|" + evidence; if (seen.has(key)) return; seen.add(key); out.push({ claim: claim.slice(0, 300), conflict: `근거: ${evidence.slice(0, 200)} · 숫자 대조: ${conflict}`.slice(0, 400), severity }); };
+  const eraY = yearNum(w.era);
+  const KIN = /아버지|어머니|부친|모친|부모|아내|남편|배우자|형제|자매|형이|형은|동생|아들|딸|자녀|손자|조부|할아버지|할머니|삼촌|이모|고모|가족|연인|약혼/;
+  const named = Object.keys(w.entities).filter(x => S.pages[x] || w.entities[x].type === "인물").map(x => [x, refNames(w, x)]);
+  const onlyAbout = (sen, E) => named.every(([x, ns]) => x === E || !ns.some(n => sen.includes(n)));   // 다른 항목 이름이 함께 나오면 누구 이야기인지 알 수 없어 비교하지 않는다
+  const compare = (P, E) => {   // 문서 P의 문장들을 항목 E의 인포박스 기준값과 비교한다
+    const pe = S.pages[E]; if (!pe) return;
+    const f = numFacts(pe); if (!f.birth && !f.death && !f.origin) return;
+    const names = refNames(w, E);
+    const ibox = new Set((pe.infobox || []).map(r => `${r.label}: ${stripMarks(r.value)}`));
+    for (const sen of pageTexts(S.pages[P]).flatMap(sentencesOf)) {
+      if (P === E && ibox.has(sen)) continue;   // 기준이 된 인포박스 줄 자체는 비교하지 않는다
+      if (!names.some(n => sen.includes(n)) || !onlyAbout(sen, E)) continue;
+      const ys = yearsOf(sen);
+      for (const K of NUM_KINDS) {
+        const base = f[K.kind]; if (!base || !K.verb.test(sen) || (K.kind !== "origin" && KIN.test(sen))) continue;
+        if (ys.length === 1 && Math.abs(ys[0] - base.y) >= 1 && !NUM_KINDS.some(O => O !== K && O.verb.test(sen))) {
+          const who = P === E ? "이 문서" : `「${pe.title}」 문서`;
+          if (P === k) push(sen, `${who} 인포박스 ${base.line}`, `「${pe.title}」의 ${K.name} 연도가 ${ys[0]}년으로 적혀 있지만 ${who} 인포박스에는 ${base.y}년이다.`, "high");
+          else push(base.line, `「${S.pages[P].title}」의 서술: ${sen}`, `「${S.pages[P].title}」 문서가 이 항목의 ${K.name} 연도를 ${ys[0]}년으로 적었다. 틀린 쪽이 그 문서라면 그 문서를 고친다.`, "low");
+        }
+      }
+      const am = /(?:향년\s*)?(\d{1,3})\s*세/.exec(sen);
+      if (am && f.birth && f.death && NUM_KINDS[1].verb.test(sen) && !KIN.test(sen) && !/\d{1,3}\s*세[가-힣]*\s*(때|무렵|에)\b/.test(sen)) {
+        const a = +am[1], d = f.death.y - f.birth.y;
+        if (Math.abs(a - d) > 1) {
+          if (P === k) push(sen, `「${pe.title}」 인포박스 ${f.birth.line} / ${f.death.line}`, `사망 나이가 ${a}세로 적혀 있지만 인포박스의 출생·사망 연도로 계산하면 ${d - 1}~${d}세다.`, "high");
+          else push(f.death.line, `「${S.pages[P].title}」의 서술: ${sen}`, `「${S.pages[P].title}」 문서가 사망 나이를 ${a}세로 적었지만 이 문서의 연도로 계산하면 ${d - 1}~${d}세다.`, "low");
+        }
+      }
+    }
+  };
+  for (const E of [...new Set([...(here.links || []), ...Object.keys(S.pages)])]) if (E !== k && S.pages[E] && w.entities[E] && refNames(w, E).some(n => pageTexts(here).some(t => t.includes(n)))) compare(k, E);   // 이 문서가 다른 항목을 적은 곳
+  for (const P of Object.keys(S.pages)) if (P !== k && w.entities[P]) compare(P, k);   // 다른 문서가 이 항목을 적은 곳
+  compare(k, k);   // 이 문서 안
+  const f = numFacts(here);   // 인포박스의 "(36세)" 같은 현재 나이
+  if (f.birth && !f.death && !isNaN(eraY)) {
+    const am = /\((\d{1,3})\s*세\)/.exec(f.birth.line);
+    if (am && Math.abs(+am[1] - (eraY - f.birth.y)) > 1) push(f.birth.line, `작중 기준 시점 ${w.era}`, `작중 기준 시점으로 계산하면 ${eraY - f.birth.y - 1}~${eraY - f.birth.y}세인데 ${am[1]}세로 적혀 있다.`, "high");
+  }
+  return out.slice(0, 8);
+}
 /* 두 검사(설정 대조, 문서 읽기)를 동시에 돌려 결과를 합친다. 하나가 실패해도 다른 하나의 결과는 쓴다 */
 async function runChecks(w, k, opts, label) {
   const p = S.pages[k];
   const rs = await Promise.allSettled([
     callJson("check", checkPrompt(w, k), { modelTier: "check", ...opts }, { title: label }),
     callJson("read", readPrompt(w, k), { modelTier: "check", ...opts }, { title: label })]);
-  if (rs.every(r => r.status === "rejected")) throw rs[0].reason;
   if (rs.some(r => r.status === "rejected" && r.reason?.code === "cancelled")) throw { code: "cancelled" };
+  let num = []; try { num = numericIssues(w, k); } catch (e) { console.warn("[숫자 대조]", e); }
+  if (rs.every(r => r.status === "rejected") && !num.length) throw rs[0].reason;   // AI 검사가 모두 실패해도 숫자 대조 결과는 쓴다
   const all = [], seen = new Map(), keyOfClaim = c => stripMarks(c).replace(/\s+/g, "").slice(0, 40);
-  for (const r of rs) if (r.status === "fulfilled") for (const i of parseIssues(r.value)) {
+  for (const i of [...num, ...rs.filter(r => r.status === "fulfilled").flatMap(r => parseIssues(r.value))]) {
     const ck = keyOfClaim(i.claim), prev = seen.get(ck);
     if (prev) { if (i.severity === "high") prev.severity = "high"; if (!prev.conflict.includes(i.conflict)) prev.conflict = (prev.conflict + " / " + i.conflict).slice(0, 500); continue; }
     seen.set(ck, i); all.push(i);

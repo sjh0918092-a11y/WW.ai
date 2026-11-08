@@ -15,7 +15,7 @@ const server = http.createServer((req, res) => {
 
 /* ---------- 가짜 Gemini ---------- */
 const calls = [];           // { kind, prompt }
-const ctl = { planDelay: 0, planBad: false, planN: 1, checkIssues: null, checkDelay: 0, fixEdits: null, analyzeConflicts: null, readIssues: null, readFail: false, emptyChoices: false };
+const ctl = { planDelay: 0, planBad: false, planN: 1, checkIssues: null, checkDelay: 0, fixEdits: null, analyzeConflicts: null, readIssues: null, readFail: false, emptyChoices: false, pageOverride: {} };
 const count = k => calls.filter(c => c.kind === k).length;
 function kindOf(p) {
   if (p.includes("## 이야기 뼈대")) return "storyBible";
@@ -58,7 +58,7 @@ function answer(kind, p) {
   if (kind === "storyBible") return { ...BASE, title: "녹둔도 연대기", era: "1586년", mainTitle: "한서린", protagonist: { summary: "녹둔도의 젊은 무관", want: "고향을 지키는 것", wound: "아버지를 잃음" },
     spine: ["발단", "전개", "위기", "절정", "결말"].map((beat, i) => ({ n: i + 1, beat, intent: `${beat} 의도` })), chapter1: { title: "녹둔도의 밤", era: "1586년", summary: "1장 줄거리.", incident: "녹둔도 습격", nextChoices: ["추격한다", "보고한다", "숨는다"] } };
   if (kind === "bible") return { ...BASE, title: "기본 세계", era: "1600년", mainTitle: "대문 항목" };
-  if (kind === "page") return pageJson((/## 작성할 문서: 「([^」]+)」/.exec(p) || [])[1]);
+  if (kind === "page") { const t = (/## 작성할 문서: 「([^」]+)」/.exec(p) || [])[1]; return { ...pageJson(t), ...(ctl.pageOverride[t] || {}) }; }
   if (kind === "chapterPlan") return ctl.planBad ? { title: "불완전" } : planJson(p);
   if (kind === "chapterBlock") return blockJson(p);
   if (kind === "check") return { issues: ctl.checkIssues || [] };
@@ -603,6 +603,21 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert(!ww.entities[userK].mentions.some(m => m.sup), "AI 문서가 세운 대체 표시도 지운다");
     await fifth.ctx.close();
     ok("예전 버전에서 AI 수정이 다른 문서에 붙인 경고와 대체 표시는 세계관을 열 때 지운다");
+
+    /* 27. 숫자 대조: 연도와 사망 나이를 문서끼리 기계적으로 비교 */
+    ctl.pageOverride["갑 인물"] = { type: "인물", infobox: [{ label: "출생", value: "1890년" }, { label: "사망", value: "1934년" }] };
+    ctl.pageOverride["을 문서"] = { sections: [{ heading: "개요", level: 1, body: "[[갑 인물]]은 1931년 사망했다." }, { heading: "뒷이야기", level: 1, body: "[[갑 인물]]의 모친은 1920년 숨졌다." }] };
+    await page.fill("#q", "갑 인물"); await page.press("#q", "Enter"); await waitArticle(page, "갑 인물");
+    ctl.fixEdits = [{ memo: 1, field: "body", old: "1931년 사망했다", new: "1934년 사망했다" }];
+    const n27 = calls.length;
+    await page.fill("#q", "을 문서"); await page.press("#q", "Enter"); await waitArticle(page, "을 문서"); ctl.fixEdits = null;
+    { const fx = calls.slice(n27).find(c => c.kind === "fix");
+      const memo27 = fx.prompt.split("## 원문")[0].split("## 메모")[1] || "";
+      assert(memo27.includes("숫자 대조: 「갑 인물」의 사망 연도가 1931년으로 적혀 있지만") && !memo27.includes("1920"), "다른 항목의 연도를 다르게 적으면 띄우기 전에 고친다(가족 이야기는 비교하지 않음)"); }
+    assert((await page.locator(".article").innerText()).includes("1934년 사망했다"));
+    await page.fill("#q", "갑 인물"); await page.press("#q", "Enter"); await waitArticle(page, "갑 인물");
+    ctl.pageOverride = {};
+    ok("숫자 대조: 다른 항목의 사망 연도를 인포박스와 다르게 적으면 잡아서 띄우기 전에 고친다");
 
     await ctx.close();
     console.log(`\n모두 통과 (${step}개). Gemini 호출 ${calls.length}회: ` + Object.entries(calls.reduce((a, c) => (a[c.kind] = (a[c.kind] || 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
