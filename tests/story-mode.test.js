@@ -15,7 +15,7 @@ const server = http.createServer((req, res) => {
 
 /* ---------- 가짜 Gemini ---------- */
 const calls = [];           // { kind, prompt }
-const ctl = { planDelay: 0, planBad: false, planN: 1 };
+const ctl = { planDelay: 0, planBad: false, planN: 1, checkIssues: null };
 const count = k => calls.filter(c => c.kind === k).length;
 function kindOf(p) {
   if (p.includes("## 이야기 뼈대")) return "storyBible";
@@ -58,7 +58,7 @@ function answer(kind, p) {
   if (kind === "page") return pageJson((/## 작성할 문서: 「([^」]+)」/.exec(p) || [])[1]);
   if (kind === "chapterPlan") return ctl.planBad ? { title: "불완전" } : planJson(p);
   if (kind === "chapterBlock") return blockJson(p);
-  if (kind === "check") return { issues: [] };
+  if (kind === "check") return { issues: ctl.checkIssues || [] };
   if (kind === "analyze") return { facts: [], timeline: [], newEntities: [], relations: [], conflicts: [] };
   if (kind === "tone") return TONE;
   return { ok: true };
@@ -66,7 +66,8 @@ function answer(kind, p) {
 async function route(r) {
   const body = JSON.parse(r.request().postData() || "{}");
   const prompt = body.contents?.[0]?.parts?.[0]?.text || "";
-  const kind = kindOf(prompt); calls.push({ kind, prompt });
+  const kind = kindOf(prompt), model = decodeURIComponent((/models\/([^:]+):/.exec(r.request().url()) || [])[1] || "");
+  calls.push({ kind, prompt, model, think: body.generationConfig?.thinkingConfig?.thinkingLevel || "" });
   if (kind === "chapterPlan" && ctl.planDelay) await new Promise(res => setTimeout(res, ctl.planDelay));
   const text = JSON.stringify(answer(kind, prompt));
   const sse = `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text }] }, finishReason: "STOP" }], usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 } })}\n\n`;
@@ -141,6 +142,21 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     const bp = calls.filter(c => c.kind === "page").pop().prompt;
     assert(!bp.includes("열린 질문") && bp.includes("해석이 엇갈린다, 평가가 갈린다, 논쟁을 낳고 있다는 식의 섹션"), "문서 프롬프트가 해석·논쟁 섹션을 막는다");
     assert(calls.filter(c => c.kind === "check").pop().prompt.includes("문체, 어투, 표현 방식은 지적하지 않는다"));
+    { const ck = calls.filter(c => c.kind === "check").pop();
+      assert.strictEqual(ck.model, "gemini-3.8-flash", "설정 검사는 (검사 모델을 비워 두면) 기본 모델로");
+      assert.strictEqual(ck.think, "medium", "설정 검사의 생각 깊이 기본값은 medium");
+      assert(ck.prompt.includes("글자 그대로 evidence에 옮길 수 있다") && ck.prompt.includes('"evidence"'), "근거 인용을 요구한다");
+      assert.strictEqual(calls.filter(c => c.kind === "tone").every(c => c.model === "gemini-3.5-flash-lite"), true); }
+    await page.click('#side [data-act="gset"]');
+    await page.fill("#gCheck", "gemini-test-pro"); await page.selectOption("#gCheckT", "high"); await page.click('[data-act="gset-save"]');
+    await page.click('#side [data-act="home"]'); await page.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(page, "대문 항목");
+    ctl.checkIssues = [{ claim: "근거 있는 지적", evidence: "확정된 규칙 문장", conflict: "동시에 참일 수 없다", severity: "high" }, { claim: "근거 없는 지적", severity: "high" }];
+    await page.click('[data-check]'); await page.waitForSelector("details.memo", { timeout: 15000 }); ctl.checkIssues = null;
+    { const ck = calls.filter(c => c.kind === "check").pop(); assert.strictEqual(ck.model, "gemini-test-pro"); assert.strictEqual(ck.think, "high", "설정에서 고른 검사 모델과 생각 깊이를 쓴다"); }
+    const memo = await page.locator("details.memo").innerText();
+    assert(memo.includes("근거 있는 지적") && memo.includes("근거: 확정된 규칙 문장") && !memo.includes("근거 없는 지적"), "근거를 대지 못한 지적은 버린다");
+    await page.click('#side [data-act="gset"]'); await page.fill("#gCheck", ""); await page.selectOption("#gCheckT", "medium"); await page.click('[data-act="gset-save"]');
+    await page.click('#side [data-act="home"]');
     assert(bp.includes("기준 시점에 1학년(신입생)인 인물은 그 전 해들에는 아직 입학 전"), "문서 프롬프트에 학년·연도 역산 규칙");
     assert(calls.filter(c => c.kind === "check").pop().prompt.includes("연도·나이·학년·기수·재직 기간이 서로 맞지 않는 곳도 모순으로 지적한다"), "설정 검사가 문서 안의 연도 모순도 잡는다");
     ok("기본 모드 세계관 생성, 문서 작성, 새로고침 후 복원이 그대로 된다");

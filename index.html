@@ -346,7 +346,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v3.5 · 2026-11-08";
+const APP_VERSION = "v3.6 · 2026-11-08";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -436,7 +436,7 @@ const PAGE_MODEL = {};   // 모델과 생각 깊이는 'Gemini 설정'에서 정
 const GKEY = "wwiki:gemini";
 const GBASE = "https://generativelanguage.googleapis.com/v1beta";
 const DEFAULT_RELAY = "https://lucky-feather-d3e9.sjh0918092.workers.dev";   // 기본 중계 서버. 주소는 공개돼도 되고, 접속 암호가 있어야 쓸 수 있다
-const GDEF = { mode: "key", relay: DEFAULT_RELAY, pass: "", key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "" };
+const GDEF = { mode: "key", relay: DEFAULT_RELAY, pass: "", key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "", check: "", checkThink: "medium" };   // check: 설정 검사·수정 대조. 비우면 기본 모델
 const THINKS = [["", "모델 기본값"], ["minimal", "minimal"], ["low", "low"], ["medium", "medium"], ["high", "high"]];
 let GS = (() => {
   let st = {}; try { st = JSON.parse(localStorage.getItem(GKEY) || "{}") || {}; } catch {}
@@ -533,8 +533,9 @@ const gemini = {
   },
   async json(prompt, opts = {}) {
     if (!gReady()) throw { code: "no_sample" };
-    const tier = opts.modelTier === "quick" ? "quick" : "main";
-    const model = (GS[tier] || GDEF[tier]).trim(); let think = GS[tier + "Think"] || "";
+    const tier = opts.modelTier === "quick" ? "quick" : opts.modelTier === "check" ? "check" : "main";
+    const model = (tier === "check" ? (GS.check || GS.main || GDEF.main) : (GS[tier] || GDEF[tier])).trim();
+    let think = (tier === "check" ? GS.checkThink ?? GDEF.checkThink : GS[tier + "Think"]) || "";
     const mk = (contents, json) => { const b = { contents, generationConfig: json ? { responseMimeType: "application/json" } : {} }; if (think) b.generationConfig.thinkingConfig = { thinkingLevel: think }; return b; };
     const user = [{ role: "user", parts: [{ text: prompt }] }];
     let acc = "", usage = null, retries = 0, contTried = 0;
@@ -1359,7 +1360,13 @@ function checkPrompt(w, key) {
   const ctx = keys.map(k => checkBrief(w, k, key)).join("\n\n");
   const own = [...w.entities[key].facts.filter(f => f.src !== key && live(f)).map(f => "- " + factLine(f)), ...w.entities[key].mentions.filter(m => m.from !== key && live(m)).map(m => `- 「${w.entities[m.from]?.title || "?"}」의 서술: ${m.text}`), ...relationsOf(w, key).filter(x => x.src !== key && live(x)).map(x => "- 관계: " + relLine(w, x))].join("\n");
   const text = [`# ${p.title}`, ...(p.infobox || []).map(r => `${r.label}: ${stripMarks(r.value)}`), ...p.sections.map(s => `${(s.level || 1) === 2 ? "###" : "##"} ${s.ch && (s.level || 1) === 1 ? `[${s.ch}장] ` : ""}${s.heading}\n${stripMarks(s.body)}`)].join("\n");
-  return `다음 위키 문서가 세계관의 확정 설정과 모순되는지 검사하라. 확정 설정과 명백히 반대되는 서술만 지적하고, 단순히 새로 추가된 정보나 해석의 차이는 문제 삼지 마라. 문체, 어투, 표현 방식은 지적하지 않는다. 확정 설정과의 충돌에 더해, 문서 안에서 연도·나이·학년·기수·재직 기간이 서로 맞지 않는 곳도 모순으로 지적한다(예: 기준 시점에 1학년인 인물이 그보다 2년 전에 이미 그 학교 학생으로 활동함). 이런 모순은 conflict에 어긋나는 두 서술을 함께 적고 severity는 high로 둔다.
+  return `다음 위키 문서가 세계관의 확정 설정과 모순되는지 검사하라. 확정 설정과 명백히 반대되는 서술만 지적하고, 단순히 새로 추가된 정보나 해석의 차이는 문제 삼지 마라. 문체, 어투, 표현 방식은 지적하지 않는다.
+
+지적하기 전에 다음을 모두 확인한다. 하나라도 아니면 지적하지 않는다.
+- 근거가 될 확정 설정이 아래 목록에 실제로 있고, 그 문장을 글자 그대로 evidence에 옮길 수 있다. 기억이나 짐작, 일반 상식, 현실 역사에 기댄 지적은 하지 않는다.
+- 문서의 서술과 확정 설정이 같은 대상, 같은 시점에 관한 것이다. 이름이 비슷한 다른 대상이거나 다른 시점의 일이면 모순이 아니다.
+- 둘이 동시에 참일 수 없다. 한쪽이 다른 쪽을 자세히 풀거나 덧붙인 것, 확정 설정이 말하지 않은 빈칸을 채운 것은 모순이 아니다.
+- 지적할 것이 없는 것이 정상이다. 개수를 채우려고 지적하지 않는다. 확정 설정과의 충돌에 더해, 문서 안에서 연도·나이·학년·기수·재직 기간이 서로 맞지 않는 곳도 모순으로 지적한다(예: 기준 시점에 1학년인 인물이 그보다 2년 전에 이미 그 학교 학생으로 활동함). 이런 모순은 conflict에 어긋나는 두 서술을 함께 적고 severity는 high로 둔다.
 
 ${canonBlock({ ...w, timeline: (w.timeline || []).filter(t => t.src !== key) })}
 ${isStory(w) ? `\n${storyBlock(w, key)}\n이 문서는 ${p.baseAsOf || 1}~${p.syncedTo || p.baseAsOf || 1}장 시점에 작성되었다. 이 문서가 그 시점 이후의 일을 아는 것처럼 서술하면 모순으로 본다. 제목 앞에 [n장]이 붙은 섹션은 그 장에 일어난 일을 기록한 섹션이다.\n` : ""}
@@ -1372,7 +1379,7 @@ ${ctx || "(없음)"}
 ## 검사할 문서
 ${text}
 
-JSON 객체 하나만 출력: {"issues":[{"claim":"문서의 해당 서술","conflict":"충돌하는 확정 설정","severity":"high 또는 low"}]}
+JSON 객체 하나만 출력: {"issues":[{"claim":"문서의 해당 서술(문서에서 글자 그대로)","evidence":"근거가 된 확정 설정이나 문서 안의 다른 서술(글자 그대로)","conflict":"둘이 왜 동시에 참일 수 없는지 한 문장","severity":"high 또는 low"}]}
 문제가 없으면 {"issues":[]}.`;
 }
 
@@ -1724,8 +1731,9 @@ async function checkPage(k, auto) {
   S.checking = k; renderMain();
   let found = 0;
   try {
-    const r = await callJson("check", checkPrompt(w, k), { modelTier: "quick" }, { title: p.title + (auto ? " · 자동" : "") });
-    const issues = (Array.isArray(r?.issues) ? r.issues : []).filter(i => i && i.claim).slice(0, 8).map(i => ({ claim: String(i.claim).slice(0, 300), conflict: String(i.conflict || "").slice(0, 300), severity: i.severity === "high" ? "high" : "low" }));
+    const r = await callJson("check", checkPrompt(w, k), { modelTier: "check" }, { title: p.title + (auto ? " · 자동" : "") });
+    const issues = (Array.isArray(r?.issues) ? r.issues : []).filter(i => i && i.claim && (i.evidence || i.conflict)).slice(0, 8)   // 근거 없는 지적은 버린다
+      .map(i => ({ claim: String(i.claim).slice(0, 300), conflict: [i.evidence ? `근거: ${stripMarks(i.evidence)}` : "", stripMarks(i.conflict || "")].filter(Boolean).join(" · ").slice(0, 400), severity: i.severity === "high" ? "high" : "low" }));
     if (S.pages[k] === p) {   // 검사하는 동안 문서가 바뀌었으면(장 반영 등) 옛 문서를 저장하지 않는다
       p.check = { at: Date.now(), issues, auto: !!auto }; found = issues.length;
       try { await Store.savePage(w.id, p); } catch (err) { toast("검사 결과를 저장하지 못했습니다. " + errMsg(err)); }
@@ -1929,7 +1937,7 @@ async function bgSync(k) {
     const out = sourceToOut(pageToSource(w, p));
     const linkKeys = linksOfOut(w, out, k), ctx = conflictContext(w, k, linkKeys);
     const temp = { key: k, title: p.title, summary: out.summary, infobox: out.infobox, sections: out.sections, navboxes: out.navboxes };
-    const r = await callJson("analyze", analyzePrompt(w, temp, linkKeys, ctx), { modelTier: "quick" }, { title: p.title + " · 교정 후" });
+    const r = await callJson("analyze", analyzePrompt(w, temp, linkKeys, ctx), { modelTier: "check" }, { title: p.title + " · 교정 후" });
     if (S.world !== w || S.pages[k] !== p) { S.bgSync = null; return; }
     const touched = clearBadges(k);
     for (const o of Object.values(w.entities)) { o.facts = o.facts.filter(f => f.src !== k); for (const x of [...o.facts, ...o.mentions]) if (x.sup?.by === k) delete x.sup; }
@@ -2137,7 +2145,7 @@ async function saveEdit(skipCheck) {
   const temp = { key: k, title: e.title, summary: out.summary, infobox: out.infobox, sections: out.sections, navboxes: out.navboxes };
   edStatus("", true);
   let r;
-  try { r = await callJson("analyze", analyzePrompt(w, temp, linkKeys, ctx), { modelTier: "quick" }, { title: w.entities[k]?.title || "" }); }
+  try { r = await callJson("analyze", analyzePrompt(w, temp, linkKeys, ctx), { modelTier: "check" }, { title: w.entities[k]?.title || "" }); }
   catch (err) {
     if (S.edit !== ed) return;
     edStatus(`설정과 대조하지 못했습니다. ${esc(errMsg(err))} <button type="button" class="btn" data-act="ed-save-raw" style="margin-left:6px;padding:2px 10px">대조 없이 저장</button>`);
@@ -2545,8 +2553,11 @@ function gsetHtml() {
     <h2 class="nf-h">모델</h2>
     <div class="two"><div><label class="lb" for="gMain">기본 모델 <span class="note" style="font-weight:400">세계관 생성, 문서 작성, 충돌 고치기</span></label><input id="gMain" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.main)}"></div>
       <div><label class="lb" for="gMainT">생각 깊이</label><select id="gMainT">${opt(GS.mainThink)}</select></div></div>
-    <div class="two"><div><label class="lb" for="gQuick">빠른 모델 <span class="note" style="font-weight:400">분위기 판별, 설정 검사, 수정 대조</span></label><input id="gQuick" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.quick)}"></div>
+    <div class="two"><div><label class="lb" for="gQuick">빠른 모델 <span class="note" style="font-weight:400">분위기 판별</span></label><input id="gQuick" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.quick)}"></div>
       <div><label class="lb" for="gQuickT">생각 깊이</label><select id="gQuickT">${opt(GS.quickThink)}</select></div></div>
+    <div class="two"><div><label class="lb" for="gCheck">검사 모델 <span class="note" style="font-weight:400">설정 검사, 수정 대조 · 비워 두면 기본 모델</span></label><input id="gCheck" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.check || "")}" placeholder="${esc(GS.main || GDEF.main)} (기본 모델)"></div>
+      <div><label class="lb" for="gCheckT">생각 깊이</label><select id="gCheckT">${opt(GS.checkThink ?? GDEF.checkThink)}</select></div></div>
+    <p class="note" style="margin-top:6px">설정 검사는 문서가 완성될 때마다 뒤에서 자동으로 돕니다. 검사 모델을 높이거나 생각 깊이를 올리면 헛짚는 지적이 줄지만, 검사가 느려지고 사용량이 늘어납니다.</p>
     ${dl}
     <p class="note" style="margin-top:8px">모델이 지원하지 않는 생각 깊이를 고르면 그 요청은 모델 기본값으로 다시 보냅니다. 응답은 JSON 모드로 받습니다.</p>
     <div class="row"><button type="button" class="btn pri" data-act="gset-save">저장</button><button type="button" class="btn" data-act="gset-test">연결 시험</button><button type="button" class="btn" data-act="gset-models">모델 목록 불러오기</button></div>
@@ -2558,7 +2569,7 @@ function gsetHtml() {
 }
 function readGsetForm() {
   const v = id => ($("#" + id)?.value ?? "").trim();
-  GS = { ...GS, mode: v("gMode") === "relay" ? "relay" : "key", key: v("gKey"), relay: normRelay(v("gRelay")) || DEFAULT_RELAY, pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT") };
+  GS = { ...GS, mode: v("gMode") === "relay" ? "relay" : "key", key: v("gKey"), relay: normRelay(v("gRelay")) || DEFAULT_RELAY, pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT"), check: v("gCheck"), checkThink: v("gCheckT") };
   saveGS(); S.sample = gReady() ? gemini : null;
 }
 function setGres(t) { S.gres = t; const el = $("#gRes"); if (el) el.textContent = t; }
