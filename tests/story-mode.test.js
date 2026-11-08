@@ -551,6 +551,44 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert((await page.locator("details.memo").textContent()).includes("역사는 1586년에"), "한 검사가 실패해도 다른 검사 결과는 보여 준다");
     ok("설정 대조와 문서 읽기 검사를 동시에 돌려 합치고(같은 지적은 하나로), 하나가 실패해도 다른 결과를 쓰며, 분류까지 고친다");
 
+    /* 25. AI 수정은 다른 문서를 대체하지 않는다: 어긋나면 그 문서의 메모로 */
+    await page.fill("#q", "한서린"); await page.press("#q", "Enter"); await waitArticle(page, "한서린");
+    ctl.checkIssues = [{ claim: "한서린은 검사 대상과 무관하다.", evidence: "규칙 하나", conflict: "x", severity: "high" }];
+    await page.click('[data-check]'); await page.waitForSelector("[data-fixk]", { timeout: 20000 }); ctl.checkIssues = null;
+    ctl.fixEdits = [{ memo: 1, field: "body", old: "한서린은 검사 대상과 무관하다.", new: "한서린은 검사 대상과 거리를 둔다." }];
+    await page.locator("[data-fixk]").first().click(); await page.waitForSelector('[data-act="fixv-apply"]', { timeout: 20000 }); ctl.fixEdits = null;
+    ctl.analyzeConflicts = [{ ref: "M2", claim: "한서린은 검사 대상과 거리를 둔다.", old: "검사 대상은 한서린와 얽힌 다른 항목이다." }];
+    const na25 = count("analyze");
+    await page.click('[data-act="fixv-apply"]'); await waitArticle(page, "한서린");
+    for (let i = 0; i < 100 && count("analyze") === na25; i++) await page.waitForTimeout(100);
+    await page.waitForFunction(() => !document.querySelector("#main").textContent.includes("맞춰 보는 중"), null, { timeout: 20000 }); ctl.analyzeConflicts = null;
+    assert((await page.locator("#main").textContent()).includes("「검사 대상」"), "어긋난 다른 문서는 이 문서의 메모로 남는다");
+    await page.fill("#q", "검사 대상"); await page.press("#q", "Enter"); await waitArticle(page, "검사 대상");
+    assert(!(await page.locator("#main").innerText()).includes("설정과 맞지 않습니다"), "AI 수정 때문에 다른 문서에 경고가 붙지 않는다");
+    { const bw25 = await worldOf(page, "기본 세계"), hk = Object.keys(bw25.entities).find(k => bw25.entities[k].title === "한서린");
+      assert(!bw25.entities[hk].mentions.some(m => m.sup), "AI 수정이 다른 문서의 서술을 대체하지 않는다"); }
+    ok("AI가 고친 문서가 다른 문서와 어긋나면, 다른 문서에 경고를 붙이지 않고 고친 문서의 메모로 남긴다");
+
+    /* 26. 예전 버전이 AI 수정으로 붙인 경고는 세계관을 열 때 지운다 */
+    await page.click('#side [data-act="gset"]');
+    const [dl26] = await Promise.all([page.waitForEvent("download"), page.click('[data-act="export"]')]);
+    const f26 = path.join(os.tmpdir(), "ww-badge-backup.json"); await dl26.saveAs(f26);
+    const b26 = JSON.parse(fs.readFileSync(f26, "utf8")), w26 = b26.worlds.find(x => x.title === "기본 세계"), p26 = b26.pages[w26.id];
+    const k26 = t => Object.keys(w26.entities).find(k => w26.entities[k].title === t), aiK = k26("검사 분류"), userK = k26("한서린"), tgt = k26("검사 대상");
+    assert(!p26[aiK].editedAt && p26[userK].editedAt, "테스트 전제");
+    p26[tgt].conflicts = [{ by: aiK, byTitle: "검사 분류", old: "AI가 붙인 옛 경고", claim: "x" }, { by: userK, byTitle: "한서린", old: "사용자 수정 경고", claim: "y" }];
+    w26.entities[userK].mentions.forEach(m => { m.sup = { by: aiK }; });
+    fs.writeFileSync(f26, JSON.stringify(b26));
+    const fifth = await newPage(browser), q5 = fifth.page;
+    await q5.goto(URL_); await q5.waitForSelector("#seedTa");
+    await q5.click('[data-act="gset"]'); await q5.setInputFiles("#importFile", f26); await q5.waitForTimeout(500); await q5.click('#side [data-act="home"]');
+    await q5.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(q5, "대문 항목");
+    const pw = await pageOf(q5, await worldOf(q5, "기본 세계"), "검사 대상"), ww = await worldOf(q5, "기본 세계");
+    assert.deepStrictEqual(pw.conflicts.map(c => c.old), ["사용자 수정 경고"], "AI 문서가 붙인 경고만 지우고 사용자 수정 경고는 남긴다");
+    assert(!ww.entities[userK].mentions.some(m => m.sup), "AI 문서가 세운 대체 표시도 지운다");
+    await fifth.ctx.close();
+    ok("예전 버전에서 AI 수정이 다른 문서에 붙인 경고와 대체 표시는 세계관을 열 때 지운다");
+
     await ctx.close();
     console.log(`\n모두 통과 (${step}개). Gemini 호출 ${calls.length}회: ` + Object.entries(calls.reduce((a, c) => (a[c.kind] = (a[c.kind] || 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
   } catch (e) {

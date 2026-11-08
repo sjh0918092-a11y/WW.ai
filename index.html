@@ -347,7 +347,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v4.6 · 2026-11-08";
+const APP_VERSION = "v4.7 · 2026-11-08";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1587,6 +1587,20 @@ async function autoMerge(w) {
   return pairs.length;
 }
 
+/* 예전 버전에서 AI 수정이 다른 문서를 대체하고 경고를 붙인 흔적을 걷어낸다.
+   대체 표시(sup)와 경고는 사용자가 직접 수정한 문서만 세울 수 있으므로, 직접 수정한 적 없는 문서가 세운 것은 지운다 */
+async function cleanAiSupersede(w) {
+  const userEdited = k => !!S.pages[k]?.editedAt, saved = new Set(); let ws = false;
+  const un = x => { if (x?.sup && !userEdited(x.sup.by)) { delete x.sup; ws = true; } };
+  for (const o of Object.values(w.entities)) { o.facts.forEach(un); o.mentions.forEach(un); }
+  (w.timeline || []).forEach(un); (w.relations || []).forEach(un);
+  for (const [k, P] of Object.entries(S.pages)) {
+    const n = (P.conflicts || []).length; if (!n) continue;
+    P.conflicts = P.conflicts.filter(c => userEdited(c.by)); if (P.conflicts.length !== n) saved.add(k);
+  }
+  try { for (const k of saved) await Store.savePage(w.id, S.pages[k]); if (ws) await Store.saveWorld(w); } catch {}
+  return saved.size;
+}
 /* 이미 저장된 장 제목과 장 섹션 제목에서 장 번호를 뗀다 */
 async function cleanChapterTitles(w) {
   if (!isStory(w)) return;
@@ -1651,7 +1665,9 @@ async function openWorld(wid, goKey) {
   try { S.pages = await Store.listPages(w.id); } catch (e) { toast(errMsg(e)); }
   const merged = await autoMerge(w);
   await cleanChapterTitles(w);
+  const unbadged = await cleanAiSupersede(w);
   openEntity(goKey && w.entities[goKey] ? goKey : w.mainKey);
+  if (unbadged) setTimeout(() => toast(`AI 수정 때문에 잘못 붙어 있던 '설정과 맞지 않음' 경고 ${unbadged}건을 지웠습니다.`), merged ? 3800 : 0);
   if (merged) toast(`같은 대상을 가리키는데 따로 생긴 항목 ${merged}개를 원래 항목에 합쳤습니다. 예: "이름(인물)", 성이나 이름만 쓴 인물.`);
 }
 
@@ -2080,10 +2096,11 @@ async function bgSync(k, keep) {
     const temp = { key: k, title: p.title, summary: out.summary, infobox: out.infobox, sections: out.sections, navboxes: out.navboxes };
     const r = await callJson("analyze", analyzePrompt(w, temp, linkKeys, ctx), { modelTier: "check" }, { title: p.title + " · 교정 후" });
     if (S.world !== w || S.pages[k] !== p) { S.bgSync = null; return; }
-    const touched = clearBadges(k);
-    for (const o of Object.values(w.entities)) { o.facts = o.facts.filter(f => f.src !== k); for (const x of [...o.facts, ...o.mentions]) if (x.sup?.by === k) delete x.sup; }
-    w.timeline.forEach(t => { if (t.sup?.by === k) delete t.sup; });
-    (w.relations || []).forEach(x => { if (x.sup?.by === k) delete x.sup; });
+    // AI가 고친 본문은 다른 문서를 대체하는 기준이 되지 않는다. 사용자가 직접 수정한 문서라면 그 수정이 세운 대체 표시는 그대로 두고,
+    // 직접 수정한 적 없는 문서라면 (예전 버전이 AI 수정으로 붙였던) 대체 표시와 다른 문서의 경고를 걷어낸다.
+    const touched = p.editedAt ? new Set() : clearBadges(k);
+    for (const o of Object.values(w.entities)) { o.facts = o.facts.filter(f => f.src !== k); if (!p.editedAt) for (const x of [...o.facts, ...o.mentions]) if (x.sup?.by === k) delete x.sup; }
+    if (!p.editedAt) { w.timeline.forEach(t => { if (t.sup?.by === k) delete t.sup; }); (w.relations || []).forEach(x => { if (x.sup?.by === k) delete x.sup; }); }
     w.timeline = w.timeline.filter(x => x.src !== k);
     w.relations = (w.relations || []).filter(x => x.src !== k);
     for (const f of (Array.isArray(r?.facts) ? r.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = kOf(w, f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), k); }
@@ -2094,11 +2111,8 @@ async function bgSync(k, keep) {
       if (o && !o.page && !o.summary && n.summary) { o.summary = stripMarks(n.summary).slice(0, 200); if (!o.type && TYPES.includes(n.type)) o.type = n.type; }
     }
     const issues = [];
-    for (const c of readConflicts(w, r?.conflicts, ctx.refs)) {
-      if (c.ask) { issues.push({ claim: c.claim, conflict: `${conflictLabel(w, c)}: ${c.old}`, severity: "high" }); continue; }
-      const target = c.f || c.m || c.t || c.l; if (!target) continue;
-      target.sup = { by: k }; if (c.src && c.src !== "seed") badge(w, c.src, k, c, touched);
-    }
+    for (const c of readConflicts(w, r?.conflicts, ctx.refs))   // 다른 문서와 어긋나면 이 문서의 메모로 남긴다(다른 문서에 경고를 붙이지 않는다)
+      issues.push({ claim: c.claim, conflict: `${conflictLabel(w, c)}: ${c.old}`, severity: "high" });
     p.check = { at: Date.now(), issues: [...(keep || []), ...issues], auto: true }; p.stale = false;
     await Store.savePage(w.id, p);
     for (const x of touched) if (S.pages[x]) await Store.savePage(w.id, S.pages[x]);
