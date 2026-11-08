@@ -347,7 +347,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v4.7 · 2026-11-08";
+const APP_VERSION = "v4.8 · 2026-11-08";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -988,6 +988,18 @@ function storyStyleRules() {
 const entityIndex = (w, skip, max = 80) => Object.entries(w.entities).filter(([k]) => !skip.includes(k)).sort((a, b) => (b[1].page ? 1 : 0) - (a[1].page ? 1 : 0)).slice(0, max)
   .map(([, o]) => `- ${o.title}${o.type ? " — " + o.type : ""}${o.summary ? ". " + o.summary.slice(0, 50) : ""}`).join("\n") || "(없음)";
 const firstPara = p => { const s = (p?.sections || []).find(x => !x.ch && x.body.trim()); return s ? stripMarks(s.body.split(/\n{2,}/)[0]).slice(0, 300) : ""; };
+/* 이미 쓰인 인물 문서의 '특징' 섹션 소제목들. 새 인물이 같은 장르 소재(아날로그 기기, 탄약 절약 등)를 되풀이하지 않게 넘겨 준다 */
+function traitIndex(w, exceptKey, max = 30) {
+  const rows = [];
+  for (const [k, p] of Object.entries(S.pages)) {
+    if (k === exceptKey || p.type !== "인물" || !w.entities[k]) continue;
+    const i = p.sections.findIndex(s => (s.level || 1) === 1 && /특징|능력|특기/.test(s.heading)); if (i < 0) continue;
+    const t = []; for (let j = i + 1; j < p.sections.length && (p.sections[j].level || 1) === 2; j++) t.push(p.sections[j].heading);
+    if (t.length) rows.push({ at: p.createdAt || 0, line: `- ${p.title}: ${t.join(" / ")}` });
+  }
+  return rows.sort((a, b) => b.at - a.at).slice(0, max).map(x => x.line).join("\n");
+}
+const TRAIT_RULE = `이 세계의 장르를 대표하는 소재(예: 사이버펑크의 아날로그 기기 집착, 대공황 갱스터물의 탄약 절약, 무협의 독문 무공)를 여러 인물에게 되풀이해 붙이지 않는다. 아래 '이미 다른 인물이 가진 특징'과 같은 소재나 같은 버릇을 쓰지 않고, 이 인물의 처지, 과거, 직업, 관계에서만 나올 수 있는 특징을 정한다.`;
 /* 그 장이 뼈대의 어느 구간인지: 절정과 결말에는 새 인물을 들이지 않는다 */
 const beatBase = (w, n) => String(w.story.spine[n - 1]?.beat || "").split(" ")[0];
 const lateBeat = (w, n) => ["절정", "결말"].includes(beatBase(w, n)) || n >= totalOf(w);
@@ -995,7 +1007,9 @@ function newItemRule(w, n) {
   const b = n >= totalOf(w) ? "결말" : beatBase(w, n);
   if (b === "결말") return `- 새 항목: 이번 장은 결말이다. 새 인물이나 새 항목을 만들지 않는다. 지금까지 등장한 인물과 항목이 각자 어떻게 되었는지로 이야기를 맺는다. newEntities는 빈 배열이고, affected에는 기존 항목만 넣는다.`;
   if (b === "절정") return `- 새 항목: 이번 장은 절정이다. 새 인물은 만들지 않는다. 승부는 지금까지 등장한 인물, 조직, 물건, 장소, 그리고 앞선 장에 깔아 둔 복선으로 낸다. 결전의 무대나 결정적 물건처럼 꼭 필요한 새 항목만 0~2개까지 만들 수 있고, 만들면 newEntities와 affected(kind "new")에 넣는다.`;
-  return `- 새 항목: 이번 장에서 처음 등장하는 항목을 3~5개 만든다. 새 인물을 1명 이상 넣고, 나머지는 장소, 조직, 물건, 사건, 기술 중에서 이번 장 사건에 맞는 것으로 고른다. 이미 있는 항목과 이름이나 역할이 겹치지 않게 한다. 새 항목은 이번 장 사건에서 실제로 역할을 맡아야 하고(적, 조력자, 단서, 무대, 무기 등), protagonistBlock 본문에서 [[링크]]한다. 이름만 봐도 눌러 보고 싶어야 한다. 모두 newEntities에 넣고, affected에도 kind "new"로 넣는다.`;
+  const ti = traitIndex(w, null, 20);
+  return `- 새 항목: 이번 장에서 처음 등장하는 항목을 3~5개 만든다. 새 인물을 1명 이상 넣고, 나머지는 장소, 조직, 물건, 사건, 기술 중에서 이번 장 사건에 맞는 것으로 고른다. 이미 있는 항목과 이름이나 역할이 겹치지 않게 한다. 새 항목은 이번 장 사건에서 실제로 역할을 맡아야 하고(적, 조력자, 단서, 무대, 무기 등), protagonistBlock 본문에서 [[링크]]한다. 이름만 봐도 눌러 보고 싶어야 한다. 모두 newEntities에 넣고, affected에도 kind "new"로 넣는다.
+- 새 인물의 한 문장 정의(summary)에는 기존 인물들과 겹치지 않는 그만의 특징을 담는다. ${TRAIT_RULE}${ti ? `\n  이미 다른 인물이 가진 특징:\n${ti.split("\n").map(x => "  " + x).join("\n")}` : ""}`;
 }
 function chapterPlanPrompt(w, nextN, choice) {
   const st = w.story, pk = st.protagonistKey, pp = S.pages[pk], pr = st.protagonist || {}, cur = curCh(w);
@@ -1302,9 +1316,9 @@ ${w.historical ? `## 실존 인물
 - 작중 시점과 맞지 않는 연도를 쓰지 않는다. 학년, 기수, 계급, 직위, 나이, 재학·재직·복무 기간은 작중 기준 시점에서 거꾸로 계산해 모든 연도와 맞춘다. 예를 들어 기준 시점에 1학년(신입생)인 인물은 그 전 해들에는 아직 입학 전이므로 그 학교의 학생으로 활동할 수 없고, 기준 시점에 2학년인 선배는 1년 전에 1학년이다. 과거 사건에 등장시킬 때는 그때의 나이와 신분이 그 사건에 맞는지 확인한다.
 - 나이, 기간, 금액, 인원처럼 계산이 걸린 수치는 문서 안의 다른 날짜와 수치로 다시 계산해 서로 맞춘다(예: 출생일과 사건 날짜로 그때의 나이를 계산한다). 부대나 기체의 수는 동원, 손실, 격파, 항복, 잔존을 합쳐 처음 숫자와 맞춘다. 비율은 10할(100%)을 넘지 않는다. 개요에서 한 단언(예: 한 발도 쏘지 않았다)은 본문의 사건과 어긋나지 않게 범위를 정확히 쓴다.
 
-${showFor(ty, ["인물"]) ? `## 인물 문서
+${showFor(ty, ["인물"]) ? `${(() => { const ti = traitIndex(w, key); return ti ? `## 이미 다른 인물이 가진 특징 (겹치지 않게)\n${TRAIT_RULE}\n${ti}\n\n` : ""; })()}## 인물 문서
 이 항목이 인물이면 이력서가 아니라 사람의 이야기로 쓴다. 동물, 기계, 신, 정령처럼 사람이 아닌 존재라면 아래 항목을 그 존재에 맞게 바꿔 적용하고, 맞지 않는 항목(예: 소의 혼인)은 언급하지 않는다.
-- '특징' 섹션: 이 인물을 규정하는 특징 2~3개를 '성격', '능력' 같은 일반적인 말이 아니라 이 인물에게만 붙일 수 있는 소제목으로 쓰고, 각 특징은 "~한 성격이다"라고 단정하는 대신 수치와 일화로 증명한다. 평소와 특정 상황(원수 앞, 집착하는 대상 앞)의 모습이 크게 다르면 그 대비가 좋은 특징이 된다.
+- '특징' 섹션: 다른 인물과 겹치지 않는, 이 인물을 규정하는 특징 2~3개를 '성격', '능력' 같은 일반적인 말이 아니라 이 인물에게만 붙일 수 있는 소제목으로 쓰고, 각 특징은 "~한 성격이다"라고 단정하는 대신 수치와 일화로 증명한다. 평소와 특정 상황(원수 앞, 집착하는 대상 앞)의 모습이 크게 다르면 그 대비가 좋은 특징이 된다.
 - 강함과 이름: 강함이나 무서움은 적과 맞수가 그를 어떻게 대했는지로 전하고, 이명이 있다면 누가 왜 붙였는지 쓴다.
 - 동기의 뿌리: 이 인물의 힘이나 집착이 어디서 시작되었고 어떻게 바뀌었는지를 생애 안에서 보여 준다.
 - 생애의 하위 섹션은 직책이 아니라 전환점(사건, 결정, 상실, 만남)을 제목으로 삼는다. 각 전환점에서 무엇을 원했고, 어떤 선택지가 있었고, 왜 그쪽을 택했고, 무엇을 잃었는지를 쓴다. 동기는 본인이 남긴 말이나 편지, 주변의 증언, 행동으로 드러낸다.

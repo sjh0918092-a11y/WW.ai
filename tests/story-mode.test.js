@@ -35,7 +35,7 @@ const BASE = { tagline: "테스트 세계", historical: false, rules: ["규칙 �
 function pageJson(title) {
   const links = title === "한서린" ? "[[북관 철령]]과 [[이일]], [[한양]]" : title === "대문 항목" ? "[[북관 철령]]" : title === "마커스 벡" ? "[[대문 항목]]" : title === "칼 슈미트" ? "[[벡]]" : "[[한서린]]";
   return { title, type: title === "한서린" || title === "이일" || /벡|슈미트/.test(title) ? "인물" : "지명", summary: `${title}은 테스트 항목이다.`, categories: ["테스트"], notices: [], infobox: [{ label: "상태", value: "생존" }],
-    sections: [{ heading: "개요", level: 1, body: `${title}은 ${links}와 얽힌 항목이다.` }, { heading: "역사", level: 1, body: `${title}의 역사는 1586년에 시작되었다.` }],
+    sections: [{ heading: "개요", level: 1, body: `${title}은 ${links}와 얽힌 항목이다.` }, ...(title === "이일" ? [{ heading: "특징", level: 1, body: "" }, { heading: "아날로그 무전기 집착", level: 2, body: "이일은 낡은 무전기만 쓴다." }] : []), { heading: "역사", level: 1, body: `${title}의 역사는 1586년에 시작되었다.` }],
     facts: [], relations: [], navboxes: [], newEntities: [], timeline: [] };
 }
 function planJson(p) {
@@ -214,6 +214,8 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await page.fill("#edBody", (await page.inputValue("#edBody")) + "\n\n= 덧붙임 =\n사용자가 덧붙인 문단이다.");
     await page.click("#edSave"); await waitArticle(page, "이일");
     assert((await sideText(page)).includes("이번 장 탐험 3곳"), "탐험 3곳: " + await sideText(page));
+    { const pp = calls.filter(c => c.kind === "page" && c.prompt.includes("## 작성할 문서: 「여진 해적단」")).pop().prompt;
+      assert(pp.includes("## 이미 다른 인물이 가진 특징 (겹치지 않게)") && pp.includes("- 이일: 아날로그 무전기 집착") && pp.includes("여러 인물에게 되풀이해 붙이지 않는다"), "새 인물 문서에 기존 인물의 특징 목록을 넘긴다"); }
     await page.waitForTimeout(1300);
     await page.reload(); await page.waitForSelector(".wcard");
     await page.click('.wcard button.open:has-text("녹둔도 연대기")'); await waitArticle(page, "한서린");
@@ -255,6 +257,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert(after.sections.some(s => s.body.includes("[[이일]]")) && await page.locator('.article a.wl[data-t="이일"]:not(.new)').count() > 0, "유형이 붙은 링크는 원래 문서로 이어진다");
     assert(sw.story.chapters[1].affected.some(a => a.key === kOf("이일")) && sw.story.chapters[1].wove.some(a => a.key === kOf("여진 해적단")));
     assert(planPrompt.includes("새 항목: 이번 장에서 처음 등장하는 항목을 3~5개 만든다"), "장마다 새 항목을 요구한다");
+    assert(planPrompt.includes("이미 다른 인물이 가진 특징:\n  - 이일: 아날로그 무전기 집착"), "장 계획의 새 인물도 기존 인물 특징과 겹치지 않게");
     assert(wove.includes("이번 장에 새로 등장") && /이번 장에 새로 등장\s*원균 함대/.test(wove), "안내 카드에 새로 등장한 항목");
     assert(sw.story.chapters[1].fresh.includes(kOf("원균 함대")));
     assert((await sideText(page)).includes("새로 등장 1곳 · 안 읽음 1"), "사이드바에 새로 등장한 항목");
