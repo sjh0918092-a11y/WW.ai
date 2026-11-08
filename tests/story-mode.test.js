@@ -161,7 +161,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await page.click('#side [data-act="gset"]'); await page.fill("#gCheck", ""); await page.selectOption("#gCheckT", "medium"); await page.click('[data-act="gset-save"]');
     await page.click('#side [data-act="home"]');
     assert(bp.includes("기준 시점에 1학년(신입생)인 인물은 그 전 해들에는 아직 입학 전"), "문서 프롬프트에 학년·연도 역산 규칙");
-    assert(calls.filter(c => c.kind === "check").pop().prompt.includes("연도·나이·학년·기수·재직 기간이 서로 맞지 않는 곳도 모순으로 지적한다"), "설정 검사가 문서 안의 연도 모순도 잡는다");
+    assert(calls.filter(c => c.kind === "check").pop().prompt.includes("연도·나이·학년·기수·재직 기간이 서로 맞지 않는 곳(예: 기준 시점에 1학년인"), "설정 검사가 문서 안의 연도 모순도 잡는다");
     ok("기본 모드 세계관 생성, 문서 작성, 새로고침 후 복원이 그대로 된다");
 
     /* 2. 스토리 모드 생성 */
@@ -525,6 +525,18 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     const t23 = await page.locator("#main").innerText();
     assert(t23.includes("지금은 무관한 항목이다") && !t23.includes("설정과 맞지 않습니다"), "고치면 본문이 바뀌고 충돌 표시가 사라진다");
     ok("다른 문서의 직접 수정과 어긋난 서술을 'AI로 고치기'로 고치면 충돌 표시가 사라진다");
+
+    /* 24. 문서 안의 앞뒤 모순 검사, 분류도 고치기 */
+    ctl.checkIssues = [{ claim: "분류: 테스트", evidence: "검사 분류의 역사는 1586년에 시작되었다.", conflict: "분류가 본문과 맞지 않는다", severity: "high" }];
+    ctl.fixEdits = [{ memo: 1, field: "cats", old: "테스트", new: "고친 분류" }];
+    await page.fill("#q", "검사 분류"); await page.press("#q", "Enter"); await waitArticle(page, "검사 분류");
+    ctl.checkIssues = null; ctl.fixEdits = null;
+    { const ck = calls.filter(c => c.kind === "check" && c.prompt.includes("# 검사 분류")).shift().prompt;
+      assert(ck.includes("분류: 테스트") && ck.includes("한 줄 정의: 검사 분류은 테스트 항목이다."), "검사에 분류와 한 줄 정의가 들어간다");
+      assert(ck.includes("같은 사건을 섹션마다 다르게 쓴 곳") && ck.includes("섹션 제목이 본문과 어긋나는 곳") && ck.includes("두 서술을 모두 인용할 수 없으면 지적하지 않는다"), "문서 안의 앞뒤 모순도 검사한다");
+      assert(calls.filter(c => c.kind === "fix").pop().prompt.includes("[cats] (분류, | 로 구분)\n테스트"), "고치기에 분류가 들어간다"); }
+    assert.strictEqual((await page.locator(".cats span").allInnerTexts()).join(","), "고친 분류", "분류도 자동으로 고친다");
+    ok("설정 검사가 문서 안의 앞뒤 모순(분류·인포박스·섹션끼리)도 잡고, 분류까지 고친다");
 
     await ctx.close();
     console.log(`\n모두 통과 (${step}개). Gemini 호출 ${calls.length}회: ` + Object.entries(calls.reduce((a, c) => (a[c.kind] = (a[c.kind] || 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
