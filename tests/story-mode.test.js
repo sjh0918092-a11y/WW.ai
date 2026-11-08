@@ -527,12 +527,13 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     ok("다른 문서의 직접 수정과 어긋난 서술을 'AI로 고치기'로 고치면 충돌 표시가 사라진다");
 
     /* 24. 문서 안의 앞뒤 모순 검사, 분류도 고치기 */
-    ctl.checkIssues = [{ claim: "분류: 테스트", evidence: "검사 분류의 역사는 1586년에 시작되었다.", conflict: "분류가 본문과 맞지 않는다", severity: "high" }];
+    ctl.checkIssues = [{ claim: "### 분류: 테스트", evidence: "검사 분류의 역사는 1586년에 시작되었다.", conflict: "분류가 본문과 맞지 않는다", severity: "high" }];
     ctl.fixEdits = [{ memo: 1, field: "cats", old: "테스트", new: "고친 분류" }];
     await page.fill("#q", "검사 분류"); await page.press("#q", "Enter"); await waitArticle(page, "검사 분류");
     ctl.checkIssues = null; ctl.fixEdits = null;
     { const ck = calls.filter(c => c.kind === "check" && c.prompt.includes("# 검사 분류")).shift().prompt;
       assert(ck.includes("분류: 테스트") && ck.includes("한 줄 정의: 검사 분류은 테스트 항목이다."), "검사에 분류와 한 줄 정의가 들어간다");
+      assert(ck.includes("ledger(대조표)를 먼저 채운다") && ck.includes('{"ledger":[{"subject"'), "섹션끼리 맞춰 보도록 대조표를 먼저 쓰게 한다");
       assert(ck.includes("같은 사건을 섹션마다 다르게 쓴 곳") && ck.includes("섹션 제목이 본문과 어긋나는 곳") && ck.includes("두 서술을 모두 인용할 수 없으면 지적하지 않는다"), "문서 안의 앞뒤 모순도 검사한다");
       assert(calls.filter(c => c.kind === "fix").pop().prompt.includes("[cats] (분류, | 로 구분)\n테스트"), "고치기에 분류가 들어간다"); }
     assert.strictEqual((await page.locator(".cats span").allInnerTexts()).join(","), "고친 분류", "분류도 자동으로 고친다");
