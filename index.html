@@ -343,7 +343,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v3.2 · 2026-11-08";
+const APP_VERSION = "v3.3 · 2026-11-08";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -2596,7 +2596,7 @@ function homeHtml() {
       <p class="sub">원안 몇 문장으로 위키를 엽니다. 본문의 빨간 링크를 누를 때마다 그 항목의 문서가 새로 작성되고, 앞서 확정된 설정은 설정 노트에 쌓여 다음 문서의 제약이 됩니다.</p>
       <label class="lb">방식</label>
       <div class="stabs-row" role="group" aria-label="세계관 방식"><button type="button" class="chip" data-mode="basic" aria-pressed="${S.mode !== "story"}" ${S.creating ? "disabled" : ""}>기본 모드</button><button type="button" class="chip" data-mode="story" aria-pressed="${S.mode === "story"}" ${S.creating ? "disabled" : ""}>스토리 모드</button></div>
-      <p class="note" style="margin:6px 0 0">${S.mode === "story" ? `주인공 한 명의 ${S.storyN}장짜리 이야기가 위키 위에서 진행됩니다. 장마다 둘러보고 만들고 고친 문서가 다음 장 줄거리에 엮입니다.` : "링크를 따라 자유롭게 문서를 늘려 가는 위키입니다."}</p>
+      <p class="note" style="margin:6px 0 0">${S.mode === "story" ? `주인공 한 명의 이야기가 장 단위로 위키 위에서 진행됩니다. 장마다 둘러보고 만들고 고친 문서가 다음 장 줄거리에 엮입니다. 이야기 길이는 아래에서 ${STORY_MIN}~${STORY_MAX}장 중에 고릅니다.` : "링크를 따라 자유롭게 문서를 늘려 가는 위키입니다."}</p>
       ${S.mode === "story" ? `<label class="lb">장 수 <span class="note" style="font-weight:400">이야기의 길이. 시작한 뒤에는 바꿀 수 없습니다. 장이 많을수록 생성 횟수와 시간이 늘어납니다</span></label>
       <div class="stabs-row" role="group" aria-label="장 수">${Array.from({ length: STORY_MAX - STORY_MIN + 1 }, (_, i) => STORY_MIN + i).map(n => `<button type="button" class="chip" data-chn="${n}" aria-pressed="${S.storyN === n}" ${S.creating ? "disabled" : ""}>${n}장</button>`).join("")}</div>` : ""}
       <label class="lb" for="seedTa">원안</label>
