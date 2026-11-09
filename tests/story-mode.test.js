@@ -221,6 +221,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await page.click("#edSave"); await waitArticle(page, "이일");
     assert((await sideText(page)).includes("이번 장 탐험 3곳"), "탐험 3곳: " + await sideText(page));
     { const pp = calls.filter(c => c.kind === "page" && c.prompt.includes("## 작성할 문서: 「여진 해적단」")).pop().prompt;
+      assert(pp.includes("인물의 온도: 세상의 대부분은 평범한 사람이다") && pp.includes("특징은 기벽이나 집착이 아니어도 된다") && !pp.includes("집착하는 대상 앞"), "평범하고 선량한 인물을 기본으로");
       assert(pp.includes("## 이미 다른 인물이 가진 특징 (겹치지 않게)") && pp.includes("- 이일: 아날로그 무전기 집착") && pp.includes("여러 인물에게 되풀이해 붙이지 않는다"), "새 인물 문서에 기존 인물의 특징 목록을 넘긴다"); }
     await page.waitForTimeout(1300);
     await page.reload(); await page.waitForSelector(".wcard");
@@ -270,6 +271,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert(planPrompt.includes("새 항목: 이번 장에서 처음 등장하는 항목을 3~5개 만든다"), "장마다 새 항목을 요구한다");
     assert(planPrompt.includes("- 절제: 규칙은 방향이지 최대치가 아니다") && planPrompt.includes("과장 수식어("), "장 계획에도 절제 규칙");
     assert(planPrompt.includes("이미 다른 인물이 가진 특징:\n  - 이일: 아날로그 무전기 집착"), "장 계획의 새 인물도 기존 인물 특징과 겹치지 않게");
+    assert(planPrompt.includes("적어도 한 명은 이웃, 동료, 가족처럼 선량하거나 평범한 사람으로 둔다"), "장마다 평범한 새 인물도");
     assert(wove.includes("이번 장에 새로 등장") && /이번 장에 새로 등장\s*원균 함대/.test(wove), "안내 카드에 새로 등장한 항목");
     assert(sw.story.chapters[1].fresh.includes(kOf("원균 함대")));
     assert((await sideText(page)).includes("새로 등장 1곳 · 안 읽음 1"), "사이드바에 새로 등장한 항목");
