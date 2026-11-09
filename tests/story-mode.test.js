@@ -56,6 +56,7 @@ function blockJson(p) {
 }
 function answer(kind, p) {
   if (kind === "storyBible") return { ...BASE, title: "녹둔도 연대기", era: "1586년", mainTitle: "한서린", protagonist: { summary: "녹둔도의 젊은 무관", want: "고향을 지키는 것", wound: "아버지를 잃음" },
+    secrets: [{ truth: "한서린은 녹둔도 습격 때 성문을 연 장본인이다", cover: "습격의 유일한 생존자로 알려져 있다", reveal: 3 }],
     spine: ["발단", "전개", "위기", "절정", "결말"].map((beat, i) => ({ n: i + 1, beat, intent: `${beat} 의도` })), chapter1: { title: "녹둔도의 밤", era: "1586년", summary: "1장 줄거리.", incident: "녹둔도 습격", nextChoices: ["추격한다", "보고한다", "숨는다"] } };
   if (kind === "bible") return { ...BASE, title: "기본 세계", era: "1600년", mainTitle: "대문 항목" };
   if (kind === "page") { const t = (/## 작성할 문서: 「([^」]+)」/.exec(p) || [])[1]; return { ...pageJson(t), ...(ctl.pageOverride[t] || {}) }; }
@@ -166,6 +167,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await page.click('#side [data-act="gset"]'); await page.fill("#gCheck", ""); await page.selectOption("#gCheckT", "medium"); await page.click('[data-act="gset-save"]');
     await page.click('#side [data-act="home"]');
     assert(bp.includes("기준 시점에 1학년(신입생)인 인물은 그 전 해들에는 아직 입학 전"), "문서 프롬프트에 학년·연도 역산 규칙");
+    assert(bp.includes("인물의 속마음, 생각, 느낌은 위키 작성자가 알 수 있는 방식으로만 쓴다"), "속마음은 증언·기록·행동으로 (기본 모드도)");
     assert(bp.includes("## 절제 (아래 모든 규칙에 먼저 적용한다)") && bp.includes("개요의 첫 문장은 이 항목이 무엇인지 밝히는 정의") && bp.includes("핵심 숫자 3~5개만") && bp.includes("한자어 압축 명사구") && bp.includes("상투적 감각 표현") && bp.includes("예고편 대사처럼") && !bp.includes("수치의 대비"), "과장·숫자·클리셰를 누르는 절제 규칙");
     assert(bp.includes("전칭·극단 표현은 정말 예외가 없을 때만") && bp.includes("최대치 결말로 맺지 않는다") && bp.includes("좋은 예(그 자리의 말)") && bp.includes("숫자를 줄인다고 구체성까지 줄이지 않는다"), "전칭 표현, 결말, 인용 예시, 구체성 규칙");
     assert(calls.filter(c => c.kind === "read").pop().prompt.includes("연도·나이·학년·기수·재직 기간이 서로 맞지 않는 곳(예: 기준 시점에 1학년인"), "설정 검사가 문서 안의 연도 모순도 잡는다");
@@ -240,6 +242,11 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await page.evaluate(() => window.scrollTo(0, 0)); await shot(page, "3-chapter-card");
     await page.setViewportSize({ width: 390, height: 844 }); await shot(page, "4-mobile-card"); await page.setViewportSize({ width: 1280, height: 720 });
     const planPrompt = calls.filter(c => c.kind === "chapterPlan").pop().prompt;
+    { const pp1 = calls.filter(c => c.kind === "page" && c.prompt.includes("## 작성할 문서: 「한서린」")).shift().prompt;
+      assert(pp1.includes("## 아직 드러나지 않은 진실 (쓰지 말 것)") && pp1.includes("진실(쓰지 않는다): 한서린은 녹둔도 습격 때 성문을 연 장본인이다") && pp1.includes("이 시점에 알려진 것(이것만 쓴다): 습격의 유일한 생존자"), "1장 문서에는 진실을 쓰지 말라고 하고 겉모습만 쓰게 한다");
+      const ck1 = calls.filter(c => c.kind === "check" && c.prompt.includes("# 한서린")).shift().prompt;
+      assert(ck1.includes("문서가 위 '진실'을 사실로 단정하거나"), "설정 검사가 진실을 흘린 서술을 잡는다");
+      assert(planPrompt.includes("## 숨겨진 진실 (독자에게 공개하지 않는다)") && planPrompt.includes("2장에서 드러나야 하는 진실: (없음)"), "2장 계획은 진실을 드러내지 않는다"); }
     assert(planPrompt.includes("「이일」") && planPrompt.includes("「여진 해적단」") && planPrompt.includes("「북관 철령」") && planPrompt.includes("추격한다"), "장 계획 프롬프트에 탐험과 선택이 들어간다");
     assert(planPrompt.includes("발단 의도") && planPrompt.includes("결말 의도"), "장 계획 프롬프트에는 뼈대 전체가 들어간다");
     assert(planPrompt.includes("## 사용자가 정한 등장인물") && planPrompt.includes("윤가람") && planPrompt.includes("사용자가 정한 특징 (최우선 제약): 활은"), "장 계획에도 주인공 특징과 등장인물이 들어간다");
@@ -313,7 +320,13 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert(calls.filter(c => c.kind === "chapterBlock").pop().prompt.includes("## 덧붙일 장 (2, 3장)"));
     const chs = await page.locator(".article h2 .chb").allInnerTexts();
     assert(chs.includes("2장") && chs.includes("3장"), "2장, 3장 블록 모두 생성");
-    ok("두 장을 건너뛰고 연 문서는 한 번의 호출로 두 장의 블록이 생성된다");
+    { const p3 = calls.filter(c => c.kind === "chapterPlan" && c.prompt.includes("다음 장(3장)")).pop().prompt;
+      assert(p3.includes("3장에서 드러나야 하는 진실: 한서린은 녹둔도 습격 때 성문을 연 장본인이다"), "드러날 장의 계획에서 진실을 밝히게 한다");
+      const w9 = await worldOf(page, "녹둔도 연대기");
+      assert(w9.story.secrets[0].revealed === true && w9.story.secrets[0].revealedAt === 3, "드러난 진실은 확정으로 표시");
+      const bk9 = calls.filter(c => c.kind === "chapterBlock").pop().prompt;
+      assert(bk9.includes("## 이미 드러난 진실 (확정된 사실)") && !bk9.includes("## 아직 드러나지 않은 진실"), "드러난 뒤에는 확정 사실로 넘긴다"); }
+    ok("두 장을 건너뛰고 연 문서는 한 번의 호출로 두 장의 블록이 생성된다. 숨겨진 진실은 정한 장에서 드러난 뒤 확정 설정이 된다");
 
     /* 8. 편집기: 장 섹션 표시 유지 */
     await page.click('[data-edit]'); await page.waitForSelector("#edBody");
@@ -338,6 +351,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await page.click('.stcard [data-act="epilogue"]');
     await page.waitForFunction(() => document.querySelector("h1.t")?.textContent === "에필로그", null, { timeout: 15000 });
     assert((await page.locator("#main").innerText()).includes("한서린은 고향으로 돌아갔다."));
+    assert((await page.locator("#main").textContent()).includes("숨겨진 진실") && (await page.locator("#main").textContent()).includes("3장에서 드러남"), "에필로그에서 숨겨진 진실을 공개");
     await page.locator("details.memo summary").first().click(); await shot(page, "5-epilogue");
     assert((await sideText(page)).includes("에필로그 보기") && !(await sideText(page)).includes("다음 장으로"));
     await page.click('#side [data-k]:has-text("주인공 문서")'); await waitArticle(page, "한서린");

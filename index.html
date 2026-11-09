@@ -347,7 +347,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v5.4 · 2026-11-09";
+const APP_VERSION = "v5.5 · 2026-11-09";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -982,13 +982,28 @@ function rebuildPage(w, k, p, addSecs, extra = {}) {
 
 /* ---------- prompts ---------- */
 /* ---------- 스토리 모드 프롬프트 ---------- */
+/* 숨겨진 진실: 이야기가 나중에 밝히려고 감춘 답. 드러나는 장 전까지 위키(작중 사람들)는 겉으로 알려진 것만 안다 */
+const secretsOf = w => (isStory(w) && Array.isArray(w.story.secrets)) ? w.story.secrets : [];
+const hiddenSecrets = w => secretsOf(w).filter(x => !x.revealed && w.story.status !== "ended");
+function secretsBlock(w, mode) {
+  const hid = hiddenSecrets(w), shown = secretsOf(w).filter(x => x.revealed || w.story.status === "ended");
+  if (!hid.length && !shown.length) return "";
+  if (mode === "check") return hid.length ? `\n## 아직 드러나지 않은 진실 (이 시점의 작중 사람들은 모른다)\n${hid.map(x => `- 진실: ${x.truth} / 이 시점에 알려진 것: ${x.cover}`).join("\n")}\n문서가 위 '진실'을 사실로 단정하거나, 분류·인포박스·한 줄 정의·인물 관계로 드러내거나, 답을 가리키는 해설을 붙였으면 모순으로 지적한다(severity high, evidence에는 '아직 드러나지 않은 진실'이라고 적는다). 혐의나 주장으로 쓴 것, 해설 없는 단서는 지적하지 않는다.\n` : "";
+  return `${hid.length ? `\n## 아직 드러나지 않은 진실 (쓰지 말 것)
+이 위키는 작중 사람들이 지금 시점에 아는 것으로 쓴다. 아래 진실은 이야기 뒤에서 드러날 답이라 아직 아무도 모른다.
+${hid.map(x => `- 진실(쓰지 않는다): ${x.truth}\n  이 시점에 알려진 것(이것만 쓴다): ${x.cover}`).join("\n")}
+- 진실을 사실로 단정하지 않고, 분류·인포박스·한 줄 정의·인물 관계로도 드러내지 않는다.
+- 혐의, 소문, 주장은 누가 주장하는지와 함께 쓴다(예: "검찰은 그가 이중 첩자였다고 주장한다").
+- 진실과 모순되는 사실을 새로 확정하지도 않는다. 알려진 것 너머는 비워 둔다.
+- 의미심장한 단서는 하나쯤 남겨도 되지만, 그 단서가 무엇을 뜻하는지 해설하지 않는다.` : ""}${shown.length ? `\n## 이미 드러난 진실 (확정된 사실)\n${shown.map(x => `- ${x.truth}`).join("\n")}` : ""}`;
+}
 function storyBlock(w, key, forPage) {
   const st = w.story, n = st.chapter, ended = st.status === "ended", pk = st.protagonistKey, pt = w.entities[pk]?.title || "주인공";
   const lines = st.chapters.map(c => `- ${c.n}장 「${c.title}」${c.n === n && !ended ? " (진행 중)" : ""} · ${c.era}: ${c.summary}`).join("\n");
   let extra = "";
   if (forPage && key === pk) {
     const pr = st.protagonist || {};
-    extra = `\n\n이 문서는 이야기의 주인공 문서다.${pr.desc ? ` 사용자가 정한 주인공의 특징(반드시 지킨다): ${pr.desc}.` : ""}${st.cast?.length ? ` 사용자가 정한 등장인물(${st.cast.map(c => w.entities[c.key]?.title || c.name).join(", ")})은 정해진 관계대로 본문과 인물 관계 섹션에 링크해 다룬다.` : ""}${pr.want ? ` 주인공이 바라는 것: ${pr.want}.` : ""}${pr.wound ? ` 주인공의 결핍이나 상처: ${pr.wound}.` : ""} 기본 프로필(출신, 가족, 능력, 동기)을 모두 쓴다. `
+    extra = `\n\n이 문서는 이야기의 주인공 문서다.${pr.desc ? ` 사용자가 정한 주인공의 특징(반드시 지킨다): ${pr.desc}.` : ""}${st.cast?.length ? ` 사용자가 정한 등장인물(${st.cast.map(c => w.entities[c.key]?.title || c.name).join(", ")})은 정해진 관계대로 본문과 인물 관계 섹션에 링크해 다룬다.` : ""}${pr.want ? ` 주인공이 바라는 것: ${pr.want}.` : ""}${pr.wound ? ` 주인공의 결핍이나 상처: ${pr.wound}.` : ""} 기본 프로필(출신, 가족, 능력, 동기)을 쓰되, 아래 '아직 드러나지 않은 진실'에 걸린 부분은 이 시점에 알려진 것만 쓴다. `
       + (n === 1 && !ended ? `마지막 큰 섹션은 1장 발단 사건 「${st.chapters[0].incident || st.chapters[0].title}」을 다룬다. 이 사건은 아직 끝나지 않았다.` : `생애 섹션의 끝부분에서 1장부터 ${n}장까지의 사건을 차례로 다룬다.`);
   }
   const N = totalOf(w);
@@ -1001,7 +1016,8 @@ ${lines}
 ${ended ? "- 결말과 모순되는 내용을 쓰지 않는다." : `- ${w.era} 이후의 일은 쓰지 않는다. 결말을 암시하거나 예언하지 않는다.\n- 진행 중인 사건은 아직 결과가 나지 않은 것으로 쓴다.`}
 - 이 항목이 주인공과 직접 얽혀 있으면 그 연결을 본문에 드러낸다.
 - '1장', '2장', '장', '이야기', '주인공' 같은 이야기 바깥의 구분은 본문에 쓰지 않는다. 이 위키는 작중 세계의 백과사전이다. 시점은 "${w.era} 현재"처럼 작중 연도와 계절로 쓴다.
-- 줄거리에 나온 사건은 확정된 사실이다. 이 항목이 그 사건에 나온다면 일치시킨다.${extra}`;
+- 줄거리에 나온 사건은 확정된 사실이다. 이 항목이 그 사건에 나온다면 일치시킨다.
+- 위키를 쓰는 작중 사람들이 알 수 있는 것만 쓴다. 인물의 속마음, 생각, 느낌은 본인의 증언, 기록, 남이 본 행동으로만 드러낸다(예: "머릿속이 백색 소음으로 가득했다" 대신 "그는 답하지 못했다", "변호인은 그가 손을 떨었다고 증언했다").${extra}${secretsBlock(w, "write")}`;
 }
 function storyStyleRules() {
   return `- 절제: 규칙은 방향이지 최대치가 아니다. 사건의 크기, 피해 규모, 숫자, 수식어는 이 이야기와 항목에 맞는 만큼만 쓰고, 장면을 키우려고 부풀리지 않는다.
@@ -1054,7 +1070,13 @@ ${toneBlock(w)}${w.guide ? `## 작가 지침 (사용자 지정)\n${w.guide}\n\n`
 - 바라는 것: ${pr.want || "(정해지지 않음)"}
 - 결핍이나 상처: ${pr.wound || "(정해지지 않음)"}
 ${pr.desc ? `- 사용자가 정한 특징 (최우선 제약): ${pr.desc}\n` : ""}${st.cast?.length ? `\n## 사용자가 정한 등장인물 (최우선 제약. 특징과 주인공과의 관계를 지키고, 이야기에 꾸준히 등장시킨다)\n${castText(st.cast.map(c => ({ ...c, name: w.entities[c.key]?.title || c.name })))}\n` : ""}
-## 숨겨진 이야기 뼈대 (독자에게 공개하지 않는다)
+${secretsOf(w).length ? `## 숨겨진 진실 (독자에게 공개하지 않는다)
+${secretsOf(w).map(x => `- ${x.revealed ? "[이미 드러남] " : ""}${x.truth} / 드러나기 전 알려진 것: ${x.cover} / ${x.reveal}장에서 드러남`).join("\n")}
+- ${nextN}장에서 드러나야 하는 진실: ${secretsOf(w).filter(x => !x.revealed && x.reveal <= nextN).map(x => x.truth).join(" / ") || "(없음)"}. 이것은 이번 장의 사건으로 실제로 드러나게 한다(누가 어떻게 알아내는지 장면으로). protagonistBlock과 summary에 드러난 진실을 쓰고, 그 진실이 걸린 항목을 affected에 넣는다.
+- 아직 드러날 때가 아닌 진실은 summary, protagonistBlock, affected, facts 어디에도 사실로 쓰지 않는다. 단서를 하나쯤 남기는 것은 괜찮다.
+- 탐험이나 독자의 선택 때문에 진실이 더 일찍 드러나는 것이 자연스러우면 revealNow에 그 진실의 문장을 넣어 함께 드러낸다.
+
+` : ""}## 숨겨진 이야기 뼈대 (독자에게 공개하지 않는다)
 ${st.spine.map(s => `- ${s.n}단계 ${s.beat}: ${s.intent}${s.revised ? " (앞선 장의 탐험 때문에 수정됨)" : ""}`).join("\n")}
 
 ## 지금까지의 장
@@ -1090,7 +1112,7 @@ ${entityIndex(w, [pk])}
 
 ## 출력
 JSON 객체 하나만 출력:
-{"title":"이 장의 작중 사건명","era":"이 장의 작중 시점","summary":"공개 줄거리 3~5문장","timeline":[{"year":"연도","event":"..."}],"protagonistBlock":{"heading":"작중 사건명","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}],"infoboxPatch":[{"label":"상태","value":"..."}],"summaryPatch":""},"affected":[{"title":"항목 제목","change":"이번 장에서 이 항목에 일어난 일 한 문장","kind":"update 또는 new"}],"newEntities":[{"title":"...","type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의"}],"wove":[{"title":"탐험 항목 제목","how":"이 항목이 이번 장 사건에서 맡은 역할 한 문장"}],"facts":[{"about":"항목 제목","fact":"..."}],"relations":[{"a":"인물 제목","b":"인물 제목","rel":"관계 이름","story":"..."}],"spineRevise":[{"n":4,"intent":"..."}],"nextChoices":["...","...","..."],"ending":${last ? '{"epilogue":"결말 이후 3~5문장"}' : "null"}}`;
+{"title":"이 장의 작중 사건명","era":"이 장의 작중 시점","summary":"공개 줄거리 3~5문장","timeline":[{"year":"연도","event":"..."}],"protagonistBlock":{"heading":"작중 사건명","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}],"infoboxPatch":[{"label":"상태","value":"..."}],"summaryPatch":""},"affected":[{"title":"항목 제목","change":"이번 장에서 이 항목에 일어난 일 한 문장","kind":"update 또는 new"}],"newEntities":[{"title":"...","type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의"}],"wove":[{"title":"탐험 항목 제목","how":"이 항목이 이번 장 사건에서 맡은 역할 한 문장"}],"facts":[{"about":"항목 제목","fact":"..."}],"relations":[{"a":"인물 제목","b":"인물 제목","rel":"관계 이름","story":"..."}],"spineRevise":[{"n":4,"intent":"..."}],"revealNow":["(선택) 일찍 드러낸 진실 문장"],"nextChoices":["...","...","..."],"ending":${last ? '{"epilogue":"결말 이후 3~5문장"}' : "null"}}`;
 }
 function chapterBlockPrompt(w, key, chs) {
   const p = S.pages[key], e = w.entities[key];
@@ -1212,10 +1234,11 @@ ${story ? `
 ${user.desc ? `- 사용자가 정한 주인공의 특징(그대로 지키고, 바라는 것과 상처도 여기서 끌어낸다): ${user.desc}\n` : ""}${user.cast?.length ? `- 사용자가 정한 등장인물(이름은 글자 그대로 쓰고, 특징과 주인공과의 관계를 지킨다. 뼈대와 1장 줄거리에 자연스럽게 등장시킨다):\n${castText(user.cast)}\n` : ""}- protagonist: 주인공의 한 문장 정의(summary), 주인공이 바라는 것(want), 주인공의 결핍이나 상처(wound).
 - spine: ${user.total || STORY_DEF}장 각각의 의도. 발단·전개·위기·절정·결말 다섯 구간을 장에 나눠 배치했다(${beatsFor(user.total || STORY_DEF).map((b, i) => `${i + 1}장 ${b}`).join(", ")}). 같은 구간에 장이 여럿이면 그 안에서도 사건이 한 단계씩 커져야 한다. 각 단계는 주인공의 want와 wound를 건드려야 한다. 결말 단계는 방향만 정하고 구체적인 결과를 확정하지 않는다. 독자의 탐험이 결말을 바꿀 여지를 남기기 위해서다. 이 뼈대는 독자에게 공개하지 않는다.
 - chapter1: 1장(발단)의 작중 사건명(title, "1장"이나 "제1장" 같은 장 번호는 넣지 않는다), 1장의 작중 시점(era), 공개 줄거리 3~5문장(summary), 주인공의 일상을 깨는 발단 사건 한 문장(incident), 1장이 끝날 때 주인공이 할 수 있는 다음 행동 후보 3개(nextChoices, 서로 방향이 다르게).
+- secrets: 이야기가 나중에 밝히려고 감춰 둔 진실 2~4개. 각각 무엇이 사실인지(truth), 그 진실이 드러나기 전까지 세상에 알려진 겉모습(cover), 드러나는 장(reveal, 2~${user.total || STORY_DEF})을 정한다. 줄거리가 기억 상실, 정체 숨김, 누명, 음모, 숨은 배후처럼 무언가를 알아 가는 이야기라면 그 핵심 답을 반드시 넣는다. 주변 인물의 과거나 세계의 배경처럼 이야기의 반전이 아닌 것은 넣지 않는다. 가장 큰 진실은 절정이나 결말 무렵에 드러나게 한다. 1장 줄거리(chapter1)와 모든 공개 문장은 cover만으로 쓴다.
 - era(세계관 기준 시점)는 chapter1.era와 같게 한다. 연표는 1장 시점까지만 만든다.
 
 JSON 객체 하나만 출력:
-{"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"timeline":[{"year":"1947","event":"..."}],"mainTitle":"주인공 이름","tone":{"label":"...","guide":["..."]},"protagonist":{"summary":"한 문장 정의","want":"주인공이 바라는 것","wound":"주인공의 결핍이나 상처"},"spine":[${beatsFor(user.total || STORY_DEF).map((b, i) => `{"n":${i + 1},"beat":"${b}","intent":"${i === (user.total || STORY_DEF) - 1 ? "결말의 방향만" : "..."}"}`).join(",")}],"chapter1":{"title":"작중 사건명","era":"1장 작중 시점","summary":"공개 줄거리 3~5문장","incident":"발단 사건 한 문장","nextChoices":["...","...","..."]}}` : `
+{"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"timeline":[{"year":"1947","event":"..."}],"mainTitle":"주인공 이름","tone":{"label":"...","guide":["..."]},"protagonist":{"summary":"한 문장 정의","want":"주인공이 바라는 것","wound":"주인공의 결핍이나 상처"},"spine":[${beatsFor(user.total || STORY_DEF).map((b, i) => `{"n":${i + 1},"beat":"${b}","intent":"${i === (user.total || STORY_DEF) - 1 ? "결말의 방향만" : "..."}"}`).join(",")}],"secrets":[{"truth":"감춰진 진실","cover":"드러나기 전 알려진 겉모습","reveal":3}],"chapter1":{"title":"작중 사건명","era":"1장 작중 시점","summary":"공개 줄거리 3~5문장","incident":"발단 사건 한 문장","nextChoices":["...","...","..."]}}` : `
 JSON 객체 하나만 출력:
 {"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"timeline":[{"year":"1947","event":"..."}],"mainTitle":"...","tone":{"label":"...","guide":["..."]}}`}`;
 }
@@ -1341,6 +1364,7 @@ ${w.historical ? `## 실존 인물
   - 나쁜 예(선언문): "침묵하는 다수는 무덤 아래에 있으며, 그들의 권리는 석판보다 단단하다."
   - 좋은 예(그 자리의 말): "다 끝났소? 그럼 창문 좀 닫으시오. 촛불이 저 꼴이니."
   좋은 예는 상황(냉기, 촛불)과 화자의 처지(지치고 겁먹음)가 말에 묻어 있고, 주제를 요약하지 않는다.
+- 인물의 속마음, 생각, 느낌은 위키 작성자가 알 수 있는 방식으로만 쓴다. 본인의 증언, 편지, 기록, 남이 본 행동으로 드러내고, 소설처럼 머릿속을 서술하지 않는다.
 - "A가 아니라 B였다", "A보다 B였다" 같은 반전 대구는 인용문, 개요, 본문 어디에서도 쓰지 않는다. 이 세계에 없는 현실의 고사나 관용구(아킬레스건, 루비콘 등)도 쓰지 않는다.
 - 개요는 훅과 정의를 중심으로 짧게 쓴다. 진영별 이름, 규모 비교, 후대 평가 같은 정보를 개요에 몰아넣지 않고 맞는 섹션에 둔다.
 - 근거 없는 칭찬은 하지 않되 강한 것은 강하다고 쓴다. 강함은 형용사가 아니라 비교 대상, 전과, 상대가 치른 대가로 보여 준다. 실패와 갈등은 흐름 속에서 쓰고, "~라는 비판이 있다. 반면 ~" 식의 양론 정리나 "해석이 엇갈린다", "논쟁이 이어지고 있다" 같은 문장은 쓰지 않는다.
@@ -1448,7 +1472,7 @@ function checkPrompt(w, key) {
 이 조건을 모두 갖춘 충돌의 severity는 high다.
 
 ${canonBlock({ ...w, timeline: (w.timeline || []).filter(t => t.src !== key) })}
-${isStory(w) ? `\n${storyBlock(w, key)}\n이 문서는 ${p.baseAsOf || 1}~${p.syncedTo || p.baseAsOf || 1}장 시점에 작성되었다. 이 문서가 그 시점 이후의 일을 아는 것처럼 서술하면 모순으로 본다. 제목 앞에 [n장]이 붙은 섹션은 그 장에 일어난 일을 기록한 섹션이다.\n` : ""}
+${isStory(w) ? `\n${storyBlock(w, key)}\n${secretsBlock(w, "check")}\n이 문서는 ${p.baseAsOf || 1}~${p.syncedTo || p.baseAsOf || 1}장 시점에 작성되었다. 이 문서가 그 시점 이후의 일을 아는 것처럼 서술하면 모순으로 본다. 제목 앞에 [n장]이 붙은 섹션은 그 장에 일어난 일을 기록한 섹션이다.\n` : ""}
 ## 이 항목에 대해 다른 문서가 확정한 사실
 ${own || "(없음)"}
 
@@ -1544,6 +1568,10 @@ function setupStory(w, b, user = {}) {
       nextChoices: (Array.isArray(c1.nextChoices) ? c1.nextChoices : []).map(x => stripMarks(asText(x)).slice(0, 200)).filter(Boolean).slice(0, 3) }] };
   // 사용자가 정한 주인공 특징과 등장인물은 '사용자 확정' 설정으로 남긴다
   if (user.desc) { w.story.protagonist.desc = user.desc; addFact(e, "주인공의 특징(사용자 지정): " + user.desc, "user"); }
+  const N = w.story.total;
+  w.story.secrets = (Array.isArray(b.secrets) ? b.secrets : []).filter(x => x && x.truth).slice(0, 5).map((x, i) => ({ id: "s" + (i + 1),
+    truth: stripMarks(asText(x.truth)).slice(0, 300), cover: stripMarks(asText(x.cover || "")).slice(0, 300) || "알려진 것이 없다",
+    reveal: Math.min(N, Math.max(2, parseInt(x.reveal, 10) || N)), revealed: false }));
   w.story.cast = [];
   for (const c of user.cast || []) {
     const k = keyOf(c.name); if (k === w.mainKey) continue;
@@ -2634,6 +2662,8 @@ function applyChapter(w, n, out, choice) {
   for (const f of (Array.isArray(out.facts) ? out.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = kOf(w, f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), src); }
   for (const r of (Array.isArray(out.relations) ? out.relations : []).slice(0, 12)) addRelation(w, src, r);
   for (const t of (Array.isArray(out.timeline) ? out.timeline : []).slice(0, 4)) addTimeline(w, t, src, n);
+  const early = (Array.isArray(out.revealNow) ? out.revealNow : []).map(x => stripMarks(asText(x)));
+  for (const x of secretsOf(w)) if (!x.revealed && (x.reveal <= n || early.some(t => t && (x.truth.includes(t.slice(0, 20)) || t.includes(x.truth.slice(0, 20)))))) { x.revealed = true; x.revealedAt = n; }   // 이번 장에서 드러난 진실은 이제 확정 설정이다
   for (const r of (Array.isArray(out.spineRevise) ? out.spineRevise : [])) {
     const s = st.spine[(+r?.n || 0) - 1]; if (!s || s.n <= n || !r.intent) continue;
     if (!s.revised) s.orig = s.intent;
@@ -3242,7 +3272,8 @@ function advanceHtml() {
     <p class="note" style="margin-top:10px">${n >= totalOf(w) ? "마지막 장에서 결말이 납니다. 이후에도 세계관은 '결말 이후' 시점으로 계속 탐험할 수 있습니다." : `주인공 문서에 ${n}장 섹션이 덧붙고, 이번 장에서 영향을 받은 문서는 열 때 ${n}장의 변화가 반영됩니다.`}${S.sample ? "" : " " + esc(ERR.no_sample)}</p></div>`;
 }
 function spineHtml(w) {
-  return `<details class="memo"><summary>숨겨진 뼈대 보기</summary><ol class="spine">${w.story.spine.map(s => `<li><b>${esc(s.beat)}</b> — ${esc(s.intent)}${s.revised && s.orig ? `<br><span class="src">처음 계획: <del>${esc(s.orig)}</del> · 탐험 때문에 바뀜</span>` : ""}</li>`).join("")}</ol></details>`;
+  const sec = secretsOf(w);
+  return `<details class="memo"><summary>숨겨진 뼈대 보기</summary><ol class="spine">${w.story.spine.map(s => `<li><b>${esc(s.beat)}</b> — ${esc(s.intent)}${s.revised && s.orig ? `<br><span class="src">처음 계획: <del>${esc(s.orig)}</del> · 탐험 때문에 바뀜</span>` : ""}</li>`).join("")}</ol>${sec.length ? `<h4 style="margin:10px 12px 4px">숨겨진 진실</h4><ul class="spine">${sec.map(x => `<li>${esc(x.truth)}<br><span class="src">드러나기 전: ${esc(x.cover)} · ${x.revealedAt ? `${x.revealedAt}장에서 드러남` : `${x.reveal}장 예정`}</span></li>`).join("")}</ul>` : ""}</details>`;
 }
 function epilogueHtml() {
   const w = S.world; if (!isStory(w)) return `<div class="sheet"><p class="note">스토리 모드 세계관이 아닙니다.</p></div>`;
