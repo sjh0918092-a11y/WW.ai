@@ -703,6 +703,8 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await page.click('[data-act="story-next"]'); await page.click('[data-act="story-skip"]');
     await page.waitForFunction(() => /주인공 문서를 설정과 맞춰 보는 중/.test(document.querySelector("#stCount")?.textContent || ""), null, { timeout: 15000 });
     assert.strictEqual((await page.locator('[data-act="story-stop"]').innerText()).trim(), "검사 건너뛰고 보기");
+    assert.strictEqual((await page.locator("h1.t").innerText()).trim(), "3장으로", "검사 단계에서도 제목은 진행 중인 장");
+    assert((await page.locator("#main").innerText()).includes("3장은 반영되었습니다"), "검사 단계에 맞는 안내");
     await page.waitForSelector(".stcard", { timeout: 20000 }); await settle(page); ctl.checkIssues = null; ctl.fixEdits = null; ctl.checkDelay = 0;
     assert.strictEqual(count("fix"), nf30 + 1, "장 전환 뒤 주인공 문서를 보여 주기 전에 고친다");
     assert((await page.locator(".article").innerText()).includes("한서린은 성으로 돌아왔다."), "고친 주인공 문서로 보여 준다");

@@ -347,7 +347,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.1 · 2026-11-09";
+const APP_VERSION = "v6.2 · 2026-11-09";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -3481,9 +3481,9 @@ function storyCardHtml(w, n) {
 function advanceHtml() {
   const w = S.world; if (!isStory(w)) return `<div class="sheet"><p class="note">스토리 모드 세계관이 아닙니다.</p></div>`;
   const st = w.story, c = curCh(w), n = st.chapter + 1, a = S.adv || { pick: -1, custom: "", err: "" }, g = S.storyGen;
-  const head = `<div class="sheet"><div class="crumb"><span>${esc(w.title)}</span><span>이야기</span></div><h1 class="t">${n >= totalOf(w) ? "마지막 장으로" : `${n}장으로`}</h1>`;
+  const head = `<div class="sheet"><div class="crumb"><span>${esc(w.title)}</span><span>이야기</span></div><h1 class="t">${(g ? g.n : n) >= totalOf(w) ? "마지막 장으로" : `${g ? g.n : n}장으로`}</h1>`;   // 진행 중이면 진행 중인 장 번호(검사 단계에서는 이미 그 장이 반영되어 있다)
   if (g) return head + `<div class="gen-live" style="margin-top:14px"><span class="dot"></span><span id="stCount">${g.n}장 줄거리를 구상하는 중</span><button type="button" class="btn" data-act="story-stop">${g.phase === "check" || g.phase === "fix" ? "검사 건너뛰고 보기" : "중단"}</button></div>
-    <p class="note">이번 장의 탐험과 고른 행동을 엮어 ${g.n}장 줄거리를 정하고, 주인공 문서에 ${g.n}장 섹션을 덧붙입니다. 중단하거나 실패하면 지금 상태 그대로 남습니다.</p>
+    <p class="note">${g.phase === "check" || g.phase === "fix" ? `${g.n}장은 반영되었습니다. 주인공 문서를 보여 주기 전에 설정과 맞춰 보고 어긋난 곳을 고치는 중입니다. 건너뛰면 바로 보여 드리고, 검사는 읽는 동안 뒤에서 돕니다.` : `이번 장의 탐험과 고른 행동을 엮어 ${g.n}장 줄거리를 정하고, 주인공 문서에 ${g.n}장 섹션을 덧붙입니다. 중단하거나 실패하면 지금 상태 그대로 남습니다.`}</p>
     <div style="margin-top:14px"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div></div>`;
   if (st.status === "ended") return head + `<p class="note">이야기가 끝났습니다.</p><div class="row"><button type="button" class="btn pri" data-act="epilogue">에필로그 보기</button></div></div>`;
   const ex = exploreScores(w, c);
