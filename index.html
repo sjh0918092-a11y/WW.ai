@@ -347,7 +347,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.0 · 2026-11-09";
+const APP_VERSION = "v6.1 · 2026-11-09";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1014,10 +1014,15 @@ function canonBlock(w) {
   const tl = (w.timeline || []).filter(live).map(t => `- ${t.year}: ${t.event}${S.pages[t.src]?.editedAt ? " [사용자 확정]" : ""}`).join("\n") || "- (없음)";
   return `## 세계관 원안\n${w.seed}\n\n## 핵심 규칙 (절대 위반 금지)\n이 규칙들은 어기면 안 되는 전제일 뿐, 문서마다 언급해야 할 소재가 아니다. 이 항목과 직접 관련된 규칙만 본문에 반영한다.\n${rules}\n\n## 사용자 확정 설정 (최우선. 다른 모든 정보보다 우선한다)\n${(w.userCanon || "").trim() || "(없음)"}\n\n## 연표\n${tl}`;
 }
-function entityBrief(w, k, excludeSrc) {
+/* 검사의 기준: 검사하는 문서(p)보다 먼저 정해진 설정만. 원안·사용자 지정·이야기 장 줄거리·직접 수정한 문서는 언제나 기준이다.
+   나중에 쓴 문서가 정한 설정과 어긋나면, 고칠 쪽은 그 나중 문서이므로 그쪽 검사에서 잡힌다 */
+const refOK = (src, p) => { if (!src || src === "seed" || src === "user" || chOf(src) || !p) return true; const q = S.pages[src]; if (!q) return true; return !!q.editedAt || (q.createdAt || 0) <= (p.createdAt || 0); };
+function entityBrief(w, k, excludeSrc, okSrc) {
   const o = w.entities[k];
-  const facts = o.facts.filter(f => f.src !== excludeSrc && live(f)).slice(-6).map(f => "- " + factLine(f)).join("\n");
-  return `### 「${o.title}」${o.type ? " · " + o.type : ""}${o.summary ? " — " + o.summary : ""}${o.box ? "\n정보: " + o.box : ""}${facts ? "\n" + facts : ""}`;
+  const facts = o.facts.filter(f => f.src !== excludeSrc && live(f) && (!okSrc || okSrc(f.src))).slice(-6).map(f => "- " + factLine(f)).join("\n");
+  const own = !okSrc || !S.pages[k] || okSrc(k);   // 그 항목의 문서가 나중에 쓰였으면 그 문서의 정의와 인포박스는 기준에서 뺀다
+  const summary = own ? o.summary : (o.stub?.summary || ""), box = own ? o.box : "";
+  return `### 「${o.title}」${o.type ? " · " + o.type : ""}${summary ? " — " + summary : ""}${box ? "\n정보: " + box : ""}${facts ? "\n" + facts : ""}`;
 }
 
 /* ---------- 스토리 모드: 상태와 탐험 기록 ---------- */
@@ -1544,10 +1549,10 @@ facts에는 이 문서가 링크한 항목 중 중요한 것(인물, 조직, 사
 /* 제목의 표기들: "白頭(백두)"는 "白頭"와 "백두"로도 찾는다 */
 const namesOf = t => { const m = String(t).match(/^(.+?)\((.+)\)$/); return [t, ...(m ? [m[1].trim(), m[2].trim()] : [])].filter(x => x.length >= 2); };
 function checkBrief(w, k, key) {
-  const o = w.entities[k];
-  const ms = o.mentions.filter(m => m.from !== key && live(m)).slice(-2).map(m => `- 「${w.entities[m.from]?.title || "?"}」의 서술: ${m.text}`);
-  const rs = relationsOf(w, k).filter(x => x.src !== key && live(x)).slice(-3).map(x => "- 관계: " + relLine(w, x));
-  return [entityBrief(w, k, key), ...ms, ...rs].join("\n");
+  const o = w.entities[k], p = S.pages[key], ok = src => refOK(src, p);
+  const ms = o.mentions.filter(m => m.from !== key && live(m) && ok(m.from)).slice(-2).map(m => `- 「${w.entities[m.from]?.title || "?"}」의 서술: ${m.text}`);
+  const rs = relationsOf(w, k).filter(x => x.src !== key && live(x) && ok(x.src)).slice(-3).map(x => "- 관계: " + relLine(w, x));
+  return [entityBrief(w, k, key, ok), ...ms, ...rs].join("\n");
 }
 /* 문서 안에서 두 곳 이상에 나오는 대상(항목 이름, 연도)과 그 위치. 검사 모델이 무엇을 맞춰 볼지 고르지 않아도 되게 앱이 먼저 짚어 준다 */
 function crossRefs(w, p) {
@@ -1588,7 +1593,8 @@ function checkPrompt(w, key) {
     .sort((a, b) => (b[1].page ? 1 : 0) - (a[1].page ? 1 : 0)).slice(0, 8).map(([x]) => x);   // 링크 없이 이름만 나온 항목도 대조한다
   const keys = [...base, ...named];
   const ctx = keys.map(k => checkBrief(w, k, key)).join("\n\n");
-  const own = [...w.entities[key].facts.filter(f => f.src !== key && live(f)).map(f => "- " + factLine(f)), ...w.entities[key].mentions.filter(m => m.from !== key && live(m)).map(m => `- 「${w.entities[m.from]?.title || "?"}」의 서술: ${m.text}`), ...relationsOf(w, key).filter(x => x.src !== key && live(x)).map(x => "- 관계: " + relLine(w, x))].join("\n");
+  const ok = src => refOK(src, p);
+  const own = [...w.entities[key].facts.filter(f => f.src !== key && live(f) && ok(f.src)).map(f => "- " + factLine(f)), ...w.entities[key].mentions.filter(m => m.from !== key && live(m) && ok(m.from)).map(m => `- 「${w.entities[m.from]?.title || "?"}」의 서술: ${m.text}`), ...relationsOf(w, key).filter(x => x.src !== key && live(x) && ok(x.src)).map(x => "- 관계: " + relLine(w, x))].join("\n");
   return `다음 위키 문서가 세계관의 확정 설정과 어긋나는지 검사하라. 문서 안의 앞뒤 모순은 다른 검사가 따로 보므로 여기서는 보지 않는다. 단순히 새로 추가된 정보나 해석의 차이는 문제 삼지 마라. 문체, 어투, 표현 방식은 지적하지 않는다.
 
 지적하기 전에 다음을 모두 확인한다. 하나라도 아니면 지적하지 않는다.
@@ -1598,7 +1604,7 @@ function checkPrompt(w, key) {
 - 지적할 것이 없는 것이 정상이다. 개수를 채우려고 지적하지 않는다.
 이 조건을 모두 갖춘 충돌의 severity는 high다.
 
-${canonBlock({ ...w, timeline: (w.timeline || []).filter(t => t.src !== key) })}
+${canonBlock({ ...w, timeline: (w.timeline || []).filter(t => t.src !== key && ok(t.src)) })}
 ${isStory(w) ? `\n${storyBlock(w, key)}\n${secretsBlock(w, "check")}\n이 문서는 ${p.baseAsOf || 1}~${p.syncedTo || p.baseAsOf || 1}장 시점에 작성되었다. 이 문서가 그 시점 이후의 일을 아는 것처럼 서술하면 모순으로 본다. 제목 앞에 [n장]이 붙은 섹션은 그 장에 일어난 일을 기록한 섹션이다.\n` : ""}
 ## 이 항목에 대해 다른 문서가 확정한 사실
 ${own || "(없음)"}
@@ -2461,7 +2467,7 @@ async function bgSync(k, keep) {
       if (o && !o.page && !o.summary && n.summary) { o.summary = stripMarks(n.summary).slice(0, 200); if (!o.type && TYPES.includes(n.type)) o.type = n.type; }
     }
     const issues = [];
-    for (const c of readConflicts(w, r?.conflicts, ctx.refs))   // 다른 문서와 어긋나면 이 문서의 메모로 남긴다(다른 문서에 경고를 붙이지 않는다)
+    for (const c of readConflicts(w, r?.conflicts, ctx.refs).filter(c => !c.src || refOK(c.src, p)))   // 다른 문서와 어긋나면 이 문서의 메모로 남긴다(다른 문서에 경고를 붙이지 않는다). 이 문서보다 나중에 쓴 문서와의 어긋남은 그쪽이 고칠 몫이다
       issues.push({ claim: c.claim, conflict: `${conflictLabel(w, c)}: ${c.old}`, severity: "high" });
     p.check = { at: Date.now(), issues: [...(keep || []), ...issues], auto: true }; p.stale = false;
     await Store.savePage(w.id, p);
@@ -2586,7 +2592,10 @@ function analyzePrompt(w, temp, linkKeys, ctx) {
   const linked = linkKeys.filter(x => w.entities[x]).map(x => `- ${w.entities[x].title}${w.entities[x].page || w.entities[x].summary ? "" : " (정의 없음)"}`).join("\n") || "(없음)";
   return `다음은 가상 세계관 위키 「${w.title}」(작중 기준 시점 ${w.era})의 문서 「${temp.title}」이며, 사용자가 직접 수정한 최종본이다. 두 가지를 하라.
 1. 이 문서가 확정하는 사실을 추출한다. 문서에 적힌 내용만 쓰고, 새로운 내용을 지어내거나 기존 설정에 맞춰 고치지 않는다.
-2. 이 문서의 서술이 아래 '기존 설정'과 정면으로 모순되는 곳을 모두 찾는다. 같은 대상에 대해 둘 다 참일 수 없는 경우만 해당한다. 새로 추가된 정보, 더 자세해진 정보, 표현이나 해석의 차이는 모순이 아니다.
+2. 이 문서의 서술이 아래 '기존 설정'과 정면으로 모순되는 곳을 찾는다. 다음을 모두 만족할 때만 모순이다.
+   - 같은 대상, 같은 시점에 관한 서술이다. 부모와 자식, 같은 성을 쓰는 다른 사람, 다른 시기의 일은 같은 대상이 아니다(예: 아버지가 하급 관리 집안 출신이어도 그 아들이 나중에 법관 집안에서 태어난 것은 모순이 아니다).
+   - 둘이 동시에 참일 수 없다. 새로 추가된 정보, 더 자세해진 정보, 둘 다 있을 수 있는 일(예: 만년필을 물려줬지만 판결문은 연필로 썼다), 표현이나 해석의 차이는 모순이 아니다.
+   - 모순이 아닌 것을 모순으로 적느니 빠뜨리는 쪽이 낫다.
 
 ## 수정된 문서
 ${docText(temp, w, temp.navboxes)}

@@ -708,6 +708,22 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert((await page.locator(".article").innerText()).includes("한서린은 성으로 돌아왔다."), "고친 주인공 문서로 보여 준다");
     ok("장 전환 직후 주인공 문서와, 장 섹션을 붙인 문서는 보여 주기 전에 설정 검사를 돌리고 어긋난 곳을 고친다");
 
+    /* 31. 먼저 쓴 문서를 검사할 때 나중에 쓴 문서의 설정은 기준이 아니다 */
+    await page.click('[data-act="home"]').catch(() => {}); await page.click('#side [data-act="home"]').catch(() => {});
+    await page.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(page, "대문 항목");
+    ctl.pageOverride["경 인물"] = { type: "인물", sections: [{ heading: "개요", level: 1, body: "경 인물은 [[신 인물]]의 아들이다." }] };
+    ctl.pageOverride["신 인물"] = { type: "인물", infobox: [{ label: "직업", value: "판사" }], sections: [{ heading: "개요", level: 1, body: "신 인물은 [[경 인물]]의 아버지다." }], facts: [{ about: "경 인물", fact: "경 인물은 하급 관리 가문에서 태어났다." }] };
+    await page.fill("#q", "경 인물"); await page.press("#q", "Enter"); await waitArticle(page, "경 인물");
+    await clickLink(page, "신 인물"); await waitArticle(page, "신 인물"); ctl.pageOverride = {};
+    await page.fill("#q", "경 인물"); await page.press("#q", "Enter"); await waitArticle(page, "경 인물");
+    const n31 = calls.length; await page.click("[data-check]"); await until31();
+    async function until31() { for (let i = 0; i < 100 && !calls.slice(n31).some(c => c.kind === "check"); i++) await page.waitForTimeout(100); }
+    { const ck = calls.slice(n31).find(c => c.kind === "check").prompt;
+      assert(!ck.includes("하급 관리 가문에서 태어났다") && !ck.includes("직업: 판사"), "나중에 쓴 문서가 정한 사실과 그 문서의 인포박스는 먼저 쓴 문서의 검사 기준에서 뺀다"); }
+    { const ck2 = calls.filter(c => c.kind === "check" && c.prompt.includes("# 신 인물")).pop().prompt;
+      assert(ck2.includes("경 인물"), "나중에 쓴 문서의 검사에는 먼저 쓴 문서가 기준으로 들어간다"); }
+    ok("먼저 쓴 문서를 검사할 때 나중에 쓴 문서의 설정은 기준에서 뺀다(어긋남은 나중 문서 쪽에서 잡는다)");
+
     await ctx.close();
     console.log(`\n모두 통과 (${step}개). Gemini 호출 ${calls.length}회: ` + Object.entries(calls.reduce((a, c) => (a[c.kind] = (a[c.kind] || 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
   } catch (e) {
