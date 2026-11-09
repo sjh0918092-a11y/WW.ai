@@ -670,6 +670,21 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await sixth.ctx.close();
     ok("인물 관계: 같은 관계는 출처가 달라도 한 번만 남기고, 상대 인물당 카드 한 장에 관계 변화를 보여 주며, 쌓인 중복은 정리한다");
 
+    /* 29. 인용 대조: 같은 사람이 같은 날 한 말이 문서마다 다르면 */
+    ctl.pageOverride["랑에 재판"] = { type: "사건", sections: [{ heading: "판결", level: 1, body: "[[요하네스 랑에]] 판사가 판결했다.\n\n> 소급 적용은 무효이므로 피고인 전원에게 무죄를 선고한다.\n> — 요하네스 랑에, 1953년 6월 19일 리히텐베르크 법원" }] };
+    ctl.pageOverride["요하네스 랑에"] = { type: "인물", sections: [{ heading: "판결", level: 1, body: "그는 무죄를 선고했다.\n\n> 관인 날짜를 보시오. 18일이오. 전원 석방이오.\n> — 요하네스 랑에, 1953년 6월 19일 지방법원 제3형사법정" }] };
+    await page.fill("#q", "랑에 재판"); await page.press("#q", "Enter"); await waitArticle(page, "랑에 재판");
+    ctl.fixEdits = [{ memo: 1, field: "body", old: "> 관인 날짜를 보시오. 18일이오. 전원 석방이오.", new: "> 소급 적용은 무효이므로 피고인 전원에게 무죄를 선고한다." }];
+    const n29 = calls.length;
+    await clickLink(page, "요하네스 랑에"); await waitArticle(page, "요하네스 랑에"); ctl.fixEdits = null; ctl.pageOverride = {};
+    { const pp = calls.slice(n29).find(c => c.kind === "page").prompt;
+      assert(pp.includes("## 이미 기록된 발언") && pp.includes('요하네스 랑에, 1953년 6월 19일 리히텐베르크 법원: "소급 적용은 무효이므로'), "문서를 쓸 때 이미 기록된 같은 사람의 발언을 넘겨 준다");
+      const memo = (calls.slice(n29).find(c => c.kind === "fix")?.prompt.split("## 원문")[0]) || "";
+      assert(memo.includes("인용 대조: 같은 사람이 같은 날 한 말이 문서마다 다르다"), "같은 날 다른 말은 잡아서 고친다"); }
+    assert((await page.locator(".article").innerText()).includes("소급 적용은 무효이므로"), "먼저 기록된 인용으로 맞춘다");
+    { const bp29 = calls.filter(c => c.kind === "page").pop().prompt; assert(bp29.includes("직접 인용은 없는 것이 기본이다") && bp29.includes("인용이 없는 문서도 좋은 문서다"), "인용은 없는 것이 기본"); }
+    ok("인용 대조: 같은 사람이 같은 날 한 말은 이미 기록된 것을 넘겨 주고, 다르게 쓰면 잡아서 맞춘다. 인용은 없는 것이 기본");
+
     await ctx.close();
     console.log(`\n모두 통과 (${step}개). Gemini 호출 ${calls.length}회: ` + Object.entries(calls.reduce((a, c) => (a[c.kind] = (a[c.kind] || 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
   } catch (e) {
