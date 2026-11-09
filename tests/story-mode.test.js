@@ -222,10 +222,11 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await page.click("#edSave"); await waitArticle(page, "이일");
     assert((await sideText(page)).includes("이번 장 탐험 3곳"), "탐험 3곳: " + await sideText(page));
     { const pp = calls.filter(c => c.kind === "page" && c.prompt.includes("## 작성할 문서: 「여진 해적단」")).pop().prompt;
-      assert(pp.includes("## 이 인물의 기본 기질 (이 항목이 인물이면)") && pp.includes("특징 2~3개 중 적어도 하나는 직업 능력이나 일하는 태도가 아닌 사적인 면"), "평범한 기질을 건네고 직업 밖의 특징을 요구한다");
-      assert(!calls.filter(c => c.kind === "page" && c.prompt.includes("## 작성할 문서: 「한서린」")).shift().prompt.includes("## 이 인물의 기본 기질"), "주인공에게는 기질을 정해 주지 않는다");
-      assert(pp.includes("인물의 온도: 세상의 대부분은 평범한 사람이다") && pp.includes("특징은 기벽이나 집착이 아니어도 된다") && !pp.includes("집착하는 대상 앞"), "평범하고 선량한 인물을 기본으로");
-      assert(pp.includes("## 이미 다른 인물이 가진 특징 (겹치지 않게)") && pp.includes("- 이일: 아날로그 무전기 집착") && pp.includes("여러 인물에게 되풀이해 붙이지 않는다"), "새 인물 문서에 기존 인물의 특징 목록을 넘긴다"); }
+      assert(pp.includes("인물이 맡은 역할, 살아온 경험, 주변 사람과의 관계에서 자연스럽게 드러나게 한다") && !pp.includes("## 이 인물의 기본 기질"), "고정 기질 없이 역할·경험·관계에서 성격을 정한다");
+      const protagonistPrompt = calls.filter(c => c.kind === "page" && c.prompt.includes("## 작성할 문서: 「한서린」")).shift().prompt;
+      assert(protagonistPrompt.includes("사용자가 정한 특징과 이미 확정된 설정을 우선한다") && protagonistPrompt.includes("활은 잘 쏘지만 겁이 많은 막내 무관"), "주인공의 지정 특징을 우선한다");
+      assert(pp.includes("서로 다른 인물의 성격이나 성향이 겹쳐도 된다") && pp.includes("특징은 기벽이나 집착이 아니어도 된다") && pp.includes("차별화하려고 억지 기벽이나 집착을 붙이지 않는다"), "성격 중복을 허용하고 억지 기벽을 막는다");
+      assert(pp.includes("## 다른 인물의 특징 (표현 반복 참고)") && pp.includes("- 이일: 아날로그 무전기 집착") && pp.includes("같은 문구와 일화를 기계적으로 되풀이하거나") && !pp.includes("겹치지 않는") && !pp.includes("같은 소재나 같은 버릇을 쓰지 않고"), "기존 특징은 표현 반복 참고로만 넘긴다"); }
     await page.waitForTimeout(1300);
     await page.reload(); await page.waitForSelector(".wcard");
     await page.click('.wcard button.open:has-text("녹둔도 연대기")'); await waitArticle(page, "한서린");
@@ -273,9 +274,9 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert(sw.story.chapters[1].affected.some(a => a.key === kOf("이일")) && sw.story.chapters[1].wove.some(a => a.key === kOf("여진 해적단")));
     assert(planPrompt.includes("새 항목: 이번 장에서 처음 등장하는 항목을 2~4개 만든다") && planPrompt.includes("새 인물은 이번 장 사건에 꼭 필요할 때만 1명까지") && !planPrompt.includes("새 인물을 1명 이상"), "새 항목은 만들되 새 인물은 필요할 때만");
     assert(planPrompt.includes("- 절제: 규칙은 방향이지 최대치가 아니다") && planPrompt.includes("과장 수식어("), "장 계획에도 절제 규칙");
-    assert(planPrompt.includes("이미 다른 인물이 가진 특징:\n  - 이일: 아날로그 무전기 집착"), "장 계획의 새 인물도 기존 인물 특징과 겹치지 않게");
-    assert(planPrompt.includes("이웃, 동료처럼 선량하거나 평범한 사람으로 두는 편이 좋다"), "새 인물은 평범한 쪽으로");
-    assert(planPrompt.includes("새 인물의 기질은 다음 후보에서 고른다:"), "장 계획에 새 인물 기질 후보");
+    assert(planPrompt.includes("다른 인물의 특징 (표현 반복 참고):\n  - 이일: 아날로그 무전기 집착"), "장 계획에도 기존 인물 특징을 표현 반복 참고로 넘긴다");
+    assert(planPrompt.includes("summary)에 이번 사건에서 맡은 역할과 처지를 담는다") && planPrompt.includes("서로 다른 인물의 성격이나 성향이 겹쳐도 된다"), "장 계획도 역할과 처지로 인물을 소개하고 성격 중복을 허용한다");
+    assert(!planPrompt.includes("새 인물의 기질은 다음 후보에서 고른다:") && planPrompt.includes("인물이 맡은 역할, 살아온 경험, 주변 사람과의 관계에서 자연스럽게 드러나게 한다") && planPrompt.includes("차별화하려고 억지 기벽이나 집착을 붙이지 않는다"), "장 계획도 고정 기질 없이 성격을 드러내고 억지 기벽을 막는다");
     assert(wove.includes("이번 장에 새로 등장") && /이번 장에 새로 등장\s*원균 함대/.test(wove), "안내 카드에 새로 등장한 항목");
     assert(sw.story.chapters[1].fresh.includes(kOf("원균 함대")));
     assert((await sideText(page)).includes("새로 등장 2곳 · 안 읽음 2"), "사이드바에 새로 등장한 항목");
