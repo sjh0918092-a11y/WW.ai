@@ -347,7 +347,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v5.3 · 2026-11-09";
+const APP_VERSION = "v5.4 · 2026-11-09";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -821,9 +821,27 @@ function addRelation(w, key, r) {
   if (a === b || !w.entities[a] || !w.entities[b]) return;
   const rel = stripMarks(r.rel).slice(0, 60), story = stripMarks(r.story || "").slice(0, 260);
   w.relations ||= [];
-  if (w.relations.some(x => x.src === key && ((x.a === a && x.b === b) || (x.a === b && x.b === a)) && x.rel === rel)) return;
+  // 같은 두 사람 사이의 같은 관계는 출처가 달라도 한 번만 둔다. 앞선 기록에 설명이 없으면 채운다
+  const same = w.relations.find(x => !x.sup && samePair(x, a, b) && relKey(x.rel) === relKey(rel));
+  if (same) { if (!same.story && story) same.story = story; return; }
   w.relations.push({ a, b, rel, story, src: key });
   if (w.relations.length > 500) w.relations.splice(w.relations.findIndex(x => !S.pages[x.src]?.editedAt), 1);
+}
+const samePair = (x, a, b) => (x.a === a && x.b === b) || (x.a === b && x.b === a);
+const relKey = r => String(r || "").replace(/[\s·,()（）]/g, "");
+/* 이미 쌓인 중복 관계를 하나로 합친다. 사용자가 정한 것, 직접 수정한 문서의 것, 먼저 생긴 것 순으로 남긴다 */
+function dedupeRelations(w) {
+  const rank = x => x.src === "user" ? 0 : S.pages[x.src]?.editedAt ? 1 : 2;
+  const list = (w.relations || []).map((x, i) => [x, i]).sort((p, q) => rank(p[0]) - rank(q[0]) || p[1] - q[1]);
+  const keep = new Map();
+  for (const [x] of list) {
+    const id = [x.a, x.b].sort().join("|") + "|" + relKey(x.rel) + "|" + (x.sup ? "sup" : "");
+    const k = keep.get(id); if (k) { if (!k.story && x.story) k.story = x.story; continue; }
+    keep.set(id, x);
+  }
+  const kept = new Set(keep.values()), before = (w.relations || []).length;
+  w.relations = (w.relations || []).filter(x => kept.has(x));
+  return before - w.relations.length;
 }
 const relationsOf = (w, k) => (w.relations || []).filter(x => (x.a === k || x.b === k) && w.entities[x.a] && w.entities[x.b]);
 const relLine = (w, x) => `「${w.entities[x.a].title}」–「${w.entities[x.b].title}」: ${x.rel}${x.story ? ". " + x.story : ""}${x.src === "user" || S.pages[x.src]?.editedAt ? " [사용자 확정]" : ""}`;
@@ -1699,6 +1717,7 @@ async function openWorld(wid, goKey) {
   const merged = await autoMerge(w);
   await cleanChapterTitles(w);
   const unbadged = await cleanAiSupersede(w);
+  if (dedupeRelations(w)) { try { await Store.saveWorld(w); } catch {} }
   openEntity(goKey && w.entities[goKey] ? goKey : w.mainKey);
   if (unbadged) setTimeout(() => toast(`AI 수정 때문에 잘못 붙어 있던 '설정과 맞지 않음' 경고 ${unbadged}건을 지웠습니다.`), merged ? 3800 : 0);
   if (merged) toast(`같은 대상을 가리키는데 따로 생긴 항목 ${merged}개를 원래 항목에 합쳤습니다. 예: "이름(인물)", 성이나 이름만 쓴 인물.`);
@@ -3057,7 +3076,15 @@ function articleHtml(k) {
     ${(() => {
       const rs = relationsOf(w, k);
       if (!rs.length) return "";
-      return `<section class="rels"><h3>인물 관계</h3><ul>${rs.map(x => { const o = x.a === k ? x.b : x.a; return `<li class="${x.sup ? "sup" : ""}"><div class="rel-h">${linkHtml(w.entities[o].title)}<span class="rel-k">${esc(x.rel)}</span></div>${x.story ? `<p>${esc(x.story)}</p>` : ""}<span class="src">출처 ${esc(srcTitle(w, x.src, "?"))}${S.pages[x.src]?.editedAt ? " (직접 수정)" : ""}${x.sup ? ` · 「${esc(w.entities[x.sup.by]?.title || "?")}」 수정으로 대체됨` : ""}</span></li>`; }).join("")}</ul></section>`;
+      const groups = new Map();   // 상대 인물 한 명당 카드 한 장. 관계가 여러 번 바뀌었으면 순서대로 보여 준다
+      for (const x of rs) { const o = x.a === k ? x.b : x.a; (groups.get(o) || groups.set(o, []).get(o)).push(x); }
+      return `<section class="rels"><h3>인물 관계</h3><ul>${[...groups].map(([o, xs]) => {
+        const liveXs = xs.filter(x => !x.sup), show = liveXs.length ? liveXs : xs, last = show[show.length - 1];
+        const rels = [...new Map(show.map(x => [relKey(x.rel), x.rel])).values()];
+        const srcs = [...new Set(show.map(x => srcTitle(w, x.src, "?") + (S.pages[x.src]?.editedAt ? " (직접 수정)" : "")))];
+        const story = [...show].reverse().find(x => x.story)?.story || "";
+        return `<li class="${liveXs.length ? "" : "sup"}"><div class="rel-h">${linkHtml(w.entities[o].title)}${rels.map((r, i) => `${i ? `<span class="src">→</span>` : ""}<span class="rel-k">${esc(r)}</span>`).join("")}</div>${story ? `<p>${esc(story)}</p>` : ""}<span class="src">출처 ${esc(srcs.join(" · "))}${!liveXs.length && last.sup ? ` · 「${esc(w.entities[last.sup.by]?.title || "?")}」 수정으로 대체됨` : ""}</span></li>`;
+      }).join("")}</ul></section>`;
     })()}
     <div class="meta-foot">
       <div class="box"><b>이 문서를 언급한 문서</b>${back.length ? back.map(x => linkHtml(w.entities[x].title)).join(" · ") : `<span class="src">없음 (첫 문서)</span>`}</div>

@@ -631,6 +631,31 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     ctl.pageOverride = {};
     ok("숫자 대조: 다른 항목의 사망 연도를 인포박스와 다르게 적으면 잡아서 띄우기 전에 고친다. 먼저 쓴 문서가 기준이다");
 
+    /* 28. 인물 관계 중복: 같은 관계는 한 번만, 카드는 상대 인물당 한 장 */
+    ctl.pageOverride["무 인물"] = { type: "인물", sections: [{ heading: "개요", level: 1, body: "무 인물은 [[기 인물]]의 스승이다." }], relations: [{ a: "무 인물", b: "기 인물", rel: "스승과 제자", story: "어릴 때 검술을 가르쳤다." }] };
+    ctl.pageOverride["기 인물"] = { type: "인물", sections: [{ heading: "개요", level: 1, body: "기 인물은 [[무 인물]]에게 배웠다." }], relations: [{ a: "기 인물", b: "무 인물", rel: "스승과 제자" }, { a: "무 인물", b: "기 인물", rel: "스승과 제자", story: "" }, { a: "기 인물", b: "무 인물", rel: "맞수", story: "나중에 맞수가 되었다." }] };
+    await page.fill("#q", "무 인물"); await page.press("#q", "Enter"); await waitArticle(page, "무 인물");
+    await clickLink(page, "기 인물"); await waitArticle(page, "기 인물");
+    ctl.pageOverride = {};
+    { const cards = page.locator(".rels li"); assert.strictEqual(await cards.count(), 1, "상대 인물당 카드 한 장");
+      const t = await cards.first().innerText(); assert(t.includes("스승과 제자") && t.includes("→") && t.includes("맞수") && t.includes("나중에 맞수가 되었다."), "관계 변화를 한 카드에 순서대로");
+      const w28 = await worldOf(page, "기본 세계"), mk = Object.keys(w28.entities).find(k => w28.entities[k].title === "무 인물");
+      assert.strictEqual(w28.relations.filter(x => x.a === mk || x.b === mk).length, 2, "같은 관계는 출처가 달라도 한 번만 저장");
+      assert.strictEqual(w28.relations.find(x => x.rel === "스승과 제자").story, "어릴 때 검술을 가르쳤다."); }
+    await page.click('#side [data-act="gset"]');
+    const [dl28] = await Promise.all([page.waitForEvent("download"), page.click('[data-act="export"]')]);
+    const f28 = path.join(os.tmpdir(), "ww-rel-backup.json"); await dl28.saveAs(f28);
+    const b28 = JSON.parse(fs.readFileSync(f28, "utf8")), w28b = b28.worlds.find(x => x.title === "기본 세계");
+    const r0 = w28b.relations.find(x => x.rel === "스승과 제자"), n28 = w28b.relations.length;
+    w28b.relations.push({ ...r0, src: "e_other1", story: "" }, { ...r0, a: r0.b, b: r0.a, src: "e_other2", story: "" });
+    fs.writeFileSync(f28, JSON.stringify(b28));
+    const sixth = await newPage(browser), q6 = sixth.page;
+    await q6.goto(URL_); await q6.waitForSelector("#seedTa"); await q6.click('[data-act="gset"]'); await q6.setInputFiles("#importFile", f28);
+    await q6.waitForTimeout(500); await q6.click('#side [data-act="home"]'); await q6.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(q6, "대문 항목");
+    assert.strictEqual((await worldOf(q6, "기본 세계")).relations.length, n28, "이미 쌓인 중복 관계는 세계관을 열 때 합친다");
+    await sixth.ctx.close();
+    ok("인물 관계: 같은 관계는 출처가 달라도 한 번만 남기고, 상대 인물당 카드 한 장에 관계 변화를 보여 주며, 쌓인 중복은 정리한다");
+
     await ctx.close();
     console.log(`\n모두 통과 (${step}개). Gemini 호출 ${calls.length}회: ` + Object.entries(calls.reduce((a, c) => (a[c.kind] = (a[c.kind] || 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
   } catch (e) {
