@@ -35,7 +35,7 @@ const TONE = { label: "테스트 사극", guide: ["한자어를 섞는다", "건
 const BASE = { tagline: "테스트 세계", historical: false, rules: ["규칙 하나", "규칙 둘", "규칙 셋", "규칙 넷", "규칙 다섯"], timeline: [{ year: "1580", event: "녹둔도 개척" }, { year: "1585", event: "북관 철령 완공" }], tone: TONE };
 function pageJson(title) {
   const links = title === "한서린" ? "[[북관 철령]]과 [[이일]], [[한양]]" : title === "대문 항목" ? "[[북관 철령]]" : title === "마커스 벡" ? "[[대문 항목]]" : title === "칼 슈미트" ? "[[벡]]" : "[[한서린]]";
-  return { title, type: title === "한서린" || title === "이일" || /벡|슈미트/.test(title) ? "인물" : "지명", summary: `${title}은 테스트 항목이다.`, categories: ["테스트"], notices: [], infobox: [{ label: "상태", value: "생존" }],
+  return { title, type: title === "한서린" || title === "이일" || /벡|슈미트/.test(title) ? "인물" : "지명", summary: `${title}은 테스트 항목이다.`, categories: ["테스트"], notices: [], infobox: [{ label: "상태", value: "생존" }, ...(title === "한서린" || title === "이일" || /벡|슈미트/.test(title) ? [{ label: "성별", value: "여성" }] : [])],
     sections: [{ heading: "개요", level: 1, body: `${title}은 ${links}와 얽힌 항목이다.` }, ...(title === "이일" ? [{ heading: "특징", level: 1, body: "" }, { heading: "아날로그 무전기 집착", level: 2, body: "이일은 낡은 무전기만 쓴다." }] : []), { heading: "역사", level: 1, body: `${title}의 역사는 1586년에 시작되었다.` }],
     facts: [], relations: [], navboxes: [], newEntities: [], timeline: [] };
 }
@@ -728,6 +728,16 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     { const ck2 = calls.filter(c => c.kind === "check" && c.prompt.includes("# 신 인물")).pop().prompt;
       assert(ck2.includes("경 인물"), "나중에 쓴 문서의 검사에는 먼저 쓴 문서가 기준으로 들어간다"); }
     ok("먼저 쓴 문서를 검사할 때 나중에 쓴 문서의 설정은 기준에서 뺀다(어긋남은 나중 문서 쪽에서 잡는다)");
+
+    /* 32. 인물 인포박스의 성별 */
+    assert(calls.filter(c => c.kind === "page").pop().prompt.includes("인물이면 '성별' 줄을 반드시 넣는다"), "인물 인포박스에 성별을 요구한다");
+    ctl.pageOverride["성별 없는 인물"] = { type: "인물", infobox: [{ label: "직업", value: "제빵사" }], sections: [{ heading: "개요", level: 1, body: "그녀는 빵을 굽는다." }] };
+    ctl.fixEdits = [{ memo: 1, field: "infobox", old: "직업: 제빵사", new: "성별: 여성\n직업: 제빵사" }];
+    const n32 = calls.length;
+    await page.fill("#q", "성별 없는 인물"); await page.press("#q", "Enter"); await waitArticle(page, "성별 없는 인물"); ctl.fixEdits = null; ctl.pageOverride = {};
+    assert((calls.slice(n32).find(c => c.kind === "fix")?.prompt || "").includes("인포박스에 '성별' 줄이 없다"), "성별이 빠지면 띄우기 전에 채우게 한다");
+    assert((await page.locator(".infobox").innerText()).includes("여성"));
+    ok("인물 인포박스에 성별을 넣게 하고, 빠지면 띄우기 전에 채운다");
 
     await ctx.close();
     console.log(`\n모두 통과 (${step}개). Gemini 호출 ${calls.length}회: ` + Object.entries(calls.reduce((a, c) => (a[c.kind] = (a[c.kind] || 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
