@@ -11,3 +11,9 @@ keep_vars = true
 # 친구 요청이 홍콩(HKG)처럼 Gemini가 막는 지역의 데이터센터로 가면 "User location is not supported"가 나기 때문이다.
 [placement]
 region = "gcp:us-east4"
+
+# 계정과 세계관 저장소 (Cloudflare D1). 테이블은 Worker가 첫 요청 때 만든다.
+[[d1_databases]]
+binding = "DB"
+database_name = "worldwiki-db"
+database_id = "3ce1b198-c233-45c6-8b46-8c0aa8638327"

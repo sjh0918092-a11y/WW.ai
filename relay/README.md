@@ -93,3 +93,25 @@ npx wrangler deploy
 두 방법 모두 대시보드에 넣은 `GEMINI_KEY`, `PASSWORDS` 는 그대로 유지됩니다.
 배포 후 Worker 주소를 다시 열어 `runsIn` 이 미국 쪽 코드(예: IAD, EWR)로 바뀌었는지 확인하세요.
 배치는 Cloudflare가 지키려고 노력하는 "힌트"라서 드물게 다른 곳에서 실행될 수도 있습니다.
+
+## 계정과 세계관 저장 (Cloudflare D1)
+
+앱의 'Gemini 설정 → 계정'에서 가입하고 로그인하면 세계관이 서버에 저장되어, 다른 기기에서 같은 아이디로 로그인해도 보입니다.
+
+- 저장소는 Cloudflare D1(`worldwiki-db`)입니다. `wrangler.toml`의 `[[d1_databases]]`에 Database ID가 들어 있고, 테이블은 Worker가 첫 요청 때 스스로 만듭니다.
+- 가입할 때 초대 코드로 `PASSWORDS` 중 하나(접속 암호)를 받습니다. 아무나 가입해 저장 공간을 쓰지 못하게 하기 위해서입니다.
+- 비밀번호는 PBKDF2 해시로만 저장합니다. 관리자도 비밀번호는 볼 수 없지만, 세계관 내용은 대시보드의 D1 → `worlds`, `pages` 테이블에서 볼 수 있습니다.
+- 같은 문서를 두 기기에서 고치면 수정 시각이 더 최근인 쪽이 남습니다.
+- 무료 한도(하루 쓰기 10만 번, 저장 5GB) 안에서 씁니다.
+
+### 관리
+
+D1 화면의 **Console**에서 SQL로 관리합니다.
+
+| 하고 싶은 것 | SQL |
+|---|---|
+| 가입한 사람 보기 | `SELECT id, created FROM users;` |
+| 비밀번호를 잊은 사람 지우기(세계관은 남음, 같은 아이디로 다시 가입하면 이어서 보임) | `DELETE FROM users WHERE id = '아이디'; DELETE FROM sessions WHERE uid = '아이디';` |
+| 어떤 사람의 저장 데이터까지 모두 지우기 | `DELETE FROM pages WHERE uid = '아이디'; DELETE FROM worlds WHERE uid = '아이디';` |
+
+Worker 주소를 열었을 때 `storageConfigured`가 `true`면 저장소가 연결된 것입니다.

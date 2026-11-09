@@ -347,7 +347,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v5.8 · 2026-11-09";
+const APP_VERSION = "v6.0 · 2026-11-09";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -658,6 +658,7 @@ const IDB = {
     });
   },
   put(k, v) { return this.tx("readwrite", st => { st.put(v, k); }); },
+  get(k) { return this.tx("readonly", (st, set) => { const r = st.get(k); r.onsuccess = () => set(r.result); }); },
   del(k) { return this.tx("readwrite", st => { st.delete(k); }); },
   delPrefix(p) { return this.tx("readwrite", st => { st.delete(IDBKeyRange.bound(p, p + "￿")); }); },
   getPrefix(p) {
@@ -682,6 +683,11 @@ const Store = {
   },
   saveWorld(w) {
     w.updatedAt = Date.now(); const copy = JSON.parse(JSON.stringify(w));
+    Sync.mark("w", w.id);
+    return this.putWorldRaw(copy);
+  },
+  putWorldRaw(copy) {   // 시각을 바꾸지 않고 그대로 저장(서버에서 받은 것)
+    const w = copy;
     return this.run(async () => {
       if (this.mode === "idb") return IDB.put("w:" + w.id, copy);
       if (this.mode === "local") { const all = LS.get("wwiki:v1:worlds") || {}; all[w.id] = copy; if (!LS.set("wwiki:v1:worlds", all)) throw { code: "local_full" }; return; }
@@ -694,27 +700,143 @@ const Store = {
     return JSON.parse(JSON.stringify(this.mem.pages[wid] || {}));
   },
   savePage(wid, p) {
-    const copy = JSON.parse(JSON.stringify(p));
+    p.savedAt = Date.now(); const copy = JSON.parse(JSON.stringify(p));
+    Sync.mark("p", wid, p.key);
+    return this.putPageRaw(wid, copy);
+  },
+  putPageRaw(wid, copy) {
+    const p = copy;
     return this.run(async () => {
       if (this.mode === "idb") return IDB.put("p:" + wid + ":" + p.key, copy);
       if (this.mode === "local") { const all = LS.get("wwiki:v1:p:" + wid) || {}; all[p.key] = copy; if (!LS.set("wwiki:v1:p:" + wid, all)) throw { code: "local_full" }; return; }
       (this.mem.pages[wid] ||= {})[p.key] = copy;
     });
   },
-  deletePage(wid, key) {
+  async getWorld(wid) {
+    if (this.mode === "idb") return (await IDB.get("w:" + wid)) || null;
+    if (this.mode === "local") return (LS.get("wwiki:v1:worlds") || {})[wid] || null;
+    return this.mem.worlds[wid] || null;
+  },
+  async getPage(wid, key) {
+    if (this.mode === "idb") return (await IDB.get("p:" + wid + ":" + key)) || null;
+    if (this.mode === "local") return (LS.get("wwiki:v1:p:" + wid) || {})[key] || null;
+    return this.mem.pages[wid]?.[key] || null;
+  },
+  deletePage(wid, key, silent) {
+    if (!silent) Sync.mark("dp", wid, key);
     return this.run(async () => {
       if (this.mode === "idb") return IDB.del("p:" + wid + ":" + key);
       if (this.mode === "local") { const all = LS.get("wwiki:v1:p:" + wid) || {}; delete all[key]; LS.set("wwiki:v1:p:" + wid, all); return; }
       if (this.mem.pages[wid]) delete this.mem.pages[wid][key];
     });
   },
-  deleteWorld(wid) {
+  deleteWorld(wid, silent) {
+    if (!silent) Sync.mark("dw", wid);
     return this.run(async () => {
       if (this.mode === "idb") { await IDB.delPrefix("p:" + wid + ":"); return IDB.del("w:" + wid); }
       if (this.mode === "local") { const all = LS.get("wwiki:v1:worlds") || {}; delete all[wid]; LS.set("wwiki:v1:worlds", all); LS.del("wwiki:v1:p:" + wid); return; }
       delete this.mem.worlds[wid]; delete this.mem.pages[wid];
     });
   }
+};
+
+/* ---------- 계정과 서버 저장 (중계 서버의 /api) ----------
+   로그인하면 저장할 때마다 바뀐 세계관과 문서를 모아 서버에 올리고, 앱을 열거나 다시 돌아올 때 바뀐 것을 받아 온다.
+   같은 것을 두 기기에서 고치면 수정 시각이 더 최근인 쪽이 남는다. 로그인하지 않으면 지금처럼 브라우저에만 저장한다. */
+const AKEY = "wwiki:acct", DKEY = "wwiki:dirty";
+const Sync = {
+  acct: LS.get(AKEY), dirty: null, timer: null, busy: false, err: "", lastAt: 0, pulling: false,
+  base() { return (GS.relay || DEFAULT_RELAY).replace(/\/+$/, "") + "/api"; },
+  load() { const d = LS.get(DKEY) || {}; this.dirty = { w: new Set(d.w || []), p: new Set(d.p || []), dw: new Set(d.dw || []), dp: new Set(d.dp || []) }; },
+  persist() { LS.set(DKEY, { w: [...this.dirty.w], p: [...this.dirty.p], dw: [...this.dirty.dw], dp: [...this.dirty.dp] }); },
+  pending() { const d = this.dirty; return d ? d.w.size + d.p.size + d.dw.size + d.dp.size : 0; },
+  mark(kind, wid, key) {
+    if (!this.acct) return; if (!this.dirty) this.load();
+    const d = this.dirty, id = key === undefined ? wid : wid + "\u0001" + key;
+    if (kind === "w") { d.w.add(id); d.dw.delete(id); }
+    if (kind === "p") { d.p.add(id); d.dp.delete(id); }
+    if (kind === "dw") { d.dw.add(id); d.w.delete(id); for (const x of [...d.p]) if (x.startsWith(wid + "\u0001")) d.p.delete(x); }
+    if (kind === "dp") { d.dp.add(id); d.p.delete(id); }
+    this.persist(); this.schedule();
+  },
+  schedule(ms = 3000) { clearTimeout(this.timer); this.timer = setTimeout(() => this.push(), ms); },
+  async req(path, opts = {}) {
+    let res;
+    try { res = await fetch(this.base() + path, { ...opts, headers: { "Content-Type": "application/json", ...(this.acct?.token ? { Authorization: "Bearer " + this.acct.token } : {}), ...(opts.headers || {}) } }); }
+    catch (e) { throw { code: "network", message: "중계 서버에 연결하지 못했습니다." }; }
+    let j = null; try { j = await res.json(); } catch {}
+    if (!res.ok) { const m = j?.error?.message || "HTTP " + res.status; if (res.status === 401 && this.acct && !/^\/(login|signup)/.test(path)) { this.acct = null; LS.del(AKEY); } throw { code: "acct", status: res.status, message: m }; }
+    return j;
+  },
+  async login(id, pw, signup, invite) {
+    const j = await this.req(signup ? "/signup" : "/login", { method: "POST", body: JSON.stringify(signup ? { id, pw, invite } : { id, pw }) });
+    this.acct = { id: j.id, token: j.token, since: 0 }; LS.set(AKEY, this.acct); this.load();
+    await this.pull();
+    for (const w of S.worlds) { this.mark("w", w.id); for (const k of Object.keys(await Store.listPages(w.id))) this.mark("p", w.id, k); }   // 이 브라우저의 세계관도 올려서 합친다(서버에 더 최근 것이 있으면 그쪽이 남는다)
+    await this.push();
+  },
+  async logout() { try { await this.req("/logout", { method: "POST" }); } catch {} this.acct = null; LS.del(AKEY); LS.del(DKEY); this.dirty = null; this.err = ""; },
+  async push() {
+    if (!this.acct || this.busy) { if (this.acct) this.schedule(); return; }
+    if (!this.dirty) this.load(); if (!this.pending()) return;
+    this.busy = true; this.err = "";
+    try {
+      const d = this.dirty, items = [];
+      for (const wid of d.w) { const w = await Store.getWorld(wid); if (w) items.push(["w", wid, { wid, data: JSON.stringify(w), updated: w.updatedAt || Date.now() }]); else d.w.delete(wid); }
+      for (const id of d.p) { const [wid, key] = id.split("\u0001"); const p = await Store.getPage(wid, key); if (p) items.push(["p", id, { wid, pkey: key, data: JSON.stringify(p), updated: p.savedAt || p.createdAt || Date.now() }]); else d.p.delete(id); }
+      for (const wid of d.dw) items.push(["dw", wid, { wid, deleted: true, updated: Date.now() }]);
+      for (const id of d.dp) { const [wid, key] = id.split("\u0001"); items.push(["dp", id, { wid, pkey: key, deleted: true, updated: Date.now() }]); }
+      let batch = [], size = 0;
+      const send = async () => {
+        if (!batch.length) return;
+        await this.req("/sync", { method: "POST", body: JSON.stringify({ worlds: batch.filter(x => x[0] === "w" || x[0] === "dw").map(x => x[2]), pages: batch.filter(x => x[0] === "p" || x[0] === "dp").map(x => x[2]) }) });
+        for (const [k, id] of batch) d[k].delete(id);
+        this.persist(); batch = []; size = 0;
+      };
+      for (const it of items) { const n = (it[2].data || "").length + 200; if (size + n > 4e6 && batch.length) await send(); batch.push(it); size += n; }
+      await send();
+      this.lastAt = Date.now();
+    } catch (e) { this.err = e.message || "올리지 못했습니다."; this.schedule(30000); }
+    this.busy = false; this.render();
+  },
+  async pull() {
+    if (!this.acct || this.pulling) return 0; this.pulling = true;
+    let changed = 0;
+    try {
+      let since = this.acct.since || 0, more = true;
+      while (more) {
+        const j = await this.req("/sync?since=" + since);
+        for (const r of j.worlds || []) {
+          const local = await Store.getWorld(r.wid);
+          if (r.deleted) { if (local && (local.updatedAt || 0) <= r.updated) { await Store.deleteWorld(r.wid, true); changed++; } continue; }
+          if (!local || (local.updatedAt || 0) < r.updated) { let w; try { w = JSON.parse(r.data); } catch { continue; } if (w && w.kind === "world") { w.updatedAt = r.updated; await Store.putWorldRaw(w); changed++; } }
+        }
+        for (const r of j.pages || []) {
+          const local = await Store.getPage(r.wid, r.pkey);
+          if (r.deleted) { if (local && (local.savedAt || 0) <= r.updated) { await Store.deletePage(r.wid, r.pkey, true); changed++; } continue; }
+          if (!local || (local.savedAt || 0) < r.updated) { let p; try { p = JSON.parse(r.data); } catch { continue; } if (p && p.key) { p.savedAt = r.updated; await Store.putPageRaw(r.wid, p); changed++; } }
+        }
+        more = !!j.more; since = more ? j.next : Math.max(0, j.next - 5e6);   // 끝에서는 5초를 겹쳐 받아 순서가 엇갈린 기록도 놓치지 않는다
+      }
+      this.acct.since = since; LS.set(AKEY, this.acct); this.lastAt = Date.now(); this.err = "";
+    } catch (e) { this.err = e.message || "받아 오지 못했습니다."; }
+    this.pulling = false;
+    if (changed) await this.refresh();
+    this.render();
+    return changed;
+  },
+  /* 받아 온 변경을 화면에 반영한다. 작업 중이면 지금 연 세계관은 그대로 두고 알려 준다 */
+  async refresh() {
+    const cur = S.world?.id, key = S.view.key;
+    S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    if (cur) {
+      const busy = S.gen || S.storyGen || S.syncing || S.checking || S.edit || S.bgSync;
+      if (!S.worlds.some(x => x.id === cur)) { if (!busy) { S.world = null; S.view = { name: "home" }; renderAll(); } toast("다른 기기에서 이 세계관을 지웠습니다."); return; }
+      if (busy) { toast("다른 기기에서 바뀐 내용을 받았습니다. 작업이 끝난 뒤 세계관을 다시 열면 보입니다."); return; }
+      await openWorld(cur, key); toast("다른 기기에서 바뀐 내용을 받았습니다.");
+    } else renderAll();
+  },
+  render() { try { if (S.view.name === "gset") { const el = $("#acctBox"); if (el) el.outerHTML = acctHtml(); } renderSide(); } catch {} },
 };
 
 /* ---------- 백업 ---------- */
@@ -1546,6 +1668,7 @@ async function createWorld() {
     if (rg) {   // 다시 만들기: 새 설정 노트가 나온 뒤에야 기존 세계관과 문서를 지운다(실패하면 아무것도 지우지 않는다)
       if (S.gen?.wid === rg.id || ((S.storyGen || S.syncing) && S.world?.id === rg.id)) throw { code: "busy", message: "이 세계관에서 작성 중인 문서가 있습니다. 끝난 뒤 다시 만들어 주세요." };
       w.id = rg.id; w.createdAt = rg.createdAt || w.createdAt;
+      for (const k of Object.keys(await Store.listPages(rg.id))) Sync.mark("dp", rg.id, k);   // 서버에 남은 옛 문서도 지운다
       await Store.deleteWorld(rg.id);
       S.worlds = S.worlds.filter(x => x.id !== rg.id);
       if (S.world?.id === rg.id) { S.world = null; S.pages = {}; }
@@ -2958,7 +3081,7 @@ function renderSide() {
     ${S.syncing ? `<section><h4>장 반영 중</h4><div class="genpill"><span class="dot"></span><button type="button" class="btn" data-k="${S.syncing}" style="padding:2px 8px">${esc(w.entities[S.syncing]?.title || "")}</button></div></section>` : ""}
     ${rec.length ? `<section class="rec"><h4>최근 본 문서</h4><ul>${rec.map(k => `<li><button type="button" data-k="${k}" class="${k === cur ? "cur" : ""}" ${isStory(w) && missingChs(w, k).length ? `title="이번 장의 변화가 아직 반영되지 않았습니다. 열면 반영합니다"` : ""}>${esc(w.entities[k].title)}${isStory(w) && missingChs(w, k).length ? " •" : ""}</button></li>`).join("")}</ul></section>` : ""}`;
 }
-const storeLabel = () => ({ idb: "이 브라우저 IndexedDB (다른 기기와 공유되지 않음)", local: "이 브라우저 localStorage (용량 약 5MB)", memory: "임시 (새로고침하면 사라짐)" }[Store.mode]);
+const storeLabel = () => Sync.acct ? `서버에 저장 (${Sync.acct.id}${Sync.pending() ? ` · 올릴 변경 ${Sync.pending()}건` : ""}) + 이 브라우저` : ({ idb: "이 브라우저 IndexedDB (다른 기기와 공유되지 않음)", local: "이 브라우저 localStorage (용량 약 5MB)", memory: "임시 (새로고침하면 사라짐)" }[Store.mode]);
 
 function gsetHtml() {
   const opt = v => THINKS.map(([x, l]) => `<option value="${x}" ${v === x ? "selected" : ""}>${esc(l)}</option>`).join("");
@@ -2992,10 +3115,39 @@ function gsetHtml() {
     <p class="note" style="margin-top:8px">모델이 지원하지 않는 생각 깊이를 고르면 그 요청은 모델 기본값으로 다시 보냅니다. 응답은 JSON 모드로 받습니다.</p>
     <div class="row"><button type="button" class="btn pri" data-act="gset-save">저장</button><button type="button" class="btn" data-act="gset-test">연결 시험</button><button type="button" class="btn" data-act="gset-models">모델 목록 불러오기</button></div>
     <p class="res" id="gRes">${esc(S.gres || "")}</p>
+    <h2 class="nf-h">계정 (서버에 세계관 저장)</h2>
+    ${acctHtml()}
     <h2 class="nf-h">백업</h2>
     <p class="note">세계관과 문서를 JSON 파일 하나로 내보내거나, 그 파일에서 가져옵니다. 같은 id의 세계관은 가져온 내용으로 덮어씁니다. 저장 위치: ${esc(storeLabel())}</p>
     <div class="row"><button type="button" class="btn" data-act="export" ${S.worlds.length ? "" : "disabled"}>내보내기</button><button type="button" class="btn" data-act="import">가져오기</button><input type="file" id="importFile" accept="application/json,.json" hidden></div>
   </div>`;
+}
+function acctHtml() {
+  const a = Sync.acct, n = Sync.pending();
+  return `<div id="acctBox">${a ? `<p style="margin:0"><b>${esc(a.id)}</b>(으)로 로그인되어 있습니다. 세계관이 서버에 저장되어 다른 기기에서도 같은 아이디로 로그인하면 보입니다.</p>
+    <p class="note" style="margin:6px 0 0">${Sync.busy || Sync.pulling ? "동기화하는 중…" : n ? `올릴 변경 ${n}건 대기 중` : "모두 서버에 올라가 있습니다"}${Sync.lastAt ? ` · 마지막 동기화 ${new Date(Sync.lastAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}` : ""}${Sync.err ? ` · <span style="color:var(--red)">${esc(Sync.err)}</span>` : ""}</p>
+    <div class="row"><button type="button" class="btn" data-act="acct-sync">지금 동기화</button><button type="button" class="btn" data-act="acct-logout">로그아웃</button></div>
+    <p class="note">로그아웃해도 이 브라우저에 저장된 세계관은 남습니다.</p>`
+  : `<p class="note" style="margin:0">로그인하면 세계관이 서버에 저장되어 다른 기기에서도 이어서 볼 수 있습니다. 로그인하지 않으면 지금처럼 이 브라우저에만 저장됩니다.</p>
+    <div class="two"><div><label class="lb" for="acId">아이디</label><input id="acId" class="txt" autocomplete="username" maxlength="24" spellcheck="false"></div>
+      <div><label class="lb" for="acPw">비밀번호</label><input id="acPw" class="txt" type="password" autocomplete="current-password" maxlength="100"></div></div>
+    <details class="memo" style="margin-top:10px"><summary>처음이면 가입하기</summary><div style="padding:0 12px 12px">
+      <label class="lb" for="acInv">초대 코드 <span class="note" style="font-weight:400">중계 서버 접속 암호와 같습니다</span></label><input id="acInv" class="txt" type="password" autocomplete="off" value="${esc(GS.pass || "")}">
+      <div class="row"><button type="button" class="btn" data-act="acct-signup">가입하고 로그인</button></div>
+      <p class="note">비밀번호를 잊으면 스스로 찾을 수 없습니다. 서버 관리자에게 초기화를 부탁해야 합니다. 서버 관리자는 저장된 세계관 내용을 볼 수 있습니다(비밀번호는 볼 수 없습니다).</p></div></details>
+    <div class="row"><button type="button" class="btn pri" data-act="acct-login">로그인</button></div>
+    ${Sync.err ? `<p class="res" style="color:var(--red)">${esc(Sync.err)}</p>` : ""}`}</div>`;
+}
+async function acctAction(kind) {
+  const id = norm($("#acId")?.value || ""), pw = $("#acPw")?.value || "", inv = $("#acInv")?.value || "";
+  if (kind !== "logout" && kind !== "sync" && (!id || !pw)) { Sync.err = "아이디와 비밀번호를 넣어 주세요."; Sync.render(); return; }
+  Sync.err = ""; const box = $("#acctBox"); if (box) box.querySelectorAll("button").forEach(b => b.disabled = true);
+  try {
+    if (kind === "logout") { await Sync.logout(); toast("로그아웃했습니다. 이 브라우저의 세계관은 그대로 있습니다."); }
+    else if (kind === "sync") { await Sync.pull(); await Sync.push(); toast(Sync.err ? "동기화하지 못했습니다. " + Sync.err : "동기화했습니다."); }
+    else { await Sync.login(id, pw, kind === "signup", inv); toast(`${Sync.acct.id}(으)로 로그인했습니다. 세계관을 서버와 맞췄습니다.`); S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)); }
+  } catch (e) { Sync.err = e.message || "실패했습니다."; }
+  Sync.render(); renderSide();
 }
 function readGsetForm() {
   const v = id => ($("#" + id)?.value ?? "").trim();
@@ -3569,6 +3721,10 @@ document.addEventListener("click", ev => {
     case "rw-no": S.confirmRewrite = null; renderMain(); break;
     case "delpage-no": S.confirmDelPage = null; renderMain(); break;
     case "mg-no": S.confirmMerge = null; renderMain(); break;
+    case "acct-login": acctAction("login"); break;
+    case "acct-signup": acctAction("signup"); break;
+    case "acct-logout": acctAction("logout"); break;
+    case "acct-sync": acctAction("sync"); break;
     case "regen-open": openRegen(); break;
     case "regen-cancel": cancelRegen(); break;
     case "cast-add": if (S.cast.length < 8) { S.cast.push({ name: "", desc: "", rel: "" }); renderMain(); document.querySelector(`[data-cast="${S.cast.length - 1}"][data-cf="name"]`)?.focus(); } break;
@@ -3657,6 +3813,10 @@ document.addEventListener("click", ev => {   // 길게 누른 뒤 손을 뗄 때
   if (lp.fired && Date.now() - (lp.firedAt || 0) < 900) { ev.stopPropagation(); ev.preventDefault(); lp.fired = false; }
 }, true);
 document.addEventListener("contextmenu", ev => { if (ev.target.closest?.("a.wl.new")) ev.preventDefault(); });
+document.addEventListener("visibilitychange", () => {   // 다른 기기에서 작업하고 돌아오면 바뀐 것을 받아 온다
+  if (document.visibilityState === "visible" && Sync.acct && S.ready && Date.now() - Sync.lastAt > 30000) Sync.pull();
+  if (document.visibilityState === "hidden" && Sync.acct && Sync.pending()) Sync.push();
+});
 document.addEventListener("keydown", ev => {
   if (ev.key === "Escape") $("#sugg").hidden = true;
   if (ev.key === "Enter" && ev.target.matches?.("textarea.die-v")) { ev.preventDefault(); ev.target.blur(); }   // 주사위 칸은 한 줄. Enter는 입력을 마친다
@@ -3673,6 +3833,7 @@ document.addEventListener("keydown", ev => {
   await Store.init();
   try { S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)); }
   catch (e) { toast("세계관 목록을 불러오지 못했습니다. " + errMsg(e)); }
+  if (Sync.acct) { Sync.load(); await Sync.pull(); S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)); Sync.push(); }   // 로그인되어 있으면 서버에서 바뀐 것을 받고 남은 변경을 올린다
   S.ready = true; S.view = gReady() ? { name: "home" } : { name: "gset" };
   if (invited) S.gres = "초대 링크로 중계 서버 주소가 채워졌습니다. 받은 접속 암호를 넣고 저장해 주세요.";
   renderAll();
