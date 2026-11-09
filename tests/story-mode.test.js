@@ -748,10 +748,10 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     ok("인물 인포박스에 성별을 넣게 하고, 빠지면 띄우기 전에 채운다");
 
     /* 33. 본문 평문을 골라 빨간 링크 만들기 */
-    ctl.pageOverride["선택 문서"] = { sections: [{ heading: "개요", level: 1, body: "**바다 마을**의 빵집[*바다 마을 기록]과 바다 마을의 [[한서린]] 그리고 바다 마을." }] };
+    ctl.pageOverride["선택 문서"] = { infobox: [{ label: "직업", value: "등대지기 겸 어부" }], sections: [{ heading: "개요", level: 1, body: "**바다 마을**의 빵집[*바다 마을 기록]과 바다 마을의 [[한서린]] 그리고 바다 마을." }] };
     await page.fill("#q", "선택 문서"); await page.press("#q", "Enter"); await waitArticle(page, "선택 문서"); ctl.pageOverride = {};
     const selectNth = (text, nth) => page.evaluate(([text, nth]) => {   // nth번째 평문 조각에서 text를 고른다
-      const nodes = [], tw = document.createTreeWalker(document.querySelector(".article .secb"), NodeFilter.SHOW_TEXT);
+      const nodes = [], tw = document.createTreeWalker(document.querySelector(".article .secb[data-bi]"), NodeFilter.SHOW_TEXT);
       for (let n = tw.nextNode(); n; n = tw.nextNode()) if (!n.parentElement.closest("a, sup") && n.data.includes(text)) nodes.push(n);
       const n = nodes[nth], i = n.data.lastIndexOf(text), r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + text.length);
       const s = getSelection(); s.removeAllRanges(); s.addRange(r);
@@ -775,6 +775,14 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
       assert(p33.sections[0].body.startsWith("**[[바다 마을]]**의 빵집"), "굵게 안의 글을 감싼다: " + p33.sections[0].body); }
     assert.strictEqual(await page.locator('.article strong a.wl.new[data-t="바다 마을"]').count(), 1, "굵게 안의 링크로 보인다");
     assert(!(await page.locator(".article").innerText()).includes("**"), "서식 기호가 드러나지 않는다");
+    await page.evaluate(() => {   // 인포박스 값에서도 고를 수 있다
+      const td = [...document.querySelectorAll(".infobox td")].find(x => x.textContent.includes("등대지기")), n = [...td.childNodes].find(x => x.nodeType === 3 && x.data.includes("등대지기"));
+      const i = n.data.indexOf("등대지기"), r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + 4); getSelection().removeAllRanges(); getSelection().addRange(r);
+    });
+    await page.waitForSelector("#selPop", { state: "visible", timeout: 5000 }); await page.click("#selPop"); await settle(page);
+    { const w33 = await worldOf(page, "기본 세계"), p33 = await pageOf(page, w33, "선택 문서");
+      assert.strictEqual(p33.infobox.find(r => r.label === "직업").value, "[[등대지기]] 겸 어부", "인포박스 값의 고른 자리를 감싼다"); }
+    assert.strictEqual(await page.locator('.infobox a.wl.new[data-t="등대지기"]').count(), 1, "인포박스에 빨간 링크로 보인다");
     const np33 = count("page"); await page.locator('.article a.wl.new[data-t="바다 마을"]').click(); await waitArticle(page, "바다 마을");
     assert.strictEqual(count("page"), np33 + 1, "만든 빨간 링크를 누르면 문서를 작성한다");
     ok("본문 평문을 골라 빨간 링크로 만들고(굵게·각주·링크 밖에서 고른 그 자리만), 되돌릴 수 있으며, 누르면 문서를 작성한다");

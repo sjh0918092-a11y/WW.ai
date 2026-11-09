@@ -349,7 +349,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.8 · 2026-11-09";
+const APP_VERSION = "v6.9 · 2026-11-09";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -3294,7 +3294,7 @@ function articleHtml(k) {
       <div class="tools"><button type="button" class="btn pri" data-gen="${k}" ${S.gen || !S.sample ? "disabled" : ""}>이 문서 작성하기</button><button type="button" class="btn" data-compose="${k}">방향을 정해 작성</button></div></div>`;
   }
   const fns = [];
-  const box = p.infobox?.length ? `<aside class="infobox"><div class="ih">${esc(p.title)}</div><div class="ity">${esc(p.type)}</div><table>${p.infobox.map(r => `<tr><th>${esc(r.label)}</th><td>${blocks(r.value, fns).replace(/^<p>|<\/p>$/g, "")}</td></tr>`).join("")}</table></aside>` : "";
+  const box = p.infobox?.length ? `<aside class="infobox"><div class="ih">${esc(p.title)}</div><div class="ity">${esc(p.type)}</div><table>${p.infobox.map((r, i) => `<tr><th>${esc(r.label)}</th><td class="secb" data-ib="${i}">${blocks(r.value, fns).replace(/^<p>|<\/p>$/g, "")}</td></tr>`).join("")}</table></aside>` : "";
   let n1 = 0, n2 = 0;
   const nums = p.sections.map(s => { if ((s.level || 1) === 2 && n1) { n2++; return `${n1}.${n2}.`; } n1++; n2 = 0; return `${n1}.`; });
   const story = isStory(w), pk = story ? w.story.protagonistKey : null, card = story && k === pk && !held && S.storyCard?.wid === w.id ? S.storyCard : null;
@@ -3889,7 +3889,7 @@ function selTarget() {
     for (let i = d.indexOf(text); i >= 0 && i < end; i = d.indexOf(text, i + 1)) n++;
     if (x === node) break;
   }
-  return { k: v.key, bi: +secb.dataset.bi, n, text, range: r };
+  return { k: v.key, where: secb.dataset.ib != null ? ["infobox", +secb.dataset.ib, "value"] : ["sections", +secb.dataset.bi, "body"], n, text, range: r };   // 섹션 본문 또는 인포박스 값
 }
 function selBusy(k) {
   const w = S.world;
@@ -3900,26 +3900,27 @@ function selBusy(k) {
 async function linkSelection(t) {
   const w = S.world, p = S.pages[t.k]; if (!w || !p) return;
   const busy = selBusy(t.k); if (busy) { toast(busy); return; }
-  const sec = p.sections[t.bi]; if (!sec) return;
-  const body = sec.body, mask = maskSource(body);
+  const [list, idx, fld] = t.where, sec = p[list]?.[idx]; if (!sec || typeof sec[fld] !== "string") return;
+  const body = sec[fld], mask = maskSource(body);
   let at = -1;
   for (let i = mask.indexOf(t.text), c = 0; i >= 0; i = mask.indexOf(t.text, i + 1)) if (c++ === t.n) { at = i; break; }
   if (at < 0) { toast("원문에서 이 부분을 찾지 못했습니다. 편집으로 [[ ]]를 넣어 주세요."); return; }
   const title = norm(t.text), lk = kOf(w, title);
   if (lk === t.k) { toast("이 문서 자기 자신에는 링크를 걸 수 없습니다."); return; }
   const tag = `[[${title}]]`;
-  sec.body = body.slice(0, at) + tag + body.slice(at + t.text.length);
+  sec[fld] = body.slice(0, at) + tag + body.slice(at + t.text.length);
   const made = !w.entities[lk];
   if (made) { w.entities[lk] = newEntity(title, "", ""); w.entities[lk].origin = t.k; }
-  const e = w.entities[lk], mention = sentenceAround(sec.body, at, tag.length), hadMention = e.mentions.some(m => m.from === t.k && m.text === mention);
+  const e = w.entities[lk], mention = list === "infobox" ? `${p.title} 정보 — ${sec.label}: ${stripMarks(sec[fld])}`.slice(0, 420) : sentenceAround(sec[fld], at, tag.length), hadMention = e.mentions.some(m => m.from === t.k && m.text === mention);
   addMention(e, t.k, mention);
   const hadLink = (p.links ||= []).includes(lk); if (!hadLink) p.links.push(lk);
+  if (list === "infobox") { const pe = w.entities[t.k]; if (pe) pe.box = p.infobox.map(r => r.label + ": " + stripMarks(r.value)).join(" / ").slice(0, 400); }
   getSelection()?.removeAllRanges(); hideSelPop();
   const save = async () => { try { await Store.savePage(w.id, p); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); } };
   await save(); renderAll();
   const undo = async () => {
-    if (S.world !== w || S.pages[t.k] !== p || sec.body.slice(at, at + tag.length) !== tag) { toast("그새 문서가 바뀌어 되돌릴 수 없습니다. 편집으로 고쳐 주세요."); return; }
-    sec.body = body;
+    if (S.world !== w || S.pages[t.k] !== p || sec[fld].slice(at, at + tag.length) !== tag) { toast("그새 문서가 바뀌어 되돌릴 수 없습니다. 편집으로 고쳐 주세요."); return; }
+    sec[fld] = body;
     if (!hadMention) e.mentions = e.mentions.filter(m => !(m.from === t.k && m.text === mention));
     if (!hadLink) p.links = p.links.filter(x => x !== lk);
     if (made && !S.pages[lk] && !e.mentions.length && !e.facts.length) delete w.entities[lk];
