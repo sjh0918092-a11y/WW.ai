@@ -46,7 +46,7 @@ function planJson(p) {
     : n === 3 ? [{ title: "이일", change: "이일이 백의종군했다.", kind: "update" }] : [{ title: "한양", change: "한양에 소식이 전해졌다.", kind: "update" }];
   return { title: `제${n}장: ${n}번째 사건`, era: `${1586 + n}년`, summary: `${n}장 줄거리. 한서린이 움직였다.`, timeline: [{ year: String(1586 + n), event: `${n}장 사건` }],
     protagonistBlock: { heading: `${n}장 사건명`, sections: [{ heading: "출전", level: 1, body: `한서린은 [[이일(인물)]]과 함께 출전했다. (${n}장)` }, { heading: "귀환", level: 1, body: "한서린은 돌아왔다." }], infoboxPatch: [{ label: "상태", value: `${n}장 상태` }], summaryPatch: "" },
-    affected, newEntities: [{ title: "원균 함대", type: "조직", summary: "새 함대" }], wove: [{ title: "이일", how: "이일이 출전의 계기가 되었다." }, { title: "여진 해적단(조직)", how: "해적단이 철령을 포위했다." }],
+    affected, newEntities: [{ title: "원균 함대", type: "조직", summary: "새 함대" }, ...(n === 2 ? [{ title: "새 이웃", type: "인물", summary: "옆집 사람" }] : [])], wove: [{ title: "이일", how: "이일이 출전의 계기가 되었다." }, { title: "여진 해적단(조직)", how: "해적단이 철령을 포위했다." }],
     facts: [{ about: "이일", fact: `이일은 ${n}장에 움직였다.` }], relations: [], spineRevise: n === 2 ? [{ n: 4, intent: "수정된 절정" }] : [],
     nextChoices: last ? [] : ctl.emptyChoices ? [{}, { score: 3 }] : n === 2 ? [{ action: "진격한다", reason: "적이 약하다" }, { text: "후퇴한다" }, "협상한다"] : ["진격한다", "후퇴한다", "협상한다"], ending: last ? { epilogue: "한서린은 고향으로 돌아갔다." } : null };
 }
@@ -168,6 +168,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await page.click('#side [data-act="home"]');
     assert(bp.includes("기준 시점에 1학년(신입생)인 인물은 그 전 해들에는 아직 입학 전"), "문서 프롬프트에 학년·연도 역산 규칙");
     assert(bp.includes("인물의 속마음, 생각, 느낌은 위키 작성자가 알 수 있는 방식으로만 쓴다"), "속마음은 증언·기록·행동으로 (기본 모드도)");
+    assert(bp.includes("새 인물은 이 항목의 이야기에 꼭 필요할 때만 많아야 1명") && !bp.includes("인물을 2명 이상") && !bp.includes("사랑한 사람과 그 결말"), "문서마다 새 인물을 강요하지 않고, 연인·가족을 지어내지 않는다");
     assert(bp.includes("## 절제 (아래 모든 규칙에 먼저 적용한다)") && bp.includes("개요의 첫 문장은 이 항목이 무엇인지 밝히는 정의") && bp.includes("핵심 숫자 3~5개만") && bp.includes("한자어 압축 명사구") && bp.includes("상투적 감각 표현") && bp.includes("예고편 대사처럼") && !bp.includes("수치의 대비"), "과장·숫자·클리셰를 누르는 절제 규칙");
     assert(bp.includes("전칭·극단 표현은 정말 예외가 없을 때만") && bp.includes("최대치 결말로 맺지 않는다") && bp.includes("좋은 예(그 자리의 말)") && bp.includes("숫자를 줄인다고 구체성까지 줄이지 않는다"), "전칭 표현, 결말, 인용 예시, 구체성 규칙");
     assert(calls.filter(c => c.kind === "read").pop().prompt.includes("연도·나이·학년·기수·재직 기간이 서로 맞지 않는 곳(예: 기준 시점에 1학년인"), "설정 검사가 문서 안의 연도 모순도 잡는다");
@@ -270,18 +271,18 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert(!Object.values(sw.entities).some(o => /\((인물|조직)\)$/.test(o.title)), "모델이 '이일(인물)'처럼 써도 중복 항목을 만들지 않는다");
     assert(after.sections.some(s => s.body.includes("[[이일]]")) && await page.locator('.article a.wl[data-t="이일"]:not(.new)').count() > 0, "유형이 붙은 링크는 원래 문서로 이어진다");
     assert(sw.story.chapters[1].affected.some(a => a.key === kOf("이일")) && sw.story.chapters[1].wove.some(a => a.key === kOf("여진 해적단")));
-    assert(planPrompt.includes("새 항목: 이번 장에서 처음 등장하는 항목을 3~5개 만든다"), "장마다 새 항목을 요구한다");
+    assert(planPrompt.includes("새 항목: 이번 장에서 처음 등장하는 항목을 2~4개 만든다") && planPrompt.includes("새 인물은 이번 장 사건에 꼭 필요할 때만 1명까지") && !planPrompt.includes("새 인물을 1명 이상"), "새 항목은 만들되 새 인물은 필요할 때만");
     assert(planPrompt.includes("- 절제: 규칙은 방향이지 최대치가 아니다") && planPrompt.includes("과장 수식어("), "장 계획에도 절제 규칙");
     assert(planPrompt.includes("이미 다른 인물이 가진 특징:\n  - 이일: 아날로그 무전기 집착"), "장 계획의 새 인물도 기존 인물 특징과 겹치지 않게");
-    assert(planPrompt.includes("적어도 한 명은 이웃, 동료, 가족처럼 선량하거나 평범한 사람으로 둔다"), "장마다 평범한 새 인물도");
+    assert(planPrompt.includes("이웃, 동료처럼 선량하거나 평범한 사람으로 두는 편이 좋다"), "새 인물은 평범한 쪽으로");
     assert(planPrompt.includes("새 인물의 기질은 다음 후보에서 고른다:"), "장 계획에 새 인물 기질 후보");
     assert(wove.includes("이번 장에 새로 등장") && /이번 장에 새로 등장\s*원균 함대/.test(wove), "안내 카드에 새로 등장한 항목");
     assert(sw.story.chapters[1].fresh.includes(kOf("원균 함대")));
-    assert((await sideText(page)).includes("새로 등장 1곳 · 안 읽음 1"), "사이드바에 새로 등장한 항목");
+    assert((await sideText(page)).includes("새로 등장 2곳 · 안 읽음 2"), "사이드바에 새로 등장한 항목");
     ok("다음 장으로 → 선택 → 주인공 문서에 2장 블록이 붙고, 기존 본문은 그대로이며, 탐험이 반영된다");
 
     await page.locator('#side button[data-k]', { hasText: "원균 함대" }).click(); await waitArticle(page, "원균 함대");
-    assert((await sideText(page)).includes("새로 등장 1곳") && !(await sideText(page)).includes("안 읽음") && (await sideText(page)).includes("이번 장 탐험 1곳"), "새 항목을 읽으면 탐험으로 센다");
+    assert((await sideText(page)).includes("새로 등장 2곳 · 안 읽음 1") && (await sideText(page)).includes("이번 장 탐험 1곳"), "새 항목을 읽으면 탐험으로 센다");
     await page.click('#side [data-k]:has-text("주인공 문서")'); await waitArticle(page, "한서린");
     ok("장마다 새로 등장한 항목이 사이드바에 보이고, 읽으면 이번 장 탐험으로 센다");
 
@@ -353,8 +354,8 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     }
     assert.strictEqual((await page.locator("h1.t").innerText()).trim(), "한서린", "마지막 장도 주인공 문서부터 보여 준다");
     { const plans = calls.filter(c => c.kind === "chapterPlan").map(c => c.prompt), byN = n => plans.filter(x => x.includes(`다음 장(${n}장)`)).pop();
-      assert(byN(3).includes("처음 등장하는 항목을 3~5개 만든다"), "위기까지는 새 항목 3~5개");
-      assert(byN(4).includes("이번 장은 절정이다. 새 인물은 만들지 않는다") && !byN(4).includes("3~5개 만든다"), "절정에는 새 인물을 만들지 않는다");
+      assert(byN(3).includes("처음 등장하는 항목을 2~4개 만든다") && byN(3).includes("직전 장에 새 인물이 나왔으므로 이번 장에는 새 인물을 만들지 않는다"), "새 인물은 간간이: 직전 장에 나왔으면 이번 장은 쉰다");
+      assert(byN(4).includes("이번 장은 절정이다. 새 인물은 만들지 않는다") && !byN(4).includes("2~4개 만든다"), "절정에는 새 인물을 만들지 않는다");
       assert(byN(5).includes("이번 장은 결말이다. 새 인물이나 새 항목을 만들지 않는다"), "결말에는 새 항목을 만들지 않는다"); }
     assert((await page.locator(".article h2 .chb").allInnerTexts()).includes("5장"));
     assert.strictEqual(await page.locator('.stcard [data-act="epilogue"]').count(), 1, "안내 카드 위에 '에필로그로' 버튼");
