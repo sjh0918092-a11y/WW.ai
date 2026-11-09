@@ -347,7 +347,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.5 · 2026-11-09";
+const APP_VERSION = "v6.6 · 2026-11-09";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -874,8 +874,12 @@ const S = {
   creating: false, createErr: null, seed: "", seedTab: "own", ownSeed: "", dice: null, whatIfs: null, first: "", guideIn: "",
   confirmDel: null, confirmRewrite: null, canonFilter: "all", focusEnt: null, nf: new Set(),
   edit: null, refreshing: null, confirmDelPage: null, confirmMerge: null, compose: null,
-  mode: "basic", storyN: 5, protoDesc: "", cast: [], regen: null, storyGen: null, syncQ: [], syncing: null, syncErr: null, adv: null, storyCard: null
+  mode: "basic", storyN: 5, protoDesc: "", cast: [], regen: null, storyGen: null, syncQ: [], syncing: null, syncErr: null, hold: null, adv: null, storyCard: null
 };
+
+/* 장을 반영한 문서는 설정 검사와 고치기가 끝날 때까지 이전 버전을 보여 준다. hold: { wid, key, page(이전 버전) } */
+const shownPage = k => S.hold && S.hold.key === k && S.hold.wid === S.world?.id ? S.hold.page : S.pages[k];
+const isHeld = k => !!S.hold && S.hold.key === k && S.hold.wid === S.world?.id;
 
 /* ---------- canon helpers ---------- */
 const newEntity = (title, type, summary) => ({ title: norm(title), type: type || "", summary: summary || "", facts: [], mentions: [], page: false, box: "" });
@@ -2235,6 +2239,7 @@ async function checkPage(k, auto) {
   if (!S.sample) { if (!auto) toast(ERR.no_sample); return; }
   if (S.checking) { if (auto) { (S.autoQ ||= []).includes(k) || S.autoQ.push(k); } return; }
   const w = S.world, p = S.pages[k]; if (!w || !p) return;
+  if (isHeld(k)) { if (!auto) toast("이 문서에 반영한 장을 설정과 맞춰 보는 중입니다."); return; }
   S.checking = k; S.checkT0 = performance.now(); renderMain();
   let found = 0;
   try {
@@ -2642,6 +2647,7 @@ const conflictLabel = (w, c) => c.kind === "rule" ? `핵심 규칙 ${c.id}` : c.
 
 function openEditor(k) {
   const p = S.pages[k]; if (!p) return;
+  if (isHeld(k)) { toast("이 문서에 반영한 장을 설정과 맞춰 보는 중입니다. 끝난 뒤 편집해 주세요."); return; }
   if (!S.edit || S.edit.key !== k) S.edit = { key: k, f: pageToSource(S.world, p) };
   S.confirmRewrite = null; S.confirmDelPage = null; renderMain(true); window.scrollTo({ top: 0 });
 }
@@ -2906,8 +2912,13 @@ async function advanceChapter(skip) {
     drainSync(); return;
   }
   S.pages[pk] = np;
-  // 주인공 문서를 보여 주기 전에 설정 검사를 돌리고 어긋난 곳은 고친다(건너뛰거나 실패하면 그대로 보여 준다)
-  const pre = GS.preCheck !== false && S.world === w ? await preCheck(w, pk, np, S.storyGen, () => { if (S.view.name === "advance") renderMain(); updateStoryLive(); }, ` · ${n}장 반영 직후`) : null;
+  // 주인공 문서를 보여 주기 전에 설정 검사를 돌리고 어긋난 곳은 고친다(건너뛰거나 실패하면 그대로 보여 준다). 그동안 주인공 문서를 열면 이전 버전이 보인다
+  let pre = null;
+  if (GS.preCheck !== false && S.world === w) {
+    S.hold = { wid: w.id, key: pk, page: oldP };
+    try { pre = await preCheck(w, pk, np, S.storyGen, () => { if (S.view.name === "advance" || (S.view.name === "article" && S.view.key === pk)) renderMain(); updateStoryLive(); }, ` · ${n}장 반영 직후`); }
+    finally { S.hold = null; }
+  }
   np = pre?.page || np;
   S.storyGen = null; S.adv = null;
   try { await Store.savePage(w.id, np); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
@@ -2998,9 +3009,11 @@ async function runSync(k) {
   }
   // 장 섹션을 붙인 문서도 보여 주기 전에 설정 검사를 돌리고 어긋난 곳은 고친다
   let pre = null;
-  if (GS.preCheck !== false && S.world === w) {
+  if (GS.preCheck !== false && S.world === w) {   // 검사와 고치기가 끝날 때까지 화면에는 이전 버전을 둔다
     S.syncPhase = { phase: "", ctl: new AbortController(), nFix: 0 };
-    pre = await preCheck(w, k, np, S.syncPhase, () => { if (S.view.name === "article" && S.view.key === k) renderMain(); else renderSide(); }, ` · ${chs.join(",")}장 반영 직후`);
+    S.hold = { wid: w.id, key: k, page: p };
+    try { pre = await preCheck(w, k, np, S.syncPhase, () => { if (S.view.name === "article" && S.view.key === k) renderMain(); else renderSide(); }, ` · ${chs.join(",")}장 반영 직후`); }
+    finally { S.hold = null; }
     np = pre.page || np;
   }
   S.syncing = null; S.syncPhase = null;
@@ -3261,7 +3274,7 @@ function homeHtml() {
 }
 
 function articleHtml(k) {
-  const w = S.world, e = w.entities[k], p = S.pages[k];
+  const w = S.world, e = w.entities[k], p = shownPage(k), held = isHeld(k);
   if (!e) return `<div class="sheet"><p>문서를 찾을 수 없습니다.</p></div>`;
   const crumb = `<div class="crumb"><span>${esc(w.title)}</span><span>작중 기준 ${esc(w.era)}</span>${e.type ? `<span>분류: ${esc(e.type)}</span>` : ""}${p ? `<span>작성 ${fmtDate(p.createdAt)}</span>` : ""}${p?.editedAt ? `<span>직접 수정 ${fmtDate(p.editedAt)}</span>` : ""}</div>`;
   if (S.gen && S.gen.key === k) {
@@ -3283,13 +3296,15 @@ function articleHtml(k) {
   const box = p.infobox?.length ? `<aside class="infobox"><div class="ih">${esc(p.title)}</div><div class="ity">${esc(p.type)}</div><table>${p.infobox.map(r => `<tr><th>${esc(r.label)}</th><td>${blocks(r.value, fns).replace(/^<p>|<\/p>$/g, "")}</td></tr>`).join("")}</table></aside>` : "";
   let n1 = 0, n2 = 0;
   const nums = p.sections.map(s => { if ((s.level || 1) === 2 && n1) { n2++; return `${n1}.${n2}.`; } n1++; n2 = 0; return `${n1}.`; });
-  const story = isStory(w), pk = story ? w.story.protagonistKey : null, card = story && k === pk && S.storyCard?.wid === w.id ? S.storyCard : null;
+  const story = isStory(w), pk = story ? w.story.protagonistKey : null, card = story && k === pk && !held && S.storyCard?.wid === w.id ? S.storyCard : null;
   const chb = (s, sub) => s.ch && !sub ? `<span class="chb">${s.ch}장</span>` : "";
   const secs = p.sections.map((s, i) => { const sub = nums[i].split(".").length > 2; return `<${sub ? "h3" : "h2"} id="s-${i}" class="${sub ? "sh" : ""}${!sub && card && s.ch === card.n ? " chnew" : ""}"><span class="n">${nums[i]}</span>${chb(s, sub)}${esc(s.heading)}</${sub ? "h3" : "h2"}>${blocks(s.body, fns)}`; }).join("");
   const toc = p.sections.length > 2 ? `<nav class="toc" aria-label="목차"><b>목차</b><ul>${p.sections.map((s, i) => `<li class="${nums[i].split(".").length > 2 ? "sub" : ""}"><span class="n">${nums[i]}</span> <button type="button" data-sec="${i}">${chb(s, nums[i].split(".").length > 2)}${esc(s.heading)}</button></li>`).join("")}</ul></nav>` : "";
   const stNotice = story && storyOn(w) && p.storyNotice ? `<div class="notice"><div>이 문서는 진행 중인 사건을 다룹니다. (현재 ${w.story.chapter}장)</div></div>` : "";
-  const miss = story ? missingChs(w, k) : [];
-  const syncHtml = !story ? "" : S.syncing === k ? `<p class="memo-line"><span class="dot"></span>${S.syncPhase?.phase === "check" ? "반영한 장 섹션을 설정과 맞춰 보는 중…" : S.syncPhase?.phase === "fix" ? `반영한 장 섹션에서 설정과 어긋난 ${S.syncPhase.nFix}곳을 고치는 중…` : `${missingChs(w, k).join(", ")}장의 변화를 이 문서에 반영하는 중…`}</p>`
+  const miss = story && !held ? missingChs(w, k) : [];
+  const holdTail = " 끝나면 바뀐 내용을 보여 드립니다. 지금은 이전 버전입니다.";
+  const syncHtml = !story ? "" : S.storyGen && held ? `<p class="memo-line"><span class="dot"></span>${S.storyGen.n}장을 반영한 이 문서를 ${S.storyGen.phase === "fix" ? `설정과 어긋난 ${S.storyGen.nFix}곳을 고치는 중…` : "설정과 맞춰 보는 중…"}${holdTail}</p>`
+    : S.syncing === k ? `<p class="memo-line"><span class="dot"></span>${S.syncPhase?.phase === "check" ? "반영한 장 섹션을 설정과 맞춰 보는 중…" + holdTail : S.syncPhase?.phase === "fix" ? `반영한 장 섹션에서 설정과 어긋난 ${S.syncPhase.nFix}곳을 고치는 중…` + holdTail : `${missingChs(w, k).join(", ")}장의 변화를 이 문서에 반영하는 중…`}</p>`
     : S.syncErr?.key === k ? `<div class="banner warn">${miss.join(", ")}장의 변화를 반영하지 못했습니다. ${esc(S.syncErr.msg)} <button type="button" class="btn" data-act="sync-retry" style="margin-left:6px;padding:2px 10px" ${!S.sample ? "disabled" : ""}>다시 시도</button></div>`
     : miss.length ? `<p class="memo-line"><span class="dot"></span>${miss.join(", ")}장의 변화를 반영할 차례를 기다리는 중</p>` : "";
   const cardHtml = card ? storyCardHtml(w, card.n) : "";

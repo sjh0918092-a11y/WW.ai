@@ -290,10 +290,14 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     let nb = count("chapterBlock");
     ctl.checkIssues = [{ claim: "2장에서 이 항목에 일이 생겼다.", evidence: "규칙 하나", conflict: "x", severity: "high" }];
     ctl.fixEdits = [{ memo: 1, field: "body", old: "2장에서 이 항목에 일이 생겼다.", new: "2장에서 이 항목에 변화가 생겼다." }];
-    const nf5 = count("fix");
+    const nf5 = count("fix"); ctl.checkDelay = 1200;
     await page.locator('.stcard a.wl[data-t="북관 철령"]').click();
+    await page.waitForFunction(() => /반영한 장 섹션을 설정과 맞춰 보는 중/.test(document.querySelector("#main")?.textContent || ""), null, { timeout: 15000 });
+    { const t = await page.locator(".article").innerText();
+      assert(!t.includes("2장에서 이 항목에") && !(await page.locator(".chb").allInnerTexts()).includes("2장"), "검사와 고치기가 끝나기 전에는 새 장 섹션을 보여 주지 않는다(이전 버전)");
+      assert((await page.locator("#main").innerText()).includes("지금은 이전 버전입니다"), "이전 버전이라고 알린다"); }
     await page.waitForFunction(() => [...document.querySelectorAll(".chb")].some(e => e.textContent === "2장"), null, { timeout: 15000 }); await settle(page);
-    ctl.checkIssues = null; ctl.fixEdits = null;
+    ctl.checkIssues = null; ctl.fixEdits = null; ctl.checkDelay = 0;
     assert.strictEqual(count("chapterBlock"), nb + 1, "affected 문서를 열면 장 섹션을 한 번 생성");
     assert.strictEqual(count("fix"), nf5 + 1, "장 섹션을 붙인 뒤 보여 주기 전에 검사하고 고친다");
     assert((await page.locator(".article").innerText()).includes("2장에서 이 항목에 변화가 생겼다."), "고친 장 섹션으로 보여 준다");
@@ -709,6 +713,9 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert.strictEqual((await page.locator('[data-act="story-stop"]').innerText()).trim(), "검사 건너뛰고 보기");
     assert.strictEqual((await page.locator("h1.t").innerText()).trim(), "3장으로", "검사 단계에서도 제목은 진행 중인 장");
     assert((await page.locator("#main").innerText()).includes("3장은 반영되었습니다"), "검사 단계에 맞는 안내");
+    await page.fill("#q", "한서린"); await page.press("#q", "Enter"); await waitArticle(page, "한서린");   // 검사 중에 주인공 문서를 직접 열어 본다
+    assert(!(await page.locator(".article").innerText()).includes("(3장)") && (await page.locator("#main").innerText()).includes("지금은 이전 버전입니다"), "검사 중 주인공 문서를 열면 이전 버전을 보여 준다");
+    await page.click("[data-edit]"); assert.strictEqual(await page.locator("#edSummary").count(), 0, "검사 중에는 편집을 열지 않는다");
     await page.waitForSelector(".stcard", { timeout: 20000 }); await settle(page); ctl.checkIssues = null; ctl.fixEdits = null; ctl.checkDelay = 0;
     assert.strictEqual(count("fix"), nf30 + 1, "장 전환 뒤 주인공 문서를 보여 주기 전에 고친다");
     assert((await page.locator(".article").innerText()).includes("한서린은 성으로 돌아왔다."), "고친 주인공 문서로 보여 준다");
