@@ -273,6 +273,8 @@ details.ent li{margin-bottom:3px}
 .ver{position:fixed;right:calc(8px + env(safe-area-inset-right,0px));bottom:calc(6px + env(safe-area-inset-bottom,0px));z-index:5;font:11px/1.4 var(--f-mono);color:var(--muted);background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);padding:2px 6px;opacity:.85;pointer-events:none;user-select:none}
 @media print{.ver{display:none}}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--accent);color:var(--on-accent);padding:10px 16px;border-radius:var(--r);font-size:13.5px;box-shadow:0 8px 24px rgb(0 0 0 / .2);z-index:20;max-width:calc(100vw - 32px)}
+.selpop{position:fixed;z-index:21;display:none;border:1px solid var(--line);background:var(--sheet);color:var(--red);border-radius:var(--r);padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 6px 18px rgb(0 0 0 / .16);white-space:nowrap}
+.selpop.blue{color:var(--link)}
 .toast button{background:none;border:0;color:inherit;text-decoration:underline;cursor:pointer;margin-left:8px;padding:0}
 
 @media (max-width:900px){
@@ -347,7 +349,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.6 · 2026-11-09";
+const APP_VERSION = "v6.7 · 2026-11-09";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -3298,7 +3300,7 @@ function articleHtml(k) {
   const nums = p.sections.map(s => { if ((s.level || 1) === 2 && n1) { n2++; return `${n1}.${n2}.`; } n1++; n2 = 0; return `${n1}.`; });
   const story = isStory(w), pk = story ? w.story.protagonistKey : null, card = story && k === pk && !held && S.storyCard?.wid === w.id ? S.storyCard : null;
   const chb = (s, sub) => s.ch && !sub ? `<span class="chb">${s.ch}장</span>` : "";
-  const secs = p.sections.map((s, i) => { const sub = nums[i].split(".").length > 2; return `<${sub ? "h3" : "h2"} id="s-${i}" class="${sub ? "sh" : ""}${!sub && card && s.ch === card.n ? " chnew" : ""}"><span class="n">${nums[i]}</span>${chb(s, sub)}${esc(s.heading)}</${sub ? "h3" : "h2"}>${blocks(s.body, fns)}`; }).join("");
+  const secs = p.sections.map((s, i) => { const sub = nums[i].split(".").length > 2; return `<${sub ? "h3" : "h2"} id="s-${i}" class="${sub ? "sh" : ""}${!sub && card && s.ch === card.n ? " chnew" : ""}"><span class="n">${nums[i]}</span>${chb(s, sub)}${esc(s.heading)}</${sub ? "h3" : "h2"}><div class="secb" data-bi="${i}">${blocks(s.body, fns)}</div>`; }).join("");
   const toc = p.sections.length > 2 ? `<nav class="toc" aria-label="목차"><b>목차</b><ul>${p.sections.map((s, i) => `<li class="${nums[i].split(".").length > 2 ? "sub" : ""}"><span class="n">${nums[i]}</span> <button type="button" data-sec="${i}">${chb(s, nums[i].split(".").length > 2)}${esc(s.heading)}</button></li>`).join("")}</ul></nav>` : "";
   const stNotice = story && storyOn(w) && p.storyNotice ? `<div class="notice"><div>이 문서는 진행 중인 사건을 다룹니다. (현재 ${w.story.chapter}장)</div></div>` : "";
   const miss = story && !held ? missingChs(w, k) : [];
@@ -3853,6 +3855,99 @@ document.addEventListener("keydown", ev => {
   if (ev.key === "Escape") $("#sugg").hidden = true;
   if (ev.key === "Enter" && ev.target.matches?.("textarea.die-v")) { ev.preventDefault(); ev.target.blur(); }   // 주사위 칸은 한 줄. Enter는 입력을 마친다
 });
+
+/* ---------- 본문 글을 골라 링크로 만들기 ----------
+ * 본문의 평문을 드래그(모바일은 길게 눌러 선택)하면 버튼이 뜨고, 누르면 그 자리를 [[ ]]로 감싼다. 없는 항목이면 빨간 링크가 된다.
+ * 화면의 글과 원문을 맞추는 법: 링크·각주·굵게·취소선 안의 글은 양쪽에서 모두 빼고, 고른 글이 그 문단에서 몇 번째로 나오는지로 원문 위치를 찾는다. */
+const SEL_SKIP = "a, sup, strong, del";
+function plainNodes(root) {   // 링크·각주·서식 밖의 글 조각들
+  const out = [], tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = tw.nextNode(); n; n = tw.nextNode()) if (!n.parentElement.closest(SEL_SKIP)) out.push(n);
+  return out;
+}
+function maskSource(t) {   // 원문과 같은 길이로, 화면에 평문으로 나오지 않는 부분은 \0으로 가린다
+  const a = t.split("");   // indexOf와 같은 UTF-16 칸 단위
+  const hide = (i, j) => { for (let x = i; x < j; x++) a[x] = "\0"; };
+  for (let i = 0; i < t.length; i++) if (t[i] === "[" && t[i + 1] === "*") { let d = 1, j = i + 2; while (j < t.length && d > 0) { if (t[j] === "[") d++; else if (t[j] === "]") d--; j++; } if (d === 0) { hide(i, j); i = j - 1; } }
+  const m1 = a.join("");
+  for (const re of [LINK_RE, /\*\*([^*]+)\*\*/g, /~~([^~]+)~~/g]) for (const m of m1.matchAll(new RegExp(re.source, "g"))) if (!m[0].includes("\0") && (re === LINK_RE || !m[0].includes("[["))) hide(m.index, m.index + m[0].length);
+  return a.join("");
+}
+/* 지금 선택이 링크로 만들 수 있는 글이면 { k, bi, n, text } */
+function selTarget() {
+  const sel = getSelection(); if (!sel || sel.isCollapsed || sel.rangeCount !== 1) return null;
+  const r = sel.getRangeAt(0), node = r.startContainer;
+  if (node !== r.endContainer || node.nodeType !== 3) return null;   // 한 글 조각 안에서만(링크나 서식 경계를 넘지 않게)
+  const secb = node.parentElement.closest(".article .secb"); if (!secb || node.parentElement.closest(SEL_SKIP)) return null;
+  const v = S.view; if (v.name !== "article" || !S.world || !S.pages[v.key]) return null;
+  let a = r.startOffset, b = r.endOffset; const raw = node.data;
+  while (a < b && /\s/.test(raw[a])) a++; while (b > a && /\s/.test(raw[b - 1])) b--;
+  const text = raw.slice(a, b); if (!text || text.length > 60 || /[\[\]|*~\n]/.test(text)) return null;
+  let n = 0;   // 같은 문단에서 이 글이 앞에 몇 번 나왔나
+  for (const x of plainNodes(secb)) {
+    const d = x.data, end = x === node ? a : Infinity;
+    for (let i = d.indexOf(text); i >= 0 && i < end; i = d.indexOf(text, i + 1)) n++;
+    if (x === node) break;
+  }
+  return { k: v.key, bi: +secb.dataset.bi, n, text, range: r };
+}
+function selBusy(k) {
+  const w = S.world;
+  if (S.edit) return "편집 중에는 링크를 만들 수 없습니다.";
+  if (S.gen?.key === k || S.syncing === k || isHeld(k) || (S.storyGen && isStory(w) && k === w.story.protagonistKey)) return "이 문서를 작성하거나 맞춰 보는 중입니다. 끝난 뒤 다시 해 주세요.";
+  return "";
+}
+async function linkSelection(t) {
+  const w = S.world, p = S.pages[t.k]; if (!w || !p) return;
+  const busy = selBusy(t.k); if (busy) { toast(busy); return; }
+  const sec = p.sections[t.bi]; if (!sec) return;
+  const body = sec.body, mask = maskSource(body);
+  let at = -1;
+  for (let i = mask.indexOf(t.text), c = 0; i >= 0; i = mask.indexOf(t.text, i + 1)) if (c++ === t.n) { at = i; break; }
+  if (at < 0) { toast("원문에서 이 부분을 찾지 못했습니다. 편집으로 [[ ]]를 넣어 주세요."); return; }
+  const title = norm(t.text), lk = kOf(w, title);
+  if (lk === t.k) { toast("이 문서 자기 자신에는 링크를 걸 수 없습니다."); return; }
+  const tag = `[[${title}]]`;
+  sec.body = body.slice(0, at) + tag + body.slice(at + t.text.length);
+  const made = !w.entities[lk];
+  if (made) { w.entities[lk] = newEntity(title, "", ""); w.entities[lk].origin = t.k; }
+  const e = w.entities[lk], mention = sentenceAround(sec.body, at, tag.length), hadMention = e.mentions.some(m => m.from === t.k && m.text === mention);
+  addMention(e, t.k, mention);
+  const hadLink = (p.links ||= []).includes(lk); if (!hadLink) p.links.push(lk);
+  getSelection()?.removeAllRanges(); hideSelPop();
+  const save = async () => { try { await Store.savePage(w.id, p); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); } };
+  await save(); renderAll();
+  const undo = async () => {
+    if (S.world !== w || S.pages[t.k] !== p || sec.body.slice(at, at + tag.length) !== tag) { toast("그새 문서가 바뀌어 되돌릴 수 없습니다. 편집으로 고쳐 주세요."); return; }
+    sec.body = body;
+    if (!hadMention) e.mentions = e.mentions.filter(m => !(m.from === t.k && m.text === mention));
+    if (!hadLink) p.links = p.links.filter(x => x !== lk);
+    if (made && !S.pages[lk] && !e.mentions.length && !e.facts.length) delete w.entities[lk];
+    await save(); renderAll();
+  };
+  toast(S.pages[lk] ? `「${e.title}」 문서로 링크했습니다.` : `「${title}」 빨간 링크를 만들었습니다. 누르면 문서를 작성합니다.`, { label: "되돌리기", fn: undo });
+}
+let selPop = null, selT = null;
+function hideSelPop() { if (selPop) selPop.style.display = "none"; selT = null; }
+function showSelPop() {
+  const t = selTarget(); if (!t || selBusy(t.k)) { hideSelPop(); return; }
+  if (!selPop) {
+    selPop = document.createElement("button"); selPop.type = "button"; selPop.className = "selpop"; selPop.id = "selPop"; document.body.appendChild(selPop);
+    selPop.addEventListener("pointerdown", ev => ev.preventDefault());   // 누르는 순간 선택이 풀리지 않게
+    selPop.addEventListener("click", () => { const x = selT; hideSelPop(); if (x) linkSelection(x); });
+  }
+  selT = t;
+  const has = !!S.pages[kOf(S.world, norm(t.text))];
+  selPop.textContent = has ? "문서 링크로 만들기" : "빨간 링크 만들기"; selPop.classList.toggle("blue", has);
+  selPop.style.display = "block";
+  const rc = t.range.getBoundingClientRect(), bw = selPop.offsetWidth, bh = selPop.offsetHeight;
+  let top = rc.bottom + 8; if (top + bh > innerHeight - 12) top = Math.max(12, rc.top - bh - 8);   // 모바일 기본 메뉴(위쪽)와 겹치지 않게 아래에 둔다
+  selPop.style.top = top + "px"; selPop.style.left = Math.max(16, Math.min(innerWidth - bw - 16, rc.left + rc.width / 2 - bw / 2)) + "px";
+}
+let selTimer = null;
+document.addEventListener("selectionchange", () => { clearTimeout(selTimer); selTimer = setTimeout(showSelPop, 180); });
+addEventListener("scroll", () => { if (selT) showSelPop(); }, { passive: true });
+addEventListener("resize", hideSelPop);
 
 /* ---------- boot ---------- */
 (async function boot() {

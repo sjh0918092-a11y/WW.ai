@@ -747,6 +747,33 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert((await page.locator(".infobox").innerText()).includes("여성"));
     ok("인물 인포박스에 성별을 넣게 하고, 빠지면 띄우기 전에 채운다");
 
+    /* 33. 본문 평문을 골라 빨간 링크 만들기 */
+    ctl.pageOverride["선택 문서"] = { sections: [{ heading: "개요", level: 1, body: "**바다 마을**의 빵집[*바다 마을 기록]과 바다 마을의 [[한서린]] 그리고 바다 마을." }] };
+    await page.fill("#q", "선택 문서"); await page.press("#q", "Enter"); await waitArticle(page, "선택 문서"); ctl.pageOverride = {};
+    const selectNth = (text, nth) => page.evaluate(([text, nth]) => {   // nth번째 평문 조각에서 text를 고른다
+      const nodes = [], tw = document.createTreeWalker(document.querySelector(".article .secb"), NodeFilter.SHOW_TEXT);
+      for (let n = tw.nextNode(); n; n = tw.nextNode()) if (!n.parentElement.closest("a, sup, strong, del") && n.data.includes(text)) nodes.push(n);
+      const n = nodes[nth], i = n.data.lastIndexOf(text), r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + text.length);
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    }, [text, nth]);
+    await selectNth("바다 마을", 1);
+    await page.waitForSelector("#selPop", { state: "visible", timeout: 5000 });
+    assert.strictEqual((await page.locator("#selPop").innerText()).trim(), "빨간 링크 만들기");
+    await page.click("#selPop"); await settle(page);
+    { const w33 = await worldOf(page, "기본 세계"), p33 = await pageOf(page, w33, "선택 문서");
+      assert.strictEqual(p33.sections[0].body, "**바다 마을**의 빵집[*바다 마을 기록]과 바다 마을의 [[한서린]] 그리고 [[바다 마을]].", "고른 자리(굵게·각주·링크 밖의 두 번째)만 감싼다");
+      assert(Object.values(w33.entities).some(e => e.title === "바다 마을" && !e.page && e.mentions.some(m => m.text.includes("그리고 바다 마을"))), "빨간 링크 항목과 언급이 생긴다"); }
+    assert.strictEqual(await page.locator('.article a.wl.new[data-t="바다 마을"]').count(), 1, "빨간 링크로 보인다");
+    await page.click(".toast button"); await settle(page);   // 되돌리기
+    { const w33 = await worldOf(page, "기본 세계"), p33 = await pageOf(page, w33, "선택 문서");
+      assert(!p33.sections[0].body.includes("[[바다 마을]]") && !Object.values(w33.entities).some(e => e.title === "바다 마을"), "되돌리면 원문과 새 항목이 원래대로"); }
+    await page.evaluate(() => { const a = document.querySelector('.article .secb a.wl'), r = document.createRange(); r.selectNodeContents(a); getSelection().removeAllRanges(); getSelection().addRange(r); });
+    await page.waitForTimeout(400); assert(!(await page.locator("#selPop").isVisible()), "링크 안의 글에는 버튼이 뜨지 않는다");
+    await selectNth("바다 마을", 0); await page.waitForSelector("#selPop", { state: "visible", timeout: 5000 }); await page.click("#selPop"); await settle(page);
+    const np33 = count("page"); await page.locator('.article a.wl.new[data-t="바다 마을"]').click(); await waitArticle(page, "바다 마을");
+    assert.strictEqual(count("page"), np33 + 1, "만든 빨간 링크를 누르면 문서를 작성한다");
+    ok("본문 평문을 골라 빨간 링크로 만들고(굵게·각주·링크 밖에서 고른 그 자리만), 되돌릴 수 있으며, 누르면 문서를 작성한다");
+
     await ctx.close();
     console.log(`\n모두 통과 (${step}개). Gemini 호출 ${calls.length}회: ` + Object.entries(calls.reduce((a, c) => (a[c.kind] = (a[c.kind] || 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
   } catch (e) {
