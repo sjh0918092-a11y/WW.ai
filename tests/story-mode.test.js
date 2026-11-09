@@ -282,9 +282,15 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
 
     /* 5. 지연 갱신 */
     let nb = count("chapterBlock");
+    ctl.checkIssues = [{ claim: "2장에서 이 항목에 일이 생겼다.", evidence: "규칙 하나", conflict: "x", severity: "high" }];
+    ctl.fixEdits = [{ memo: 1, field: "body", old: "2장에서 이 항목에 일이 생겼다.", new: "2장에서 이 항목에 변화가 생겼다." }];
+    const nf5 = count("fix");
     await page.locator('.stcard a.wl[data-t="북관 철령"]').click();
     await page.waitForFunction(() => [...document.querySelectorAll(".chb")].some(e => e.textContent === "2장"), null, { timeout: 15000 }); await settle(page);
+    ctl.checkIssues = null; ctl.fixEdits = null;
     assert.strictEqual(count("chapterBlock"), nb + 1, "affected 문서를 열면 장 섹션을 한 번 생성");
+    assert.strictEqual(count("fix"), nf5 + 1, "장 섹션을 붙인 뒤 보여 주기 전에 검사하고 고친다");
+    assert((await page.locator(".article").innerText()).includes("2장에서 이 항목에 변화가 생겼다."), "고친 장 섹션으로 보여 준다");
     nb = count("chapterBlock");
     await page.fill("#q", "여진 해적단"); await page.press("#q", "Enter"); await waitArticle(page, "여진 해적단");
     await settle(page);
@@ -684,6 +690,21 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert((await page.locator(".article").innerText()).includes("소급 적용은 무효이므로"), "먼저 기록된 인용으로 맞춘다");
     { const bp29 = calls.filter(c => c.kind === "page").pop().prompt; assert(bp29.includes("직접 인용은 없는 것이 기본이다") && bp29.includes("인용이 없는 문서도 좋은 문서다"), "인용은 없는 것이 기본"); }
     ok("인용 대조: 같은 사람이 같은 날 한 말은 이미 기록된 것을 넘겨 주고, 다르게 쓰면 잡아서 맞춘다. 인용은 없는 것이 기본");
+
+    /* 30. 장 전환 직후 주인공 문서도 보여 주기 전에 검사하고 고친다 */
+    await page.click('#side [data-act="home"]').catch(() => {}); await page.click('[data-act="home"]').catch(() => {});
+    await page.locator('.wcard').filter({ hasText: "스토리 2/7장" }).locator("button.open").click(); await waitArticle(page, "한서린");
+    ctl.checkIssues = [{ claim: "한서린은 돌아왔다.", evidence: "규칙 하나", conflict: "x", severity: "high" }];
+    ctl.fixEdits = [{ memo: 1, field: "body", old: "한서린은 돌아왔다.", new: "한서린은 성으로 돌아왔다." }];
+    ctl.checkDelay = 1500;
+    const nf30 = count("fix");
+    await page.click('[data-act="story-next"]'); await page.click('[data-act="story-skip"]');
+    await page.waitForFunction(() => /주인공 문서를 설정과 맞춰 보는 중/.test(document.querySelector("#stCount")?.textContent || ""), null, { timeout: 15000 });
+    assert.strictEqual((await page.locator('[data-act="story-stop"]').innerText()).trim(), "검사 건너뛰고 보기");
+    await page.waitForSelector(".stcard", { timeout: 20000 }); await settle(page); ctl.checkIssues = null; ctl.fixEdits = null; ctl.checkDelay = 0;
+    assert.strictEqual(count("fix"), nf30 + 1, "장 전환 뒤 주인공 문서를 보여 주기 전에 고친다");
+    assert((await page.locator(".article").innerText()).includes("한서린은 성으로 돌아왔다."), "고친 주인공 문서로 보여 준다");
+    ok("장 전환 직후 주인공 문서와, 장 섹션을 붙인 문서는 보여 주기 전에 설정 검사를 돌리고 어긋난 곳을 고친다");
 
     await ctx.close();
     console.log(`\n모두 통과 (${step}개). Gemini 호출 ${calls.length}회: ` + Object.entries(calls.reduce((a, c) => (a[c.kind] = (a[c.kind] || 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));

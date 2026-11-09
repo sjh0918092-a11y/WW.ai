@@ -347,7 +347,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v5.6 · 2026-11-09";
+const APP_VERSION = "v5.7 · 2026-11-09";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -2055,12 +2055,12 @@ function parseIssues(r) {
 }
 /* 작성 직후, 문서를 보여 주기 전에 설정 검사를 돌리고 '다듬을 곳'은 자동으로 고친다.
    실패하거나 사용자가 건너뛰면 작성된 문서를 그대로 쓴다. 고쳤으면 { page: 고친 문서, fixed, keep: 남은 지적 } */
-async function preCheck(w, k, page) {
-  const g = S.gen, res = { page, fixed: 0, keep: null, done: false };
-  const show = () => { if (S.view.name === "article" && S.view.key === k) renderMain(); else renderSide(); };
+async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 직후") {
+  const res = { page, fixed: 0, keep: null, done: false };
+  show ||= () => { if (S.view.name === "article" && S.view.key === k) renderMain(); else renderSide(); };
   try {
     g.phase = "check"; show();
-    const issues = await runChecks(w, k, { signal: g.ctl.signal }, page.title + " · 작성 직후"), high = issues.filter(i => i.severity === "high");
+    const issues = await runChecks(w, k, { signal: g.ctl.signal }, page.title + label), high = issues.filter(i => i.severity === "high");
     page.check = { at: Date.now(), issues, auto: true }; res.done = true;
     if (!high.length || S.world !== w || S.pages[k] !== page) return res;
     g.phase = "fix"; g.nFix = high.length; show();
@@ -2764,7 +2764,11 @@ async function advanceChapter(skip) {
     if (S.view.name === "advance") renderAll(); else renderSide();
     drainSync(); return;
   }
-  S.pages[pk] = np; S.storyGen = null; S.adv = null;
+  S.pages[pk] = np;
+  // 주인공 문서를 보여 주기 전에 설정 검사를 돌리고 어긋난 곳은 고친다(건너뛰거나 실패하면 그대로 보여 준다)
+  const pre = GS.preCheck !== false && S.world === w ? await preCheck(w, pk, np, S.storyGen, () => { if (S.view.name === "advance") renderMain(); updateStoryLive(); }, ` · ${n}장 반영 직후`) : null;
+  np = pre?.page || np;
+  S.storyGen = null; S.adv = null;
   try { await Store.savePage(w.id, np); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
   {   // 마지막 장도 다른 장처럼 주인공 문서의 새 장 섹션부터 보여 주고, 에필로그는 안내 카드의 버튼으로 연다
     S.storyCard = { wid: w.id, n };
@@ -2772,7 +2776,9 @@ async function advanceChapter(skip) {
     const i = np.sections.findIndex(s => s.ch === n); const el = i >= 0 && document.getElementById("s-" + i);
     window.scrollTo({ top: 0 }); if (el) setTimeout(() => el.scrollIntoView({ block: "start", behavior: "smooth" }), 400);
   }
-  checkPage(pk, true); drainSync();
+  if (pre?.fixed) { toast(`주인공 문서에서 설정과 어긋난 ${pre.fixed}곳을 고쳐서 보여 드립니다.`); bgSync(pk, pre.keep); }
+  else if (!pre?.done) checkPage(pk, true);
+  drainSync();
 }
 /* 다음 행동 후보가 없거나 깨졌을 때 다시 만든다 */
 function choicesPrompt(w) {
@@ -2808,7 +2814,8 @@ function updateStoryLive() {
   const g = S.storyGen, c = $("#stCount"); if (!g || !c) return;
   const el = Math.floor((performance.now() - g.t0) / 1000);
   const rt = g.retry ? ` · 연결이 끊겨 ${g.retry.mode === "continue" ? "이어 받는 중" : "다시 받는 중"}(${g.retry.n}/${G_RETRY})` : "";
-  c.textContent = (g.raw ? `${g.n}장을 쓰는 중 · ${g.raw.length.toLocaleString()}자 · ${el}초` : `${g.n}장 줄거리를 구상하는 중 · ${el}초`) + rt;
+  c.textContent = g.phase === "check" ? `${g.n}장 · 주인공 문서를 설정과 맞춰 보는 중 · ${el}초` : g.phase === "fix" ? `${g.n}장 · 설정과 어긋난 ${g.nFix}곳을 고치는 중 · ${el}초`
+    : (g.raw ? `${g.n}장을 쓰는 중 · ${g.raw.length.toLocaleString()}자 · ${el}초` : `${g.n}장 줄거리를 구상하는 중 · ${el}초`) + rt;
 }
 
 /* ---------- 스토리 모드: 지연 갱신 (영향받은 문서는 열 때 그 장 섹션을 쓴다) ---------- */
@@ -2843,17 +2850,25 @@ async function runSync(k) {
     np.syncedTo = w.story.chapter; np.storyNotice = storyOn(w); np.check = null;
     S.pages[k] = np;
   } catch (err) {
-    S.syncing = null;
+    S.syncing = null; S.syncPhase = null;
     if (err?.code !== "cancelled" && S.world === w) S.syncErr = { key: k, msg: errMsg(err) };
     if (S.view.name === "article" && S.view.key === k) renderMain(); renderSide();
     drainSync(); return;
   }
-  S.syncing = null;
+  // 장 섹션을 붙인 문서도 보여 주기 전에 설정 검사를 돌리고 어긋난 곳은 고친다
+  let pre = null;
+  if (GS.preCheck !== false && S.world === w) {
+    S.syncPhase = { phase: "", ctl: new AbortController(), nFix: 0 };
+    pre = await preCheck(w, k, np, S.syncPhase, () => { if (S.view.name === "article" && S.view.key === k) renderMain(); else renderSide(); }, ` · ${chs.join(",")}장 반영 직후`);
+    np = pre.page || np;
+  }
+  S.syncing = null; S.syncPhase = null;
   try { await Store.savePage(w.id, np); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
   if (S.view.name === "article" && S.view.key === k) renderMain();
   else toast(`「${np.title}」에 ${chs.join(", ")}장의 변화를 반영했습니다.`, { label: "열기", fn: () => openEntity(k) });
   renderSide();
-  checkPage(k, true); drainSync();
+  if (pre?.fixed) bgSync(k, pre.keep); else if (!pre?.done) checkPage(k, true);
+  drainSync();
 }
 
 /* ---------- rendering: text ---------- */
@@ -3104,7 +3119,7 @@ function articleHtml(k) {
   const toc = p.sections.length > 2 ? `<nav class="toc" aria-label="목차"><b>목차</b><ul>${p.sections.map((s, i) => `<li class="${nums[i].split(".").length > 2 ? "sub" : ""}"><span class="n">${nums[i]}</span> <button type="button" data-sec="${i}">${chb(s, nums[i].split(".").length > 2)}${esc(s.heading)}</button></li>`).join("")}</ul></nav>` : "";
   const stNotice = story && storyOn(w) && p.storyNotice ? `<div class="notice"><div>이 문서는 진행 중인 사건을 다룹니다. (현재 ${w.story.chapter}장)</div></div>` : "";
   const miss = story ? missingChs(w, k) : [];
-  const syncHtml = !story ? "" : S.syncing === k ? `<p class="memo-line"><span class="dot"></span>${missingChs(w, k).join(", ")}장의 변화를 이 문서에 반영하는 중…</p>`
+  const syncHtml = !story ? "" : S.syncing === k ? `<p class="memo-line"><span class="dot"></span>${S.syncPhase?.phase === "check" ? "반영한 장 섹션을 설정과 맞춰 보는 중…" : S.syncPhase?.phase === "fix" ? `반영한 장 섹션에서 설정과 어긋난 ${S.syncPhase.nFix}곳을 고치는 중…` : `${missingChs(w, k).join(", ")}장의 변화를 이 문서에 반영하는 중…`}</p>`
     : S.syncErr?.key === k ? `<div class="banner warn">${miss.join(", ")}장의 변화를 반영하지 못했습니다. ${esc(S.syncErr.msg)} <button type="button" class="btn" data-act="sync-retry" style="margin-left:6px;padding:2px 10px" ${!S.sample ? "disabled" : ""}>다시 시도</button></div>`
     : miss.length ? `<p class="memo-line"><span class="dot"></span>${miss.join(", ")}장의 변화를 반영할 차례를 기다리는 중</p>` : "";
   const cardHtml = card ? storyCardHtml(w, card.n) : "";
@@ -3305,7 +3320,7 @@ function advanceHtml() {
   const w = S.world; if (!isStory(w)) return `<div class="sheet"><p class="note">스토리 모드 세계관이 아닙니다.</p></div>`;
   const st = w.story, c = curCh(w), n = st.chapter + 1, a = S.adv || { pick: -1, custom: "", err: "" }, g = S.storyGen;
   const head = `<div class="sheet"><div class="crumb"><span>${esc(w.title)}</span><span>이야기</span></div><h1 class="t">${n >= totalOf(w) ? "마지막 장으로" : `${n}장으로`}</h1>`;
-  if (g) return head + `<div class="gen-live" style="margin-top:14px"><span class="dot"></span><span id="stCount">${g.n}장 줄거리를 구상하는 중</span><button type="button" class="btn" data-act="story-stop">중단</button></div>
+  if (g) return head + `<div class="gen-live" style="margin-top:14px"><span class="dot"></span><span id="stCount">${g.n}장 줄거리를 구상하는 중</span><button type="button" class="btn" data-act="story-stop">${g.phase === "check" || g.phase === "fix" ? "검사 건너뛰고 보기" : "중단"}</button></div>
     <p class="note">이번 장의 탐험과 고른 행동을 엮어 ${g.n}장 줄거리를 정하고, 주인공 문서에 ${g.n}장 섹션을 덧붙입니다. 중단하거나 실패하면 지금 상태 그대로 남습니다.</p>
     <div style="margin-top:14px"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div></div>`;
   if (st.status === "ended") return head + `<p class="note">이야기가 끝났습니다.</p><div class="row"><button type="button" class="btn pri" data-act="epilogue">에필로그 보기</button></div></div>`;
