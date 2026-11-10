@@ -1,0 +1,47 @@
+const http=require('http'),fs=require('fs'),path=require('path'),assert=require('assert');
+const {chromium}=require('playwright');
+const server=http.createServer((req,res)=>{res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(fs.readFileSync(path.join(__dirname,'../index.html')));});
+const read=(p,key)=>p.evaluate(key=>new Promise(resolve=>{const r=indexedDB.open('worldwiki-gemini',1);r.onsuccess=()=>{const d=r.result,t=d.transaction('kv'),q=t.objectStore('kv').get(key);q.onsuccess=()=>resolve(q.result);t.oncomplete=()=>d.close();};}),key);
+const put=(p,key,value)=>p.evaluate(({key,value})=>new Promise(resolve=>{const r=indexedDB.open('worldwiki-gemini',1);r.onsuccess=()=>{const d=r.result,t=d.transaction('kv','readwrite');t.objectStore('kv').put(value,key);t.oncomplete=()=>{d.close();resolve();};};}),{key,value});
+let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
+(async()=>{
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch(),ctx=await browser.newContext({acceptDownloads:true});
+ await ctx.addInitScript(()=>{if(!localStorage.getItem('wwiki:gemini'))localStorage.setItem('wwiki:gemini',JSON.stringify({mode:'key',key:'gemini-test',openaiKey:'sk-test'}));});
+ await ctx.route('https://fonts.googleapis.com/**',r=>r.abort());await ctx.route('https://fonts.gstatic.com/**',r=>r.abort());
+ const page=await ctx.newPage(),calls=[],errors=[];let generated;
+ page.on('pageerror',e=>errors.push(e.message));
+ const respond=async r=>{const q=r.request();calls.push({url:q.url(),body:q.postData()?.replace(/\r\n/g,'\n'),bytes:q.postDataBuffer(),headers:await q.allHeaders()});assert(!q.url().includes('streamGenerateContent'));await r.fulfill({json:q.url().includes('openai.com')?{data:[{b64_json:generated.split(',')[1]}]}:{candidates:[{content:{parts:[{inlineData:{mimeType:'image/png',data:generated.split(',')[1]}}]}}]}});};
+ await ctx.route('https://api.openai.com/v1/images/**',respond);await ctx.route('**/v1beta/models/**',respond);
+ const open=async()=>{await page.click('#side [data-act="home"]');await page.click('.wcard button.open');await page.waitForSelector('.article h2');await page.click('[data-prose-open]');await page.locator('.prose-saved summary').click();await page.click('[data-prose-illustrate]');};
+ const upload=async files=>{await page.locator('[data-prose-ref-files]').setInputFiles(files);await page.waitForFunction(()=>!document.querySelector('[data-act="prose-image-generate"]').disabled);};
+ const start=async()=>{await page.click('[data-act="prose-image-generate"]');await page.waitForSelector('.prose-image-form .preview');await page.waitForFunction(()=>!document.querySelector('[data-act="prose-image-apply"]').disabled);};
+ try{
+  await page.goto(`http://127.0.0.1:${server.address().port}`);await page.waitForSelector('#seedTa');const imgs=await page.evaluate(()=>{const make=color=>{const c=document.createElement('canvas');c.width=1800;c.height=1200;const x=c.getContext('2d');x.fillStyle=color;x.fillRect(0,0,1800,1200);return c.toDataURL('image/png');};return['#b79988','#225566','#ffbb33','#334455','#99cc77'].map(make);});generated=imgs[4];
+  const doc={key:'person',title:'레퍼런스 인물',type:'인물',summary:'60m 인물',infobox:[],sections:[{heading:'개요',body:'격납고에서 쉬는 인물이다.',level:1}],links:[],createdAt:1,portrait:imgs[0],shortStories:[{id:'one',title:'휴식',body:'소녀는 정비병과 나란히 앉았다.',createdAt:1}]};
+  const world={kind:'world',id:'refs',title:'참고 세계',era:'1989년',seed:'거인의 일상',rules:[],timeline:[],entities:{person:{title:doc.title,type:doc.type,summary:doc.summary,facts:[],mentions:[],page:true,box:''}},mainKey:'person',createdAt:1};
+  await page.click('#side [data-act="gset"]');await page.setInputFiles('#importFile',{name:'fixture.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({app:'worldwiki',version:1,worlds:[world],pages:{refs:{person:doc}}}))});await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.includes('가져왔습니다'));await open();
+  const files=imgs.slice(1,4).map((src,i)=>({name:['composition.png','lighting.png','style.png'][i],mimeType:'image/png',buffer:Buffer.from(src.split(',')[1],'base64')}));
+  await upload(files);assert.equal(await page.locator('.prose-ref-grid figure').count(),3);assert.equal(calls.length,0);assert.equal((await read(page,'p:refs:person')).portrait,imgs[0]);
+  for(const i of await page.locator('.prose-ref-grid img').all())assert((await i.evaluate(x=>x.naturalWidth))<=1536);
+  await page.locator('.prose-ref-grid img').first().click();await page.waitForSelector('.image-viewer[open]');await page.click('[data-viewer-close]');
+  pass('참고 이미지 3장을 브라우저에서 준비·미리보기·확대하고 AI 요청이나 프로필 변경을 하지 않는다');
+  await upload([files[0]]);assert((await page.locator('.prose-image-form [role="alert"]').textContent()).includes('최대 3장'));assert.equal(await page.locator('.prose-ref-grid figure').count(),3);
+  await page.locator('[data-prose-ref-remove]').last().click();await upload([{name:'bad.svg',mimeType:'image/svg+xml',buffer:Buffer.from('<svg/>')}]);assert.equal(await page.locator('.prose-ref-grid figure').count(),2);await upload([files[2]]);
+  pass('최대 장수와 잘못된 형식을 검사하고 삭제·재추가할 수 있다');
+  await page.locator('[data-prose-ref-role]').nth(1).selectOption('lighting');await page.locator('[data-prose-ref-role]').nth(2).selectOption('style');const srcs=await page.locator('.prose-ref-grid img').evaluateAll(a=>a.map(x=>x.src));await start();let req=calls.at(-1);assert(req.url.endsWith('/edits'));assert.equal((req.body.match(/name="image\[\]"/g)||[]).length,4);assert(req.bytes.includes(Buffer.from(imgs[0].split(',')[1],'base64')));for(const src of srcs)assert(req.bytes.includes(Buffer.from(src.split(',')[1],'base64')));
+  for(const t of ['이미지 1: 문서 프로필','이미지 2: 추가 참고 — 구도·카메라','이미지 3: 추가 참고 — 조명·색감','이미지 4: 추가 참고 — 화풍·질감','외모는 문서 프로필','구도·연출 참고로 사용하지 않는다','추가 참고 이미지의 인물 얼굴·신원·외모는 복사하지 않는다'])assert(req.body.includes(t),t);
+  pass('OpenAI에는 프로필을 먼저 보내고 추가 3장과 용도별 지시를 정확한 순서로 전달한다');
+  await page.click('[data-act="prose-image-discard"]');await page.selectOption('[data-prose-image="model"]','gemini-3-pro-image');assert.equal(await page.locator('.prose-ref-grid figure').count(),3);await start();let b=JSON.parse(calls.at(-1).body);assert.equal(b.contents[0].parts.length,5);assert.equal(b.contents[0].parts[1].inlineData.data,imgs[0].split(',')[1]);srcs.forEach((src,i)=>assert.equal(b.contents[0].parts[i+2].inlineData.data,src.split(',')[1]));assert(b.contents[0].parts[0].text.includes('이미지 4: 추가 참고 — 화풍·질감'));
+  pass('공급자를 바꿔도 참고 이미지와 용도를 유지하고 Gemini에도 동일한 순서로 전달한다');
+  await page.click('[data-act="prose-image-apply"]');await page.waitForSelector('.prose-image-form',{state:'detached'});const saved=await read(page,'p:refs:person');assert(saved.shortStories[0].illustration);assert(!JSON.stringify(saved).includes('composition.png'));assert(!saved.shortStories[0].refs);assert.equal(saved.portrait,imgs[0]);
+  pass('적용은 삽화만 저장하고 추가 참고 파일은 문서에 저장하지 않는다');
+  const noise=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=c.height=1200;const x=c.getContext('2d'),p=x.createImageData(1200,1200);let seed=123;for(let i=0;i<p.data.length;i+=4){seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;p.data[i]=seed&255;p.data[i+1]=(seed>>>8)&255;p.data[i+2]=(seed>>>16)&255;p.data[i+3]=255;}x.putImageData(p,0,0);for(const quality of [1,.9,.8,.7,.6,.5,.4]){const src=c.toDataURL('image/webp',quality);if(src.length>500*1024&&src.length<=1536*1024)return src;}throw new Error('No large fixture');});assert(noise.length>500*1024&&noise.length<=1536*1024);
+  await put(page,'p:refs:person',{...saved,portrait:noise});await page.reload();await page.waitForSelector('.wcard');await open();await upload(files);await page.selectOption('[data-prose-image="model"]','gemini-3-pro-image');await start();req=calls.at(-1);b=JSON.parse(req.body);assert(Buffer.byteLength(req.body)<2*1024*1024);assert.equal(b.contents[0].parts.length,5);assert(b.contents[0].parts[1].inlineData.data.length<noise.split(',')[1].length);assert.equal((await read(page,'p:refs:person')).portrait,noise);
+  pass('큰 프로필을 포함한 4장도 전송용 사본만 압축해 기존 2MB 중계 한도를 지킨다');
+  const absent=await read(page,'p:refs:person');delete absent.portrait;await put(page,'p:refs:person',absent);await page.reload();await page.waitForSelector('.wcard');await open();await upload([files[1]]);await page.locator('[data-prose-ref-role]').selectOption('lighting');await start();req=calls.at(-1);assert(req.url.endsWith('/edits'));assert.equal((req.body.match(/name="image\[\]"/g)||[]).length,1);assert(req.body.includes('이미지 1: 추가 참고 — 조명·색감'));assert(req.body.includes('첨부 프로필은 없다'));
+  await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));if(process.env.SHOT_DIR){fs.mkdirSync(process.env.SHOT_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.SHOT_DIR,'prose-reference-mobile.png'),fullPage:true});}
+  pass('프로필 없이도 추가 참고 이미지만 사용할 수 있고 모바일에서 가로 넘침이 없다');
+  await page.click('[data-act="prose-image-close"]');await page.click('[data-prose-illustrate]');assert.equal(await page.locator('.prose-ref-grid figure').count(),0);assert.deepStrictEqual(errors,[]);
+  pass('참고 이미지는 생성창을 닫으면 해제된다');console.log(`\n모두 통과 (${n}개). 실제 유료 API 호출 0회.`);
+ }finally{await browser.close();await new Promise(r=>server.close(r));}
+})().catch(e=>{console.error(e);process.exitCode=1;});
