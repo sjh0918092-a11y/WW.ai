@@ -1,0 +1,55 @@
+const http=require('http'),fs=require('fs'),path=require('path'),assert=require('assert');
+const {chromium}=require('playwright');
+const server=http.createServer((req,res)=>{res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(fs.readFileSync(path.join(__dirname,'../index.html')));});
+const read=(p,key)=>p.evaluate(key=>new Promise((resolve,reject)=>{const q=indexedDB.open('worldwiki-gemini',1);q.onsuccess=()=>{const db=q.result,t=db.transaction('kv'),r=t.objectStore('kv').get(key);r.onsuccess=()=>resolve(r.result);t.oncomplete=()=>db.close();t.onerror=reject;};}),key);
+const put=(p,key,value)=>p.evaluate(({key,value})=>new Promise((resolve,reject)=>{const q=indexedDB.open('worldwiki-gemini',1);q.onsuccess=()=>{const db=q.result,t=db.transaction('kv','readwrite');t.objectStore('kv').put(value,key);t.oncomplete=()=>{db.close();resolve();};t.onerror=reject;};}),{key,value});
+let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
+(async()=>{
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch(),ctx=await browser.newContext({acceptDownloads:true});
+ await ctx.addInitScript(()=>{if(!localStorage.getItem('wwiki:gemini'))localStorage.setItem('wwiki:gemini',JSON.stringify({mode:'key',key:'gemini-test',openaiKey:'sk-test'}));});
+ await ctx.route('https://fonts.googleapis.com/**',r=>r.abort());await ctx.route('https://fonts.gstatic.com/**',r=>r.abort());
+ let pixels,mode='ok',release;const calls=[],errors=[];
+ const imageResponse=async r=>{const req=r.request();calls.push({url:req.url(),body:req.postData()?.replace(/\r\n/g,"\n"),bytes:req.postDataBuffer(),headers:await req.allHeaders()});if(mode==='delay')await new Promise(resolve=>release=resolve);try{if(mode==='quota')return await r.fulfill({status:429,json:{error:{message:'quota exceeded'}}});await r.fulfill({json:req.url().includes('openai.com')?{data:[{b64_json:pixels.generated.split(',')[1]}]}:{candidates:[{content:{parts:[{inlineData:{mimeType:'image/png',data:pixels.generated.split(',')[1]}}]}}]}});}catch{}};
+ await ctx.route('https://api.openai.com/v1/images/**',imageResponse);await ctx.route('**/v1beta/models/**',r=>{assert(r.request().url().endsWith(':generateContent'),'삽화에서 텍스트·설정 검사 호출 금지');return imageResponse(r);});
+ const page=await ctx.newPage();page.on('pageerror',e=>errors.push(e.message));
+ const open=async()=>{await page.click('#side [data-act="home"]');await page.click('.wcard button.open');await page.waitForSelector('.article h2');await page.click('[data-prose-open]');await page.locator('.prose-saved summary').click();};
+ const start=async()=>{if(!await page.locator('.prose-image-form').count())await page.click('[data-prose-illustrate]');await page.click('[data-act="prose-image-generate"]');await page.waitForSelector('.prose-image-form .preview');await page.waitForFunction(()=>!document.querySelector('[data-act="prose-image-apply"]').disabled);};
+ const apply=async()=>{await page.click('[data-act="prose-image-apply"]');await page.waitForSelector('.prose-image-form .preview',{state:'detached'});await page.waitForFunction(()=>!document.querySelector('[data-prose-illustrate]').disabled);};
+ try{
+  await page.goto(`http://127.0.0.1:${server.address().port}`);await page.waitForSelector('#seedTa');
+  pixels=await page.evaluate(()=>{const make=color=>{const c=document.createElement('canvas');c.width=900;c.height=600;c.getContext('2d').fillStyle=color;c.getContext('2d').fillRect(0,0,900,600);return c.toDataURL('image/png');};return{profile:make('#b57766'),old:make('#99aabb'),generated:make('#347865')};});
+  const story={id:'story-1',title:'出動前夜',body:'格納庫で少女は床に腰を下ろした。整備兵は手の傷を診た。\n\n두 사람은 출동을 기다렸다.',createdAt:1,illustration:pixels.old};
+  const p={key:'person',title:'검증 인물',type:'인물',summary:'16세의 60m 거인',infobox:[{label:'신장',value:'60m'}],sections:[{heading:'개요',level:1,body:'1989년의 군인이다.'}],links:[],createdAt:1,portrait:pixels.profile,shortStories:[story]};
+  const w={kind:'world',id:'ill',title:'삽화 세계',era:'1989년',seed:'거인과 정비병',rules:['거인은 60m'],imageGuide:'군 기록사진 같은 실사',userCanon:'군복은 회색이다',timeline:[],mainKey:'person',entities:{person:{title:p.title,type:p.type,summary:p.summary,facts:[],mentions:[],page:true,box:'신장:60m'}},createdAt:1};
+  await page.click('#side [data-act="gset"]');await page.setInputFiles('#importFile',{name:'fixture.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({app:'worldwiki',version:1,worlds:[w],pages:{ill:{person:p}}}))});await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.includes('가져왔습니다'));await open();
+  const before=await read(page,'p:ill:person'),worldBefore=await read(page,'w:ill');
+  await page.click('[data-prose-illustrate]');await page.fill('[data-prose-image="direction"]','격납고 바닥에 앉아 검진받는 순간. 옆에서 넓게 촬영');await start();
+  let req=calls.at(-1);assert(req.url.endsWith('/edits'));assert(req.bytes.includes(Buffer.from(pixels.profile.split(',')[1],'base64')));assert(!req.bytes.includes(Buffer.from(pixels.old.split(',')[1],'base64')));
+  for(const t of [story.body,w.imageGuide,'군복은 회색이다','오직 해당 인물의 외모','구도, 포즈','그대로 베끼거나 재현하는 것은 금지','조명, 색감, 화풍','독립적으로 새로 설계','다른 등장인물에게','옆에서 넓게 촬영'])assert(req.body.includes(t),t);
+  assert.equal(calls.length,1);assert.deepStrictEqual(await read(page,'p:ill:person'),before);
+  pass('단편 전체와 공통 지침을 보내고 프로필만 외모 참조로 첨부하며 구도·포즈 복제를 금지한다');
+  await page.click('.prose-image-form .preview');await page.waitForSelector('.image-viewer[open]');await page.click('[data-viewer-close]');await apply();let saved=await read(page,'p:ill:person');assert.equal(saved.portrait,pixels.profile);assert(saved.shortStories[0].illustration!==pixels.old);assert.equal(saved.shortStories[0].body,story.body);assert.deepStrictEqual(await read(page,'w:ill'),worldBefore);
+  pass('미리보기를 확대하고 삽화 한 장만 교체하며 프로필·단편 본문·세계관은 유지한다');
+  await page.reload();await page.waitForSelector('.wcard');await open();assert.equal(await page.locator('.prose-illustration img').getAttribute('src'),saved.shortStories[0].illustration);await page.locator('.prose-illustration img').click();await page.waitForSelector('.image-viewer[open]');await page.keyboard.press('Escape');
+  await page.click('[data-prose-illustrate]');await page.selectOption('[data-prose-image="model"]','gemini-3-pro-image');await start();req=calls.at(-1);const b=JSON.parse(req.body);assert.equal(b.contents[0].parts[1].inlineData.data,pixels.profile.split(',')[1]);assert(b.contents[0].parts[0].text.includes(story.body));assert(!req.headers.authorization);assert.equal(req.headers['x-goog-api-key'],'gemini-test');await page.click('[data-act="prose-image-discard"]');assert.equal((await read(page,'p:ill:person')).shortStories[0].illustration,saved.shortStories[0].illustration);
+  pass('저장 후 확대·재열기가 가능하고 Gemini에도 같은 외모 참조 원칙을 적용한다');
+  mode='quota';const count=calls.length;await page.click('[data-act="prose-image-generate"]');await page.waitForSelector('.prose-image-form [role="alert"]');assert.equal(calls.length,count+1);assert.equal((await read(page,'p:ill:person')).shortStories[0].illustration,saved.shortStories[0].illustration);mode='ok';
+  pass('생성 실패는 자동 재시도나 기존 삽화 교체를 하지 않는다');
+  await start();await page.evaluate(()=>{const old=IDBObjectStore.prototype.put;window.restorePut=()=>IDBObjectStore.prototype.put=old;IDBObjectStore.prototype.put=function(){throw new DOMException('full','QuotaExceededError');};});await page.click('[data-act="prose-image-apply"]');await page.waitForFunction(()=>document.querySelector('.prose-image-form [role="alert"]')?.textContent.includes('저장하지 못했습니다'));assert.equal(await page.locator('.prose-image-form .preview').count(),1);await page.evaluate(()=>window.restorePut());await apply();
+  pass('저장 실패 시 미리보기를 유지해 재적용할 수 있다');
+  await start();const original=await read(page,'p:ill:person');await put(page,'p:ill:person',{...original,shortStories:original.shortStories.map(x=>({...x,body:'다른 기기에서 고친 단편'}))});await page.click('[data-act="prose-image-apply"]');await page.waitForFunction(()=>document.querySelector('.prose-image-form [role="alert"]')?.textContent.includes('바뀌었습니다'));assert.equal((await read(page,'p:ill:person')).shortStories[0].body,'다른 기기에서 고친 단편');await put(page,'p:ill:person',original);await page.click('[data-act="prose-image-discard"]');
+  pass('생성 중 다른 기기에서 단편을 바꾸면 덮어쓰지 않는다');
+  mode='delay';release=null;await page.click('[data-act="prose-image-generate"]');while(!release)await new Promise(r=>setTimeout(r,10));await page.click('[data-act="prose-image-close"]');release();await page.waitForFunction(()=>!document.querySelector('[data-act="prose-image-generate"]').disabled);assert.equal(await page.locator('.prose-image-form .preview').count(),0);mode='ok';
+  pass('삽화 생성 중단은 단편과 기존 삽화를 보존한다');
+  await start();const profileBefore=await read(page,'p:ill:person');await put(page,'p:ill:person',{...profileBefore,portrait:pixels.generated});await page.click('[data-act="prose-image-apply"]');await page.waitForFunction(()=>document.querySelector('.prose-image-form [role="alert"]')?.textContent.includes('바뀌었습니다'));assert.equal((await read(page,'p:ill:person')).portrait,pixels.generated);await put(page,'p:ill:person',profileBefore);await page.click('[data-act="prose-image-discard"]');
+  pass('생성 중 프로필이 바뀌면 이전 외모 참고로 만든 결과를 적용하지 않는다');
+  await page.click('[data-act="prose-image-close"]');await page.click('[data-prose-image-delete]');assert((await read(page,'p:ill:person')).shortStories[0].illustration);await page.click('[data-prose-image-delete]');await page.waitForSelector('.prose-illustration',{state:'detached'});saved=await read(page,'p:ill:person');assert(!saved.shortStories[0].illustration);assert.equal(saved.portrait,pixels.profile);
+  pass('확인 삭제는 단편 삽화만 지우고 프로필을 보존한다');
+  delete saved.portrait;await put(page,'p:ill:person',saved);await page.reload();await page.waitForSelector('.wcard');await open();await page.click('[data-prose-illustrate]');await start();req=calls.at(-1);assert(req.url.endsWith('/generations'));assert(!JSON.parse(req.body).image);assert(JSON.parse(req.body).prompt.includes('첨부 프로필은 없다'));await apply();
+  pass('프로필이 없는 문서는 텍스트만으로 삽화를 생성한다');
+  await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));if(process.env.SHOT_DIR){fs.mkdirSync(process.env.SHOT_DIR,{recursive:true});await page.locator('#toast').waitFor({state:'hidden'});await page.screenshot({path:path.join(process.env.SHOT_DIR,'prose-illustration-mobile.png'),fullPage:true});}
+  await page.click('#side [data-act="gset"]');const dl=page.waitForEvent('download');await page.click('[data-act="export"]');const d=await dl,backup=JSON.parse(fs.readFileSync(await d.path(),'utf8'));assert(backup.pages.ill.person.shortStories[0].illustration);assert(!JSON.stringify(backup).includes('sk-test'));
+  pass('삽화는 모바일에서 표시되고 단편과 함께 백업되며 키는 제외한다');
+  assert.deepStrictEqual(errors,[]);console.log(`\n모두 통과 (${n}개). 실제 유료 API 호출 0회.`);
+ }finally{await browser.close();await new Promise(r=>server.close(r));}
+})().catch(e=>{console.error(e);process.exitCode=1;});

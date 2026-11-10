@@ -48,8 +48,9 @@ const until = async (fn, msg, ms = 15000) => { const t0 = Date.now(); while (Dat
   try {
     /* 기기 A: 세계관 하나를 가진 상태에서 가입 */
     const A = await device();
+    const illustrationFixture = await A.page.evaluate(() => { const c = document.createElement("canvas"); c.width = c.height = 16; c.getContext("2d").fillRect(0, 0, 16, 16); return c.toDataURL("image/png"); });
     const backup = { app: "worldwiki", version: 1, worlds: [{ kind: "world", id: "wsync1", title: "동기화 세계", tagline: "", seed: "테스트 원안입니다.", era: "1900년", rules: [], timeline: [], userCanon: "", style: "encyc", entities: { e1: { title: "첫 문서", type: "인물", summary: "첫 문서다.", facts: [], mentions: [], page: true, box: "" } }, mainKey: "e1", createdAt: 1, updatedAt: 1000 }],
-      pages: { wsync1: { e1: { key: "e1", title: "첫 문서", type: "인물", summary: "첫 문서다.", categories: [], notices: [], infobox: [], sections: [{ heading: "개요", level: 1, body: "원래 본문이다." }], links: [], shortStories: [{ id: "sync-short", title: "밤의 기록", body: "정비병은 잠시 손을 멈췄다.", createdAt: 1 }], createdAt: 1, savedAt: 1000 } } } };
+      pages: { wsync1: { e1: { key: "e1", title: "첫 문서", type: "인물", summary: "첫 문서다.", categories: [], notices: [], infobox: [], sections: [{ heading: "개요", level: 1, body: "원래 본문이다." }], links: [], shortStories: [{ id: "sync-short", title: "밤의 기록", body: "정비병은 잠시 손을 멈췄다.", illustration: illustrationFixture, createdAt: 1 }], createdAt: 1, savedAt: 1000 } } } };
     const f = path.join(os.tmpdir(), "ww-sync-backup.json"); fs.writeFileSync(f, JSON.stringify(backup));
     await A.page.setInputFiles("#importFile", f); await A.page.waitForTimeout(500);
     await A.page.fill("#acId", "테스터"); await A.page.fill("#acPw", "secret1");
@@ -72,9 +73,10 @@ const until = async (fn, msg, ms = 15000) => { const t0 = Date.now(); while (Dat
 
     await B.page.click("[data-prose-open]"); await B.page.locator(".prose-saved summary").click();
     assert((await B.page.locator(".prose-saved .prose-text").innerText()).includes("정비병은 잠시"));
+    assert.strictEqual(await B.page.locator(".prose-illustration img").getAttribute("src"), illustrationFixture);
     assert.strictEqual(JSON.parse(row("SELECT data FROM pages WHERE wid = 'wsync1' AND pkey = 'e1'").data).shortStories[0].id, "sync-short");
     await B.page.click('[data-act="prose-close"]');
-    pass("문서에 보관한 단편도 서버를 거쳐 다른 기기에서 API 키 없이 읽는다");
+    pass("문서에 보관한 단편과 삽화도 서버를 거쳐 다른 기기에서 API 키 없이 읽는다");
 
     // 이미지도 기존 문서 데이터로 동기화하며 별도 업로드 API를 쓰지 않는다.
     const png = Buffer.from(await B.page.evaluate(() => {
