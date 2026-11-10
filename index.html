@@ -99,6 +99,9 @@ h1.t{font-family:var(--f-display);font-weight:700;font-size:30px;line-height:1.2
 .image-gen h3{margin:0 0 8px;font-size:16px}
 .image-gen select{width:100%;padding:8px;border:1px solid var(--line);border-radius:var(--r);background:var(--sheet);color:var(--ink);font:inherit}
 .image-gen .preview{display:block;max-height:640px;max-width:100%;margin:12px auto;object-fit:contain}
+.section-edit{float:right;margin-left:12px;border:0;background:none;color:var(--link);font:12px var(--f-body);padding:5px 0;cursor:pointer}
+.section-edit:disabled{color:var(--muted);cursor:default}
+.section-ai{padding:12px;border:1px solid var(--line);border-radius:var(--r);margin:16px 0}
 .prose-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:16px;line-height:2;margin:16px 0}
 .prose-saved{margin-top:20px;border-top:1px solid var(--line);padding-top:12px}
 .prose-saved details{margin:12px 0}
@@ -375,7 +378,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.24 · 2026-11-10";
+const APP_VERSION = "v6.25 · 2026-11-10";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -644,7 +647,7 @@ async function listGeminiModels() {
 }
 const LOGK = "wwiki:log";
 const LOG = (() => { try { const v = JSON.parse(localStorage.getItem(LOGK) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })();
-const KIND = { prose: "단편 쓰기", image: "이미지 생성", choices: "행동 후보", read: "문서 읽기 검사", bible: "세계관 생성", storyBible: "스토리 세계관 생성", chapterPlan: "장 계획", chapterBlock: "장 섹션", page: "문서 작성", tone: "분위기 판별", check: "설정 검사", analyze: "수정 대조", fix: "충돌 고치기" };
+const KIND = { section: "문단 다시 쓰기", prose: "단편 쓰기", image: "이미지 생성", choices: "행동 후보", read: "문서 읽기 검사", bible: "세계관 생성", storyBible: "스토리 세계관 생성", chapterPlan: "장 계획", chapterBlock: "장 섹션", page: "문서 작성", tone: "분위기 판별", check: "설정 검사", analyze: "수정 대조", fix: "충돌 고치기" };
 function pushLog(r) {
   LOG.push(r); if (LOG.length > 40) LOG.splice(0, LOG.length - 40);
   try { localStorage.setItem(LOGK, JSON.stringify(LOG)); } catch {}
@@ -657,7 +660,7 @@ async function callJson(kind, prompt, opts = {}, meta = {}) {
   const t0 = performance.now(); let first = null, chars = 0;
   const user = opts.onText;
   const rec = { at: Date.now(), kind, tier: opts.modelTier || "default", model: "", effort: "", in: prompt.length, ...meta };
-  const o = { progressWatch: ["page", "check", "read", "prose"].includes(kind), ...opts, onText: u => { if (first === null) first = performance.now(); chars = u.text.length; if (user) user(u); },
+  const o = { progressWatch: ["page", "check", "read", "prose", "section"].includes(kind), ...opts, onText: u => { if (first === null) first = performance.now(); chars = u.text.length; if (user) user(u); },
     onRetry: r => { rec.retry = r.n; (rec.retries ||= []).push(r.reason ? String(r.reason).slice(0, 120) : r.mode); opts.onRetry?.(r); },
     onMeta: m => { rec.model = m.model; rec.effort = m.think || ""; if (m.retries) rec.retry = m.retries; if (m.usage) rec.tok = { i: m.usage.promptTokenCount || 0, o: m.usage.candidatesTokenCount || 0, t: m.usage.thoughtsTokenCount || 0 }; } };
   const done = () => { rec.first = first === null ? null : Math.round(first - t0); rec.total = Math.round(performance.now() - t0); rec.out = chars; };
@@ -3170,16 +3173,97 @@ function imageGenHtml(w, k) {
     <div class="row" style="margin-top:10px"><button type="button" class="btn pri" data-act="image-generate" ${disabled || !imageReady(o.model) ? "disabled" : ""}>${v.busy ? "이미지 생성 중…" : v.preview ? "다시 1장 생성" : "1장 생성"}</button><button type="button" class="btn" data-act="image-close">${v.busy ? "생성 중단" : "닫기"}</button></div></section>`;
 }
 
+/* 문단 편집은 제목 하나와 그 아래 하위 문단에만 적용한다. */
+const sectionBaseStamp = (w, p) => JSON.stringify([imageDocStamp(p), p.categories, p.notices, pageToSource(w, p).navbox]);
+function openSectionEditor(k, index) {
+  const w = S.world, p = S.pages[k]; if (!w || !p || !Number.isInteger(index) || !p.sections[index]) return;
+  if (portraitBusy(k) || S.portraitJob) { toast("문서 작업이 끝난 뒤 문단을 편집해 주세요."); return; }
+  if (S.edit?.aiBusy || S.edit?.saving) { toast("진행 중인 문단 수정을 마치거나 중단해 주세요."); return; }
+  let end = index + 1; const root = p.sections[index];
+  if ((root.level || 1) === 1) while (end < p.sections.length && (p.sections[end].level || 1) === 2) end++;
+  const f = pageToSource(w, p); f.body = pageToSource(w, { ...p, sections: p.sections.slice(index, end) }).body;
+  S.edit = { key: k, f, section: { index, end, root: { ...root }, stamp: sectionBaseStamp(w, p) }, aiDirection: "" };
+  S.confirmRewrite = null; S.confirmDelPage = null; renderMain(true); window.scrollTo({ top: 0 }); $("#edBody")?.focus();
+}
+function sectionDraft(ed) {
+  const parsed = parseHeadings(ed.f.body), root = ed.section.root;
+  if (parsed.pre && parsed.parts.length) throw new Error("문단 제목 앞에는 본문을 두지 마세요.");
+  const parts = parsed.parts.length ? parsed.parts.map(x => ({ heading: x.heading.replace(/^\[\d+장\]\s*/, ""), level: x.level, body: x.text })) : [{ heading: root.heading, level: root.level || 1, body: parsed.pre }];
+  if (parts[0].level !== (root.level || 1) || parts.slice(1).some(x => (root.level || 1) === 2 || x.level !== 2)) throw new Error("선택한 문단의 제목 수준을 유지해 주세요. 상위 문단에는 하위 문단만 추가할 수 있습니다.");
+  return parts.map(x => { if (!x.heading.trim()) throw new Error("문단 제목을 입력해 주세요."); return { ...x, ...(root.ch ? { ch: root.ch } : {}) }; });
+}
+function sectionEditOut(w, p, ed) {
+  const out = sourceToOut(pageToSource(w, p));
+  for (const field of ["type", "summary", "categories", "notices", "infobox"]) if (p[field] !== undefined) out[field] = p[field];
+  out.sections = [...p.sections.slice(0, ed.section.index), ...sectionDraft(ed), ...p.sections.slice(ed.section.end)];
+  return out;
+}
+async function rewriteSection() {
+  const ed = S.edit, w = S.world, p = ed && S.pages[ed.key];
+  if (!ed?.section || ed.aiBusy || ed.saving || !w || !p || !S.sample) return;
+  if (portraitBusy(ed.key) || S.portraitJob) { edStatus("문서 작업이 끝난 뒤 문단을 다시 써 주세요."); return; }
+  if (sectionBaseStamp(w, p) !== ed.section.stamp) { edStatus("원본 문서가 바뀌었습니다. 초안을 복사한 뒤 문서를 다시 열어 주세요."); return; }
+  const draft = ed.f.body; ed.aiBusy = true; ed.ctl = new AbortController(); ed.aiError = ""; renderMain(true);
+  const prompt = `## 선택한 문단 다시 쓰기
+가상 세계관 위키의 선택된 문단만 수정한다. 나머지 문서·인포박스·분류는 수정하지 않는다.
+${canonBlock(w)}
+${isStory(w) ? storyBlock(w, ed.key, true) : ""}
+${toneBlock(w)}
+## 다른 문서가 확정한 사실
+${entityBrief(w, ed.key, ed.key)}
+${w.entities[ed.key].facts.filter(f => live(f) && f.src !== ed.key).map(f => factLine(f)).join("\n")}
+${w.entities[ed.key].mentions.filter(m => live(m) && m.from !== ed.key).map(m => m.text).join("\n")}
+${relationsOf(w, ed.key).filter(live).map(r => relLine(w, r)).join("\n")}
+${related(w, ed.key).map(k => entityBrief(w, k, ed.key)).join("\n\n")}
+## 전체 문서 (앞뒤 흐름을 위한 참고)
+${docForCheck(p)}
+## 수정할 문단과 하위 문단 (현재 초안)
+${draft}
+## 사용자가 요청한 수정 방향
+${ed.aiDirection?.trim() || "확정 내용과 결말은 유지하면서 선택한 문단만 처음부터 다시 써라."}
+## 출력 규칙
+선택한 문단만 출력한다. 기존 확정 설정·연표·신원·나이·관계를 지킨다. 다른 문단의 내용을 덮어쓰거나 같은 설명을 불필요하게 반복하지 않는다. 요청에 따라 문장 수정·보강·전면 다시 쓰기를 한다. 설명문이나 '작성 방향:'을 붙이지 않는다.
+첫 문단의 level은 ${ed.section.root.level || 1}이다. ${(ed.section.root.level || 1) === 2 ? "문단 하나만 출력한다." : "첫 상위 문단 하나와 필요한 하위 문단(level 2)만 출력한다. 다른 상위 문단은 출력하지 않는다."} 이야기 장 번호는 앱이 유지하므로 heading에 붙이지 않는다.
+JSON 객체 하나: {"sections":[{"heading":"제목","level":${ed.section.root.level || 1},"body":"위키 문법의 본문"}]}`;
+  try {
+    const out = await callJson("section", prompt, { modelTier: "default", signal: ed.ctl.signal }, { title: p.title + " · " + ed.section.root.heading });
+    if (S.edit !== ed || S.world !== w || ed.ctl.signal.aborted) return;
+    if (!Array.isArray(out?.sections) || !out.sections.length || out.sections.length > 20 || out.sections.some(x => !x || typeof x.heading !== "string" || !x.heading.trim() || ![1, 2].includes(x.level) || typeof x.body !== "string" || x.body.length > 60000)) throw new Error("문단 응답 형식을 확인할 수 없습니다.");
+    const candidate = pageToSource(w, { ...p, sections: out.sections.map(x => ({ heading: x.heading, level: x.level, body: x.body })) }).body;
+    sectionDraft({ ...ed, f: { ...ed.f, body: candidate } });
+    if (ed.f.body !== draft) throw new Error("생성 중 초안이 바뀌었습니다. 다시 요청해 주세요.");
+    ed.aiBefore = draft; ed.f.body = candidate; ed.aiError = "AI 초안을 편집 칸에 반영했습니다. 확인한 뒤 저장해 주세요.";
+  } catch (e) { if (S.edit === ed) ed.aiError = e.code === "cancelled" ? "AI 수정을 중단했습니다. 기존 초안은 유지했습니다." : (e.message || errMsg(e)); }
+  finally { ed.aiBusy = false; if (S.edit === ed && S.world === w) renderMain(true); }
+}
+function sectionEditHtml(k) {
+  const ed = S.edit, title = S.pages[k]?.title || "", busy = ed.aiBusy || ed.saving, disabled = busy ? "disabled" : "";
+  return `<div class="sheet ed"><div class="crumb"><span>${esc(S.world.title)}</span><span>문단 편집</span></div><h1 class="t">${esc(ed.section.root.heading)} <span class="note">편집</span></h1>
+    <p class="note">「${esc(title)}」의 이 문단${ed.section.end - ed.section.index > 1 ? "과 하위 문단" : ""}만 수정합니다. 나머지 본문·인포박스·이미지·단편은 유지합니다.${ed.section.root.ch ? ` ${ed.section.root.ch}장 소속도 유지합니다.` : ""}</p>
+    <label class="lb" for="edBody">문단 내용</label><textarea id="edBody" data-ef="body" rows="20" ${disabled}>${esc(ed.f.body)}</textarea>
+    <p class="note">제목은 = 제목 =, 하위 제목은 == 제목 == 형식입니다. 선택한 문단의 제목 수준은 유지해 주세요.</p>
+    <section class="section-ai"><label class="lb" for="sectionDirection">AI 수정·다시 쓰기 방향 (선택)</label><textarea id="sectionDirection" rows="3" maxlength="2000" placeholder="예: 이 전투의 경과만 더 구체적으로. 결말은 유지하고 긴장감을 높여 줘." ${disabled}>${esc(ed.aiDirection || "")}</textarea>
+      ${ed.aiError ? `<p class="note" role="status">${esc(ed.aiError)}</p>` : ""}
+      <div class="row"><button type="button" class="btn" data-act="section-rewrite" ${disabled || !S.sample ? "disabled" : ""}>${ed.aiBusy ? "문단을 고치는 중…" : "AI로 이 문단 고치기"}</button>${ed.aiBusy ? `<button type="button" class="btn" data-act="section-stop">AI 중단</button>` : ""}${ed.aiBefore !== undefined ? `<button type="button" class="btn" data-act="section-undo" ${disabled}>AI 수정 전으로</button>` : ""}</div>
+    </section><p class="note">AI 수정은 저장 전 초안입니다. 저장할 때 기존 설정과 대조하고 충돌이 있으면 확인합니다.</p>
+    <div id="edConflicts"></div><div class="banner warn" id="edErr" hidden></div><div class="row"><button type="button" class="btn pri" id="edSave" data-act="ed-save" ${disabled}>저장</button><button type="button" class="btn" data-act="ed-cancel" ${ed.saving ? "disabled" : ""}>취소</button></div></div>`;
+}
+
 function openEditor(k) {
+  if (S.edit?.aiBusy || S.edit?.saving) { toast("진행 중인 문단 수정을 마치거나 중단해 주세요."); return; }
   const p = S.pages[k]; if (!p) return;
   if (isHeld(k)) { toast("이 문서에 반영한 장을 설정과 맞춰 보는 중입니다. 끝난 뒤 편집해 주세요."); return; }
-  if (!S.edit || S.edit.key !== k) S.edit = { key: k, f: pageToSource(S.world, p) };
+  if (!S.edit || S.edit.key !== k || S.edit.section) S.edit = { key: k, f: pageToSource(S.world, p) };
   S.confirmRewrite = null; S.confirmDelPage = null; renderMain(true); window.scrollTo({ top: 0 });
 }
 function edStatus(msg, busy) {
   const btn = $("#edSave"), err = $("#edErr");
   if (btn) { btn.disabled = !!busy; btn.textContent = busy ? "설정과 대조하는 중…" : "저장"; }
   if (err) { err.hidden = !msg; err.innerHTML = msg || ""; }
+  if (S.edit?.section) {
+    document.querySelectorAll(".ed textarea, .ed [data-act='section-rewrite'], .ed [data-act='section-undo']").forEach(el => el.disabled = !!busy || !!S.edit.aiBusy);
+    const cancel = document.querySelector(".ed [data-act='ed-cancel']"); if (cancel) cancel.disabled = !!S.edit.saving;
+  }
 }
 async function saveEdit(skipCheck) {
   const ed = S.edit, w = S.world; if (!ed || !w) return;
@@ -3189,7 +3273,12 @@ async function saveEdit(skipCheck) {
   if (S.gen && S.gen.key === k) { edStatus("이 문서를 작성하는 중이라 저장할 수 없습니다."); return; }
   if (S.syncing === k) { edStatus("이 문서에 장의 변화를 반영하는 중이라 저장할 수 없습니다. 잠시 뒤 다시 저장해 주세요."); return; }
   if (S.storyGen) { edStatus("다음 장을 쓰는 중이라 저장할 수 없습니다. 끝난 뒤 다시 저장해 주세요."); return; }
-  const out = sourceToOut(ed.f);
+  if (ed.aiBusy || ed.saving) return;
+  let out;
+  try {
+    if (ed.section && sectionBaseStamp(w, S.pages[k]) !== ed.section.stamp) throw new Error("원본 문서가 바뀌었습니다. 초안을 복사한 뒤 문서를 다시 열어 주세요.");
+    out = ed.section ? sectionEditOut(w, S.pages[k], ed) : sourceToOut(ed.f);
+  } catch (err) { edStatus(esc(err.message || errMsg(err))); return; }
   if (!out.sections.some(s => s.body.trim())) { edStatus("본문이 비어 있습니다. 섹션 아래에 내용을 적어 주세요."); return; }
   if (skipCheck || !S.sample) { commitEdit(ed, out, null, [], {}); return; }
   const snap = JSON.stringify(ed.f);
@@ -3210,7 +3299,7 @@ async function saveEdit(skipCheck) {
   const conflicts = readConflicts(w, r?.conflicts, ctx.refs);
   const ask = conflicts.filter(c => c.ask);
   if (!ask.length) { commitEdit(ed, out, r, conflicts, {}); return; }
-  ed.pending = { out, r, conflicts };
+  ed.pending = { out, r, conflicts, draftStamp: JSON.stringify(ed.f) };
   const box = $("#edConflicts"); if (box) { box.innerHTML = conflictPanelHtml(w, ask); box.scrollIntoView({ block: "start", behavior: "smooth" }); }
 }
 function conflictPanelHtml(w, ask) {
@@ -3228,6 +3317,7 @@ function conflictPanelHtml(w, ask) {
 }
 function applyConflictChoices() {
   const ed = S.edit; if (!ed?.pending) return;
+  if (ed.section && ed.pending.draftStamp !== JSON.stringify(ed.f)) { ed.pending = null; if ($("#edConflicts")) $("#edConflicts").innerHTML = ""; edStatus("충돌 확인 중 초안이 바뀌었습니다. 다시 저장해 주세요."); return; }
   const ch = { rules: {}, keep: {} };
   for (const c of ed.pending.conflicts.filter(c => c.ask)) {
     const box = document.getElementById("cf-" + c.id);
@@ -3248,8 +3338,19 @@ function clearBadges(k) {
   return touched;
 }
 async function commitEdit(ed, out, r, conflicts, ch) {
-  const w = S.world, k = ed.key, old = S.pages[k], e = w.entities[k];
-  if (S.edit !== ed || !old) return;
+  const w = S.world, k = ed.key, e = w.entities[k]; let old = S.pages[k];
+  if (S.edit !== ed || !old || ed.saving) return;
+  if (ed.section) {
+    ed.saving = true; edStatus("", true);
+    try {
+      const latest = await Store.getPage(w.id, k);
+      if (S.edit !== ed || S.world !== w) { ed.saving = false; return; }
+      if (!latest || sectionBaseStamp(w, latest) !== ed.section.stamp || sectionBaseStamp(w, old) !== ed.section.stamp) throw new Error("원본 문서가 바뀌었습니다. 초안을 복사한 뒤 문서를 다시 열어 주세요.");
+      old = latest;
+    } catch (err) { ed.saving = false; edStatus(esc(err.message || errMsg(err))); return; }
+  }
+  const pagesBackup = ed.section ? Object.fromEntries(Object.entries(S.pages).map(([key, p]) => [key, { ...p, ...(p.conflicts ? { conflicts: p.conflicts.slice() } : {}) }])) : null;
+  const ownNavboxes = ed.section ? Object.fromEntries(Object.entries(w.navboxes || {}).filter(([, nb]) => nb.src === k)) : null;
   const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], rules: w.rules });
   const touched = clearBadges(k);
   let page;
@@ -3262,7 +3363,13 @@ async function commitEdit(ed, out, r, conflicts, ch) {
     (w.relations || []).forEach(x => { if (x.sup?.by === k) delete x.sup; });
     for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === k) delete w.navboxes[id];
     page = integrate(w, k, out);
-  } catch (err) { const b = JSON.parse(backup); restoreRewrite(w, backup); w.rules = b.rules; edStatus("저장하지 못했습니다. " + esc(errMsg(err))); return; }
+  } catch (err) { const b = JSON.parse(backup); restoreRewrite(w, backup); w.rules = b.rules; ed.saving = false; edStatus("저장하지 못했습니다. " + esc(errMsg(err))); return; }
+  if (ed.section) {
+    for (const field of ["title", "type", "summary", "categories", "notices", "infobox", "style", "portrait", "shortStories"]) { if (old[field] !== undefined) page[field] = old[field]; else delete page[field]; }
+    page.sections = out.sections;
+    for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === k) delete w.navboxes[id];
+    Object.assign(w.navboxes, ownNavboxes);
+  }
   Object.assign(page, { createdAt: old.createdAt, rewrittenAt: old.rewrittenAt, direction: old.direction, editedAt: Date.now(), stale: !r, baseAsOf: old.baseAsOf, syncedTo: old.syncedTo, storyNotice: old.storyNotice });
   if (r) {
     for (const o of Object.values(w.entities)) o.facts = o.facts.filter(f => f.src !== k);
@@ -3290,6 +3397,23 @@ async function commitEdit(ed, out, r, conflicts, ch) {
   }
   page.pending = pending.map(c => ({ label: conflictLabel(w, c), old: c.old, claim: c.claim }));
   cleanupOrphans(w, k);
+  if (ed.section) {
+    const changed = [...touched].filter(x => x !== k && S.pages[x]).map(x => S.pages[x]);
+    try {
+      await Store.savePage(w.id, page);
+      for (const q of changed) await Store.savePage(w.id, q);
+      await Store.saveWorld(w);
+    } catch (err) {
+      restoreRewrite(w, backup); w.rules = JSON.parse(backup).rules;
+      if (S.world === w) { S.pages = pagesBackup; S.pages[k] = old; }
+      try { await Store.putPageRaw(w.id, old); for (const q of changed) if (pagesBackup[q.key]) await Store.putPageRaw(w.id, pagesBackup[q.key]); await Store.saveWorld(w); } catch {}
+      ed.saving = false; edStatus("저장하지 못했습니다. 초안은 유지했습니다. " + esc(errMsg(err))); return;
+    }
+    if (S.world === w) S.pages[k] = page;
+    if (S.edit === ed) S.edit = null;
+    if (S.world === w) { noteExplore(k, "edited"); renderAll(); if (S.view.key === k) document.getElementById("s-" + ed.section.index)?.scrollIntoView({ block: "start" }); }
+    toast("문단을 저장했습니다."); return;
+  }
   S.pages[k] = page; S.edit = null; noteExplore(k, "edited"); renderAll(); window.scrollTo({ top: 0 });
   try {
     await Store.savePage(w.id, page);
@@ -3807,7 +3931,7 @@ function articleHtml(k) {
   const nums = p.sections.map(s => { if ((s.level || 1) === 2 && n1) { n2++; return `${n1}.${n2}.`; } n1++; n2 = 0; return `${n1}.`; });
   const story = isStory(w), pk = story ? w.story.protagonistKey : null, card = story && k === pk && !held && S.storyCard?.wid === w.id ? S.storyCard : null;
   const chb = (s, sub) => s.ch && !sub ? `<span class="chb">${s.ch}장</span>` : "";
-  const secs = p.sections.map((s, i) => { const sub = nums[i].split(".").length > 2; return `<${sub ? "h3" : "h2"} id="s-${i}" class="${sub ? "sh" : ""}${!sub && card && s.ch === card.n ? " chnew" : ""}"><span class="n">${nums[i]}</span>${chb(s, sub)}${esc(s.heading)}</${sub ? "h3" : "h2"}><div class="secb" data-bi="${i}">${blocks(s.body, fns)}</div>`; }).join("");
+  const secs = p.sections.map((s, i) => { const sub = nums[i].split(".").length > 2; return `<${sub ? "h3" : "h2"} id="s-${i}" class="${sub ? "sh" : ""}${!sub && card && s.ch === card.n ? " chnew" : ""}"><span class="n">${nums[i]}</span>${chb(s, sub)}${esc(s.heading)}<button type="button" class="section-edit" data-section-edit="${i}" data-section-key="${k}" aria-label="${esc(s.heading)} 문단 편집" ${held || portraitBusy(k) ? "disabled" : ""}>[편집]</button></${sub ? "h3" : "h2"}><div class="secb" data-bi="${i}">${blocks(s.body, fns)}</div>`; }).join("");
   const toc = p.sections.length > 2 ? `<nav class="toc" aria-label="목차"><b>목차</b><ul>${p.sections.map((s, i) => `<li class="${nums[i].split(".").length > 2 ? "sub" : ""}"><span class="n">${nums[i]}</span> <button type="button" data-sec="${i}">${chb(s, nums[i].split(".").length > 2)}${esc(s.heading)}</button></li>`).join("")}</ul></nav>` : "";
   const stNotice = story && storyOn(w) && p.storyNotice ? `<div class="notice"><div>이 문서는 진행 중인 사건을 다룹니다. (현재 ${w.story.chapter}장)</div></div>` : "";
   const miss = story && !held ? missingChs(w, k) : [];
@@ -3884,6 +4008,7 @@ function articleHtml(k) {
     </div></article>`;
 }
 function editHtml(k) {
+  if (S.edit.section) return sectionEditHtml(k);
   const w = S.world, f = S.edit.f, e = w.entities[k];
   const ta = (id, ef, rows, ph) => `<textarea id="${id}" data-ef="${ef}" rows="${rows}" ${ph ? `placeholder="${esc(ph)}"` : ""}>${esc(f[ef])}</textarea>`;
   return `<div class="sheet ed"><div class="crumb"><span>${esc(w.title)}</span><span>문서 편집</span></div>
@@ -4195,6 +4320,7 @@ document.addEventListener("click", ev => {
   if (d.check) { checkPage(d.check); return; }
   if (d.fixk) { openFixView(d.fixk, [Number(d.fix)], true); return; }
   if (d.cfix) { openConflictFix(d.cfix); return; }
+  if (d.sectionEdit !== undefined) { openSectionEditor(d.sectionKey, Number(d.sectionEdit)); return; }
   if (d.edit) { openEditor(d.edit); return; }
   if (d.imageOpen) { openImageGen(d.imageOpen); return; }
   if (d.proseIllustrate) { openProseImage(d.proseIllustrate); return; }
@@ -4293,11 +4419,14 @@ document.addEventListener("click", ev => {
     case "regen-open": openRegen(); break;
     case "regen-cancel": cancelRegen(); break;
     case "cast-add": if (S.cast.length < 8) { S.cast.push({ name: "", desc: "", rel: "" }); renderMain(); document.querySelector(`[data-cast="${S.cast.length - 1}"][data-cf="name"]`)?.focus(); } break;
+    case "section-rewrite": rewriteSection(); break;
+    case "section-stop": S.edit?.ctl?.abort(); break;
+    case "section-undo": if (S.edit?.section && !S.edit.aiBusy && !S.edit.saving && S.edit.aiBefore !== undefined) { S.edit.f.body = S.edit.aiBefore; delete S.edit.aiBefore; S.edit.aiError = "AI 수정 전 초안으로 되돌렸습니다."; renderMain(true); } break;
     case "ed-save": saveEdit(); break;
     case "ed-save-raw": saveEdit(true); break;
     case "cf-apply": applyConflictChoices(); break;
     case "cf-back": if (S.edit) S.edit.pending = null; $("#edConflicts").innerHTML = ""; $("#edBody")?.focus(); break;
-    case "ed-cancel": S.edit = null; renderMain(); window.scrollTo({ top: 0 }); break;
+    case "ed-cancel": if (S.edit?.saving) break; S.edit?.ctl?.abort(); S.edit = null; renderMain(); window.scrollTo({ top: 0 }); break;
     case "save-canon": saveCanon(); break;
     case "prose-image-generate": generateProseImage(); break;
     case "prose-image-apply": saveProseImage(); break;
@@ -4359,6 +4488,7 @@ document.addEventListener("input", ev => {
   if (S.fixv && ev.target.dataset?.fsel !== undefined) { const x = Number(ev.target.dataset.fsel); ev.target.checked ? S.fixv.sel.add(x) : S.fixv.sel.delete(x); renderMain(); }
   if (S.fixv && ev.target.dataset?.fon !== undefined) { const e = S.fixv.edits[Number(ev.target.dataset.fon)]; if (e) { e.on = ev.target.checked; renderMain(); } }
   if (S.fixv && ev.target.dataset?.fnew !== undefined) { const e = S.fixv.edits[Number(ev.target.dataset.fnew)]; if (e) e.new = ev.target.value; }
+  if (ev.target.id === "sectionDirection" && S.edit?.section && !S.edit.aiBusy) S.edit.aiDirection = ev.target.value;
   if (ev.target.dataset?.ef && S.edit) S.edit.f[ev.target.dataset.ef] = ev.target.value;
   if (ev.target.id === "q") renderSugg();
 });
