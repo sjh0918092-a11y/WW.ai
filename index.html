@@ -75,10 +75,20 @@ h1.t{font-family:var(--f-display);font-weight:700;font-size:30px;line-height:1.2
 
 .article{font-size:15px;line-height:1.8}
 .lead{margin:18px 0 0}
-.infobox{float:right;width:280px;margin:16px 0 16px 24px;border:1px solid var(--line);border-radius:var(--r);font-size:13px;line-height:1.55;overflow:hidden;background:var(--sheet)}
+.infobox{float:right;width:340px;max-width:100%;margin:16px 0 16px 24px;border:1px solid var(--line);border-radius:var(--r);font-size:13px;line-height:1.55;overflow:hidden;background:var(--sheet)}
 .infobox .ih{background:var(--tint);padding:10px 12px;font-family:var(--f-display);font-weight:700;font-size:15px;text-align:center}
 .portrait{padding:10px;text-align:center;border-bottom:1px solid var(--line)}
-.portrait img{display:block;max-width:100%;max-height:400px;width:auto;height:auto;margin:0 auto;object-fit:contain}
+.portrait img{display:block;width:100%;height:auto;margin:0 auto;object-fit:contain}
+.image-open{display:block;width:100%;border:0;padding:0;background:none;cursor:zoom-in}
+.image-viewer{border:1px solid var(--line);border-radius:var(--r);padding:12px;background:var(--sheet);color:var(--ink);width:min(96vw,1800px);height:92vh;height:92dvh;max-width:96vw;max-height:92dvh}
+.image-viewer[open]{display:flex;flex-direction:column;gap:12px}
+.image-viewer::backdrop{background:rgb(0 0 0 / .85)}
+.image-viewer header{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:none}
+.image-viewer header strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.image-viewer .image-stage{flex:1;min-height:0;overflow:auto;display:flex;align-items:center;justify-content:center;overscroll-behavior:contain;touch-action:pan-x pan-y pinch-zoom}
+.image-viewer .viewer-image{display:block;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;cursor:zoom-in}
+.image-viewer.original .image-stage{display:block}
+.image-viewer.original .viewer-image{max-width:none;max-height:none;margin:0 auto;cursor:zoom-out}
 .portrait-menu{position:relative;align-self:flex-start}
 .portrait-menu>summary{list-style:none}
 .portrait-menu>summary::-webkit-details-marker{display:none}
@@ -88,7 +98,7 @@ h1.t{font-family:var(--f-display);font-weight:700;font-size:30px;line-height:1.2
 .image-gen{margin:12px 0;padding:16px;border:1px solid var(--line);border-radius:var(--r);background:var(--paper);scroll-margin-top:140px}
 .image-gen h3{margin:0 0 8px;font-size:16px}
 .image-gen select{width:100%;padding:8px;border:1px solid var(--line);border-radius:var(--r);background:var(--sheet);color:var(--ink);font:inherit}
-.image-gen .preview{display:block;max-height:420px;max-width:100%;margin:12px auto;object-fit:contain}
+.image-gen .preview{display:block;max-height:640px;max-width:100%;margin:12px auto;object-fit:contain}
 .image-gen .guide{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0 12px;font-size:13px;color:var(--muted)}
 .infobox .ity{font-family:var(--f-mono);font-size:11px;color:var(--muted);text-align:center;padding:4px 0 2px;border-bottom:1px solid var(--line)}
 .infobox table{width:100%;border-collapse:collapse}
@@ -362,7 +372,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.16 · 2026-11-10";
+const APP_VERSION = "v6.17 · 2026-11-10";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -2733,7 +2743,7 @@ const conflictLabel = (w, c) => c.kind === "rule" ? `핵심 규칙 ${c.id}` : c.
   : c.kind === "timeline" ? `연표${c.src && w.entities[c.src] ? ` (「${w.entities[c.src].title}」)` : ""}` : `「${w.entities[c.src]?.title || "?"}」${S.pages[c.src]?.editedAt ? " (직접 수정한 문서)" : ""}`;
 
 /* ---------- 문서 이미지 업로드: 브라우저에서 축소하고 문서와 함께 저장 ---------- */
-const PORTRAIT_MAX = 240 * 1024;   // data URL 전체 길이. 문서 저장·백업·동기화의 부담을 제한
+const PORTRAIT_MAX = 1536 * 1024;   // data URL 전체 길이. 참조 이미지도 기존 중계 서버의 2MB 요청 한도에 맞춘다
 const portraitSrc = p => typeof p?.portrait === "string" && p.portrait.length <= PORTRAIT_MAX && /^data:image\/(?:webp|png|jpeg);base64,[A-Za-z0-9+/]+=*$/.test(p.portrait) ? p.portrait : "";
 async function preparePortrait(file) {
   if (!/^image\/(?:jpeg|png|webp|gif|avif)$/i.test(file.type)) throw new Error("JPG, PNG, WebP, GIF, AVIF 이미지 파일을 선택해 주세요.");
@@ -2745,12 +2755,14 @@ async function preparePortrait(file) {
     if (!w || !h || w * h > 40e6) throw new Error("이미지 해상도가 너무 큽니다. 크기를 줄인 뒤 선택해 주세요.");
     const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("이 브라우저에서 이미지를 처리하지 못했습니다.");
-    let scale = Math.min(1, 768 / Math.max(w, h));
-    for (let i = 0; i < 6; i++, scale *= .75) {
+    let scale = Math.min(1, 2048 / Math.max(w, h));
+    for (let i = 0; i < 6; i++, scale *= .8) {
       canvas.width = Math.max(1, Math.round(w * scale)); canvas.height = Math.max(1, Math.round(h * scale));
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      const src = canvas.toDataURL("image/webp", .82);
-      if (portraitSrc({ portrait: src })) return src;
+      for (const quality of [.9, .82, .72]) {
+        const src = canvas.toDataURL("image/webp", quality);
+        if (portraitSrc({ portrait: src })) return src;
+      }
     }
     throw new Error("이미지를 저장할 크기로 줄이지 못했습니다. 더 작은 파일을 선택해 주세요.");
   } finally { URL.revokeObjectURL(url); }
@@ -2778,7 +2790,44 @@ async function setPortrait(k, file) {
 }
 function portraitHtml(p) {
   const src = portraitSrc(p);
-  return src ? `<div class="portrait"><img src="${esc(src)}" alt="${esc(p.title)} ${p.type === "인물" ? "프로필" : "문서"} 이미지" decoding="async"></div>` : "";
+  return src ? `<div class="portrait">${imageZoomHtml(src, p.title + (p.type === "인물" ? " 프로필 이미지" : " 문서 이미지"))}</div>` : "";
+}
+function imageZoomHtml(src, title, preview = false) {
+  return `<button type="button" class="image-open" data-image-view aria-label="${esc(title)} 확대 보기" title="눌러서 크게 보기"><img ${preview ? 'class="preview"' : ""} src="${esc(src)}" alt="${esc(title)}" decoding="async"></button>`;
+}
+let imageViewer = null;
+function openImageViewer(src, title, trigger) {
+  if (!portraitSrc({ portrait: src })) return;
+  if (!imageViewer) {
+    const dialog = imageViewer = document.createElement("dialog");
+    dialog.className = "image-viewer"; dialog.setAttribute("aria-label", "이미지 확대 보기");
+    dialog.innerHTML = '<header><strong></strong><button type="button" class="btn" data-viewer-zoom aria-pressed="false">100% 크기</button><button type="button" class="btn" data-viewer-close autofocus>닫기</button></header><div class="image-stage"><img class="viewer-image" alt="" draggable="false"></div>';
+    document.body.appendChild(dialog);
+    const zoom = () => {
+      const original = dialog.classList.toggle("original"), button = dialog.querySelector("[data-viewer-zoom]"), stage = dialog.querySelector(".image-stage");
+      button.textContent = original ? "화면에 맞춤" : "100% 크기"; button.setAttribute("aria-pressed", String(original));
+      requestAnimationFrame(() => { stage.scrollLeft = original ? (stage.scrollWidth - stage.clientWidth) / 2 : 0; stage.scrollTop = original ? (stage.scrollHeight - stage.clientHeight) / 2 : 0; });
+    };
+    dialog.addEventListener("click", ev => {
+      ev.stopPropagation();
+      if (ev.target.closest("[data-viewer-close]")) dialog.close();
+      else if (ev.target.closest("[data-viewer-zoom]") || ev.target.classList.contains("viewer-image")) zoom();
+      else if (ev.target === dialog) { const r = dialog.getBoundingClientRect(); if (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom) dialog.close(); }
+    });
+    dialog.addEventListener("close", () => {
+      document.body.style.overflow = dialog._bodyOverflow; document.documentElement.style.overflow = dialog._rootOverflow;
+      dialog.querySelector("img").removeAttribute("src");
+      (dialog._trigger?.isConnected ? dialog._trigger : document.querySelector("[data-image-view]"))?.focus({ preventScroll: true });
+    });
+  }
+  const dialog = imageViewer;
+  dialog._trigger = trigger;
+  dialog.classList.remove("original"); dialog.querySelector("[data-viewer-zoom]").textContent = "100% 크기"; dialog.querySelector("[data-viewer-zoom]").setAttribute("aria-pressed", "false");
+  dialog.querySelector("strong").textContent = title; const img = dialog.querySelector("img"); img.alt = title; img.src = src;
+  if (!dialog.open) {
+    dialog._bodyOverflow = document.body.style.overflow; dialog._rootOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden"; document.documentElement.style.overflow = "hidden"; dialog.showModal();
+  }
 }
 function portraitMenuHtml(p, k, held) {
   const src = portraitSrc(p), busy = S.portraitJob?.key === k && S.portraitJob?.wid === S.world.id;
@@ -2887,7 +2936,7 @@ function imageGenHtml(w, k) {
     ${portraitSrc(p) ? `<label class="lb" style="font-weight:400"><input type="checkbox" data-igf="useRef" ${o.useRef ? "checked" : ""} ${disabled}>기존 이미지를 참고 이미지로 보내기</label>` : ""}
     <p class="note">공통 이미지 지침과 문서 내용을 함께 참고해 한 장을 생성합니다.${price ? ` 1K 이미지 출력비 약 $${price}/장, 입력 비용 별도.` : ""} 기존 이미지는 적용 버튼을 누를 때 바뀝니다.</p>
     ${v.error ? `<div class="banner warn" role="alert">${esc(v.error)}</div>` : ""}
-    ${v.preview ? `<img class="preview" src="${esc(v.preview)}" alt="${esc(p.title)} 생성 이미지 미리보기"><div class="row"><button type="button" class="btn pri" data-act="image-apply">이 이미지 적용</button><button type="button" class="btn" data-act="image-discard">미리보기 버리기</button></div>` : ""}
+    ${v.preview ? `${imageZoomHtml(v.preview, p.title + " 생성 이미지 미리보기", true)}<div class="row"><button type="button" class="btn pri" data-act="image-apply">이 이미지 적용</button><button type="button" class="btn" data-act="image-discard">미리보기 버리기</button></div>` : ""}
     <div class="row" style="margin-top:10px"><button type="button" class="btn pri" data-act="image-generate" ${disabled || !gReady() ? "disabled" : ""}>${v.busy ? "이미지 생성 중…" : v.preview ? "다시 1장 생성" : "1장 생성"}</button><button type="button" class="btn" data-act="image-close">${v.busy ? "생성 중단" : "닫기"}</button></div></section>`;
 }
 
@@ -3863,6 +3912,7 @@ document.addEventListener("click", ev => {
   if (!ev.target.closest(".search")) $("#sugg").hidden = true;
   const el = ev.target.closest("button, a"); if (!el) return;
   const d = el.dataset;
+  if (d.imageView !== undefined) { const img = el.querySelector("img"); if (img) openImageViewer(img.getAttribute("src"), img.alt, el); return; }
   if (el.matches("a.wl.new")) {
     ev.preventDefault();
     if (lp.fired) { lp.fired = false; return; }               // 길게 누르기로 이미 작성 페이지를 열었음
