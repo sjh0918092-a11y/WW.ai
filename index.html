@@ -357,7 +357,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.12 · 2026-11-10";
+const APP_VERSION = "v6.13 · 2026-11-10";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1965,8 +1965,7 @@ async function generatePage(k, rewrite, direction) {
     try { await Store.savePage(w.id, fin); for (const x of cleared) if (S.pages[x] && x !== k) await Store.savePage(w.id, S.pages[x]); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
     afterGen(k, true);
     if (S.world === w && S.pages[k] === fin) {
-      if (pre?.fixed) { toast(`설정과 어긋난 ${pre.fixed}곳을 고쳐서 보여 드립니다.`); bgSync(k, pre.keep); }   // 고친 본문 기준으로 확정 사실을 다시 정리
-      else if (!pre?.done) checkPage(k, true);   // 사전 검사를 끄거나 건너뛰었으면 읽는 동안 뒤에서 대조한다
+      if (pre?.fixed) { toast(`설정과 어긋난 ${pre.fixed}곳을 고쳐서 보여 드립니다.`); bgSync(k); }   // 확정 사실만 정리하며 검사는 다시 하지 않는다
     }
   } catch (err) {
     S.gen = null;
@@ -2242,31 +2241,26 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
     np.check = { at: Date.now(), issues: keep, auto: true }; np.autoFixed = { at: Date.now(), n: fixedMemo.size };
     cleanupOrphans(w, k);
     S.pages[k] = np; Object.assign(res, { page: np, fixed: fixedMemo.size, keep });
-  } catch (err) { /* 건너뛰었거나 실패: 작성된 문서를 그대로 보여 주고, 검사는 뒤에서 다시 돌린다 */ }
+  } catch (err) { /* 건너뛰었거나 실패: 작성된 문서를 그대로 보여 주며 자동 재검사를 예약하지 않는다 */ }
   return res;
 }
-async function checkPage(k, auto) {
-  if (!S.sample) { if (!auto) toast(ERR.no_sample); return; }
-  if (S.checking) { if (auto) { (S.autoQ ||= []).includes(k) || S.autoQ.push(k); } return; }
+/* 작성 직후의 preCheck 외에는 사용자가 설정 검사 버튼을 눌렀을 때만 실행한다. */
+async function checkPage(k) {
+  if (!S.sample) { toast(ERR.no_sample); return; }
+  if (S.checking) return;
   const w = S.world, p = S.pages[k]; if (!w || !p) return;
-  if (isHeld(k)) { if (!auto) toast("이 문서에 반영한 장을 설정과 맞춰 보는 중입니다."); return; }
+  if (isHeld(k)) { toast("이 문서에 반영한 장을 설정과 맞춰 보는 중입니다."); return; }
   S.checking = k; S.checkT0 = performance.now(); renderMain();
-  let found = 0;
   try {
-    const issues = await runChecks(w, k, {}, p.title + (auto ? " · 자동" : ""));
+    const issues = await runChecks(w, k, {}, p.title);
     if (S.pages[k] === p) {   // 검사하는 동안 문서가 바뀌었으면(장 반영 등) 옛 문서를 저장하지 않는다
-      p.check = { at: Date.now(), issues, auto: !!auto }; found = issues.length;
+      p.check = { at: Date.now(), issues, auto: false };
       try { await Store.savePage(w.id, p); } catch (err) { toast("검사 결과를 저장하지 못했습니다. " + errMsg(err)); }
     }
-  } catch (err) { if (!auto) toast(errMsg(err)); }
+  } catch (err) { toast(errMsg(err)); }
   S.checking = null;
   const here = S.view.name === "article" && S.view.key === k;
   if (here) renderMain();
-  else if (auto && found && S.world === w) toast(`「${p.title}」에서 설정 충돌 ${found}건이 발견되었습니다.`, { label: "열기", fn: () => openEntity(k) });
-  while (S.autoQ?.length) {
-    const next = S.autoQ.shift();
-    if (S.world === w && S.pages[next] && !S.pages[next].check) { checkPage(next, true); break; }
-  }
 }
 
 /* ---------- 코드로 하는 교정 ---------- */
@@ -2465,15 +2459,15 @@ async function applyFix() {
   toast(`${applied}곳을 고쳤습니다.${missed ? ` 겹쳐서 적용하지 못한 수정 ${missed}곳은 건너뛰었습니다.` : ""}`);
   bgSync(k);
 }
-/* 고친 본문에서 확정 사실, 연표, 관계를 뒤에서 다시 뽑고, 남은 충돌은 편집자 메모로 돌려준다 */
-async function bgSync(k, keep) {
+/* 고친 본문의 확정 사실·연표·관계만 정리한다. 모순 검사나 검사 결과 갱신은 하지 않는다. */
+async function bgSync(k) {
   const w = S.world, p = S.pages[k]; if (!w || !p || !S.sample) return;
   S.bgSync = k; if (S.view.name === "article" && S.view.key === k) renderMain();
   try {
     const out = sourceToOut(pageToSource(w, p));
-    const linkKeys = linksOfOut(w, out, k), ctx = conflictContext(w, k, linkKeys);
+    const linkKeys = linksOfOut(w, out, k);
     const temp = { key: k, title: p.title, summary: out.summary, infobox: out.infobox, sections: out.sections, navboxes: out.navboxes };
-    const r = await callJson("analyze", analyzePrompt(w, temp, linkKeys, ctx), { modelTier: "check" }, { title: p.title + " · 교정 후" });
+    const r = await callJson("analyze", factSyncPrompt(w, temp, linkKeys), { modelTier: "check" }, { title: p.title + " · 확정 사실 정리" });
     if (S.world !== w || S.pages[k] !== p) { S.bgSync = null; return; }
     // AI가 고친 본문은 다른 문서를 대체하는 기준이 되지 않는다. 사용자가 직접 수정한 문서라면 그 수정이 세운 대체 표시는 그대로 두고,
     // 직접 수정한 적 없는 문서라면 (예전 버전이 AI 수정으로 붙였던) 대체 표시와 다른 문서의 경고를 걷어낸다.
@@ -2489,10 +2483,7 @@ async function bgSync(k, keep) {
       if (!n || !n.title) continue; const o = w.entities[kOf(w, n.title)];
       if (o && !o.page && !o.summary && n.summary) { o.summary = stripMarks(n.summary).slice(0, 200); if (!o.type && TYPES.includes(n.type)) o.type = n.type; }
     }
-    const issues = [];
-    for (const c of readConflicts(w, r?.conflicts, ctx.refs).filter(c => !c.src || refOK(c.src, p)))   // 다른 문서와 어긋나면 이 문서의 메모로 남긴다(다른 문서에 경고를 붙이지 않는다). 이 문서보다 나중에 쓴 문서와의 어긋남은 그쪽이 고칠 몫이다
-      issues.push({ claim: c.claim, conflict: `${conflictLabel(w, c)}: ${c.old}`, severity: "high" });
-    p.check = { at: Date.now(), issues: [...(keep || []), ...issues], auto: true }; p.stale = false;
+    p.stale = false;
     await Store.savePage(w.id, p);
     for (const x of touched) if (S.pages[x]) await Store.savePage(w.id, S.pages[x]);
     await Store.saveWorld(w);
@@ -2506,7 +2497,7 @@ function fixvHtml(k) {
   const head = `<div class="sheet"><div class="crumb"><span>${esc(w.title)}</span><span>교정</span></div><h1 class="t">${esc(p.title)} <span class="note" style="font-family:var(--f-body);font-size:14px;font-weight:400">교정</span></h1>`;
   if (v.phase === "review") {
     const on = v.edits.filter(e => e.on).length;
-    return head + `<p class="note">${v.note ? esc(v.note) + " " : ""}고친 문장은 바로 손볼 수 있습니다. 적용하면 즉시 저장되고, 설정과의 대조는 문서를 보는 동안 뒤에서 진행됩니다.</p>
+    return head + `<p class="note">${v.note ? esc(v.note) + " " : ""}고친 문장은 바로 손볼 수 있습니다. 적용하면 즉시 저장되고, 확정 사실과 연표를 정리합니다. 다시 검사하려면 문서의 설정 검사 버튼을 눌러 주세요.</p>
       <div class="fx-list">${v.edits.map((e, i) => `<div class="fx-ed${e.on ? "" : " off"}">
         <label class="fx-on"><input type="checkbox" id="fon-${i}" data-fon="${i}" ${e.on ? "checked" : ""}> 적용 <span class="src">메모: ${esc(v.items[e.n].claim.slice(0, 60))}${v.items[e.n].claim.length > 60 ? "…" : ""}</span></label>
         <del>${esc(e.old)}</del>
@@ -2610,6 +2601,17 @@ function conflictContext(w, k, linkKeys) {
   }
   const text = `### 핵심 규칙\n${R.join("\n") || "(없음)"}\n\n### 사용자 확정 설정 (U)\n${U || "(없음)"}\n\n### 연표\n${T.join("\n") || "(없음)"}\n\n### 다른 문서가 확정한 사실\n${F.join("\n") || "(없음)"}\n\n### 다른 문서 본문에서 이 항목을 언급한 문장\n${M.join("\n") || "(없음)"}\n\n### 확정된 인물 관계\n${L.join("\n") || "(없음)"}`;
   return { refs, text };
+}
+function factSyncPrompt(w, temp, linkKeys) {
+  const linked = linkKeys.filter(k => w.entities[k]).map(k => w.entities[k].title).join(" / ") || "(없음)";
+  return `## 문서의 확정 사실 정리
+가상 세계관 위키 「${w.title}」(작중 기준 ${w.era})의 문서에서 확정 사실, 연표, 인물 관계를 추출한다. 문서에 적힌 내용만 쓰고 새 내용을 지어내거나 고치지 않는다. 모순을 검사하거나 교정안을 만들지 않는다.
+${docText(temp, w, temp.navboxes)}
+
+링크한 항목: ${linked}
+JSON 객체 하나만 출력:
+{"facts":[{"about":"항목 제목","fact":"사실 한 문장"}],"timeline":[{"year":"연도","event":"사건"}],"newEntities":[{"title":"항목 제목","type":"${TYPES.join("|")} 중 하나","summary":"본문에 근거한 한 문장 정의"}],"relations":[{"a":"인물 제목","b":"인물 제목","rel":"관계 이름","story":"관계의 시작과 변화 한 문장"}]}
+facts에는 「${temp.title}」 자체의 핵심 사실 3~6개와 주요 링크 항목의 사실을 넣는다. about, a, b는 문서 제목이나 링크한 항목 제목 그대로 쓴다. timeline에는 연도가 적힌 주요 사건만 넣는다. newEntities에는 아직 정의가 없는 링크 항목만 넣는다. relations는 문서에 적힌 주요 인물 관계를 6개까지 넣는다.`;
 }
 function analyzePrompt(w, temp, linkKeys, ctx) {
   const linked = linkKeys.filter(x => w.entities[x]).map(x => `- ${w.entities[x].title}${w.entities[x].page || w.entities[x].summary ? "" : " (정의 없음)"}`).join("\n") || "(없음)";
@@ -2979,14 +2981,6 @@ async function advanceChapter(skip) {
     drainSync(); return;
   }
   S.pages[pk] = np;
-  // 주인공 문서를 보여 주기 전에 설정 검사를 돌리고 어긋난 곳은 고친다(건너뛰거나 실패하면 그대로 보여 준다). 그동안 주인공 문서를 열면 이전 버전이 보인다
-  let pre = null;
-  if (GS.preCheck !== false && S.world === w) {
-    S.hold = { wid: w.id, key: pk, page: oldP };
-    try { pre = await preCheck(w, pk, np, S.storyGen, () => { if (S.view.name === "advance" || (S.view.name === "article" && S.view.key === pk)) renderMain(); updateStoryLive(); }, ` · ${n}장 반영 직후`); }
-    finally { S.hold = null; }
-  }
-  np = pre?.page || np;
   S.storyGen = null; S.adv = null;
   try { await Store.savePage(w.id, np); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
   {   // 마지막 장도 다른 장처럼 주인공 문서의 새 장 섹션부터 보여 주고, 에필로그는 안내 카드의 버튼으로 연다
@@ -2995,8 +2989,6 @@ async function advanceChapter(skip) {
     const i = np.sections.findIndex(s => s.ch === n); const el = i >= 0 && document.getElementById("s-" + i);
     window.scrollTo({ top: 0 }); if (el) setTimeout(() => el.scrollIntoView({ block: "start", behavior: "smooth" }), 400);
   }
-  if (pre?.fixed) { toast(`주인공 문서에서 설정과 어긋난 ${pre.fixed}곳을 고쳐서 보여 드립니다.`); bgSync(pk, pre.keep); }
-  else if (!pre?.done) checkPage(pk, true);
   drainSync();
 }
 /* 다음 행동 후보가 없거나 깨졌을 때 다시 만든다 */
@@ -3074,21 +3066,11 @@ async function runSync(k) {
     if (S.view.name === "article" && S.view.key === k) renderMain(); renderSide();
     drainSync(); return;
   }
-  // 장 섹션을 붙인 문서도 보여 주기 전에 설정 검사를 돌리고 어긋난 곳은 고친다
-  let pre = null;
-  if (GS.preCheck !== false && S.world === w) {   // 검사와 고치기가 끝날 때까지 화면에는 이전 버전을 둔다
-    S.syncPhase = { phase: "", ctl: new AbortController(), nFix: 0 };
-    S.hold = { wid: w.id, key: k, page: p };
-    try { pre = await preCheck(w, k, np, S.syncPhase, () => { if (S.view.name === "article" && S.view.key === k) renderMain(); else renderSide(); }, ` · ${chs.join(",")}장 반영 직후`); }
-    finally { S.hold = null; }
-    np = pre.page || np;
-  }
   S.syncing = null; S.syncPhase = null;
   try { await Store.savePage(w.id, np); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
   if (S.view.name === "article" && S.view.key === k) renderMain();
   else toast(`「${np.title}」에 ${chs.join(", ")}장의 변화를 반영했습니다.`, { label: "열기", fn: () => openEntity(k) });
   renderSide();
-  if (pre?.fixed) bgSync(k, pre.keep); else if (!pre?.done) checkPage(k, true);
   drainSync();
 }
 
@@ -3205,8 +3187,8 @@ function gsetHtml() {
       <div><label class="lb" for="gQuickT">생각 깊이</label><select id="gQuickT">${opt(GS.quickThink)}</select></div></div>
     <div class="two"><div><label class="lb" for="gCheck">검사 모델 <span class="note" style="font-weight:400">설정 검사, 수정 대조 · 비워 두면 기본 모델</span></label><input id="gCheck" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.check || "")}" placeholder="${esc(GS.main || GDEF.main)} (기본 모델)"></div>
       <div><label class="lb" for="gCheckT">생각 깊이</label><select id="gCheckT">${opt(GS.checkThink ?? GDEF.checkThink)}</select></div></div>
-    <label class="lb" for="gPre" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="gPre" ${GS.preCheck !== false ? "checked" : ""}>문서를 띄우기 전에 설정 검사를 하고, 어긋난 곳은 고쳐서 보여 주기 <span class="note">끄면 문서가 더 빨리 뜨고, 검사는 읽는 동안 뒤에서 돕니다</span></label>
-    <p class="note" style="margin-top:6px">설정 검사는 문서가 완성될 때마다 자동으로 돕니다. 검사 모델을 높이거나 생각 깊이를 올리면 헛짚는 지적이 줄지만, 검사가 느려지고 사용량이 늘어납니다.</p>
+    <label class="lb" for="gPre" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="gPre" ${GS.preCheck !== false ? "checked" : ""}>문서 작성 직후 한 번 자동 검사하고, 어긋난 곳은 고쳐서 보여 주기 <span class="note">끄면 자동 검사하지 않습니다. 이후 검사는 문서의 설정 검사 버튼으로 실행합니다</span></label>
+    <p class="note" style="margin-top:6px">자동 검사는 새 문서를 작성하거나 다시 쓸 때 한 번만 돕니다. 이후에는 설정 검사 버튼을 눌렀을 때만 검사합니다. 검사 모델을 높이거나 생각 깊이를 올리면 헛짚는 지적이 줄지만, 검사가 느려지고 사용량이 늘어납니다.</p>
     ${dl}
     <p class="note" style="margin-top:8px">모델이 지원하지 않는 생각 깊이를 고르면 그 요청은 모델 기본값으로 다시 보냅니다. 응답은 JSON 모드로 받습니다.</p>
     <div class="row"><button type="button" class="btn pri" data-act="gset-save">저장</button><button type="button" class="btn" data-act="gset-test">연결 시험</button><button type="button" class="btn" data-act="gset-models">모델 목록 불러오기</button></div>
@@ -3346,7 +3328,6 @@ function articleHtml(k) {
   if (S.gen && S.gen.key === k) {
     return `<div class="sheet">${crumb}<h1 class="t">${esc(e.title)}</h1>
       <div class="gen-live"><span class="dot"></span><span id="genCount">${S.gen.phase === "check" ? "설정과 맞춰 보는 중" : S.gen.phase === "fix" ? `설정과 어긋난 ${S.gen.nFix}곳을 고치는 중` : "문서를 작성하는 중"}</span><button type="button" class="btn" data-act="stop">${S.gen.phase ? "검사 건너뛰고 보기" : "작성 중단"}</button></div>
-      ${S.gen.direction ? `<p class="src" style="margin:10px 0 0">${S.gen.rewrite ? "다시 쓰기" : "작성"} 방향: ${esc(S.gen.direction)}</p>` : ""}
       ${promiseHtml(w, e, "이 문서가 지켜야 할 확정 내용")}
       <ul class="heads" id="genHeads"></ul>
       <div style="margin-top:14px"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div></div>`;
@@ -3392,7 +3373,7 @@ function articleHtml(k) {
   S.memo = { k, items: [...hi, ...lo] };
   const fixBtn = n => `<button type="button" class="btn memo-fix" data-fix="${n}" data-fixk="${k}" ${S.fixing || (S.gen && S.gen.key === k) || !S.sample ? "disabled" : ""}>${S.fixing && S.fixing.key === k && S.fixing.i === n ? "고치는 중…" : "고치기"}</button>`;
   const item = (i, n, cls) => `<li class="${cls}">${esc(i.claim)}${i.conflict ? `<span class="memo-why">${esc(i.conflict)}</span>` : ""}${fixBtn(n)}</li>`;
-  const chkHtml = (S.checking === k || S.bgSync === k) ? `<p class="memo-line"><span class="dot"></span>설정 노트와 맞춰 보는 중 <span class="src" id="chkTick"></span></p>`
+  const chkHtml = S.bgSync === k ? `<p class="memo-line"><span class="dot"></span>확정 사실을 정리하는 중</p>` : S.checking === k ? `<p class="memo-line"><span class="dot"></span>설정 노트와 맞춰 보는 중 <span class="src" id="chkTick"></span></p>`
     : (hi.length || lo.length) ? `<details class="memo"${hi.length ? " open" : ""}><summary><span class="memo-dot${hi.length ? " on" : ""}"></span>편집자 메모${hi.length ? ` · 다듬을 곳 ${hi.length}` : ""}${lo.length ? ` · 참고 ${lo.length}` : ""}${chk ? `<span class="src">${fmtDate(chk.at)}</span>` : ""}</summary><ul>${hi.map((i, n) => item(i, n, "")).join("")}${lo.map((i, n) => item(i, hi.length + n, "lo")).join("")}</ul>${hi.length + lo.length > 1 ? `<div class="memo-foot"><button type="button" class="btn" data-act="fixv-open" ${S.gen && S.gen.key === k ? "disabled" : ""}>여러 곳 한꺼번에 교정하기</button></div>` : ""}</details>`
     : chk ? `<p class="memo-line">설정 노트와 맞춰 봤습니다 <span class="src">${fmtDate(chk.at)}</span></p>` : "";
   const rw = `<button type="button" class="btn" data-rw="${k}" aria-expanded="${S.confirmRewrite === k}" ${S.gen || S.storyGen || S.syncing === k || !S.sample ? "disabled" : ""}>다시 쓰기</button>`;
@@ -3420,7 +3401,7 @@ function articleHtml(k) {
       <ul>${p.pending.map(c => `<li><span class="sev">${esc(c.label)}</span>${esc(c.old)} <span class="src">↔ 수정본: ${esc(c.claim)}</span></li>`).join("")}</ul>
       <div class="row" style="margin-top:4px"><button type="button" class="btn" data-edit="${k}">편집</button><button type="button" class="btn" data-act="canon">설정 노트 열기</button><button type="button" class="btn" data-dismiss="${k}" data-field="pending">표시 지우기</button></div></div>` : ""}
     ${rwBox}${syncHtml}${p.autoFixed && Date.now() - p.autoFixed.at < 864e5 ? `<p class="memo-line">작성 직후 설정과 어긋난 ${p.autoFixed.n}곳을 자동으로 고쳤습니다 <span class="src">${fmtDate(p.autoFixed.at)}</span></p>` : ""}${chkHtml}
-    ${p.rewrittenAt ? `<p class="src" style="margin:8px 0 0">${fmtDate(p.rewrittenAt)} 다시 씀${p.direction ? ` · 방향: ${esc(p.direction)}` : ""}</p>` : p.direction ? `<p class="src" style="margin:8px 0 0">작성 방향: ${esc(p.direction)}</p>` : ""}
+    ${p.rewrittenAt ? `<p class="src" style="margin:8px 0 0">${fmtDate(p.rewrittenAt)} 다시 씀</p>` : ""}
     <div class="article">${stNotice}${p.notices?.length ? `<div class="notice">${p.notices.map(n => `<div>${blocks(n, fns).replace(/^<p>|<\/p>$/g, "")}</div>`).join("")}</div>` : ""}${box}${toc}${secs}${fnHtml}</div>
     ${(() => {
       const rs = relationsOf(w, k);
@@ -3571,8 +3552,8 @@ function advanceHtml() {
   const w = S.world; if (!isStory(w)) return `<div class="sheet"><p class="note">스토리 모드 세계관이 아닙니다.</p></div>`;
   const st = w.story, c = curCh(w), n = st.chapter + 1, a = S.adv || { pick: -1, custom: "", err: "" }, g = S.storyGen;
   const head = `<div class="sheet"><div class="crumb"><span>${esc(w.title)}</span><span>이야기</span></div><h1 class="t">${(g ? g.n : n) >= totalOf(w) ? "마지막 장으로" : `${g ? g.n : n}장으로`}</h1>`;   // 진행 중이면 진행 중인 장 번호(검사 단계에서는 이미 그 장이 반영되어 있다)
-  if (g) return head + `<div class="gen-live" style="margin-top:14px"><span class="dot"></span><span id="stCount">${g.n}장 줄거리를 구상하는 중</span><button type="button" class="btn" data-act="story-stop">${g.phase === "check" || g.phase === "fix" ? "검사 건너뛰고 보기" : "중단"}</button></div>
-    <p class="note">${g.phase === "check" || g.phase === "fix" ? `${g.n}장은 반영되었습니다. 주인공 문서를 보여 주기 전에 설정과 맞춰 보고 어긋난 곳을 고치는 중입니다. 건너뛰면 바로 보여 드리고, 검사는 읽는 동안 뒤에서 돕니다.` : `이번 장의 탐험과 고른 행동을 엮어 ${g.n}장 줄거리를 정하고, 주인공 문서에 ${g.n}장 섹션을 덧붙입니다. 중단하거나 실패하면 지금 상태 그대로 남습니다.`}</p>
+  if (g) return head + `<div class="gen-live" style="margin-top:14px"><span class="dot"></span><span id="stCount">${g.n}장 줄거리를 구상하는 중</span><button type="button" class="btn" data-act="story-stop">중단</button></div>
+    <p class="note">이번 장의 탐험과 고른 행동을 엮어 ${g.n}장 줄거리를 정하고, 주인공 문서에 ${g.n}장 섹션을 덧붙입니다. 중단하거나 실패하면 지금 상태 그대로 남습니다.</p>
     <div style="margin-top:14px"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div></div>`;
   if (st.status === "ended") return head + `<p class="note">이야기가 끝났습니다.</p><div class="row"><button type="button" class="btn pri" data-act="epilogue">에필로그 보기</button></div></div>`;
   const ex = exploreScores(w, c);

@@ -15,7 +15,7 @@ const server = http.createServer((req, res) => {
 
 /* ---------- 가짜 Gemini ---------- */
 const calls = [];           // { kind, prompt }
-const ctl = { planDelay: 0, planBad: false, planN: 1, checkIssues: null, checkDelay: 0, fixEdits: null, analyzeConflicts: null, readIssues: null, readFail: false, emptyChoices: false, pageOverride: {} };
+const ctl = { planDelay: 0, planBad: false, planN: 1, checkIssues: null, checkDelay: 0, fixEdits: null, analyzeConflicts: null, readIssues: null, readFail: false, checkFail: false, emptyChoices: false, pageOverride: {} };
 const count = k => calls.filter(c => c.kind === k).length;
 function kindOf(p) {
   if (p.includes("## 이야기 뼈대")) return "storyBible";
@@ -25,7 +25,7 @@ function kindOf(p) {
   if (p.includes("## 문서 읽기 검사")) return "read";
   if (p.includes("검사하라")) return "check";
   if (p.includes("편집자가 남긴 메모")) return "fix";
-  if (p.includes("사용자가 직접 수정한 최종본")) return "analyze";
+  if (p.includes("사용자가 직접 수정한 최종본") || p.includes("## 문서의 확정 사실 정리")) return "analyze";
   if (p.includes("분위기 지침을 만든다")) return "tone";
   if (p.includes("편집장")) return "bible";
   if (p.includes("## 작성할 문서:")) return "page";
@@ -77,7 +77,7 @@ async function route(r) {
   calls.push({ kind, prompt, model, think: body.generationConfig?.thinkingConfig?.thinkingLevel || "" });
   if (kind === "chapterPlan" && ctl.planDelay) await new Promise(res => setTimeout(res, ctl.planDelay));
   if ((kind === "check" || kind === "read") && ctl.checkDelay) await new Promise(res => setTimeout(res, ctl.checkDelay));
-  if (kind === "read" && ctl.readFail) { try { await r.fulfill({ status: 400, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }, body: JSON.stringify({ error: { code: 400, message: "test failure" } }) }); } catch {} return; }
+  if ((kind === "read" && ctl.readFail) || (kind === "check" && ctl.checkFail)) { try { await r.fulfill({ status: 400, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }, body: JSON.stringify({ error: { code: 400, message: "test failure" } }) }); } catch {} return; }
   const text = JSON.stringify(answer(kind, prompt));
   const sse = `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text }] }, finishReason: "STOP" }], usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 } })}\n\n`;
   try { await r.fulfill({ status: 200, headers: { "Content-Type": "text/event-stream", "Access-Control-Allow-Origin": "*" }, body: sse }); } catch {}
@@ -300,19 +300,14 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
 
     /* 5. 지연 갱신 */
     let nb = count("chapterBlock");
-    ctl.checkIssues = [{ claim: "2장에서 이 항목에 일이 생겼다.", evidence: "규칙 하나", conflict: "x", severity: "high" }];
-    ctl.fixEdits = [{ memo: 1, field: "body", old: "2장에서 이 항목에 일이 생겼다.", new: "2장에서 이 항목에 변화가 생겼다." }];
-    const nf5 = count("fix"); ctl.checkDelay = 1200;
+    const nf5 = count("fix"), nc5 = count("check"), nr5 = count("read");
     await page.locator('.stcard a.wl[data-t="북관 철령"]').click();
-    await page.waitForFunction(() => /반영한 장 섹션을 설정과 맞춰 보는 중/.test(document.querySelector("#main")?.textContent || ""), null, { timeout: 15000 });
-    { const t = await page.locator(".article").innerText();
-      assert(!t.includes("2장에서 이 항목에") && !(await page.locator(".chb").allInnerTexts()).includes("2장"), "검사와 고치기가 끝나기 전에는 새 장 섹션을 보여 주지 않는다(이전 버전)");
-      assert((await page.locator("#main").innerText()).includes("지금은 이전 버전입니다"), "이전 버전이라고 알린다"); }
     await page.waitForFunction(() => [...document.querySelectorAll(".chb")].some(e => e.textContent === "2장"), null, { timeout: 15000 }); await settle(page);
-    ctl.checkIssues = null; ctl.fixEdits = null; ctl.checkDelay = 0;
     assert.strictEqual(count("chapterBlock"), nb + 1, "affected 문서를 열면 장 섹션을 한 번 생성");
-    assert.strictEqual(count("fix"), nf5 + 1, "장 섹션을 붙인 뒤 보여 주기 전에 검사하고 고친다");
-    assert((await page.locator(".article").innerText()).includes("2장에서 이 항목에 변화가 생겼다."), "고친 장 섹션으로 보여 준다");
+    assert.strictEqual(count("fix"), nf5, "장 섹션을 붙인 뒤 자동 교정하지 않는다");
+    assert.strictEqual(count("check"), nc5, "기존 문서의 장 반영 뒤에는 자동 설정 검사하지 않는다");
+    assert.strictEqual(count("read"), nr5, "기존 문서의 장 반영 뒤에는 자동 문서 읽기 검사하지 않는다");
+    assert((await page.locator(".article").innerText()).includes("2장에서 이 항목에 일이 생겼다."), "생성한 장 섹션을 그대로 보여 준다");
     nb = count("chapterBlock");
     await page.fill("#q", "여진 해적단"); await page.press("#q", "Enter"); await waitArticle(page, "여진 해적단");
     await settle(page);
@@ -569,8 +564,9 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await page.click('[data-act="stop"]'); await waitArticle(page, "건너뛸 문서"); ctl.checkDelay = 0;
     await page.waitForTimeout(1500); ctl.checkIssues = null;
     assert(!calls.slice(n0).some(c => c.kind === "fix"), "건너뛰면 고치지 않는다");
-    assert(calls.slice(n0).filter(c => c.kind === "check").length >= 2, "건너뛰면 검사는 뒤에서 다시 돈다");
-    ok("'검사 건너뛰고 보기'를 누르면 바로 문서를 보여 주고, 검사는 뒤에서 돈다");
+    assert.strictEqual(calls.slice(n0).filter(c => c.kind === "check").length, 1, "건너뛰면 자동 재검사하지 않는다");
+    assert.strictEqual(calls.slice(n0).filter(c => c.kind === "read").length, 1, "건너뛰면 읽기 검사도 다시 실행하지 않는다");
+    ok("검사를 건너뛰면 문서를 보여 주고 자동 재검사는 하지 않는다");
 
     /* 23. 다른 문서의 직접 수정과 어긋난 서술을 AI로 고치기 */
     await page.fill("#q", "한서린"); await page.press("#q", "Enter"); await waitArticle(page, "한서린");
@@ -622,13 +618,14 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     const na25 = count("analyze");
     await page.click('[data-act="fixv-apply"]'); await waitArticle(page, "한서린");
     for (let i = 0; i < 100 && count("analyze") === na25; i++) await page.waitForTimeout(100);
-    await page.waitForFunction(() => !document.querySelector("#main").textContent.includes("맞춰 보는 중"), null, { timeout: 20000 }); ctl.analyzeConflicts = null;
-    assert((await page.locator("#main").textContent()).includes("「검사 대상」"), "어긋난 다른 문서는 이 문서의 메모로 남는다");
+    await page.waitForFunction(() => !document.querySelector("#main").textContent.includes("확정 사실을 정리하는 중"), null, { timeout: 20000 }); ctl.analyzeConflicts = null;
+    assert.strictEqual((await pageOf(page, await worldOf(page, "기본 세계"), "한서린")).check, null, "교정 후 확정 사실 정리가 자동으로 새 검사 결과를 만들지 않는다");
+    assert(calls.filter(c => c.kind === "analyze").pop().prompt.includes("## 문서의 확정 사실 정리"), "교정 후에는 검사 대신 사실 정리만 요청한다");
     await page.fill("#q", "검사 대상"); await page.press("#q", "Enter"); await waitArticle(page, "검사 대상");
     assert(!(await page.locator("#main").innerText()).includes("설정과 맞지 않습니다"), "AI 수정 때문에 다른 문서에 경고가 붙지 않는다");
     { const bw25 = await worldOf(page, "기본 세계"), hk = Object.keys(bw25.entities).find(k => bw25.entities[k].title === "한서린");
       assert(!bw25.entities[hk].mentions.some(m => m.sup), "AI 수정이 다른 문서의 서술을 대체하지 않는다"); }
-    ok("AI가 고친 문서가 다른 문서와 어긋나면, 다른 문서에 경고를 붙이지 않고 고친 문서의 메모로 남긴다");
+    ok("AI 교정 후에는 확정 사실만 정리하고 자동 재검사나 다른 문서 경고를 만들지 않는다");
 
     /* 26. 예전 버전이 AI 수정으로 붙인 경고는 세계관을 열 때 지운다 */
     await page.click('#side [data-act="gset"]');
@@ -714,25 +711,22 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     { const bp29 = calls.filter(c => c.kind === "page").pop().prompt; assert(bp29.includes("직접 인용은 없는 것이 기본이다") && bp29.includes("인용이 없는 문서도 좋은 문서다"), "인용은 없는 것이 기본"); }
     ok("인용 대조: 같은 사람이 같은 날 한 말은 이미 기록된 것을 넘겨 주고, 다르게 쓰면 잡아서 맞춘다. 인용은 없는 것이 기본");
 
-    /* 30. 장 전환 직후 주인공 문서도 보여 주기 전에 검사하고 고친다 */
+    /* 30. 장 전환 뒤 자동 재검사 없이 반영하고 명시적으로 검사할 수 있다 */
     await page.click('#side [data-act="home"]').catch(() => {}); await page.click('[data-act="home"]').catch(() => {});
     await page.locator('.wcard').filter({ hasText: "스토리 2/7장" }).locator("button.open").click(); await waitArticle(page, "한서린");
     ctl.checkIssues = [{ claim: "한서린은 돌아왔다.", evidence: "규칙 하나", conflict: "x", severity: "high" }];
-    ctl.fixEdits = [{ memo: 1, field: "body", old: "한서린은 돌아왔다.", new: "한서린은 성으로 돌아왔다." }];
-    ctl.checkDelay = 1500;
-    const nf30 = count("fix");
+    const nf30 = count("fix"), nc30 = count("check"), nr30 = count("read");
     await page.click('[data-act="story-next"]'); await page.click('[data-act="story-skip"]');
-    await page.waitForFunction(() => /주인공 문서를 설정과 맞춰 보는 중/.test(document.querySelector("#stCount")?.textContent || ""), null, { timeout: 15000 });
-    assert.strictEqual((await page.locator('[data-act="story-stop"]').innerText()).trim(), "검사 건너뛰고 보기");
-    assert.strictEqual((await page.locator("h1.t").innerText()).trim(), "3장으로", "검사 단계에서도 제목은 진행 중인 장");
-    assert((await page.locator("#main").innerText()).includes("3장은 반영되었습니다"), "검사 단계에 맞는 안내");
-    await page.fill("#q", "한서린"); await page.press("#q", "Enter"); await waitArticle(page, "한서린");   // 검사 중에 주인공 문서를 직접 열어 본다
-    assert(!(await page.locator(".article").innerText()).includes("(3장)") && (await page.locator("#main").innerText()).includes("지금은 이전 버전입니다"), "검사 중 주인공 문서를 열면 이전 버전을 보여 준다");
-    await page.click("[data-edit]"); assert.strictEqual(await page.locator("#edSummary").count(), 0, "검사 중에는 편집을 열지 않는다");
-    await page.waitForSelector(".stcard", { timeout: 20000 }); await settle(page); ctl.checkIssues = null; ctl.fixEdits = null; ctl.checkDelay = 0;
-    assert.strictEqual(count("fix"), nf30 + 1, "장 전환 뒤 주인공 문서를 보여 주기 전에 고친다");
-    assert((await page.locator(".article").innerText()).includes("한서린은 성으로 돌아왔다."), "고친 주인공 문서로 보여 준다");
-    ok("장 전환 직후 주인공 문서와, 장 섹션을 붙인 문서는 보여 주기 전에 설정 검사를 돌리고 어긋난 곳을 고친다");
+    await page.waitForSelector(".stcard", { timeout: 20000 }); await settle(page);
+    assert.strictEqual(count("fix"), nf30, "장 전환 뒤 자동 교정하지 않는다");
+    assert.strictEqual(count("check"), nc30, "주인공 문서도 장 전환 뒤 자동 재검사하지 않는다");
+    assert.strictEqual(count("read"), nr30, "장 전환 뒤 문서 읽기 검사도 하지 않는다");
+    assert((await page.locator(".article").innerText()).includes("한서린은 돌아왔다."), "주인공 문서에 생성된 장을 바로 보여 준다");
+    await page.click("[data-check]"); await page.waitForSelector("[data-fixk]", { timeout: 20000 });
+    assert.strictEqual(count("check"), nc30 + 1, "설정 검사 버튼으로 명시적으로 검사할 수 있다");
+    assert.strictEqual(count("read"), nr30 + 1);
+    ctl.checkIssues = null;
+    ok("주인공의 장 전환 뒤에는 자동 검사하지 않고 사용자가 검사 버튼을 누르면 실행한다");
 
     /* 31. 먼저 쓴 문서를 검사할 때 나중에 쓴 문서의 설정은 기준이 아니다 */
     await page.click('[data-act="home"]').catch(() => {}); await page.click('#side [data-act="home"]').catch(() => {});
@@ -799,6 +793,53 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     const np33 = count("page"); await page.locator('.article a.wl.new[data-t="바다 마을"]').click(); await waitArticle(page, "바다 마을");
     assert.strictEqual(count("page"), np33 + 1, "만든 빨간 링크를 누르면 문서를 작성한다");
     ok("본문 평문을 골라 빨간 링크로 만들고(굵게·각주·링크 밖에서 고른 그 자리만), 되돌릴 수 있으며, 누르면 문서를 작성한다");
+
+    /* 34. 작성 방향은 프롬프트에만 쓰고 결과에서 숨기며, 다시 열어도 검사하지 않는다 */
+    const audits = () => calls.filter(c => c.kind === "check" || c.kind === "read").length;
+    const direction = "항구의 활약을 담백하게 다루는 고유 작성 요청";
+    await page.fill("#q", "방향 문서"); await page.locator("[data-scompose]").click();
+    await page.fill("#cpDir", direction); await page.selectOption("#cpType", "지명");
+    const n34 = audits();
+    await page.click("[data-compose-go]"); await waitArticle(page, "방향 문서");
+    assert.strictEqual(audits(), n34 + 2, "작성 직후 두 검사로 구성된 한 번의 자동 검사를 한다");
+    assert(calls.filter(c => c.kind === "page").pop().prompt.includes(direction), "작성 방향은 생성 프롬프트에 적용한다");
+    assert(!(await page.locator("#main").innerText()).includes(direction) && !(await page.locator("#main").innerText()).includes("작성 방향:"), "결과에는 작성 방향을 노출하지 않는다");
+    await page.reload(); await page.waitForSelector(".wcard");
+    await page.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(page, "대문 항목");
+    await page.fill("#q", "방향 문서"); await page.press("#q", "Enter"); await waitArticle(page, "방향 문서");
+    assert.strictEqual(audits(), n34 + 2, "새로고침하거나 다시 열어도 자동 재검사하지 않는다");
+    assert(!(await page.locator("#main").innerText()).includes(direction), "저장된 예전 방향도 결과에서 숨긴다");
+    await page.click("[data-check]"); await page.waitForSelector("[data-check]:not([disabled])");
+    assert.strictEqual(audits(), n34 + 4, "사용자가 검사 버튼을 누르면 다시 검사한다");
+    const rewriteDirection = "항구 이야기를 더욱 짧게 쓰는 고유 재작성 요청";
+    await page.locator("[data-rw]").first().click(); await page.fill("#rwDir", rewriteDirection);
+    await page.click("[data-rw-yes]"); await waitArticle(page, "방향 문서");
+    assert.strictEqual(audits(), n34 + 6, "다시 쓰기로 새 본문을 작성하면 작성 직후 한 번 검사한다");
+    assert(calls.filter(c => c.kind === "page").pop().prompt.includes(rewriteDirection));
+    assert(!(await page.locator("#main").innerText()).includes(rewriteDirection) && (await page.locator("#main").innerText()).includes("다시 씀"), "다시 쓴 날짜만 표시하고 방향은 숨긴다");
+    ok("작성·다시 쓰기 방향은 결과에서 숨기며, 작성 직후 한 번 검사하고 이후에는 버튼으로 검사한다");
+
+    /* 35. 최초 검사 실패도 재실행하지 않고 사용자가 누를 때 재시도 */
+    ctl.checkFail = ctl.readFail = true;
+    const n35 = audits();
+    await page.fill("#q", "검사 실패 문서"); await page.press("#q", "Enter"); await waitArticle(page, "검사 실패 문서");
+    ctl.checkFail = ctl.readFail = false;
+    await settle(page);
+    assert.strictEqual(audits(), n35 + 2, "두 검사가 모두 실패해도 자동 재검사하지 않는다");
+    await page.click("[data-check]"); await page.waitForSelector("[data-check]:not([disabled])");
+    assert.strictEqual(audits(), n35 + 4, "실패한 최초 검사는 사용자가 다시 요청할 수 있다");
+    ok("최초 검사 실패 뒤에도 자동으로 재시도하지 않고 수동 검사는 유지한다");
+
+    /* 36. 자동 검사 설정을 꺼도 뒤에서 검사를 실행하지 않는다 */
+    await page.click('#side [data-act="gset"]'); await page.uncheck("#gPre"); await page.click('[data-act="gset-save"]');
+    assert((await page.locator('label[for="gPre"]').innerText()).includes("끄면 자동 검사하지 않습니다"));
+    await page.click('#side [data-act="home"]'); await page.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(page, "대문 항목");
+    const n36 = audits();
+    await page.fill("#q", "자동 검사 끔"); await page.press("#q", "Enter"); await waitArticle(page, "자동 검사 끔");
+    assert.strictEqual(audits(), n36, "자동 검사를 끄면 작성 뒤 백그라운드 검사도 하지 않는다");
+    await page.click("[data-check]"); await page.waitForSelector("[data-check]:not([disabled])");
+    assert.strictEqual(audits(), n36 + 2, "자동 검사 설정과 무관하게 수동 검사는 가능하다");
+    ok("자동 검사 설정을 끄면 수동으로 요청할 때만 검사한다");
 
     await ctx.close();
     console.log(`\n모두 통과 (${step}개). Gemini 호출 ${calls.length}회: ` + Object.entries(calls.reduce((a, c) => (a[c.kind] = (a[c.kind] || 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
