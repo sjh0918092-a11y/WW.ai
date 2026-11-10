@@ -102,10 +102,6 @@ h1.t{font-family:var(--f-display);font-weight:700;font-size:30px;line-height:1.2
 .prose-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:16px;line-height:2;margin:16px 0}
 .prose-saved{margin-top:20px;border-top:1px solid var(--line);padding-top:12px}
 .prose-saved details{margin:12px 0}
-.prose-ref-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px;margin:12px 0}
-.prose-ref-grid img{width:100%;height:120px;object-fit:contain}
-.prose-ref-grid figcaption{overflow-wrap:anywhere;font-size:12px}
-.prose-ref-grid figure{margin:0;min-width:0}
 .image-gen .guide{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0 12px;font-size:13px;color:var(--muted)}
 .infobox .ity{font-family:var(--f-mono);font-size:11px;color:var(--muted);text-align:center;padding:4px 0 2px;border-bottom:1px solid var(--line)}
 .infobox table{width:100%;border-collapse:collapse}
@@ -379,7 +375,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.23 · 2026-11-10";
+const APP_VERSION = "v6.24 · 2026-11-10";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -2865,23 +2861,6 @@ async function saveProse(removeId = null) {
   finally { v.busy = false; v.saving = false; if (S.proseGen === v && S.world === w && S.view.key === v.key) renderMain(); }
 }
 /* 단편 삽화는 문서 프로필과 별도 슬롯에 한 장만 보관한다. */
-const PROSE_REF_ROLES = { composition: "구도·카메라", lighting: "조명·색감", style: "화풍·질감" };
-function referenceFile(src, name = "reference") {
-  const [meta, data] = src.split(","), mime = /^data:([^;]+)/.exec(meta)[1];
-  return new File([Uint8Array.from(atob(data), c => c.charCodeAt(0))], name + "." + mime.split("/")[1], { type: mime });
-}
-async function addProseReferences(files) {
-  const v = S.proseGen, j = v?.illustration;
-  if (!j || v.busy || !files.length) return;
-  if ((j.refs?.length || 0) + files.length > 3) { j.error = "추가 참고 이미지는 최대 3장입니다. 일부를 삭제한 뒤 선택해 주세요."; renderMain(); return; }
-  v.busy = true; v.refLoading = true; j.error = ""; renderMain();
-  try {
-    const added = [];
-    for (const file of files) added.push({ id: crypto.randomUUID(), name: file.name.slice(0, 120), src: await preparePortrait(file, 300 * 1024, 1536), role: "composition" });
-    if (S.proseGen === v && v.illustration === j) j.refs = [...(j.refs || []), ...added];
-  } catch (e) { j.error = e.message || "참고 이미지를 준비하지 못했습니다."; }
-  finally { v.busy = false; v.refLoading = false; if (S.proseGen === v) renderMain(); }
-}
 const proseImageStamp = story => JSON.stringify([story.id, story.title, story.body]);
 function proseImagePrompt(w, p, story, o) {
   return `단편 「${story.title}」에 넣을 삽화 한 장을 생성한다. 아래 단편에서 실제로 벌어지는 의미 있는 순간을 골라 인물의 행동·감정과 주변 공간이 드러나는 새 장면으로 구성한다. 문서 프로필을 다시 그리는 작업이 아니다. 전투를 억지로 추가하지 않는다. 그림에 제목·설명·자막·로고를 쓰지 않는다.
@@ -2896,22 +2875,18 @@ ${story.body}
 ## 이번 삽화 요청
 희망 화풍: ${o.style}. 화풍은 공통 이미지 지침을 우선한다.
 장면·연출 추가 요청: ${o.direction || "단편의 핵심 장면을 새 구도로 선택한다."}
-## 첨부 이미지 순서와 용도
-${portraitSrc(p) ? "이미지 1: 문서 프로필. 외모 전용이며 구도·연출 참고로 사용하지 않는다." : "문서 프로필은 첨부하지 않는다."}
-${(o.references || []).map((r, i) => `이미지 ${i + (portraitSrc(p) ? 2 : 1)}: 추가 참고 — ${PROSE_REF_ROLES[r.role] || PROSE_REF_ROLES.composition}. 지정된 요소만 참고한다.`).join("\n")}
-추가 참고 이미지의 인물 얼굴·신원·외모는 복사하지 않는다. 외모는 문서 프로필과 문서 설명을 우선한다. 구도용은 구도·카메라만, 조명용은 조명·색감만, 화풍용은 화풍·질감만 참고한다. 참고 이미지의 사건이나 인물을 단편에 새로 끌어오지 않는다. 단편의 장면·시대·신장·축척은 지킨다.
 ## 외모 참조의 엄격한 사용 범위 — 다른 연출 요청보다 우선
-${portraitSrc(p) ? `첨부 이미지 1은 기준 문서 「${p.title}」의 프로필이며 오직 해당 인물의 외모를 확인하는 참고 자료다.
+${portraitSrc(p) ? `첨부 이미지는 기준 문서 「${p.title}」의 프로필이며 오직 해당 인물의 외모를 확인하는 참고 자료다.
 - 얼굴의 골격·이목구비·머리카락·피부색 등 정체성을 유지한다. 나이·신장·체형은 문서와 단편의 해당 시점 설정을 따른다.
 - 프로필 이미지의 구도, 포즈, 동작, 표정, 시선, 카메라 위치·각도·거리, 프레이밍, 배경, 소품 배치, 조명, 색감, 화풍을 그대로 베끼거나 재현하는 것은 금지한다. 배경만 바꾸거나 같은 포즈를 유지한 변형도 하지 않는다.
 - 의상·장비는 단편과 문서의 장면 설정에서 결정한다. 참고 이미지에 있다는 이유만으로 그대로 복제하지 않는다.
 - 단편 속 장소·행동·인물 사이의 관계에 맞춰 포즈·표정·카메라·배경·조명을 독립적으로 새로 설계한다. 다른 등장인물에게 프로필 인물의 얼굴을 복사하지 않는다.` : "첨부 프로필은 없다. 문서와 단편의 외모 설정을 따른다."}
-완성 전에 단편의 장면인지, 외모 일관성을 지키면서 프로필 이미지의 구도와 포즈를 답습하지 않았는지 점검하고 이미지 한 장을 출력한다.`;
+완성 전에 단편의 장면인지, 외모 일관성을 지키면서 참고 이미지의 구도와 포즈를 답습하지 않았는지 점검하고 이미지 한 장을 출력한다.`;
 }
 function openProseImage(id) {
   const v = S.proseGen; if (!v || v.busy || !shortStoriesOf(S.pages[v.key]).some(x => x.id === id)) return;
   v.openStory = id;
-  if (v.illustration?.storyId !== id) v.illustration = { storyId: id, refs: [], preview: "", error: "", opts: { model: GS.imageModel || GDEF.imageModel, ratio: "4:3", style: IMAGE_STYLES[0], quality: "high", direction: "" } };
+  if (v.illustration?.storyId !== id) v.illustration = { storyId: id, preview: "", error: "", opts: { model: GS.imageModel || GDEF.imageModel, ratio: "4:3", style: IMAGE_STYLES[0], quality: "high", direction: "" } };
   renderMain(); $(".prose-image-form")?.scrollIntoView({ block: "start", behavior: "smooth" });
 }
 async function generateProseImage() {
@@ -2923,8 +2898,8 @@ async function generateProseImage() {
   v.busy = true; v.ctl = new AbortController(); v.imageTask = true; renderMain();
   const timer = setTimeout(() => { j.timedOut = true; v.ctl.abort(); }, openAIImage(j.opts.model) ? 300000 : 180000); j.timedOut = false;
   try {
-    const o = { ...j.opts, useRef: !!j.ref, references: (j.refs || []).map(r => ({ role: r.role })) };
-    const src = await requestDocImage(w, p, o, v.ctl.signal, proseImagePrompt(w, p, story, o), (j.refs || []).map(r => r.src));
+    const o = { ...j.opts, useRef: !!j.ref };
+    const src = await requestDocImage(w, p, o, v.ctl.signal, proseImagePrompt(w, p, story, o));
     if (S.proseGen === v && v.illustration === j && !v.ctl.signal.aborted) j.preview = src;
   } catch (e) { if (S.proseGen === v) j.error = j.timedOut ? "삽화 생성 시간이 초과되었습니다." : e.code === "cancelled" ? "삽화 생성을 중단했습니다." : (e.message || errMsg(e)); }
   finally { clearTimeout(timer); v.busy = false; v.imageTask = false; if (S.proseGen === v && S.world === w && S.view.key === v.key) renderMain(); }
@@ -2956,9 +2931,6 @@ function proseImageHtml(p, story, v) {
     <label class="lb">화풍<select data-prose-image="style" ${disabled}>${IMAGE_STYLES.map(s => `<option ${o.style === s ? "selected" : ""}>${s}</option>`).join("")}</select></label>
     <label class="lb">화면 비율<select data-prose-image="ratio" ${disabled}>${["1:1", "3:4", "4:3", "9:16", "16:9"].map(r => `<option ${o.ratio === r ? "selected" : ""}>${r}</option>`).join("")}</select></label>
     <label class="lb">장면·연출 추가 요청<textarea data-prose-image="direction" rows="3" maxlength="2000" ${disabled}>${esc(o.direction)}</textarea></label>
-    <label class="lb">추가 참고 이미지 (최대 3장)<input type="file" data-prose-ref-files multiple accept="image/jpeg,image/png,image/webp,image/gif,image/avif" ${disabled}></label>
-    <p class="note">프로필 외에 구도·조명·화풍 참고 이미지를 최대 3장 추가할 수 있습니다. 용도를 각각 지정해 주세요. 참고 파일은 생성할 때 선택한 이미지 API로 전송하며, 생성창에서만 사용하고 문서·백업에는 저장하지 않습니다.</p>
-    ${(j.refs || []).length ? `<div class="prose-ref-grid">${j.refs.map((r, i) => `<figure>${imageZoomHtml(r.src, `추가 참고 ${i + 1}`)}<figcaption>${esc(r.name)}</figcaption><label class="lb">참고 용도<select data-prose-ref-role="${esc(r.id)}" ${disabled}>${Object.entries(PROSE_REF_ROLES).map(([key, label]) => `<option value="${key}" ${r.role === key ? "selected" : ""}>${label}</option>`).join("")}</select></label><button type="button" class="btn" data-prose-ref-remove="${esc(r.id)}" ${disabled}>참고 삭제</button></figure>`).join("")}</div>` : ""}
     ${!imageReady(o.model) ? `<p class="note">${esc(imageSetupHint(o.model))} <button type="button" class="btn" data-act="gset">AI 연결 설정</button></p>` : ""}
     ${j.error ? `<div class="banner warn" role="alert">${esc(j.error)}</div>` : ""}
     ${j.preview ? `${imageZoomHtml(j.preview, story.title + " 삽화 미리보기", true)}<div class="row"><button type="button" class="btn pri" data-act="prose-image-apply" ${disabled}>이 삽화 적용</button><button type="button" class="btn" data-act="prose-image-discard" ${disabled}>미리보기 버리기</button></div>` : ""}
@@ -2974,7 +2946,7 @@ function proseHtml(w, k) {
     <label class="lb" for="proseDirection">내용·분위기·문체·시점</label><textarea id="proseDirection" data-prose-field="direction" rows="4" maxlength="2000" placeholder="예: 출동 전날 밤, 정비병의 시점으로. 거인의 손을 검진하며 나누는 짧은 대화. 조용하고 따뜻하게, 감정은 행동으로 보여 줘." ${disabled}>${esc(v.opts.direction)}</textarea>
     <label class="lb" for="proseLength">분량</label><select id="proseLength" data-prose-field="length" ${disabled}>${Object.entries(PROSE_LENGTHS).map(([id, label]) => `<option value="${id}" ${v.opts.length === id ? "selected" : ""}>${esc(label)}</option>`).join("")}</select>
     ${v.error ? `<div class="banner warn" role="alert">${esc(v.error)}</div>` : ""}
-    ${v.busy ? `<p class="note" id="proseProgress" role="status">${v.imageTask ? "삽화를 생성하는 중…" : v.refLoading ? "참고 이미지를 준비하는 중…" : "단편을 처리하는 중…"}</p>` : ""}
+    ${v.busy ? `<p class="note" id="proseProgress" role="status">${v.imageTask ? "삽화를 생성하는 중…" : "단편을 처리하는 중…"}</p>` : ""}
     ${v.preview ? `<section class="prose-preview"><h3>${esc(v.preview.title)}</h3><div class="prose-text">${esc(v.preview.body)}</div><div class="row"><button type="button" class="btn pri" data-act="prose-save" ${disabled}>이 단편 보관</button><button type="button" class="btn" data-act="prose-discard" ${disabled}>미리보기 버리기</button></div></section>` : ""}
     <div class="row"><button type="button" class="btn pri" data-act="prose-generate" ${disabled || !gReady() ? "disabled" : ""}>${v.busy ? "처리 중…" : v.preview ? "새 단편 생성" : "단편 생성"}</button><button type="button" class="btn" data-act="prose-close" ${v.saving ? "disabled" : ""}>${v.busy && !v.saving && v.ctl ? "생성 중단·닫기" : "닫기"}</button></div>
     ${stories.length ? `<section class="prose-saved"><h3>보관한 단편 · ${stories.length}편</h3>${stories.slice().reverse().map(x => `<details data-prose-id="${esc(x.id)}" ${v.openStory === x.id ? "open" : ""}><summary>${esc(x.title)} · ${fmtDate(x.createdAt)}</summary>${x.sourceStamp && x.sourceStamp !== imageDocStamp(S.pages[k]) ? `<p class="note">이 단편은 이전 문서 내용을 바탕으로 생성되었습니다.</p>` : ""}${x.direction ? `<p class="note">요청: ${esc(x.direction)}</p>` : ""}${proseImageHtml(S.pages[k], x, v)}<div class="prose-text">${esc(x.body)}</div><button type="button" class="btn dng" data-prose-delete="${esc(x.id)}" ${disabled}>${v.confirmDelete === x.id ? "삭제 확인" : "단편 삭제"}</button></details>`).join("")}</section>` : ""}</section>`;
@@ -2983,7 +2955,7 @@ function proseHtml(w, k) {
 /* ---------- 문서 이미지 업로드: 브라우저에서 축소하고 문서와 함께 저장 ---------- */
 const PORTRAIT_MAX = 1536 * 1024;   // data URL 전체 길이. 참조 이미지도 기존 중계 서버의 2MB 요청 한도에 맞춘다
 const portraitSrc = p => typeof p?.portrait === "string" && p.portrait.length <= PORTRAIT_MAX && /^data:image\/(?:webp|png|jpeg);base64,[A-Za-z0-9+/]+=*$/.test(p.portrait) ? p.portrait : "";
-async function preparePortrait(file, maxLength = PORTRAIT_MAX, maxEdge = 2048) {
+async function preparePortrait(file) {
   if (!/^image\/(?:jpeg|png|webp|gif|avif)$/i.test(file.type)) throw new Error("JPG, PNG, WebP, GIF, AVIF 이미지 파일을 선택해 주세요.");
   if (file.size > 10 * 1024 * 1024) throw new Error("이미지는 10MB 이하로 선택해 주세요.");
   const url = URL.createObjectURL(file), img = new Image();
@@ -2993,13 +2965,13 @@ async function preparePortrait(file, maxLength = PORTRAIT_MAX, maxEdge = 2048) {
     if (!w || !h || w * h > 40e6) throw new Error("이미지 해상도가 너무 큽니다. 크기를 줄인 뒤 선택해 주세요.");
     const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("이 브라우저에서 이미지를 처리하지 못했습니다.");
-    let scale = Math.min(1, maxEdge / Math.max(w, h));
+    let scale = Math.min(1, 2048 / Math.max(w, h));
     for (let i = 0; i < 6; i++, scale *= .8) {
       canvas.width = Math.max(1, Math.round(w * scale)); canvas.height = Math.max(1, Math.round(h * scale));
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       for (const quality of [.9, .82, .72]) {
         const src = canvas.toDataURL("image/webp", quality);
-        if (src.length <= maxLength && portraitSrc({ portrait: src })) return src;
+        if (portraitSrc({ portrait: src })) return src;
       }
     }
     throw new Error("이미지를 저장할 크기로 줄이지 못했습니다. 더 작은 파일을 선택해 주세요.");
@@ -3088,14 +3060,15 @@ const imageDocStamp = p => JSON.stringify([p.title, p.type, p.summary, p.infobox
 const openAIImage = model => /^gpt-image-/.test(model || "");
 const imageReady = model => openAIImage(model) ? !!GS.openaiKey : gReady();
 const imageSetupHint = model => openAIImage(model) ? "AI 연결 설정에서 OpenAI API 키를 저장해 주세요. ChatGPT 구독과 별도로 API 사용료가 청구됩니다." : "AI 연결 설정에서 이미지 생성이 가능한 Gemini API 연결을 저장해 주세요.";
-async function openAIImageFetch(model, prompt, refs, o, signal) {
+async function openAIImageFetch(model, prompt, ref, o, signal) {
   const size = ({ "1:1": "1024x1024", "3:4": "1152x1536", "4:3": "1536x1152", "9:16": "864x1536", "16:9": "1536x864" })[o.ratio] || "1024x1024";
   const values = { model, prompt, n: 1, size, quality: o.quality || "high", output_format: "png" };
   let body, endpoint = "generations", headers = { Authorization: "Bearer " + GS.openaiKey };
-  if (refs.length) {
+  if (ref) {
     endpoint = "edits"; body = new FormData();
     for (const [k, v] of Object.entries(values)) body.append(k, String(v));
-    refs.forEach((src, i) => body.append("image[]", referenceFile(src, i ? "reference-" + (i + 1) : "reference")));
+    const [meta, data] = ref.split(","), mime = /^data:([^;]+)/.exec(meta)[1];
+    body.append("image[]", new Blob([Uint8Array.from(atob(data), c => c.charCodeAt(0))], { type: mime }), "reference." + mime.split("/")[1]);
   } else { headers["Content-Type"] = "application/json"; body = JSON.stringify(values); }
   try { return await fetch("https://api.openai.com/v1/images/" + endpoint, { method: "POST", headers, body, signal }); }
   catch (e) { if (e?.name === "AbortError") throw { code: "cancelled" }; throw { code: "network", message: "OpenAI에 연결하지 못했습니다. 네트워크 연결을 확인해 주세요." }; }
@@ -3113,20 +3086,13 @@ ${o.useRef && portraitSrc(p) ? "첨부 이미지는 같은 대상의 외모·형
 ## 문서 내용
 ${docText(p, w).slice(0, 10000)}`;
 }
-async function requestDocImage(w, p, o, signal, customPrompt = "", extraRefs = []) {
+async function requestDocImage(w, p, o, signal, customPrompt = "") {
   const model = o.model.trim();
   if (!/^[A-Za-z0-9._-]+$/.test(model)) throw new Error("이미지 모델 이름을 확인해 주세요.");
   const prompt = customPrompt || imagePrompt(w, p, o), ref = o.useRef ? portraitSrc(p) : "";
-  if (extraRefs.length > 3 || extraRefs.some(src => !portraitSrc({ portrait: src }))) throw new Error("추가 참고 이미지를 확인해 주세요.");
-  let refs = [...(ref ? [ref] : []), ...extraRefs];
-  if (extraRefs.length && refs.length > 1) {
-    const eachMax = Math.floor(1400 * 1024 / refs.length), packed = [];
-    for (const src of refs) packed.push(src.length <= eachMax ? src : await preparePortrait(referenceFile(src), eachMax));
-    refs = packed;
-  }
-  if (signal?.aborted) throw { code: "cancelled" };
-  const parts = [{ text: prompt }, ...refs.map(src => { const m = /^data:(image\/[a-z]+);base64,(.+)$/.exec(src); return { inlineData: { mimeType: m[1], data: m[2] } }; })];
-  const send = () => openAIImage(model) ? openAIImageFetch(model, prompt, refs, o, signal) : gFetch(`/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", ...gAuth() }, body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: o.ratio, ...(model === "gemini-3.1-flash-lite-image" ? {} : { imageSize: "1K" }) } } }), signal });
+  const m = /^data:(image\/[a-z]+);base64,(.+)$/.exec(ref);
+  const parts = [{ text: prompt }, ...(m ? [{ inlineData: { mimeType: m[1], data: m[2] } }] : [])];
+  const send = () => openAIImage(model) ? openAIImageFetch(model, prompt, ref, o, signal) : gFetch(`/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", ...gAuth() }, body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: o.ratio, ...(model === "gemini-3.1-flash-lite-image" ? {} : { imageSize: "1K" }) } } }), signal });
   const t0 = performance.now();
   try {
     const res = await send();   // 공급자에 맞는 API로 한 번만 요청한다.
@@ -4231,7 +4197,6 @@ document.addEventListener("click", ev => {
   if (d.cfix) { openConflictFix(d.cfix); return; }
   if (d.edit) { openEditor(d.edit); return; }
   if (d.imageOpen) { openImageGen(d.imageOpen); return; }
-  if (d.proseRefRemove) { const v = S.proseGen; if (v?.illustration && !v.busy) { v.illustration.refs = (v.illustration.refs || []).filter(r => r.id !== d.proseRefRemove); renderMain(); } return; }
   if (d.proseIllustrate) { openProseImage(d.proseIllustrate); return; }
   if (d.proseImageDelete) { const v = S.proseGen; if (v && !v.busy) { if (v.confirmImageDelete === d.proseImageDelete) saveProseImage(true, d.proseImageDelete); else { v.confirmImageDelete = d.proseImageDelete; el.textContent = "삽화 삭제 확인"; } } return; }
   if (d.proseOpen) { openProse(d.proseOpen); return; }
@@ -4405,8 +4370,6 @@ $("#searchForm").addEventListener("submit", ev => {
 });
 document.addEventListener("change", ev => {
   if (ev.target.dataset?.worldExport && S.world) { const field = ev.target.dataset.worldExport; if (["images", "stories"].includes(field)) (S.worldExports[S.world.id] ||= { images: true, stories: true })[field] = ev.target.checked; return; }
-  if (ev.target.matches?.("[data-prose-ref-files]")) { const files = Array.from(ev.target.files || []); ev.target.value = ""; addProseReferences(files); return; }
-  if (ev.target.dataset?.proseRefRole && S.proseGen?.illustration && !S.proseGen.busy) { const ref = S.proseGen.illustration.refs?.find(r => r.id === ev.target.dataset.proseRefRole); if (ref && PROSE_REF_ROLES[ev.target.value]) ref.role = ev.target.value; return; }
   if (ev.target.dataset?.proseImage === "model" && S.proseGen?.illustration && !S.proseGen.busy) { S.proseGen.illustration.opts.model = ev.target.value; renderMain(); return; }
   if (ev.target.dataset?.proseImage && S.proseGen?.illustration && !S.proseGen.busy) { const f = ev.target.dataset.proseImage; if (["model", "style", "ratio", "direction"].includes(f)) S.proseGen.illustration.opts[f] = ev.target.value; }
   if (ev.target.dataset?.proseField && S.proseGen && !S.proseGen.busy) { const f = ev.target.dataset.proseField; if (["direction", "length"].includes(f)) S.proseGen.opts[f] = ev.target.value; }
