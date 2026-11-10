@@ -85,6 +85,11 @@ h1.t{font-family:var(--f-display);font-weight:700;font-size:30px;line-height:1.2
 .portrait-menu>summary::after{content:"▾";font-size:10px;color:var(--muted)}
 .portrait-actions{position:absolute;top:calc(100% + 4px);left:0;z-index:4;min-width:170px;padding:6px;border:1px solid var(--line);border-radius:var(--r);background:var(--sheet);box-shadow:0 6px 20px rgb(0 0 0 / .12)}
 .portrait-actions .btn{display:flex;width:100%;border:0;text-align:left}
+.image-gen{margin:12px 0;padding:16px;border:1px solid var(--line);border-radius:var(--r);background:var(--paper);scroll-margin-top:140px}
+.image-gen h3{margin:0 0 8px;font-size:16px}
+.image-gen select{width:100%;padding:8px;border:1px solid var(--line);border-radius:var(--r);background:var(--sheet);color:var(--ink);font:inherit}
+.image-gen .preview{display:block;max-height:420px;max-width:100%;margin:12px auto;object-fit:contain}
+.image-gen .guide{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0 12px;font-size:13px;color:var(--muted)}
 .infobox .ity{font-family:var(--f-mono);font-size:11px;color:var(--muted);text-align:center;padding:4px 0 2px;border-bottom:1px solid var(--line)}
 .infobox table{width:100%;border-collapse:collapse}
 .infobox th,.infobox td{padding:6px 10px;border-top:1px solid var(--line);vertical-align:top;text-align:left}
@@ -357,7 +362,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.15 · 2026-11-10";
+const APP_VERSION = "v6.16 · 2026-11-10";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -455,7 +460,7 @@ const PAGE_MODEL = {};   // 모델과 생각 깊이는 'Gemini 설정'에서 정
 const GKEY = "wwiki:gemini";
 const GBASE = "https://generativelanguage.googleapis.com/v1beta";
 const DEFAULT_RELAY = "https://lucky-feather-d3e9.sjh0918092.workers.dev";   // 기본 중계 서버. 주소는 공개돼도 되고, 접속 암호가 있어야 쓸 수 있다
-const GDEF = { mode: "key", relay: DEFAULT_RELAY, pass: "", key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "", check: "", checkThink: "medium", preCheck: true };   // check: 설정 검사·수정 대조. 비우면 기본 모델
+const GDEF = { mode: "key", relay: DEFAULT_RELAY, pass: "", key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "", check: "", checkThink: "medium", preCheck: true, imageModel: "gemini-nano-banana-2.1" };   // check: 설정 검사·수정 대조. 비우면 기본 모델
 const THINKS = [["", "모델 기본값"], ["minimal", "minimal"], ["low", "low"], ["medium", "medium"], ["high", "high"]];
 let GS = (() => {
   let st = {}; try { st = JSON.parse(localStorage.getItem(GKEY) || "{}") || {}; } catch {}
@@ -603,7 +608,7 @@ async function listGeminiModels() {
 }
 const LOGK = "wwiki:log";
 const LOG = (() => { try { const v = JSON.parse(localStorage.getItem(LOGK) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })();
-const KIND = { choices: "행동 후보", read: "문서 읽기 검사", bible: "세계관 생성", storyBible: "스토리 세계관 생성", chapterPlan: "장 계획", chapterBlock: "장 섹션", page: "문서 작성", tone: "분위기 판별", check: "설정 검사", analyze: "수정 대조", fix: "충돌 고치기" };
+const KIND = { image: "이미지 생성", choices: "행동 후보", read: "문서 읽기 검사", bible: "세계관 생성", storyBible: "스토리 세계관 생성", chapterPlan: "장 계획", chapterBlock: "장 섹션", page: "문서 작성", tone: "분위기 판별", check: "설정 검사", analyze: "수정 대조", fix: "충돌 고치기" };
 function pushLog(r) {
   LOG.push(r); if (LOG.length > 40) LOG.splice(0, LOG.length - 40);
   try { localStorage.setItem(LOGK, JSON.stringify(LOG)); } catch {}
@@ -840,7 +845,7 @@ const Sync = {
     const cur = S.world?.id, key = S.view.key;
     S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     if (cur) {
-      const busy = S.gen || S.storyGen || S.syncing || S.checking || S.edit || S.bgSync || S.portraitJob;
+      const busy = S.gen || S.storyGen || S.syncing || S.checking || S.edit || S.bgSync || S.portraitJob || S.imageGen?.busy;
       if (!S.worlds.some(x => x.id === cur)) { if (!busy) { S.world = null; S.view = { name: "home" }; renderAll(); } toast("다른 기기에서 이 세계관을 지웠습니다."); return; }
       if (busy) { toast("다른 기기에서 바뀐 내용을 받았습니다. 작업이 끝난 뒤 세계관을 다시 열면 보입니다."); return; }
       await openWorld(cur, key); toast("다른 기기에서 바뀐 내용을 받았습니다.");
@@ -883,7 +888,7 @@ const S = {
   gen: null, genErr: null, checking: null, sample: null, sampleReady: false,
   creating: false, createErr: null, seed: "", seedTab: "own", ownSeed: "", dice: null, whatIfs: null, first: "", guideIn: "",
   confirmDel: null, confirmRewrite: null, canonFilter: "all", focusEnt: null, nf: new Set(),
-  edit: null, refreshing: null, confirmDelPage: null, confirmMerge: null, compose: null, portraitJob: null,
+  edit: null, refreshing: null, confirmDelPage: null, confirmMerge: null, compose: null, portraitJob: null, imageGen: null,
   mode: "basic", storyN: 5, protoDesc: "", cast: [], regen: null, storyGen: null, syncQ: [], syncing: null, syncErr: null, hold: null, adv: null, storyCard: null
 };
 
@@ -1931,6 +1936,7 @@ function cancelRegen() {
 
 async function openWorld(wid, goKey) {
   const w = S.worlds.find(x => x.id === wid); if (!w) return;
+  if (S.imageGen?.busy && S.imageGen.wid !== wid) { toast("이미지 생성을 마치거나 중단한 뒤 다른 세계관을 열어 주세요."); return; }
   if (S.gen && S.gen.wid !== wid) { toast("다른 세계관의 문서를 작성하는 중입니다. 끝난 뒤 열어 주세요."); return; }
   if (S.storyGen && S.world?.id !== wid) { toast("다음 장을 쓰는 중입니다. 끝난 뒤 열어 주세요."); return; }
   if (S.syncing && S.world?.id !== wid) { toast("장의 변화를 문서에 반영하는 중입니다. 끝난 뒤 열어 주세요."); return; }
@@ -2726,7 +2732,7 @@ function readConflicts(w, raw, refs) {
 const conflictLabel = (w, c) => c.kind === "rule" ? `핵심 규칙 ${c.id}` : c.kind === "canon" ? "사용자 확정 설정"
   : c.kind === "timeline" ? `연표${c.src && w.entities[c.src] ? ` (「${w.entities[c.src].title}」)` : ""}` : `「${w.entities[c.src]?.title || "?"}」${S.pages[c.src]?.editedAt ? " (직접 수정한 문서)" : ""}`;
 
-/* ---------- 인물 프로필 이미지: AI 호출 없이 브라우저에서 축소하고 문서와 함께 저장 ---------- */
+/* ---------- 문서 이미지 업로드: 브라우저에서 축소하고 문서와 함께 저장 ---------- */
 const PORTRAIT_MAX = 240 * 1024;   // data URL 전체 길이. 문서 저장·백업·동기화의 부담을 제한
 const portraitSrc = p => typeof p?.portrait === "string" && p.portrait.length <= PORTRAIT_MAX && /^data:image\/(?:webp|png|jpeg);base64,[A-Za-z0-9+/]+=*$/.test(p.portrait) ? p.portrait : "";
 async function preparePortrait(file) {
@@ -2749,10 +2755,10 @@ async function preparePortrait(file) {
     throw new Error("이미지를 저장할 크기로 줄이지 못했습니다. 더 작은 파일을 선택해 주세요.");
   } finally { URL.revokeObjectURL(url); }
 }
-const portraitBusy = k => S.gen || S.storyGen || S.syncing === k || S.checking === k || S.fixing || S.bgSync === k || isHeld(k);
+const portraitBusy = k => S.gen || S.storyGen || S.syncing === k || S.checking === k || S.fixing || S.bgSync === k || (S.imageGen?.busy && S.imageGen.key === k) || isHeld(k);
 async function setPortrait(k, file) {
   const w = S.world, p = S.pages[k];
-  if (!w || !p || p.type !== "인물") return;
+  if (!w || !p) return;
   if (S.portraitJob || portraitBusy(k)) { toast("문서 작업이 끝난 뒤 이미지를 변경해 주세요."); return; }
   const job = S.portraitJob = { wid: w.id, key: k };
   renderMain();
@@ -2771,16 +2777,118 @@ async function setPortrait(k, file) {
   }
 }
 function portraitHtml(p) {
-  const src = p.type === "인물" ? portraitSrc(p) : "";
-  return src ? `<div class="portrait"><img src="${esc(src)}" alt="${esc(p.title)} 프로필 이미지" decoding="async"></div>` : "";
+  const src = portraitSrc(p);
+  return src ? `<div class="portrait"><img src="${esc(src)}" alt="${esc(p.title)} ${p.type === "인물" ? "프로필" : "문서"} 이미지" decoding="async"></div>` : "";
 }
 function portraitMenuHtml(p, k, held) {
-  if (p.type !== "인물") return "";
   const src = portraitSrc(p), busy = S.portraitJob?.key === k && S.portraitJob?.wid === S.world.id;
   const disabled = held || S.portraitJob || portraitBusy(k) ? "disabled" : "";
-  return `<details class="portrait-menu"><summary class="btn">${busy ? "이미지 저장 중…" : "프로필 이미지"}</summary>
-    <div class="portrait-actions"><button type="button" class="btn" data-portrait="${k}" ${disabled}>${src ? "이미지 변경" : "이미지 추가"}</button>${src ? `<button type="button" class="btn dng" data-portrait-remove="${k}" ${disabled}>이미지 삭제</button>` : ""}</div>
+  return `<details class="portrait-menu"><summary class="btn">${busy ? "이미지 저장 중…" : p.type === "인물" ? "프로필 이미지" : "문서 이미지"}</summary>
+    <div class="portrait-actions"><button type="button" class="btn" data-image-open="${k}" ${disabled}>AI로 생성</button><button type="button" class="btn" data-portrait="${k}" ${disabled}>${src ? "이미지 변경" : "이미지 추가"}</button>${src ? `<button type="button" class="btn dng" data-portrait-remove="${k}" ${disabled}>이미지 삭제</button>` : ""}</div>
     <input type="file" data-portrait-file="${k}" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" aria-label="${esc(p.title)} 프로필 이미지 선택" hidden></details>`;
+}
+
+/* ---------- 문서 이미지 생성: 한 장씩 미리 본 뒤 적용 ---------- */
+const IMAGE_MODELS = [
+  { id: "gemini-nano-banana-2.1", label: "Nano Banana 2.1", price: .0336 },
+  { id: "gemini-3.1-flash-lite-image", label: "Nano Banana 2 Lite", price: .0336 },
+  { id: "gemini-3-pro-image", label: "Nano Banana Pro", price: .134 }
+];
+const IMAGE_STYLES = ["세계관 지침 따름", "실사", "애니메이션", "웹툰", "유화", "수채화", "픽셀아트", "3D 렌더"];
+const imageDocStamp = p => JSON.stringify([p.title, p.type, p.summary, p.infobox, p.sections]);
+function imagePrompt(w, p, o) {
+  return `위키 문서 「${p.title}」(${p.type})에 넣을 이미지 한 장을 생성한다. 문서에 나온 대상의 외모, 복장, 특징, 시대와 크기 관계를 따른다. 정해지지 않은 외모나 배경은 이 세계관에 맞게 구성한다. 인물이면 해당 인물, 장소면 장소, 물건이면 해당 물건을 중심으로 한다. 그림에 문서 제목이나 설명문을 쓰지 않는다.
+## 세계관
+${w.title} · 작중 기준 ${w.era}\n${w.seed || ""}\n${(w.rules || []).join("\n")}\n${w.userCanon || ""}
+## 세계관 공통 이미지 지침 (모든 문서 이미지에 적용)
+${String(w.imageGuide || "").slice(0, 2000) || "세계관의 시대와 분위기를 따른다."}
+## 이번 이미지
+희망 화풍: ${o.style}. 공통 이미지 지침과 화풍 선택이 충돌하면 공통 이미지 지침을 따른다.
+추가 요청: ${o.direction || "없음"}
+${o.useRef && portraitSrc(p) ? "첨부 이미지는 같은 대상의 외모·형태 참고다. 정체성과 주요 특징을 유지하면서 공통 이미지 지침과 이번 요청을 반영한다." : ""}
+## 문서 내용
+${docText(p, w).slice(0, 10000)}`;
+}
+async function requestDocImage(w, p, o, signal) {
+  const model = o.model.trim();
+  if (!/^[A-Za-z0-9._-]+$/.test(model)) throw new Error("이미지 모델 이름을 확인해 주세요.");
+  const prompt = imagePrompt(w, p, o), ref = o.useRef ? portraitSrc(p) : "";
+  const m = /^data:(image\/[a-z]+);base64,(.+)$/.exec(ref);
+  const parts = [{ text: prompt }, ...(m ? [{ inlineData: { mimeType: m[1], data: m[2] } }] : [])];
+  const send = () => gFetch(`/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", ...gAuth() }, body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: o.ratio, ...(model === "gemini-3.1-flash-lite-image" ? {} : { imageSize: "1K" }) } } }), signal });
+  const t0 = performance.now();
+  try {
+    const res = await send();   // 공식 호환 API: 기존 중계 서버에서도 같은 모델을 그대로 사용
+    if (!res.ok) throw await gError(res, model);
+    const j = await res.json(), images = [];
+    const collect = x => {
+      if (!x || typeof x !== "object" || x.thought === true || x.role === "user" || /thought|reason|^user$/.test(x.type || "")) return;
+      const mime = x.mime_type || x.mimeType, data = x.data;
+      if (/^image\/(png|jpeg|webp)$/.test(mime || "") && typeof data === "string") images.push({ mime, data });
+      for (const [k, v] of Object.entries(x)) if (!["input", "arguments", "data"].includes(k) && typeof v === "object") Array.isArray(v) ? v.forEach(collect) : collect(v);
+    };
+    collect(j.output_image); collect(j.output); collect(j.outputs); collect(j.steps); collect(j.candidates);
+    const img = images[images.length - 1];
+    if (!img) throw new Error("모델이 이미지를 반환하지 않았습니다. 요청이나 이미지 모델을 바꿔 다시 시도해 주세요.");
+    if (img.data.length > 14e6 || !/^[A-Za-z0-9+/]+=*$/.test(img.data)) throw new Error("반환된 이미지 형식이나 크기를 확인할 수 없습니다.");
+    const bytes = Uint8Array.from(atob(img.data), c => c.charCodeAt(0));
+    const src = await preparePortrait(new File([bytes], "generated", { type: img.mime }));
+    pushLog({ at: Date.now(), kind: "image", title: p.title, model, in: prompt.length, total: Math.round(performance.now() - t0), out: src.length, ok: true });
+    return src;
+  } catch (e) {
+    pushLog({ at: Date.now(), kind: "image", title: p.title, model, in: prompt.length, total: Math.round(performance.now() - t0), out: 0, ok: false, err: e.code || e.name || "image", msg: e.message });
+    throw e;
+  }
+}
+function openImageGen(k) {
+  const w = S.world, p = S.pages[k]; if (!w || !p) return;
+  if (S.imageGen?.busy) { toast("진행 중인 이미지 생성을 마치거나 중단해 주세요."); return; }
+  S.imageGen = { wid: w.id, key: k, opts: { model: GS.imageModel || GDEF.imageModel, style: IMAGE_STYLES[0], ratio: p.type === "인물" ? "3:4" : "4:3", direction: "", useRef: !!portraitSrc(p) }, preview: "", error: "", busy: false };
+  renderMain(); $(".image-gen")?.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+async function generateDocImage() {
+  const v = S.imageGen, w = S.world, p = v && S.pages[v.key];
+  if (!v || v.busy || !w || v.wid !== w.id || !p) return;
+  if (!gReady()) { v.error = "Gemini 설정에서 이미지 생성이 가능한 유료 API 연결을 먼저 저장해 주세요."; renderMain(); return; }
+  if (portraitBusy(v.key) || S.portraitJob) { v.error = "문서 작업이 끝난 뒤 생성해 주세요."; renderMain(); return; }
+  v.busy = true; v.timedOut = false; v.error = ""; v.preview = ""; v.stamp = imageDocStamp(p); v.original = portraitSrc(p); v.ctl = new AbortController();
+  renderMain();
+  const timer = setTimeout(() => { v.timedOut = true; v.ctl.abort(); }, 180000);
+  try {
+    const src = await requestDocImage(w, p, { ...v.opts }, v.ctl.signal);
+    if (S.imageGen === v && !v.ctl.signal.aborted) v.preview = src;
+  } catch (e) { if (S.imageGen === v) v.error = v.timedOut ? "이미지 생성 시간이 초과되었습니다. 다시 시도해 주세요." : e.code === "cancelled" ? "이미지 생성을 중단했습니다." : (e.message || errMsg(e)); }
+  finally { clearTimeout(timer); v.busy = false; if (S.imageGen === v && S.world === w && S.view.key === v.key) renderMain(); }
+}
+async function applyDocImage() {
+  const v = S.imageGen, w = S.world, p = v && S.pages[v.key];
+  if (!v || !v.preview || v.busy || !w || w.id !== v.wid || !p) return;
+  if (portraitBusy(v.key) || S.portraitJob) { v.error = "문서 작업이 끝난 뒤 적용해 주세요."; renderMain(); return; }
+  try {
+    const latest = await Store.getPage(w.id, v.key);
+    if (!latest || imageDocStamp(latest) !== v.stamp || imageDocStamp(p) !== v.stamp || portraitSrc(latest) !== v.original || portraitSrc(p) !== v.original) throw new Error("생성 중 문서나 기존 이미지가 바뀌었습니다. 문서를 다시 열고 생성해 주세요.");
+    const next = { ...latest, portrait: v.preview };
+    await Store.savePage(w.id, next);
+    if (S.world === w && S.pages[v.key] === p) S.pages[v.key] = next;
+    S.imageGen = null; renderMain(); toast("생성한 이미지를 적용했습니다.");
+  } catch (e) { v.error = "이미지를 적용하지 못했습니다. " + (e.message || errMsg(e)); renderMain(); }
+}
+function imageGenHtml(w, k) {
+  const v = S.imageGen, p = S.pages[k]; if (!v || v.wid !== w.id || v.key !== k || !p) return "";
+  const o = v.opts, disabled = v.busy ? "disabled" : "", price = IMAGE_MODELS.find(m => m.id === o.model)?.price;
+  const models = IMAGE_MODELS.some(m => m.id === o.model) ? IMAGE_MODELS : [...IMAGE_MODELS, { id: o.model, label: o.model }];
+  return `<section class="image-gen" aria-label="문서 이미지 생성"><h3>AI 이미지 생성</h3>
+    ${!gReady() ? `<p class="note">Gemini 설정에서 이미지 생성이 가능한 유료 API 연결을 저장해 주세요. <button type="button" class="btn" data-act="gset">Gemini 설정</button></p>` : ""}
+    <details class="memo"><summary>세계관 공통 이미지 지침</summary><div class="guide">${esc(w.imageGuide || "지정된 이미지 지침이 없습니다.")}</div><button type="button" class="btn" data-act="image-guide" ${disabled}>이미지 지침 설정</button></details>
+    <div class="two"><div><label class="lb" for="imageModel">이미지 모델</label><select id="imageModel" data-igf="model" ${disabled}>${models.map(m => `<option value="${esc(m.id)}" ${o.model === m.id ? "selected" : ""}>${esc(m.label)}</option>`).join("")}</select></div>
+    <div><label class="lb" for="imageStyle">화풍</label><select id="imageStyle" data-igf="style" ${disabled}>${IMAGE_STYLES.map(s => `<option ${o.style === s ? "selected" : ""}>${s}</option>`).join("")}</select></div></div>
+    <label class="lb" for="imageRatio">화면 비율</label><select id="imageRatio" data-igf="ratio" ${disabled}>${["1:1", "3:4", "4:3", "9:16", "16:9"].map(r => `<option ${o.ratio === r ? "selected" : ""}>${r}</option>`).join("")}</select>
+    <label class="lb" for="imageDirection">이번 이미지 추가 요청</label><textarea id="imageDirection" data-igf="direction" rows="3" maxlength="2000" placeholder="예: 상반신 초상, 항구를 배경으로, 차분한 표정" ${disabled}>${esc(o.direction)}</textarea>
+    ${portraitSrc(p) ? `<label class="lb" style="font-weight:400"><input type="checkbox" data-igf="useRef" ${o.useRef ? "checked" : ""} ${disabled}>기존 이미지를 참고 이미지로 보내기</label>` : ""}
+    <p class="note">공통 이미지 지침과 문서 내용을 함께 참고해 한 장을 생성합니다.${price ? ` 1K 이미지 출력비 약 $${price}/장, 입력 비용 별도.` : ""} 기존 이미지는 적용 버튼을 누를 때 바뀝니다.</p>
+    ${v.error ? `<div class="banner warn" role="alert">${esc(v.error)}</div>` : ""}
+    ${v.preview ? `<img class="preview" src="${esc(v.preview)}" alt="${esc(p.title)} 생성 이미지 미리보기"><div class="row"><button type="button" class="btn pri" data-act="image-apply">이 이미지 적용</button><button type="button" class="btn" data-act="image-discard">미리보기 버리기</button></div>` : ""}
+    <div class="row" style="margin-top:10px"><button type="button" class="btn pri" data-act="image-generate" ${disabled || !gReady() ? "disabled" : ""}>${v.busy ? "이미지 생성 중…" : v.preview ? "다시 1장 생성" : "1장 생성"}</button><button type="button" class="btn" data-act="image-close">${v.busy ? "생성 중단" : "닫기"}</button></div></section>`;
 }
 
 function openEditor(k) {
@@ -2951,6 +3059,7 @@ async function saveCanon() {
   const nt = norm($("#wTitle")?.value || "").slice(0, 40); if (nt) w.title = nt;
   if ($("#wTag")) w.tagline = norm($("#wTag").value).slice(0, 160);
   if ($("#wHist")) w.historical = $("#wHist").checked;
+  if ($("#wImageGuide")) w.imageGuide = $("#wImageGuide").value.trim().slice(0, 2000);
   if ($("#wGuide")) w.guide = $("#wGuide").value.replace(/\r/g, "").trim().slice(0, 1000);
   renderTop();
   const tl = norm($("#toneLabel")?.value || "").slice(0, 60);
@@ -3256,6 +3365,7 @@ function gsetHtml() {
       <div><label class="lb" for="gQuickT">생각 깊이</label><select id="gQuickT">${opt(GS.quickThink)}</select></div></div>
     <div class="two"><div><label class="lb" for="gCheck">검사 모델 <span class="note" style="font-weight:400">설정 검사, 수정 대조 · 비워 두면 기본 모델</span></label><input id="gCheck" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.check || "")}" placeholder="${esc(GS.main || GDEF.main)} (기본 모델)"></div>
       <div><label class="lb" for="gCheckT">생각 깊이</label><select id="gCheckT">${opt(GS.checkThink ?? GDEF.checkThink)}</select></div></div>
+    <label class="lb" for="gImage">이미지 생성 모델</label><input id="gImage" class="txt" list="gImageModels" value="${esc(GS.imageModel || GDEF.imageModel)}"><datalist id="gImageModels">${IMAGE_MODELS.map(m => `<option value="${m.id}">${m.label}</option>`).join("")}</datalist>
     <label class="lb" for="gPre" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="gPre" ${GS.preCheck !== false ? "checked" : ""}>문서 작성 직후 한 번 자동 검사하고, 어긋난 곳은 고쳐서 보여 주기 <span class="note">끄면 자동 검사하지 않습니다. 이후 검사는 문서의 설정 검사 버튼으로 실행합니다</span></label>
     <p class="note" style="margin-top:6px">자동 검사는 새 문서를 작성하거나 다시 쓸 때 한 번만 돕니다. 이후에는 설정 검사 버튼을 눌렀을 때만 검사합니다. 검사 모델을 높이거나 생각 깊이를 올리면 헛짚는 지적이 줄지만, 검사가 느려지고 사용량이 늘어납니다.</p>
     ${dl}
@@ -3298,7 +3408,7 @@ async function acctAction(kind) {
 }
 function readGsetForm() {
   const v = id => ($("#" + id)?.value ?? "").trim();
-  GS = { ...GS, mode: v("gMode") === "relay" ? "relay" : "key", key: v("gKey"), relay: normRelay(v("gRelay")) || DEFAULT_RELAY, pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT"), check: v("gCheck"), checkThink: v("gCheckT"), preCheck: !!$("#gPre")?.checked };
+  GS = { ...GS, mode: v("gMode") === "relay" ? "relay" : "key", key: v("gKey"), relay: normRelay(v("gRelay")) || DEFAULT_RELAY, pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT"), check: v("gCheck"), checkThink: v("gCheckT"), preCheck: !!$("#gPre")?.checked, imageModel: v("gImage") || GDEF.imageModel };
   saveGS(); S.sample = gReady() ? gemini : null;
 }
 function setGres(t) { S.gres = t; const el = $("#gRes"); if (el) el.textContent = t; }
@@ -3409,7 +3519,7 @@ function articleHtml(k) {
       <div class="tools"><button type="button" class="btn pri" data-gen="${k}" ${S.gen || !S.sample ? "disabled" : ""}>이 문서 작성하기</button><button type="button" class="btn" data-compose="${k}">방향을 정해 작성</button></div></div>`;
   }
   const fns = [];
-  const box = p.infobox?.length || p.type === "인물" ? `<aside class="infobox"><div class="ih">${esc(p.title)}</div>${portraitHtml(p)}<div class="ity">${esc(p.type)}</div><table>${(p.infobox || []).map((r, i) => `<tr><th>${esc(r.label)}</th><td class="secb" data-ib="${i}">${blocks(r.value, fns).replace(/^<p>|<\/p>$/g, "")}</td></tr>`).join("")}</table></aside>` : "";
+  const box = p.infobox?.length || p.type === "인물" || portraitSrc(p) ? `<aside class="infobox"><div class="ih">${esc(p.title)}</div>${portraitHtml(p)}<div class="ity">${esc(p.type)}</div><table>${(p.infobox || []).map((r, i) => `<tr><th>${esc(r.label)}</th><td class="secb" data-ib="${i}">${blocks(r.value, fns).replace(/^<p>|<\/p>$/g, "")}</td></tr>`).join("")}</table></aside>` : "";
   let n1 = 0, n2 = 0;
   const nums = p.sections.map(s => { if ((s.level || 1) === 2 && n1) { n2++; return `${n1}.${n2}.`; } n1++; n2 = 0; return `${n1}.`; });
   const story = isStory(w), pk = story ? w.story.protagonistKey : null, card = story && k === pk && !held && S.storyCard?.wid === w.id ? S.storyCard : null;
@@ -3458,7 +3568,7 @@ function articleHtml(k) {
     ${navboxesFor(w, k).map(([, nb]) => navboxHtml(nb, nb.src === k, k)).join("")}
     ${cardHtml}
     <div class="tools"><button type="button" class="btn" data-edit="${k}">편집</button>${portraitMenuHtml(p, k, held)}<button type="button" class="btn" data-check="${k}" ${S.checking || !S.sample ? "disabled" : ""}>설정 검사</button>${rw}<button type="button" class="btn" data-focus="${k}">설정 노트에서 보기</button>${fixed ? "" : `<button type="button" class="btn" data-mg="${k}" aria-expanded="${S.confirmMerge === k}">합치기</button>`}${k === pk ? `<button type="button" class="btn dng" disabled title="주인공 문서는 이야기의 중심이라 삭제할 수 없습니다">삭제</button>` : `<button type="button" class="btn dng" data-delpage="${k}" aria-expanded="${S.confirmDelPage === k}">삭제</button>`}</div>
-    ${mergeBox}${twinHtml}
+    ${imageGenHtml(w, k)}${mergeBox}${twinHtml}
     ${S.confirmDelPage === k ? `<div class="rwbox"><p style="margin:0">「${esc(p.title)}」 문서를 삭제할까요?</p>
       <p class="note">문서와 이 문서가 확정한 사실, 틀, 연표 항목이 지워집니다. 다른 문서가 이 항목을 언급한 내용은 남고, 그 링크는 미작성 문서로 돌아갑니다. 되돌릴 수 없습니다.</p>
       <div class="row" style="margin-top:6px"><button type="button" class="btn dng" data-delpage-yes="${k}">삭제</button><button type="button" class="btn" data-act="delpage-no">취소</button></div></div>` : ""}
@@ -3680,6 +3790,9 @@ function canonHtml() {
     <div style="overflow-x:auto"><table class="tl">${w.story.chapters.map(c => `<tr><td>${c.n}장</td><td><b>${esc(c.title)}</b> <span class="src">· ${esc(c.era)}</span><br>${c.n < w.story.chapter || w.story.status === "ended" ? esc(c.summary) : `<span class="note">진행 중인 장입니다. 줄거리는 다음 장으로 넘어가면 공개됩니다.</span>`}</td></tr>`).join("")}</table></div>
     ${w.story.protagonist?.desc || w.story.cast?.length ? `<dl class="kv" style="margin-top:12px">${w.story.protagonist?.desc ? `<dt>주인공 특징</dt><dd>${esc(w.story.protagonist.desc)}</dd>` : ""}${(w.story.cast || []).filter(c => w.entities[c.key]).map(c => `<dt>${linkHtml(w.entities[c.key].title)}</dt><dd>${esc([c.rel && "관계: " + c.rel, c.desc].filter(Boolean).join(" · ") || "(설명 없음)")}</dd>`).join("")}</dl><p class="note">처음에 정한 주인공 특징과 등장인물입니다. 사용자 확정 설정으로 모든 장과 문서에 반영됩니다.</p>` : ""}
     ${w.story.status === "ended" ? spineHtml(w) : ""}` : ""}
+    <h2>이미지 지침</h2>
+    <label class="lb" for="wImageGuide">세계관 공통 이미지 지침</label><textarea id="wImageGuide" rows="4" maxlength="2000" placeholder="예: 1990년대 셀 애니메이션 화풍, 푸른 회색 팔레트, 시대에 맞는 복장, 글자 없는 그림">${esc(w.imageGuide || "")}</textarea>
+    <p class="note">이 세계관의 모든 문서에서 이미지를 생성할 때 공통으로 참고합니다. 지침 저장만으로 기존 이미지를 바꾸지는 않습니다.</p>
     <h2>작가 지침</h2>
     <label class="lb" for="wGuide">세계관 전체에 걸쳐 지킬 방향 <span class="note" style="font-weight:400">문체와 구성 규칙보다 우선하고, 확정 설정보다는 뒤에 옵니다. 1,000자까지</span></label>
     <textarea id="wGuide" rows="4" maxlength="1000" placeholder="예: 양산기 바리에이션을 풍부하게. 개그는 줄이고 전쟁물처럼 쓴다.">${esc(w.guide || "")}</textarea>
@@ -3790,6 +3903,7 @@ document.addEventListener("click", ev => {
   if (d.fixk) { openFixView(d.fixk, [Number(d.fix)], true); return; }
   if (d.cfix) { openConflictFix(d.cfix); return; }
   if (d.edit) { openEditor(d.edit); return; }
+  if (d.imageOpen) { openImageGen(d.imageOpen); return; }
   if (d.portrait) { document.querySelector('[data-portrait-file="' + d.portrait + '"]')?.click(); return; }
   if (d.portraitRemove) { setPortrait(d.portraitRemove, null); return; }
   if (d.delpage) { S.confirmDelPage = S.confirmDelPage === d.delpage ? null : d.delpage; S.confirmRewrite = null; renderMain(); return; }
@@ -3887,6 +4001,11 @@ document.addEventListener("click", ev => {
     case "cf-back": if (S.edit) S.edit.pending = null; $("#edConflicts").innerHTML = ""; $("#edBody")?.focus(); break;
     case "ed-cancel": S.edit = null; renderMain(); window.scrollTo({ top: 0 }); break;
     case "save-canon": saveCanon(); break;
+    case "image-generate": generateDocImage(); break;
+    case "image-apply": applyDocImage(); break;
+    case "image-discard": if (S.imageGen && !S.imageGen.busy) { S.imageGen.preview = ""; S.imageGen.error = ""; renderMain(); } break;
+    case "image-close": S.imageGen?.ctl?.abort(); S.imageGen = null; renderMain(); break;
+    case "image-guide": S.view = { name: "canon" }; renderAll(); $("#wImageGuide")?.focus(); break;
     case "roll": rollDice(true); S.seed = diceSeed(S.dice); renderMain(); break;
     case "whatif-more": { const shown = new Set(S.whatIfs || []); const rest = shuffle(WHATIFS.filter(q => !shown.has(q))); S.whatIfs = (rest.length >= 8 ? rest : shuffle(WHATIFS)).slice(0, 8); renderMain(); break; }
     case "compose-cancel": { const k = S.view.key; S.compose = null; if (k && S.world?.entities[k] && (S.world.entities[k].facts.length || S.world.entities[k].mentions.length)) { S.genErr = null; S.view = { name: "article", key: k }; } else { S.view = { name: "article", key: S.world.mainKey }; } renderAll(); break; }
@@ -3905,6 +4024,7 @@ document.addEventListener("click", ev => {
   }
 });
 document.addEventListener("input", ev => {
+  if (ev.target.dataset?.igf && S.imageGen && !S.imageGen.busy) { const f = ev.target.dataset.igf; S.imageGen.opts[f] = f === "useRef" ? ev.target.checked : ev.target.value; }
   if (ev.target.id === "seedTa") {
     S.seed = S.ownSeed = ev.target.value;
     if (S.seedTab !== "own") {   // 예시나 주사위 결과를 고쳐 쓰면 내 원안이 된다
@@ -3941,6 +4061,7 @@ $("#searchForm").addEventListener("submit", ev => {
   if (hit) { $("#q").value = ""; $("#sugg").hidden = true; openEntity(hit[0]); } else goSearch(q);
 });
 document.addEventListener("change", ev => {
+  if (ev.target.dataset?.igf && S.imageGen && !S.imageGen.busy) { const f = ev.target.dataset.igf; S.imageGen.opts[f] = f === "useRef" ? ev.target.checked : ev.target.value; if (f === "model") renderMain(); }
   if (ev.target.dataset?.portraitFile && ev.target.files?.[0]) { const f = ev.target.files[0]; ev.target.value = ""; setPortrait(ev.target.dataset.portraitFile, f); }
   if (ev.target.id === "cpType" && S.compose) S.compose.type = ev.target.value;
   if (ev.target.id === "gMode") { const r = ev.target.value === "relay"; $("#gKeyBox").hidden = r; $("#gRelayBox").hidden = !r; }

@@ -171,9 +171,10 @@ let n = 0; const pass = msg => console.log(`  ✓ ${++n}. ${msg}`);
     await reopen(page);
     assert.strictEqual(await image(page).count(), 0);
     await page.fill("#q", "테스트 항구"); await page.press("#q", "Enter"); await page.waitForSelector(".article h2");
-    assert.strictEqual(await page.locator("[data-portrait]").count(), 0);
+    assert.strictEqual(await page.locator("[data-portrait]").count(), 1);
+    assert.strictEqual(await page.locator("[data-portrait]").isVisible(), false);
     assert.strictEqual(requests.length, rewriteCalls); assert.deepStrictEqual(errors, []);
-    pass("삭제는 새로고침 뒤에도 유지되고 인물 외 문서에는 업로드 UI를 추가하지 않는다");
+    pass("삭제는 새로고침 뒤에도 유지되고 다른 문서의 이미지 메뉴도 접힌 상태로 제공한다");
     console.log(`\n모두 통과 (${n}개). 이미지 작업 AI 요청 0회, 다시 쓰기 검증용 가짜 AI 응답 ${rewriteCalls}회.`);
   } finally { await browser.close(); await new Promise(r => server.close(r)); }
 })().catch(e => { console.error(e); process.exitCode = 1; });
