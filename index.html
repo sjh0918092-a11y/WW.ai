@@ -357,7 +357,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.14 · 2026-11-10";
+const APP_VERSION = "v6.15 · 2026-11-10";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -895,6 +895,27 @@ const isHeld = k => !!S.hold && S.hold.key === k && S.hold.wid === S.world?.id;
 const newEntity = (title, type, summary) => ({ title: norm(title), type: type || "", summary: summary || "", facts: [], mentions: [], page: false, box: "" });
 /* 모델이 목록의 유형 표시까지 제목으로 베껴 "김형식(인물)"처럼 쓰는 경우: 원래 이름의 항목이 있으면 그 항목으로 본다 */
 const TYPE_SUFFIX = new RegExp("^(.+?)\\s*[(（]\\s*(?:" + TYPES.join("|") + ")\\s*[)）]$");
+const IDENTITY_LABEL = /^(?:본명|성명|이름|코드명|암호명|제식명|활동명|별칭|별명|가명|정식명(?:칭)?|공식명(?:칭)?|옛이름|이전명칭)$/;
+const identityName = t => norm(stripMarks(t)).normalize("NFKC").toLowerCase().replace(/[‘’'“”"\s]/g, "").replace(/[‐‑‒–—−]/g, "-");
+const protectedEntity = (w, k) => k === w.mainKey || (isStory(w) && (k === w.story.protagonistKey || (w.story.cast || []).some(c => c.key === k)));
+/* 인포박스가 명시한 다른 이름만 읽는다. 탑승자·조종사·운용 장비는 이름으로 취급하지 않는다. */
+function identityOwner(w, title, except) {
+  if (S.world !== w) return null;
+  const name = identityName(title); if (!name) return null;
+  let owner = null;
+  for (const [k, p] of Object.entries(S.pages)) {
+    if (k === except || !w.entities[k] || w.entities[except]?.notSame?.includes(k) || w.entities[k].notSame?.includes(except)) continue;
+    const names = [p.title];
+    for (const row of p.infobox || []) if (IDENTITY_LABEL.test(stripMarks(row.label).replace(/\s/g, ""))) {
+      names.push(row.value);
+      for (const m of String(row.value).matchAll(LINK_RE)) names.push(m[1], m[2] || m[1]);
+    }
+    if (!names.some(n => identityName(n) === name)) continue;
+    if (owner) return null;   // 여러 문서가 같은 이름을 쓰면 자동으로 고르지 않는다
+    owner = k;
+  }
+  return owner;
+}
 /* 성이나 이름 한 단어("벡")가 정확히 한 인물("마커스 벡")의 이름 첫 단어나 끝 단어와 같으면 그 인물의 키 */
 function nameOwner(w, t, except) {
   t = norm(t); if (!t || /\s/.test(t) || t.length > 10) return null;
@@ -910,7 +931,10 @@ function nameOwner(w, t, except) {
 }
 function canonTitle(w, t) {
   t = norm(t); if (!w || !t) return t;
-  const k = keyOf(t); if (w.entities[k]) return t;
+  const k = keyOf(t);
+  if ((S.world === w && S.pages[k]) || protectedEntity(w, k)) return t;
+  const named = identityOwner(w, t, k); if (named) return w.entities[named].title;
+  if (w.entities[k]) return t;
   const al = w.aliases?.[k]; if (al && w.entities[al]) return w.entities[al].title;   // 합쳐진 이름은 남은 항목으로 넘어간다
   const m = TYPE_SUFFIX.exec(t); if (m && w.entities[keyOf(norm(m[1]))]) return norm(m[1]);
   const o = nameOwner(w, t); if (o) return w.entities[o].title;
@@ -1409,14 +1433,14 @@ function redirectBlock(w, key) {
   const e = w.entities[key];
   const pages = Object.entries(S.pages).filter(([k]) => k !== key && w.entities[k] && !e.notSame?.includes(k) && !w.entities[k].notSame?.includes(key))
     .map(([k, p]) => {
-      const o = w.entities[k], names = (p.infobox || []).filter(r => /본명|이름|코드명|암호명|활동명|별칭|별명|가명|정체|정식|옛.?이름/.test(r.label)).map(r => `${r.label}: ${stripMarks(r.value)}`).join(" / ");
-      const facts = o.facts.filter(live).filter(f => /본명|코드명|암호명|별칭|별명|가명|정체|동일/.test(f.t) || f.t.includes(e.title)).slice(-4).map(f => f.t).join(" / ");
+      const o = w.entities[k], names = (p.infobox || []).filter(r => IDENTITY_LABEL.test(stripMarks(r.label).replace(/\s/g, ""))).map(r => `${r.label}: ${stripMarks(r.value)}`).join(" / ");
+      const facts = o.facts.filter(live).filter(f => /본명|코드명|제식명|암호명|별칭|별명|가명|정체|동일/.test(f.t) || f.t.includes(e.title)).slice(-4).map(f => f.t).join(" / ");
       const text = `- ${p.title} (${p.type}): ${p.summary || ""}${names ? "\n  이름 정보: " + names : ""}${facts ? "\n  확정 사실: " + facts : ""}\n  개요: ${firstPara(p)}`;
       return { text, match: text.includes(e.title) ? 1 : 0 };
     }).sort((a, b) => b.match - a.match).slice(0, 80);
   if (!pages.length) return "";
   return `## 같은 대상의 다른 이름인지 먼저 확인
-작성할 이름 「${e.title}」이 아래 기존 문서의 본명, 코드명, 별명, 가명, 약칭, 옛 이름 등으로 이미 확인되면 새 문서를 쓰지 않고 {"redirect":"기존 문서의 정확한 제목"} 하나만 출력한다.
+작성할 이름 「${e.title}」이 아래 기존 문서의 본명, 코드명, 제식명, 별명, 가명, 약칭, 옛 이름 등으로 이미 확인되면 새 문서를 쓰지 않고 {"redirect":"기존 문서의 정확한 제목"} 하나만 출력한다. 제식명이 그 인물 자체를 부르는 이름으로 명시되어 있으면 임시 유형이 '물건'이어도 같은 대상으로 본다. 조종사·탑승자·운용자와 그 장비는 서로 다른 대상이다.
 명시된 이름 정보, 같은 대상이라는 확정 사실과 언급을 근거로 한다. 직업·능력·역할·이름이 비슷하다는 이유만으로 합치거나, 다른 사람의 이름을 새 별명으로 지어내지 않는다. 별개 인물, 동명이인, 같은 코드명을 이어 쓴 다른 사람, 정체가 아직 드러나지 않은 인물은 각각 유지한다. 근거가 부족하거나 후보가 여럿이면 정상 문서를 작성한다. 넘겨줄 대상은 아래에 실제로 작성된 기존 문서여야 하며 자기 자신으로 넘기지 않는다.
 ${pages.map(x => x.text).join("\n")}\n\n`;
 }
@@ -1822,6 +1846,8 @@ async function autoMerge(w) {
   const pairs = [], protect = new Set([w.mainKey, ...(isStory(w) ? [w.story.protagonistKey, ...(w.story.cast || []).map(c => c.key)] : [])]);   // 사용자가 정한 인물은 자동으로 합치지 않는다
   for (const [dk, d] of Object.entries(w.entities)) {
     if (protect.has(dk)) continue;
+    const named = identityOwner(w, d.title, dk), p = S.pages[dk], target = S.pages[named];
+    if (named && (!p || (!p.editedAt && (protect.has(named) || (target.createdAt || 0) < (p.createdAt || 0) || ((target.createdAt || 0) === (p.createdAt || 0) && named < dk))))) { pairs.push([dk, named]); continue; }
     const m = TYPE_SUFFIX.exec(d.title || "");
     if (m) { const bk = keyOf(norm(m[1])); if (bk !== dk && w.entities[bk]) { pairs.push([dk, bk]); continue; } }
     if (!S.pages[dk] && (!d.type || d.type === "인물")) { const bk = nameOwner(w, d.title, dk); if (bk) pairs.push([dk, bk]); }
@@ -1936,8 +1962,22 @@ function openEntity(k) {
   renderAll(); window.scrollTo({ top: 0 });
 }
 
+async function followRedirect(w, k, to) {
+  const from = w.entities[k].title, title = w.entities[to].title;
+  try { await mergeEntities(w, [[k, to]]); }
+  finally { if (S.gen?.wid === w.id && S.gen.key === k) S.gen = null; }
+  S.genErr = null;
+  if (S.world !== w) return;
+  if (S.view.name === "article" && S.view.key === k) openEntity(to); else renderAll();
+  toast(`「${from}」은(는) 「${title}」의 다른 이름입니다. 기존 문서로 연결했습니다.`);
+}
 async function generatePage(k, rewrite, direction) {
   const w = S.world; const e = w.entities[k];
+  const named = !rewrite && !S.pages[k] && !protectedEntity(w, k) ? identityOwner(w, e.title, k) : null;
+  if (named && !S.gen && !S.storyGen && !S.syncing && !S.edit) {
+    S.gen = { key: k, wid: w.id, title: e.title, raw: "", t0: performance.now(), ctl: new AbortController() };
+    await followRedirect(w, k, named); return;
+  }
   if (!S.sample) { S.genErr = { key: k, msg: ERR.no_sample }; S.view = { name: "article", key: k }; renderAll(); return; }
   if (S.gen) { toast(`「${S.gen.title}」 문서를 작성하는 중입니다.`); return; }
   if (S.storyGen) { toast("다음 장을 쓰는 중입니다. 끝난 뒤 작성해 주세요."); return; }
@@ -1961,12 +2001,8 @@ async function generatePage(k, rewrite, direction) {
       const to = title ? Object.keys(w.entities).find(x => w.entities[x].title === title) || w.aliases?.[keyOf(title)] : null, target = w.entities[to];
       const protectedKey = k === w.mainKey || (isStory(w) && (k === w.story.protagonistKey || (w.story.cast || []).some(c => c.key === k)));
       if (rewrite || S.world !== w || S.pages[k] || protectedKey || !target || to === k || !S.pages[to]
-        || (e.type && (target.type || S.pages[to].type) && e.type !== (target.type || S.pages[to].type)) || e.notSame?.includes(to) || target.notSame?.includes(k)) throw { code: "bad_page" };
-      const from = e.title;
-      await mergeEntities(w, [[k, to]]);
-      S.gen = null; S.genErr = null;
-      if (S.view.name === "article" && S.view.key === k) openEntity(to); else renderAll();
-      toast(`「${from}」은(는) 「${target.title}」의 다른 이름입니다. 기존 문서로 연결했습니다.`);
+        || (e.type && (target.type || S.pages[to].type) && e.type !== (target.type || S.pages[to].type) && identityOwner(w, e.title, k) !== to) || e.notSame?.includes(to) || target.notSame?.includes(k)) throw { code: "bad_page" };
+      await followRedirect(w, k, to);
       return;
     }
     if (out && out.notFound === true && e.src === "search") {
@@ -3389,7 +3425,7 @@ function articleHtml(k) {
     : miss.length ? `<p class="memo-line"><span class="dot"></span>${miss.join(", ")}장의 변화를 반영할 차례를 기다리는 중</p>` : "";
   const cardHtml = card ? storyCardHtml(w, card.n) : "";
   const fixed = k === w.mainKey || k === pk;
-  const twin = !fixed && (!e.type || e.type === "인물") ? nameOwner(w, e.title, k) : null;
+  const twin = !fixed ? identityOwner(w, e.title, k) || ((!e.type || e.type === "인물") ? nameOwner(w, e.title, k) : null) : null;
   const twinHtml = twin && !(e.notSame || []).includes(twin) ? `<div class="banner warn">「${esc(w.entities[twin].title)}」과(와) 같은 대상인가요? 합치면 「${esc(e.title)}」 링크는 모두 「${esc(w.entities[twin].title)}」 문서로 넘어갑니다. ${S.pages[twin] ? `이 문서는 지워지고 「${esc(w.entities[twin].title)}」 문서가 남습니다. 다른 문서들이 이 항목에 대해 확정한 내용은 옮겨집니다.` : `이 문서가 「${esc(w.entities[twin].title)}」 문서가 됩니다.`}
     <div class="row" style="margin-top:6px"><button type="button" class="btn" data-mgdo="${k}" data-mgto="${twin}" ${S.gen || S.storyGen || S.syncing ? "disabled" : ""}>같은 대상이니 합치기</button><button type="button" class="btn" data-notsame="${k}" data-other="${twin}">다른 대상입니다</button></div></div>` : "";
   const mergeBox = S.confirmMerge === k ? `<div class="rwbox">
@@ -3678,7 +3714,7 @@ function renderSugg() {
   if (!w || !q) { box.hidden = true; box.innerHTML = ""; return; }
   const ql = q.toLowerCase();
   const hits = Object.entries(w.entities).filter(([, o]) => o.title.toLowerCase().includes(ql)).sort((a, b) => (b[1].page - a[1].page) || a[1].title.length - b[1].title.length).slice(0, 7);
-  const alias = w.aliases?.[keyOf(q)];
+  const alias = w.aliases?.[keyOf(q)] || identityOwner(w, q, keyOf(q));
   if (alias && w.entities[alias] && !hits.some(([k]) => k === alias)) hits.unshift([alias, w.entities[alias]]);
   const exact = hits.some(([, o]) => o.title.toLowerCase() === ql) || !!(alias && w.entities[alias]);
   box.innerHTML = hits.map(([k, o]) => `<button type="button" data-sk="${k}"><span>${esc(o.title)}</span><small>${k === alias ? esc(q) + "에서 넘겨옴" : o.page ? "문서" : "미작성"}</small></button>`).join("")

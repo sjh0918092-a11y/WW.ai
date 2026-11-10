@@ -844,7 +844,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     /* 37. 본명과 코드명이 같은 대상이면 생성 응답으로 기존 문서에 넘긴다 */
     await page.click('#side [data-act="gset"]'); await page.check("#gPre"); await page.click('[data-act="gset-save"]');
     await page.click('#side [data-act="home"]'); await page.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(page, "대문 항목");
-    ctl.pageOverride["이도현"] = { type: "인물", summary: "코드명 적비로 활동하는 통신원이다.", infobox: [{ label: "성별", value: "남성" }, { label: "본명", value: "이도현" }, { label: "코드명", value: "적비" }], sections: [{ heading: "개요", level: 1, body: "이도현은 적비라는 코드명으로 활동하는 통신원이다." }] };
+    ctl.pageOverride["이도현"] = { type: "인물", summary: "코드명 적비로 활동하는 통신원이다.", infobox: [{ label: "성별", value: "남성" }, { label: "본명", value: "이도현" }, { label: "통신 식별", value: "적비" }], sections: [{ heading: "개요", level: 1, body: "이도현은 적비라는 코드명으로 활동하는 통신원이다." }] };
     await page.fill("#q", "이도현"); await page.press("#q", "Enter"); await waitArticle(page, "이도현");
     await page.locator("[data-portrait-file]").setInputFiles({ name: "profile.png", mimeType: "image/png", buffer: portraitPng }); await page.waitForSelector(".portrait img");
     ctl.pageOverride["통신 기록"] = { sections: [{ heading: "개요", level: 1, body: "[[적비]]와 교신했다. [[위성 신호]]는 별도의 통신 조직이다." }], newEntities: [{ title: "적비", type: "인물", summary: "이도현의 코드명" }, { title: "위성 신호", type: "조직", summary: "독립적인 통신 조직" }] };
@@ -863,7 +863,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert.deepStrictEqual(await pageOf(page, redirWorld, "이도현"), canonicalBefore, "기존 문서 본문·프로필 이미지·검사 결과를 보존한다");
     assert((await pageOf(page, redirWorld, "통신 기록")).sections[0].body.includes("[[이도현|적비]]"), "기존 링크는 보이는 코드명을 유지하고 본명 문서로 연결한다");
     const redirPrompt = calls.filter(c => c.kind === "page").pop().prompt;
-    assert(redirPrompt.includes("같은 대상의 다른 이름인지 먼저 확인") && redirPrompt.includes("코드명: 적비") && redirPrompt.includes('"redirect"'), "기존 인포박스의 명시적 이름 정보를 생성 프롬프트에 제공한다");
+    assert(redirPrompt.includes("같은 대상의 다른 이름인지 먼저 확인") && redirPrompt.includes("코드명 적비") && redirPrompt.includes('"redirect"'), "기존 인포박스의 명시적 이름 정보를 생성 프롬프트에 제공한다");
     await page.fill("#q", "적비"); await page.press("#q", "Enter"); await waitArticle(page, "이도현");
     await page.fill("#q", "적비");
     assert((await page.locator("#sugg").innerText()).includes("적비에서 넘겨옴"));
@@ -912,6 +912,61 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert(!calls.filter(c => c.kind === "page").pop().prompt.includes("- 이도현 (인물):"), "별개라고 구분된 인물은 넘겨주기 후보에서도 제외한다");
     await redirBrowser.ctx.close();
     ok("넘겨주기는 백업 복원 뒤에도 유지되고 별개 인물 지정은 자동 합치기보다 우선한다");
+
+    /* 40. 인물의 제식명이 물건으로 잘못 분류된 스크린샷 사례 */
+    await page.click('#side [data-act="home"]'); await page.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(page, "대문 항목");
+    const designation = "Type-12 ‘비천’";
+    ctl.pageOverride["전략 기록"] = { sections: [{ heading: "개요", level: 1, body: "[[저우란]]과 [[Type-12 ‘비천’]]이 기록되어 있다. [[실제 장비]]도 있다." }], newEntities: [{ title: "저우란", type: "인물", summary: "전략체 요원" }, { title: designation, type: "물건", summary: "저우란이 운용하는 전략체로 잘못 적힌 제식명" }, { title: "실제 장비", type: "물건", summary: "저우란이 운용하는 별도의 장비" }] };
+    await page.fill("#q", "전략 기록"); await page.press("#q", "Enter"); await waitArticle(page, "전략 기록");
+    const before40 = await worldOf(page, "기본 세계"), designationKey = Object.keys(before40.entities).find(k => before40.entities[k].title === designation);
+    assert.strictEqual(before40.entities[designationKey].type, "물건");
+    ctl.pageOverride["저우란"] = { type: "인물", summary: "제식명 비천인 전략체 요원이다.", infobox: [{ label: "본명", value: "저우란(周岚)" }, { label: "성별", value: "여성" }, { label: "제식명", value: "Type-12 '비천'" }, { label: "운용 장비", value: "실제 장비" }], sections: [{ heading: "개요", level: 1, body: "저우란은 Type-12 비천이라는 제식명으로 불린다." }] };
+    await page.fill("#q", "저우란"); await page.press("#q", "Enter"); await waitArticle(page, "저우란");
+    await page.locator("[data-portrait-file]").setInputFiles({ name: "profile.png", mimeType: "image/png", buffer: portraitPng }); await page.waitForSelector(".portrait img");
+    const zhouWorld = await worldOf(page, "기본 세계"), zhouKey = Object.keys(zhouWorld.entities).find(k => zhouWorld.entities[k].title === "저우란"), zhouPage = await pageOf(page, zhouWorld, "저우란");
+    const pages40 = count("page"), audits40 = audits();
+    await page.fill("#q", designation); await page.press("#q", "Enter"); await waitArticle(page, "저우란");
+    assert.strictEqual(count("page"), pages40, "유형이 물건이어도 명시된 제식명은 AI를 호출하기 전에 넘긴다");
+    assert.strictEqual(audits(), audits40);
+    const after40 = await worldOf(page, "기본 세계");
+    assert(!after40.entities[designationKey] && after40.aliases[designationKey] === zhouKey, "잘못 분류된 제식명 항목도 같은 인물에 합친다");
+    assert.deepStrictEqual(await pageOf(page, after40, "저우란"), zhouPage, "본문과 프로필 사진은 그대로 둔다");
+    assert((await pageOf(page, after40, "전략 기록")).sections[0].body.includes("[[저우란|Type-12 ‘비천’]]"), "곡선 따옴표와 직선 따옴표도 같은 제식명으로 처리한다");
+    await page.fill("#q", "Type-12 '비천'"); await page.press("#q", "Enter"); await waitArticle(page, "저우란");
+    assert.strictEqual(count("page"), pages40);
+    ctl.pageOverride["실제 장비"] = { type: "물건", infobox: [{ label: "조종사", value: "저우란" }], sections: [{ heading: "개요", level: 1, body: "저우란이 조종하는 별도의 장비다." }] };
+    await page.fill("#q", "실제 장비"); await page.press("#q", "Enter"); await waitArticle(page, "실제 장비");
+    assert.strictEqual(count("page"), pages40 + 1, "운용 장비와 조종사는 자동으로 같은 대상으로 합치지 않는다");
+    ok("물건으로 오분류된 제식명도 AI 없이 인물로 넘기며 조종 장비는 별도로 유지한다");
+
+    /* 41. 이전 버전이 만든 중복 문서는 재열기 때 정리하고 직접 편집한 문서는 보존 */
+    await page.click('#side [data-act="gset"]');
+    const [legacyDl] = await Promise.all([page.waitForEvent("download"), page.click('[data-act="export"]')]);
+    const legacyFile = path.join(os.tmpdir(), "ww-designation-backup.json"); await legacyDl.saveAs(legacyFile);
+    const legacyData = JSON.parse(fs.readFileSync(legacyFile, "utf8")), legacyWorld = legacyData.worlds.find(w => w.title === "기본 세계"), legacyPages = legacyData.pages[legacyWorld.id];
+    delete legacyWorld.aliases[designationKey];
+    legacyWorld.entities[designationKey] = { title: designation, type: "물건", summary: "예전 버전의 중복 문서", facts: [], mentions: [], page: true, box: "" };
+    legacyPages[designationKey] = { ...JSON.parse(JSON.stringify(legacyPages[zhouKey])), key: designationKey, title: designation, type: "물건", infobox: [], createdAt: legacyPages[zhouKey].createdAt + 1, sections: [{ heading: "개요", level: 1, body: "예전 버전이 따로 작성한 중복 본문이다." }] };
+    delete legacyPages[designationKey].portrait;
+    for (const edited of [false, true]) {
+      const importData = JSON.parse(JSON.stringify(legacyData));
+      if (edited) importData.pages[legacyWorld.id][designationKey].editedAt = Date.now();
+      const lb = await newPage(browser), lp = lb.page;
+      await lp.goto(URL_); await lp.waitForSelector("#seedTa"); await lp.click('[data-act="gset"]');
+      await lp.setInputFiles("#importFile", { name: "legacy.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(importData)) });
+      await lp.waitForFunction(() => document.querySelector("#toast")?.textContent.includes("가져왔습니다"));
+      await lp.click('#side [data-act="home"]'); await lp.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(lp, "대문 항목");
+      const lw = await worldOf(lp, "기본 세계");
+      assert.strictEqual(!!lw.entities[designationKey], edited, "AI 중복 문서는 정리하고 직접 편집한 문서는 보존한다");
+      if (!edited) assert.strictEqual(lw.aliases[designationKey], zhouKey);
+      assert.strictEqual((await pageOf(lp, lw, "저우란")).portrait, zhouPage.portrait);
+      if (edited) {
+        await lp.fill("#q", designation); await lp.press("#q", "Enter"); await waitArticle(lp, designation);
+        assert((await lp.locator("#main").innerText()).includes("「저우란」과(와) 같은 대상인가요?"), "직접 편집한 중복은 유형이 달라도 합치기 안내를 제공한다");
+      }
+      await lb.ctx.close();
+    }
+    ok("이전 버전의 생성 중복은 자동 정리하고 직접 편집한 문서는 사진과 함께 보존한다");
 
     await ctx.close();
     console.log(`\n모두 통과 (${step}개). Gemini 호출 ${calls.length}회: ` + Object.entries(calls.reduce((a, c) => (a[c.kind] = (a[c.kind] || 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));
