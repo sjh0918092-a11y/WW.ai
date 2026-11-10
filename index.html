@@ -379,7 +379,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.22 · 2026-11-10";
+const APP_VERSION = "v6.23 · 2026-11-10";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -895,15 +895,33 @@ const Sync = {
 };
 
 /* ---------- 백업 ---------- */
+function downloadBackup(worlds, pages, filename) {
+  const data = { app: "worldwiki", version: 1, exportedAt: new Date().toISOString(), worlds, pages };
+  const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+  const a = document.createElement("a"); const url = URL.createObjectURL(blob); a.href = url;
+  a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
 async function exportAll() {
   const pages = {};
   for (const w of S.worlds) pages[w.id] = S.world && S.world.id === w.id ? S.pages : await Store.listPages(w.id);
-  const data = { app: "worldwiki", version: 1, exportedAt: new Date().toISOString(), worlds: S.worlds, pages };
-  const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
-  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
-  a.download = `worldwiki-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  downloadBackup(S.worlds, pages, `worldwiki-backup-${new Date().toISOString().slice(0, 10)}.json`);
   toast(`세계관 ${S.worlds.length}개를 내보냈습니다.`);
+}
+function exportWorld() {
+  const w = S.world; if (!w) return;
+  const opts = S.worldExports[w.id] || { images: true, stories: true };
+  const pages = {};
+  for (const [key, p] of Object.entries(S.pages)) {
+    const copy = { ...p };
+    if (!opts.images) delete copy.portrait;
+    if (!opts.stories) delete copy.shortStories;
+    else if (!opts.images && Array.isArray(copy.shortStories)) copy.shortStories = copy.shortStories.map(story => { const out = { ...story }; delete out.illustration; return out; });
+    pages[key] = copy;
+  }
+  const title = String(w.title || "world").replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").trim().slice(0, 60) || "world";
+  downloadBackup([w], { [w.id]: pages }, `worldwiki-${title}-${new Date().toISOString().slice(0, 10)}.json`);
+  toast(`「${w.title}」 세계관을 내보냈습니다.`);
 }
 async function importAll(file) {
   let data; try { data = JSON.parse(await file.text()); } catch { toast("JSON 파일을 읽지 못했습니다."); return; }
@@ -927,7 +945,7 @@ const S = {
   ready: false, worlds: [], world: null, pages: {}, view: { name: "home" }, recent: [],
   gen: null, genErr: null, checking: null, sample: null, sampleReady: false,
   creating: false, createErr: null, seed: "", seedTab: "own", ownSeed: "", dice: null, whatIfs: null, first: "", guideIn: "",
-  confirmDel: null, confirmRewrite: null, canonFilter: "all", focusEnt: null, nf: new Set(),
+  worldExports: Object.create(null), confirmDel: null, confirmRewrite: null, canonFilter: "all", focusEnt: null, nf: new Set(),
   edit: null, refreshing: null, confirmDelPage: null, confirmMerge: null, compose: null, portraitJob: null, imageGen: null, proseGen: null,
   mode: "basic", storyN: 5, protoDesc: "", cast: [], regen: null, storyGen: null, syncQ: [], syncing: null, syncErr: null, hold: null, adv: null, storyCard: null
 };
@@ -4070,6 +4088,7 @@ function epilogueHtml() {
 }
 
 function canonHtml() {
+  const ex = S.worldExports[S.world.id] || { images: true, stories: true };
   const w = S.world; const ents = Object.entries(w.entities);
   const f = S.canonFilter;
   const shown = ents.filter(([, o]) => f === "all" || (f === "done" ? o.page : !o.page)).sort((a, b) => a[1].title.localeCompare(b[1].title, "ko"));
@@ -4117,6 +4136,14 @@ function canonHtml() {
       ${o.summary ? `<p style="margin:6px 0 0 22px">${esc(o.summary)}</p>` : ""}
       <ul>${o.facts.map(x => `<li>${x.sup ? `<del>${esc(x.t)}</del>` : esc(x.t)} <span class="src">· ${esc(srcTitle(w, x.src, "사용자"))}${S.pages[x.src]?.editedAt ? " (직접 수정)" : ""}${x.sup ? ` · 「${esc(w.entities[x.sup.by]?.title || "?")}」 수정으로 대체됨` : ""}</span></li>`).join("")}${o.mentions.map(x => `<li>${x.sup ? `<del>“${esc(x.text)}”</del>` : `“${esc(x.text)}”`} <span class="src">· 「${esc(w.entities[x.from]?.title || "?")}」${x.sup ? ` · 「${esc(w.entities[x.sup.by]?.title || "?")}」 수정으로 대체됨` : ""}</span></li>`).join("")}</ul>
       <div style="margin:4px 0 6px 22px">${linkHtml(o.title, o.page ? "문서 열기" : "문서 작성하기")}</div></details>`).join("")}
+    <section id="worldExport" aria-labelledby="worldExportTitle" style="margin-top:28px;border-top:1px solid var(--line);padding-top:8px">
+      <h2 id="worldExportTitle">이 세계관 내보내기</h2>
+      <p class="note">「${esc(w.title)}」의 설정과 문서만 JSON 파일로 내보냅니다. 설정을 수정했다면 위의 ‘설정 저장’을 누른 뒤 내보내 주세요.</p>
+      <label class="lb" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="exportWorldImages" data-world-export="images" ${ex.images ? "checked" : ""}>이미지 포함 (문서 이미지·단편 삽화)</label>
+      <label class="lb" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="exportWorldStories" data-world-export="stories" ${ex.stories ? "checked" : ""}>단편 포함</label>
+      <p class="note">단편을 제외하면 단편 삽화도 제외됩니다. 선택은 내보낼 파일에만 적용하며 원래 데이터는 지우지 않습니다. AI 연결 설정의 ‘가져오기’로 복원할 수 있습니다.</p>
+      <div class="row"><button type="button" class="btn pri" data-act="export-world">이 세계관 내보내기</button></div>
+    </section>
   </div>`;
 }
 
@@ -4268,6 +4295,7 @@ document.addEventListener("click", ev => {
       try { S.gmodels = await listGeminiModels(); S.gres = `텍스트 생성 모델 ${S.gmodels.length}개를 불러왔습니다. 모델 칸을 누르면 고를 수 있습니다.`; renderMain(); }
       catch (e) { setGres("불러오지 못했습니다. " + errMsg(e)); }
     })(); break;
+    case "export-world": try { exportWorld(); } catch (e) { toast("내보내지 못했습니다. " + errMsg(e)); } break;
     case "export": exportAll().catch(e => toast("내보내지 못했습니다. " + errMsg(e))); break;
     case "import": $("#importFile")?.click(); break;
     case "log-back": S.view = S.world ? { name: "article", key: (S.recent.find(x => S.world.entities[x]) || S.world.mainKey) } : { name: "home" }; renderAll(); break;
@@ -4376,6 +4404,7 @@ $("#searchForm").addEventListener("submit", ev => {
   if (hit) { $("#q").value = ""; $("#sugg").hidden = true; openEntity(hit[0]); } else goSearch(q);
 });
 document.addEventListener("change", ev => {
+  if (ev.target.dataset?.worldExport && S.world) { const field = ev.target.dataset.worldExport; if (["images", "stories"].includes(field)) (S.worldExports[S.world.id] ||= { images: true, stories: true })[field] = ev.target.checked; return; }
   if (ev.target.matches?.("[data-prose-ref-files]")) { const files = Array.from(ev.target.files || []); ev.target.value = ""; addProseReferences(files); return; }
   if (ev.target.dataset?.proseRefRole && S.proseGen?.illustration && !S.proseGen.busy) { const ref = S.proseGen.illustration.refs?.find(r => r.id === ev.target.dataset.proseRefRole); if (ref && PROSE_REF_ROLES[ev.target.value]) ref.role = ev.target.value; return; }
   if (ev.target.dataset?.proseImage === "model" && S.proseGen?.illustration && !S.proseGen.busy) { S.proseGen.illustration.opts.model = ev.target.value; renderMain(); return; }
