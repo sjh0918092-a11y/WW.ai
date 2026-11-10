@@ -59,7 +59,7 @@ function answer(kind, p) {
     secrets: [{ truth: "한서린은 녹둔도 습격 때 성문을 연 장본인이다", cover: "습격의 유일한 생존자로 알려져 있다", reveal: 3 }],
     spine: ["발단", "전개", "위기", "절정", "결말"].map((beat, i) => ({ n: i + 1, beat, intent: `${beat} 의도` })), chapter1: { title: "녹둔도의 밤", era: "1586년", summary: "1장 줄거리.", incident: "녹둔도 습격", nextChoices: ["추격한다", "보고한다", "숨는다"] } };
   if (kind === "bible") return { ...BASE, title: "기본 세계", era: "1600년", mainTitle: "대문 항목" };
-  if (kind === "page") { const t = (/## 작성할 문서: 「([^」]+)」/.exec(p) || [])[1]; return { ...pageJson(t), ...(ctl.pageOverride[t] || {}) }; }
+  if (kind === "page") { const t = (/## 작성할 문서: 「([^」]+)」/.exec(p) || [])[1]; return Object.prototype.hasOwnProperty.call(ctl.pageOverride[t] || {}, "redirect") ? ctl.pageOverride[t] : { ...pageJson(t), ...(ctl.pageOverride[t] || {}) }; }
   if (kind === "chapterPlan") return ctl.planBad ? { title: "불완전" } : planJson(p);
   if (kind === "chapterBlock") return blockJson(p);
   if (kind === "check") return { issues: ctl.checkIssues || [] };
@@ -840,6 +840,78 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await page.click("[data-check]"); await page.waitForSelector("[data-check]:not([disabled])");
     assert.strictEqual(audits(), n36 + 2, "자동 검사 설정과 무관하게 수동 검사는 가능하다");
     ok("자동 검사 설정을 끄면 수동으로 요청할 때만 검사한다");
+
+    /* 37. 본명과 코드명이 같은 대상이면 생성 응답으로 기존 문서에 넘긴다 */
+    await page.click('#side [data-act="gset"]'); await page.check("#gPre"); await page.click('[data-act="gset-save"]');
+    await page.click('#side [data-act="home"]'); await page.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(page, "대문 항목");
+    ctl.pageOverride["이도현"] = { type: "인물", summary: "코드명 적비로 활동하는 통신원이다.", infobox: [{ label: "성별", value: "남성" }, { label: "본명", value: "이도현" }, { label: "코드명", value: "적비" }], sections: [{ heading: "개요", level: 1, body: "이도현은 적비라는 코드명으로 활동하는 통신원이다." }] };
+    await page.fill("#q", "이도현"); await page.press("#q", "Enter"); await waitArticle(page, "이도현");
+    await page.locator("[data-portrait-file]").setInputFiles({ name: "profile.png", mimeType: "image/png", buffer: portraitPng }); await page.waitForSelector(".portrait img");
+    ctl.pageOverride["통신 기록"] = { sections: [{ heading: "개요", level: 1, body: "[[적비]]와 교신했다. [[위성 신호]]는 별도의 통신 조직이다." }], newEntities: [{ title: "적비", type: "인물", summary: "이도현의 코드명" }, { title: "위성 신호", type: "조직", summary: "독립적인 통신 조직" }] };
+    await page.fill("#q", "통신 기록"); await page.press("#q", "Enter"); await waitArticle(page, "통신 기록");
+    let redirWorld = await worldOf(page, "기본 세계");
+    const canonicalKey = Object.keys(redirWorld.entities).find(k => redirWorld.entities[k].title === "이도현");
+    const aliasKey = await page.locator('a.wl.new[data-t="적비"]').getAttribute("data-k");
+    const canonicalBefore = await pageOf(page, redirWorld, "이도현"), redirCalls = count("page"), redirAudits = audits();
+    ctl.pageOverride["적비"] = { redirect: "이도현" };
+    await page.locator('a.wl.new[data-t="적비"]').click(); await waitArticle(page, "이도현");
+    assert.strictEqual(count("page"), redirCalls + 1, "기존 생성 호출의 응답으로 넘겨주며 판별용 AI 호출을 추가하지 않는다");
+    assert.strictEqual(audits(), redirAudits, "넘겨주기에는 새 문서 검사도 하지 않는다");
+    redirWorld = await worldOf(page, "기본 세계");
+    assert.strictEqual(redirWorld.aliases[aliasKey], canonicalKey);
+    assert(!redirWorld.entities[aliasKey] && !(await idbAll(page)).some(([key]) => key === `p:${redirWorld.id}:${aliasKey}`), "코드명의 별도 문서와 항목을 만들지 않는다");
+    assert.deepStrictEqual(await pageOf(page, redirWorld, "이도현"), canonicalBefore, "기존 문서 본문·프로필 이미지·검사 결과를 보존한다");
+    assert((await pageOf(page, redirWorld, "통신 기록")).sections[0].body.includes("[[이도현|적비]]"), "기존 링크는 보이는 코드명을 유지하고 본명 문서로 연결한다");
+    const redirPrompt = calls.filter(c => c.kind === "page").pop().prompt;
+    assert(redirPrompt.includes("같은 대상의 다른 이름인지 먼저 확인") && redirPrompt.includes("코드명: 적비") && redirPrompt.includes('"redirect"'), "기존 인포박스의 명시적 이름 정보를 생성 프롬프트에 제공한다");
+    await page.fill("#q", "적비"); await page.press("#q", "Enter"); await waitArticle(page, "이도현");
+    await page.fill("#q", "적비");
+    assert((await page.locator("#sugg").innerText()).includes("적비에서 넘겨옴"));
+    assert.strictEqual(await page.locator("[data-scompose]").count(), 0, "알려진 별칭은 새 문서 작성 후보로 표시하지 않는다");
+    await page.locator(`[data-sk="${canonicalKey}"]`).click(); await waitArticle(page, "이도현");
+    assert.strictEqual(count("page"), redirCalls + 1, "별칭 검색과 검색 후보는 기존 문서로 바로 이동한다");
+    await page.reload(); await page.waitForSelector(".wcard"); await page.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(page, "대문 항목");
+    await page.fill("#q", "적비"); await page.press("#q", "Enter"); await waitArticle(page, "이도현");
+    assert.strictEqual(count("page"), redirCalls + 1, "넘겨주기는 새로고침 후에도 유지된다");
+    ok("본명·코드명은 생성 단계에서 기존 문서로 넘기고 별칭·링크·이미지를 보존한다");
+
+    /* 38. 유효하지 않은 넘겨주기는 기존 문서를 손상시키지 않는다 */
+    for (const [from, to] of [["없는 대상 별칭", "없는 대상"], ["자기 별칭", "자기 별칭"], ["위성 신호", "이도현"]]) {
+      ctl.pageOverride[from] = { redirect: to };
+      await page.fill("#q", from); await page.press("#q", "Enter"); await page.waitForSelector("[data-gen]");
+      const rw38 = await worldOf(page, "기본 세계"), fromKey = await page.locator("[data-gen]").getAttribute("data-gen");
+      assert(!rw38.aliases[fromKey] && !(await pageOf(page, rw38, from)), "없는 대상·자기 자신·다른 유형으로의 넘겨주기를 거절한다: " + from);
+      assert.deepStrictEqual(await pageOf(page, rw38, "이도현"), canonicalBefore);
+    }
+    await page.fill("#q", "이도현"); await page.press("#q", "Enter"); await waitArticle(page, "이도현");
+    ctl.pageOverride["이도현"] = { redirect: "대문 항목" };
+    await page.locator("[data-rw]").first().click(); await page.click("[data-rw-yes]"); await waitArticle(page, "이도현");
+    assert.deepStrictEqual(await pageOf(page, await worldOf(page, "기본 세계"), "이도현"), canonicalBefore, "기존 문서 다시 쓰기 응답으로 넘겨주기를 보내도 원래 문서를 보존한다");
+    ok("잘못된 대상·자기 자신·유형 충돌·다시 쓰기의 넘겨주기는 거절하고 기존 문서를 지킨다");
+
+    /* 39. 넘겨주기는 백업에도 보존하며 사용자가 별개로 구분한 인물은 합치지 않는다 */
+    await page.click('#side [data-act="gset"]');
+    const [redirDownload] = await Promise.all([page.waitForEvent("download"), page.click('[data-act="export"]')]);
+    const redirFile = path.join(os.tmpdir(), "ww-redirect-backup.json"); await redirDownload.saveAs(redirFile);
+    const redirBackup = JSON.parse(fs.readFileSync(redirFile, "utf8"));
+    const redirBackupWorld = redirBackup.worlds.find(w => w.title === "기본 세계");
+    assert.strictEqual(redirBackupWorld.aliases[aliasKey], canonicalKey);
+    redirBackupWorld.entities.eDistinct = { title: "금빛 여우", type: "인물", summary: "이도현과 별개인 인물", facts: [], mentions: [], page: false, box: "", notSame: [canonicalKey] };
+    fs.writeFileSync(redirFile, JSON.stringify(redirBackup));
+    ctl.pageOverride["금빛 여우"] = { redirect: "이도현" };
+    const redirBrowser = await newPage(browser), redirPage = redirBrowser.page;
+    await redirPage.goto(URL_); await redirPage.waitForSelector("#seedTa");
+    await redirPage.click('[data-act="gset"]'); await redirPage.setInputFiles("#importFile", redirFile);
+    await redirPage.waitForFunction(() => document.querySelector("#toast")?.textContent.includes("가져왔습니다"));
+    await redirPage.click('#side [data-act="home"]'); await redirPage.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(redirPage, "대문 항목");
+    await redirPage.fill("#q", "적비"); await redirPage.press("#q", "Enter"); await waitArticle(redirPage, "이도현");
+    assert.strictEqual(await redirPage.locator(".portrait img").getAttribute("src"), canonicalBefore.portrait, "별칭과 프로필 이미지는 다른 브라우저의 백업 복원 뒤에도 유지된다");
+    await redirPage.fill("#q", "금빛 여우"); await redirPage.press("#q", "Enter"); await redirPage.waitForSelector("[data-gen]");
+    const distinctWorld = await worldOf(redirPage, "기본 세계");
+    assert(distinctWorld.entities.eDistinct && !distinctWorld.aliases.eDistinct, "사용자가 별개라고 정한 인물은 AI가 넘겨주기를 보내도 합치지 않는다");
+    assert(!calls.filter(c => c.kind === "page").pop().prompt.includes("- 이도현 (인물):"), "별개라고 구분된 인물은 넘겨주기 후보에서도 제외한다");
+    await redirBrowser.ctx.close();
+    ok("넘겨주기는 백업 복원 뒤에도 유지되고 별개 인물 지정은 자동 합치기보다 우선한다");
 
     await ctx.close();
     console.log(`\n모두 통과 (${step}개). Gemini 호출 ${calls.length}회: ` + Object.entries(calls.reduce((a, c) => (a[c.kind] = (a[c.kind] || 0) + 1, a), {})).map(([k, v]) => `${k} ${v}`).join(", "));

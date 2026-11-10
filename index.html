@@ -357,7 +357,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.13 · 2026-11-10";
+const APP_VERSION = "v6.14 · 2026-11-10";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1404,6 +1404,22 @@ function structureFor(text, ty) {
   if (!ty) return text;
   return text.split("\n").filter(l => { const m = l.match(/^  - ([^:]+):/); return !m || !STRUCT_KEYS[m[1]] || STRUCT_KEYS[m[1]].includes(ty); }).join("\n");
 }
+function redirectBlock(w, key) {
+  if (key === w.mainKey || (isStory(w) && (key === w.story.protagonistKey || (w.story.cast || []).some(c => c.key === key)))) return "";
+  const e = w.entities[key];
+  const pages = Object.entries(S.pages).filter(([k]) => k !== key && w.entities[k] && !e.notSame?.includes(k) && !w.entities[k].notSame?.includes(key))
+    .map(([k, p]) => {
+      const o = w.entities[k], names = (p.infobox || []).filter(r => /본명|이름|코드명|암호명|활동명|별칭|별명|가명|정체|정식|옛.?이름/.test(r.label)).map(r => `${r.label}: ${stripMarks(r.value)}`).join(" / ");
+      const facts = o.facts.filter(live).filter(f => /본명|코드명|암호명|별칭|별명|가명|정체|동일/.test(f.t) || f.t.includes(e.title)).slice(-4).map(f => f.t).join(" / ");
+      const text = `- ${p.title} (${p.type}): ${p.summary || ""}${names ? "\n  이름 정보: " + names : ""}${facts ? "\n  확정 사실: " + facts : ""}\n  개요: ${firstPara(p)}`;
+      return { text, match: text.includes(e.title) ? 1 : 0 };
+    }).sort((a, b) => b.match - a.match).slice(0, 80);
+  if (!pages.length) return "";
+  return `## 같은 대상의 다른 이름인지 먼저 확인
+작성할 이름 「${e.title}」이 아래 기존 문서의 본명, 코드명, 별명, 가명, 약칭, 옛 이름 등으로 이미 확인되면 새 문서를 쓰지 않고 {"redirect":"기존 문서의 정확한 제목"} 하나만 출력한다.
+명시된 이름 정보, 같은 대상이라는 확정 사실과 언급을 근거로 한다. 직업·능력·역할·이름이 비슷하다는 이유만으로 합치거나, 다른 사람의 이름을 새 별명으로 지어내지 않는다. 별개 인물, 동명이인, 같은 코드명을 이어 쓴 다른 사람, 정체가 아직 드러나지 않은 인물은 각각 유지한다. 근거가 부족하거나 후보가 여럿이면 정상 문서를 작성한다. 넘겨줄 대상은 아래에 실제로 작성된 기존 문서여야 하며 자기 자신으로 넘기지 않는다.
+${pages.map(x => x.text).join("\n")}\n\n`;
+}
 function pagePrompt(w, key, rewriteDir = null, guide = "") {
   const e = w.entities[key];
   const ty = TYPES.includes(e.type) ? e.type : "";
@@ -1433,6 +1449,7 @@ ${w.guide}
 
 ` : ""}## 작성할 문서: 「${e.title}」
 ${target}
+${rewriteDir === null ? redirectBlock(w, key) : ""}
 ${(() => { const nbs = navboxesFor(w, key).filter(([, nb]) => nb.src !== key); return nbs.length ? `\n이 항목은 아래 틀에 속해 있다. 이름, 번호, 역할, 전·현직 여부와 다른 구성원과의 관계를 틀과 정확히 일치시킨다. 이 틀을 다시 만들지 않는다.\n${nbs.map(([, nb]) => navboxText(nb)).join("\n\n")}` : ""; })()}
 
 ${guide ? `## 사용자가 요청한 방향
@@ -1898,13 +1915,15 @@ async function openWorld(wid, goKey) {
   await cleanChapterTitles(w);
   const unbadged = await cleanAiSupersede(w);
   if (dedupeRelations(w)) { try { await Store.saveWorld(w); } catch {} }
-  openEntity(goKey && w.entities[goKey] ? goKey : w.mainKey);
+  openEntity(goKey && (w.entities[goKey] || w.aliases?.[goKey]) ? goKey : w.mainKey);
   if (unbadged) setTimeout(() => toast(`AI 수정 때문에 잘못 붙어 있던 '설정과 맞지 않음' 경고 ${unbadged}건을 지웠습니다.`), merged ? 3800 : 0);
   if (merged) toast(`같은 대상을 가리키는데 따로 생긴 항목 ${merged}개를 원래 항목에 합쳤습니다. 예: "이름(인물)", 성이나 이름만 쓴 인물.`);
 }
 
 function openEntity(k) {
-  const w = S.world; if (!w || !w.entities[k]) return;
+  const w = S.world; if (!w) return;
+  if (!w.entities[k] && w.aliases?.[k]) k = w.aliases[k];
+  if (!w.entities[k]) return;
   S.confirmRewrite = null; S.genErr = S.genErr && S.genErr.key === k ? S.genErr : null;
   S.view = { name: "article", key: k };
   S.recent = [k, ...S.recent.filter(x => x !== k)].slice(0, 8);
@@ -1936,6 +1955,20 @@ async function generatePage(k, rewrite, direction) {
       if (ctl.signal.aborted) throw { code: "cancelled" };
     }
     const out = await callJson("page", pagePrompt(w, k, rewrite ? (direction || "") : null, rewrite ? "" : (direction || "")), { signal: ctl.signal, modelTier: "default", ...PAGE_MODEL, onRetry: r => { if (S.gen) { S.gen.retry = r; updateGenLive(); } }, onText: ({ text }) => { if (S.gen) { S.gen.raw = text; updateGenLive(); } } }, { title: e.title, type: TYPES.includes(e.type) ? e.type : "", ents: Object.keys(w.entities).length });
+    if (out && Object.prototype.hasOwnProperty.call(out, "redirect")) {
+      if (ctl.signal.aborted) throw { code: "cancelled" };
+      const title = typeof out.redirect === "string" ? norm(out.redirect) : "";
+      const to = title ? Object.keys(w.entities).find(x => w.entities[x].title === title) || w.aliases?.[keyOf(title)] : null, target = w.entities[to];
+      const protectedKey = k === w.mainKey || (isStory(w) && (k === w.story.protagonistKey || (w.story.cast || []).some(c => c.key === k)));
+      if (rewrite || S.world !== w || S.pages[k] || protectedKey || !target || to === k || !S.pages[to]
+        || (e.type && (target.type || S.pages[to].type) && e.type !== (target.type || S.pages[to].type)) || e.notSame?.includes(to) || target.notSame?.includes(k)) throw { code: "bad_page" };
+      const from = e.title;
+      await mergeEntities(w, [[k, to]]);
+      S.gen = null; S.genErr = null;
+      if (S.view.name === "article" && S.view.key === k) openEntity(to); else renderAll();
+      toast(`「${from}」은(는) 「${target.title}」의 다른 이름입니다. 기존 문서로 연결했습니다.`);
+      return;
+    }
     if (out && out.notFound === true && e.src === "search") {
       S.gen = null;
       const nf = e.title;
@@ -3645,13 +3678,15 @@ function renderSugg() {
   if (!w || !q) { box.hidden = true; box.innerHTML = ""; return; }
   const ql = q.toLowerCase();
   const hits = Object.entries(w.entities).filter(([, o]) => o.title.toLowerCase().includes(ql)).sort((a, b) => (b[1].page - a[1].page) || a[1].title.length - b[1].title.length).slice(0, 7);
-  const exact = hits.some(([, o]) => o.title.toLowerCase() === ql);
-  box.innerHTML = hits.map(([k, o]) => `<button type="button" data-sk="${k}"><span>${esc(o.title)}</span><small>${o.page ? "문서" : "미작성"}</small></button>`).join("")
+  const alias = w.aliases?.[keyOf(q)];
+  if (alias && w.entities[alias] && !hits.some(([k]) => k === alias)) hits.unshift([alias, w.entities[alias]]);
+  const exact = hits.some(([, o]) => o.title.toLowerCase() === ql) || !!(alias && w.entities[alias]);
+  box.innerHTML = hits.map(([k, o]) => `<button type="button" data-sk="${k}"><span>${esc(o.title)}</span><small>${k === alias ? esc(q) + "에서 넘겨옴" : o.page ? "문서" : "미작성"}</small></button>`).join("")
     + (exact ? "" : `<button type="button" data-snew="${esc(q)}"><span>「${esc(q)}」 문서 찾기</span><small>없으면 새로 작성</small></button><button type="button" data-scompose="${esc(q)}"><span>「${esc(q)}」 방향을 정해 새로 만들기</span><small>작성 페이지</small></button>`);
   box.hidden = false;
 }
 function composeFromSearch(title) {
-  const w = S.world; const t = norm(title); if (!w || !t) return;
+  const w = S.world; const t = canonTitle(w, title); if (!w || !t) return;
   const k = keyOf(t);
   if (!w.entities[k]) { w.entities[k] = newEntity(t, "", ""); w.entities[k].src = "guided"; w.entities[k].searched = true; }
   S.nf.delete(k);
