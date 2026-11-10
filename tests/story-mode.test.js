@@ -208,6 +208,16 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
       assert.strictEqual(lp.during, "none", "길게 누르는 동안에는 선택을 막는다"); assert.notStrictEqual(lp.after, "none", "손을 떼면 다시 선택된다"); }
     ok("스토리 모드: 첫 문서가 주인공 문서이고 1장 발단 사건과 진행 중 안내 틀이 나온다. 주인공 특징과 등장인물이 확정 설정으로 들어간다");
 
+    const portraitPng = Buffer.from(await page.evaluate(() => {
+      const c = document.createElement("canvas"); c.width = c.height = 32;
+      c.getContext("2d").fillRect(0, 0, 32, 32); return c.toDataURL("image/png").split(",")[1];
+    }), "base64");
+    const imageCalls = calls.length;
+    await page.locator("[data-portrait-file]").setInputFiles({ name: "profile.png", mimeType: "image/png", buffer: portraitPng });
+    await page.waitForSelector(".portrait img");
+    const portrait = await page.locator(".portrait img").getAttribute("src");
+    assert.strictEqual(calls.length, imageCalls, "AI가 연결되어 있어도 프로필 이미지 저장은 AI를 호출하지 않는다");
+
     /* 3. 탐험 기록 */
     await clickLink(page, "북관 철령"); await waitArticle(page, "북관 철령");      // 새로 작성
     await page.click('#side [data-k]:has-text("주인공 문서")'); await waitArticle(page, "한서린");   // 주인공 문서는 세지 않음
@@ -265,6 +275,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert.strictEqual(sw.story.chapter, 2); assert.strictEqual(sw.era, "1588년");
     assert.deepStrictEqual(after.sections.filter(s => !s.ch), before.sections, "기존 본문은 한 글자도 바뀌지 않는다");
     assert(after.sections.some(s => s.ch === 2) && after.infobox.find(r => r.label === "상태").value === "2장 상태");
+    assert.strictEqual(after.portrait, portrait, "장 전환으로 문서를 다시 구성해도 프로필 이미지는 유지된다");
     assert(sw.entities[kOf("원균 함대")] && sw.entities[kOf("이일")].facts.some(f => f.src === "ch2"), "affected 변화가 사실로 미리 들어간다");
     assert(sw.story.spine[3].revised && sw.story.spine[3].orig === "절정 의도");
     assert.strictEqual(sw.story.chapters[1].title, "2번째 사건", "장 제목에서 '제2장:'을 뗀다");
@@ -392,6 +403,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert((await sideText(other.page)).includes("완결") && (await other.page.locator(".article h2 .chb").allInnerTexts()).includes("5장"));
     const ow = await worldOf(other.page, "녹둔도 연대기");
     assert.deepStrictEqual(ow.story, sw.story, "스토리 진행 상태가 그대로 복원된다");
+    assert.strictEqual((await pageOf(other.page, ow, "한서린")).portrait, portrait, "여러 장을 진행한 뒤 백업한 이미지도 복원된다");
     ok("백업을 다른 브라우저에서 가져오면 장, 탐험 기록, 블록이 그대로 복원된다");
     await other.ctx.close();
 

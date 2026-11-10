@@ -48,8 +48,8 @@ const until = async (fn, msg, ms = 15000) => { const t0 = Date.now(); while (Dat
   try {
     /* 기기 A: 세계관 하나를 가진 상태에서 가입 */
     const A = await device();
-    const backup = { app: "worldwiki", version: 1, worlds: [{ kind: "world", id: "wsync1", title: "동기화 세계", tagline: "", seed: "테스트 원안입니다.", era: "1900년", rules: [], timeline: [], userCanon: "", style: "encyc", entities: { e1: { title: "첫 문서", type: "지명", summary: "첫 문서다.", facts: [], mentions: [], page: true, box: "" } }, mainKey: "e1", createdAt: 1, updatedAt: 1000 }],
-      pages: { wsync1: { e1: { key: "e1", title: "첫 문서", type: "지명", summary: "첫 문서다.", categories: [], notices: [], infobox: [], sections: [{ heading: "개요", level: 1, body: "원래 본문이다." }], links: [], createdAt: 1, savedAt: 1000 } } } };
+    const backup = { app: "worldwiki", version: 1, worlds: [{ kind: "world", id: "wsync1", title: "동기화 세계", tagline: "", seed: "테스트 원안입니다.", era: "1900년", rules: [], timeline: [], userCanon: "", style: "encyc", entities: { e1: { title: "첫 문서", type: "인물", summary: "첫 문서다.", facts: [], mentions: [], page: true, box: "" } }, mainKey: "e1", createdAt: 1, updatedAt: 1000 }],
+      pages: { wsync1: { e1: { key: "e1", title: "첫 문서", type: "인물", summary: "첫 문서다.", categories: [], notices: [], infobox: [], sections: [{ heading: "개요", level: 1, body: "원래 본문이다." }], links: [], createdAt: 1, savedAt: 1000 } } } };
     const f = path.join(os.tmpdir(), "ww-sync-backup.json"); fs.writeFileSync(f, JSON.stringify(backup));
     await A.page.setInputFiles("#importFile", f); await A.page.waitForTimeout(500);
     await A.page.fill("#acId", "테스터"); await A.page.fill("#acPw", "secret1");
@@ -69,6 +69,28 @@ const until = async (fn, msg, ms = 15000) => { const t0 = Date.now(); while (Dat
     await B.page.click('.wcard button.open:has-text("동기화 세계")'); await B.page.waitForSelector(".article h2");
     assert((await B.page.locator(".article").innerText()).includes("원래 본문이다."));
     pass("다른 기기에서 같은 아이디로 로그인하면 세계관과 문서가 그대로 보인다");
+
+    // 이미지도 기존 문서 데이터로 동기화하며 별도 업로드 API를 쓰지 않는다.
+    const png = Buffer.from(await B.page.evaluate(() => {
+      const c = document.createElement("canvas"); c.width = c.height = 32; c.getContext("2d").fillRect(0, 0, 32, 32);
+      return c.toDataURL("image/png").split(",")[1];
+    }), "base64");
+    await B.page.locator("[data-portrait-file]").setInputFiles({ name: "profile.png", mimeType: "image/png", buffer: png });
+    await B.page.waitForSelector(".portrait img");
+    const portrait = await B.page.locator(".portrait img").getAttribute("src");
+    await until(() => JSON.parse(row("SELECT data FROM pages WHERE wid = 'wsync1' AND pkey = 'e1'").data).portrait === portrait, "이미지가 기존 동기화 API로 올라감");
+    await A.page.click('[data-act="acct-sync"]');
+    await A.page.click('#side [data-act="home"]'); await A.page.click('.wcard button.open:has-text("동기화 세계")');
+    await A.page.waitForSelector(".portrait img");
+    assert.strictEqual(await A.page.locator(".portrait img").getAttribute("src"), portrait);
+    pass("프로필 이미지는 기존 문서 동기화로 다른 기기에 전달된다");
+
+    await B.page.click("[data-portrait-remove]");
+    await until(() => !JSON.parse(row("SELECT data FROM pages WHERE wid = 'wsync1' AND pkey = 'e1'").data).portrait, "이미지 삭제가 서버에 올라감");
+    await A.page.click('#side [data-act="gset"]'); await A.page.click('[data-act="acct-sync"]');
+    await A.page.click('#side [data-act="home"]'); await A.page.click('.wcard button.open:has-text("동기화 세계")');
+    assert.strictEqual(await A.page.locator(".portrait img").count(), 0);
+    pass("이미지 삭제도 다른 기기에 동기화된다");
 
     /* B에서 고치면 A가 받는다 */
     await B.page.click("[data-edit]"); await B.page.waitForSelector("#edBody");

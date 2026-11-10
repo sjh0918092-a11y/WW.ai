@@ -77,6 +77,10 @@ h1.t{font-family:var(--f-display);font-weight:700;font-size:30px;line-height:1.2
 .lead{margin:18px 0 0}
 .infobox{float:right;width:280px;margin:16px 0 16px 24px;border:1px solid var(--line);border-radius:var(--r);font-size:13px;line-height:1.55;overflow:hidden;background:var(--sheet)}
 .infobox .ih{background:var(--tint);padding:10px 12px;font-family:var(--f-display);font-weight:700;font-size:15px;text-align:center}
+.portrait{padding:10px;text-align:center;border-bottom:1px solid var(--line)}
+.portrait img{display:block;max-width:100%;max-height:400px;width:auto;height:auto;margin:0 auto;object-fit:contain}
+.portrait .row{justify-content:center;gap:8px;margin-top:8px}
+.portrait .btn{font-size:12px;padding:4px 10px}
 .infobox .ity{font-family:var(--f-mono);font-size:11px;color:var(--muted);text-align:center;padding:4px 0 2px;border-bottom:1px solid var(--line)}
 .infobox table{width:100%;border-collapse:collapse}
 .infobox th,.infobox td{padding:6px 10px;border-top:1px solid var(--line);vertical-align:top;text-align:left}
@@ -349,7 +353,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.10 · 2026-11-09";
+const APP_VERSION = "v6.11 · 2026-11-10";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -832,7 +836,7 @@ const Sync = {
     const cur = S.world?.id, key = S.view.key;
     S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     if (cur) {
-      const busy = S.gen || S.storyGen || S.syncing || S.checking || S.edit || S.bgSync;
+      const busy = S.gen || S.storyGen || S.syncing || S.checking || S.edit || S.bgSync || S.portraitJob;
       if (!S.worlds.some(x => x.id === cur)) { if (!busy) { S.world = null; S.view = { name: "home" }; renderAll(); } toast("다른 기기에서 이 세계관을 지웠습니다."); return; }
       if (busy) { toast("다른 기기에서 바뀐 내용을 받았습니다. 작업이 끝난 뒤 세계관을 다시 열면 보입니다."); return; }
       await openWorld(cur, key); toast("다른 기기에서 바뀐 내용을 받았습니다.");
@@ -875,7 +879,7 @@ const S = {
   gen: null, genErr: null, checking: null, sample: null, sampleReady: false,
   creating: false, createErr: null, seed: "", seedTab: "own", ownSeed: "", dice: null, whatIfs: null, first: "", guideIn: "",
   confirmDel: null, confirmRewrite: null, canonFilter: "all", focusEnt: null, nf: new Set(),
-  edit: null, refreshing: null, confirmDelPage: null, confirmMerge: null, compose: null,
+  edit: null, refreshing: null, confirmDelPage: null, confirmMerge: null, compose: null, portraitJob: null,
   mode: "basic", storyN: 5, protoDesc: "", cast: [], regen: null, storyGen: null, syncQ: [], syncing: null, syncErr: null, hold: null, adv: null, storyCard: null
 };
 
@@ -1101,7 +1105,7 @@ function patchInfobox(box, patch) {
   }
   return out;
 }
-const PAGE_KEEP = ["createdAt", "rewrittenAt", "direction", "editedAt", "fixedAt", "stale", "conflicts", "pending", "baseAsOf", "syncedTo", "storyNotice"];
+const PAGE_KEEP = ["createdAt", "rewrittenAt", "direction", "editedAt", "fixedAt", "stale", "conflicts", "pending", "baseAsOf", "syncedTo", "storyNotice", "portrait"];
 /* 기존 본문은 그대로 두고 섹션을 덧붙인 새 문서 객체. 링크, 언급, 사실은 integrate가 다시 계산한다 */
 function rebuildPage(w, k, p, addSecs, extra = {}) {
   autoLink(w, k, { sections: addSecs, infobox: [] });
@@ -1740,6 +1744,7 @@ async function mergeEntities(w, pairs) {
       dp.key = bk; dp.title = b.title; S.pages[bk] = dp; saved.add(bk);
       b.type = d.type || b.type; b.summary = d.summary || b.summary; b.box = d.box || b.box; b.page = true; if (d.stub && !b.stub) b.stub = d.stub;
     } else if (dp) {
+      if (!S.pages[bk].portrait && dp.portrait) { S.pages[bk].portrait = dp.portrait; saved.add(bk); }
       purge(w, dk);
       for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === dk) delete w.navboxes[id];
     }
@@ -1940,6 +1945,7 @@ async function generatePage(k, rewrite, direction) {
     const searched = !!e.searched; delete e.searched;
     if (Array.isArray(out?.sections)) for (const s of out.sections) if (s) delete s.ch;   // 장 표시는 앱이 붙인다
     const page = integrate(w, k, out);
+    if (oldPage?.portrait) page.portrait = oldPage.portrait;   // 사용자가 올린 이미지는 AI 다시 쓰기와 별개로 유지
     if (isStory(w)) {   // 새로 쓰는 문서는 장 섹션 없이 현재 장 시점으로 처음부터 쓴다
       const st = w.story; page.baseAsOf = page.syncedTo = st.chapter;
       page.storyNotice = storyOn(w) && (k === st.protagonistKey || (curCh(w).affected || []).some(a => a.key === k));
@@ -2025,7 +2031,8 @@ function integrate(w, key, out) {
     }
     w.navboxes[key + "-" + i] = { title, rows, members, src: key, srcTitle: e.title };
   });
-  return { key, title: e.title, type, summary, categories, notices, infobox, sections, links, createdAt: Date.now(), style: w.style, check: null };
+  return { key, title: e.title, type, summary, categories, notices, infobox, sections, links, createdAt: Date.now(), style: w.style, check: null,
+    ...(S.world === w && S.pages[key]?.portrait ? { portrait: S.pages[key].portrait } : {}) };
 }
 
 /* auto: 문서가 완성된 직후 자동으로 돌리는 검사. 다른 검사가 돌고 있으면 차례를 기다린다. */
@@ -2643,6 +2650,59 @@ function readConflicts(w, raw, refs) {
 }
 const conflictLabel = (w, c) => c.kind === "rule" ? `핵심 규칙 ${c.id}` : c.kind === "canon" ? "사용자 확정 설정"
   : c.kind === "timeline" ? `연표${c.src && w.entities[c.src] ? ` (「${w.entities[c.src].title}」)` : ""}` : `「${w.entities[c.src]?.title || "?"}」${S.pages[c.src]?.editedAt ? " (직접 수정한 문서)" : ""}`;
+
+/* ---------- 인물 프로필 이미지: AI 호출 없이 브라우저에서 축소하고 문서와 함께 저장 ---------- */
+const PORTRAIT_MAX = 240 * 1024;   // data URL 전체 길이. 문서 저장·백업·동기화의 부담을 제한
+const portraitSrc = p => typeof p?.portrait === "string" && p.portrait.length <= PORTRAIT_MAX && /^data:image\/(?:webp|png|jpeg);base64,[A-Za-z0-9+/]+=*$/.test(p.portrait) ? p.portrait : "";
+async function preparePortrait(file) {
+  if (!/^image\/(?:jpeg|png|webp|gif|avif)$/i.test(file.type)) throw new Error("JPG, PNG, WebP, GIF, AVIF 이미지 파일을 선택해 주세요.");
+  if (file.size > 10 * 1024 * 1024) throw new Error("이미지는 10MB 이하로 선택해 주세요.");
+  const url = URL.createObjectURL(file), img = new Image();
+  try {
+    await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = () => reject(new Error("이미지를 읽지 못했습니다. 다른 이미지 파일을 선택해 주세요.")); img.src = url; });
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if (!w || !h || w * h > 40e6) throw new Error("이미지 해상도가 너무 큽니다. 크기를 줄인 뒤 선택해 주세요.");
+    const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("이 브라우저에서 이미지를 처리하지 못했습니다.");
+    let scale = Math.min(1, 768 / Math.max(w, h));
+    for (let i = 0; i < 6; i++, scale *= .75) {
+      canvas.width = Math.max(1, Math.round(w * scale)); canvas.height = Math.max(1, Math.round(h * scale));
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const src = canvas.toDataURL("image/webp", .82);
+      if (portraitSrc({ portrait: src })) return src;
+    }
+    throw new Error("이미지를 저장할 크기로 줄이지 못했습니다. 더 작은 파일을 선택해 주세요.");
+  } finally { URL.revokeObjectURL(url); }
+}
+const portraitBusy = k => S.gen || S.storyGen || S.syncing === k || S.checking === k || S.fixing || S.bgSync === k || isHeld(k);
+async function setPortrait(k, file) {
+  const w = S.world, p = S.pages[k];
+  if (!w || !p || p.type !== "인물") return;
+  if (S.portraitJob || portraitBusy(k)) { toast("문서 작업이 끝난 뒤 이미지를 변경해 주세요."); return; }
+  const job = S.portraitJob = { wid: w.id, key: k };
+  renderMain();
+  try {
+    const src = file ? await preparePortrait(file) : "";
+    if (S.world !== w || S.pages[k] !== p || portraitBusy(k)) { toast("문서가 바뀌었습니다. 이미지를 다시 선택해 주세요."); return; }
+    const next = { ...p };
+    if (src) next.portrait = src; else delete next.portrait;
+    await Store.savePage(w.id, next);
+    if (S.world === w && S.pages[k] === p) S.pages[k] = next;
+    toast(src ? "프로필 이미지를 저장했습니다." : "프로필 이미지를 삭제했습니다.");
+  } catch (err) { toast("이미지를 저장하지 못했습니다. " + (err.message || errMsg(err))); }
+  finally {
+    if (S.portraitJob === job) S.portraitJob = null;
+    if (S.world === w && S.view.name === "article" && S.view.key === k && !S.edit) renderMain();
+  }
+}
+function portraitHtml(p, k, held) {
+  if (p.type !== "인물") return "";
+  const src = portraitSrc(p), busy = S.portraitJob?.key === k && S.portraitJob?.wid === S.world.id;
+  const disabled = held || S.portraitJob || portraitBusy(k) ? "disabled" : "";
+  return `<div class="portrait">${src ? `<img src="${esc(src)}" alt="${esc(p.title)} 프로필 이미지" decoding="async">` : ""}
+    <div class="row"><button type="button" class="btn" data-portrait="${k}" ${disabled}>${busy ? "이미지 저장 중…" : src ? "이미지 변경" : "프로필 이미지 추가"}</button>${src ? `<button type="button" class="btn" data-portrait-remove="${k}" ${disabled}>삭제</button>` : ""}</div>
+    <input type="file" data-portrait-file="${k}" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" aria-label="${esc(p.title)} 프로필 이미지 선택" hidden></div>`;
+}
 
 function openEditor(k) {
   const p = S.pages[k]; if (!p) return;
@@ -3291,7 +3351,7 @@ function articleHtml(k) {
       <div class="tools"><button type="button" class="btn pri" data-gen="${k}" ${S.gen || !S.sample ? "disabled" : ""}>이 문서 작성하기</button><button type="button" class="btn" data-compose="${k}">방향을 정해 작성</button></div></div>`;
   }
   const fns = [];
-  const box = p.infobox?.length ? `<aside class="infobox"><div class="ih">${esc(p.title)}</div><div class="ity">${esc(p.type)}</div><table>${p.infobox.map((r, i) => `<tr><th>${esc(r.label)}</th><td class="secb" data-ib="${i}">${blocks(r.value, fns).replace(/^<p>|<\/p>$/g, "")}</td></tr>`).join("")}</table></aside>` : "";
+  const box = p.infobox?.length || p.type === "인물" ? `<aside class="infobox"><div class="ih">${esc(p.title)}</div>${portraitHtml(p, k, held)}<div class="ity">${esc(p.type)}</div><table>${(p.infobox || []).map((r, i) => `<tr><th>${esc(r.label)}</th><td class="secb" data-ib="${i}">${blocks(r.value, fns).replace(/^<p>|<\/p>$/g, "")}</td></tr>`).join("")}</table></aside>` : "";
   let n1 = 0, n2 = 0;
   const nums = p.sections.map(s => { if ((s.level || 1) === 2 && n1) { n2++; return `${n1}.${n2}.`; } n1++; n2 = 0; return `${n1}.`; });
   const story = isStory(w), pk = story ? w.story.protagonistKey : null, card = story && k === pk && !held && S.storyCard?.wid === w.id ? S.storyCard : null;
@@ -3669,6 +3729,8 @@ document.addEventListener("click", ev => {
   if (d.fixk) { openFixView(d.fixk, [Number(d.fix)], true); return; }
   if (d.cfix) { openConflictFix(d.cfix); return; }
   if (d.edit) { openEditor(d.edit); return; }
+  if (d.portrait) { document.querySelector('[data-portrait-file="' + d.portrait + '"]')?.click(); return; }
+  if (d.portraitRemove) { setPortrait(d.portraitRemove, null); return; }
   if (d.delpage) { S.confirmDelPage = S.confirmDelPage === d.delpage ? null : d.delpage; S.confirmRewrite = null; renderMain(); return; }
   if (d.delpageYes) { deletePage(d.delpageYes); return; }
   if (d.mg) { S.confirmMerge = S.confirmMerge === d.mg ? null : d.mg; S.confirmDelPage = null; S.confirmRewrite = null; renderMain(); if (S.confirmMerge) $("#mgTo")?.focus(); return; }
@@ -3818,6 +3880,7 @@ $("#searchForm").addEventListener("submit", ev => {
   if (hit) { $("#q").value = ""; $("#sugg").hidden = true; openEntity(hit[0]); } else goSearch(q);
 });
 document.addEventListener("change", ev => {
+  if (ev.target.dataset?.portraitFile && ev.target.files?.[0]) { const f = ev.target.files[0]; ev.target.value = ""; setPortrait(ev.target.dataset.portraitFile, f); }
   if (ev.target.id === "cpType" && S.compose) S.compose.type = ev.target.value;
   if (ev.target.id === "gMode") { const r = ev.target.value === "relay"; $("#gKeyBox").hidden = r; $("#gRelayBox").hidden = !r; }
   if (ev.target.id === "importFile" && ev.target.files?.[0]) { const f = ev.target.files[0]; ev.target.value = ""; importAll(f); }
