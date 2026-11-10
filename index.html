@@ -378,7 +378,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.25 · 2026-11-10";
+const APP_VERSION = "v6.26 · 2026-11-10";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -524,6 +524,43 @@ const G_IDLE_MS = 180000;     // 내부 사고 중 첫 응답은 최대 3분 기
 const G_PROGRESS_IDLE_MS = 80000;   // 출력·사고 토큰이 진행된 뒤 80초간 멎었을 때만 복구
 const G_STAGE_MAX_MS = 600000;      // 문서 작성·검사 한 호출은 재시도를 포함해 최대 10분
 const G_PROGRESS_RETRY = 2;
+/* 모바일이 숨겨진 탭을 정지한 시간은 서버의 무응답으로 세지 않는다. */
+const G_RESUME_GRACE_MS = 10000;
+const gPage = typeof document === "undefined" ? null : document;
+let gHiddenAt = gPage?.hidden ? Date.now() : null, gHiddenTotal = 0;
+if (gPage) gPage.addEventListener("visibilitychange", () => {
+  if (gPage.hidden) { if (gHiddenAt === null) gHiddenAt = Date.now(); }
+  else if (gHiddenAt !== null) { gHiddenTotal += Date.now() - gHiddenAt; gHiddenAt = null; }
+});
+const gActiveNow = () => { const now = Date.now(); return now - gHiddenTotal - (gHiddenAt === null ? 0 : now - gHiddenAt); };
+function gActiveTimeout(fn, delay) {
+  let due = gActiveNow() + Math.max(0, delay), timer = null, expected = 0, closed = false, lateGraceUsed = false;
+  const cancel = () => { closed = true; clearTimeout(timer); gPage?.removeEventListener("visibilitychange", visibility); };
+  const arm = () => {
+    clearTimeout(timer); if (closed || gPage?.hidden) return;
+    const left = Math.max(0, due - gActiveNow()); expected = Date.now() + left;
+    timer = setTimeout(() => {
+      if (closed || gPage?.hidden) return;
+      // 이벤트 자체가 멈췄다가 재개된 경우, 먼저 버퍼의 응답을 읽을 여유를 준다.
+      if (!lateGraceUsed && Date.now() - expected > 5000) { lateGraceUsed = true; due = gActiveNow() + G_RESUME_GRACE_MS; arm(); return; }
+      if (gActiveNow() < due) { arm(); return; }
+      cancel(); fn();
+    }, left);
+  };
+  const visibility = () => { clearTimeout(timer); if (!gPage.hidden) { lateGraceUsed = false; due = Math.max(due, gActiveNow() + G_RESUME_GRACE_MS); arm(); } };
+  gPage?.addEventListener("visibilitychange", visibility); arm(); return cancel;
+}
+function gWaitVisible(signal) {
+  if (signal?.aborted) return Promise.reject({ code: "cancelled" });
+  if (!gPage?.hidden) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const clean = () => { gPage.removeEventListener("visibilitychange", visible); signal?.removeEventListener("abort", abort); };
+    const visible = () => { if (!gPage.hidden) { clean(); resolve(); } };
+    const abort = () => { clean(); reject({ code: "cancelled" }); };
+    gPage.addEventListener("visibilitychange", visible); signal?.addEventListener("abort", abort, { once: true });
+  });
+}
+
 const G_CONT = "직전 응답이 연결 문제로 중간에 끊겼다. 끊긴 바로 그 글자부터 이어서 출력하라. 이미 출력한 부분은 반복하지 않고, 앞말이나 설명, 코드 블록 표시 없이 나머지 JSON 텍스트만 출력해 원래 JSON 객체를 끝까지 완성한다.";
 const gRetryable = e => e && (e.code === "upstream_error" || e.code === "network" || e.code === "stalled" || /^api_5/.test(e.code || ""));
 const gSleep = (ms, signal) => new Promise((res, rej) => { if (signal?.aborted) return rej({ code: "cancelled" }); const t = setTimeout(res, ms); signal?.addEventListener("abort", () => { clearTimeout(t); rej({ code: "cancelled" }); }, { once: true }); });
@@ -537,14 +574,14 @@ function joinCont(a, b) {
 const gemini = {
   async stream(model, body, opts, prefix) {
     const ctl = new AbortController(); let stalled = false, expired = false, timer = null, hardTimer = null, progressed = false, reader = null;
-    const kick = () => { clearTimeout(timer); timer = setTimeout(() => { stalled = true; ctl.abort(); }, opts.progressWatch && progressed ? G_PROGRESS_IDLE_MS : G_IDLE_MS); };
-    const timeoutError = () => ({ code: "stage_timeout", message: "응답 복구를 포함한 최대 대기 시간(10분)을 넘었습니다. 잠시 뒤 다시 실행해 주세요." });
+    const kick = () => { timer?.(); timer = gActiveTimeout(() => { stalled = true; ctl.abort(); }, opts.progressWatch && progressed ? G_PROGRESS_IDLE_MS : G_IDLE_MS); };
+    const timeoutError = () => ({ code: "stage_timeout", message: "화면이 열린 동안의 최대 대기 시간(10분, 응답 복구 포함)을 넘었습니다. 잠시 뒤 다시 실행해 주세요." });
     const onUser = () => ctl.abort();
     if (opts.signal) { if (opts.signal.aborted) throw { code: "cancelled" }; opts.signal.addEventListener("abort", onUser, { once: true }); }
     let text = "", finish = "", block = "", usage = null;
     try {
       kick();
-      if (opts.deadline) hardTimer = setTimeout(() => { expired = true; ctl.abort(); }, Math.max(0, opts.deadline - Date.now()));
+      if (opts.deadline) hardTimer = gActiveTimeout(() => { expired = true; ctl.abort(); }, Math.max(0, opts.deadline - gActiveNow()));
       let res;
       try { res = await fetch(gBase() + `/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, { method: "POST", headers: { "Content-Type": "application/json", ...gAuth() }, body: JSON.stringify(body), signal: ctl.signal }); }
       catch (e) { if (opts.signal?.aborted) throw { code: "cancelled" }; if (expired) throw timeoutError(); if (stalled) throw { code: "stalled", message: "응답 없음" }; throw { code: "network", message: String(e?.message || e) }; }
@@ -587,13 +624,13 @@ const gemini = {
       return { text, finish, block, usage };
     } catch (e) { throw { ...e, text }; }
     finally {
-      clearTimeout(timer); clearTimeout(hardTimer); opts.signal?.removeEventListener("abort", onUser);
+      timer?.(); hardTimer?.(); opts.signal?.removeEventListener("abort", onUser);
       if (reader) { try { await reader.cancel(); } catch {} }
     }
   },
   async json(prompt, opts = {}) {
     if (!gReady()) throw { code: "no_sample" };
-    if (opts.progressWatch) opts = { ...opts, deadline: Date.now() + G_STAGE_MAX_MS };
+    if (opts.progressWatch) opts = { ...opts, deadline: gActiveNow() + G_STAGE_MAX_MS };
     const retryLimit = opts.progressWatch ? G_PROGRESS_RETRY : G_RETRY;
     const tier = opts.modelTier === "quick" ? "quick" : opts.modelTier === "check" ? "check" : "main";
     const model = (tier === "check" ? (GS.check || GS.main || GDEF.main) : (GS[tier] || GDEF[tier])).trim();
@@ -603,7 +640,8 @@ const gemini = {
     let acc = "", usage = null, retries = 0, contTried = 0;
     opts.onMeta?.({ model, think });
     for (;;) {
-      if (opts.deadline && Date.now() >= opts.deadline) throw { code: "stage_timeout", message: "응답 복구를 포함한 최대 대기 시간(10분)을 넘었습니다. 잠시 뒤 다시 실행해 주세요." };
+      await gWaitVisible(opts.signal);
+      if (opts.deadline && gActiveNow() >= opts.deadline) throw { code: "stage_timeout", message: "화면이 열린 동안의 최대 대기 시간(10분, 응답 복구 포함)을 넘었습니다. 잠시 뒤 다시 실행해 주세요." };
       const cont = acc.length >= 200;   // 받은 게 어느 정도 있으면 이어 받기, 아니면 처음부터
       const body = cont ? mk([...user, { role: "model", parts: [{ text: acc }] }, { role: "user", parts: [{ text: G_CONT }] }], false) : mk(user, true);
       try {
@@ -616,20 +654,22 @@ const gemini = {
         if (r.usage) usage = sumUsage(usage, r.usage);
         if (r.block || /SAFETY|PROHIBITED|BLOCKLIST|SPII|RECITATION/.test(r.finish)) throw { code: "refused", message: r.block || r.finish, text: acc + r.text };
         const text = cont ? joinCont(acc, r.text) : r.text;
-        if (!text.trim()) throw { code: "empty_completion", text };
+        if (!text.trim()) throw { code: r.finish ? "empty_completion" : "upstream_error", text, message: r.finish ? "" : "완료 신호 없이 연결이 끝났습니다." };
         const out = parseJsonLoose(text);
         if (out !== undefined) { opts.onMeta?.({ model, think, usage, retries }); return out; }
+        if (!r.finish) throw { code: "upstream_error", text, message: "완료 신호 없이 연결이 끝났습니다. 받은 응답부터 복구합니다." };
         if (r.finish === "MAX_TOKENS" && contTried < 2 && text.length >= 200) { contTried++; acc = text; continue; }   // 출력 한도에서 잘렸으면 이어 받는다
         if (cont && retries < retryLimit) { retries++; acc = ""; opts.onRetry?.({ n: retries, mode: "restart", reason: "이어 붙인 응답이 맞지 않음" }); continue; }
         throw { code: "invalid_json", text, message: r.finish };
       } catch (e) {
         if (e.code === "cancelled") throw { ...e, text: acc || e.text || "" };
         if (!gRetryable(e) || retries >= retryLimit) { opts.onMeta?.({ model, think, usage, retries }); throw { ...e, code: e.code === "stalled" ? "upstream_error" : e.code, text: e.text || acc }; }
+        await gWaitVisible(opts.signal);
         retries++;
         const got = cont ? joinCont(acc, e.text || "") : (e.text || "");
         acc = got.length >= 200 ? got : "";
         opts.onRetry?.({ n: retries, mode: acc ? "continue" : "restart", reason: e.message || e.code, chars: acc.length });
-        await gSleep(Math.min(8000, 1500 * 2 ** (retries - 1), opts.deadline ? Math.max(0, opts.deadline - Date.now()) : Infinity), opts.signal);
+        await gSleep(Math.min(8000, 1500 * 2 ** (retries - 1), opts.deadline ? Math.max(0, opts.deadline - gActiveNow()) : Infinity), opts.signal);
       }
     }
   }
@@ -2899,13 +2939,13 @@ async function generateProseImage() {
   if (portraitBusy(v.key) || S.portraitJob) { j.error = "문서 작업이 끝난 뒤 생성해 주세요."; renderMain(); return; }
   j.error = ""; j.preview = ""; j.stamp = proseImageStamp(story); j.docStamp = imageDocStamp(p); j.ref = portraitSrc(p); j.original = portraitSrc({ portrait: story.illustration });
   v.busy = true; v.ctl = new AbortController(); v.imageTask = true; renderMain();
-  const timer = setTimeout(() => { j.timedOut = true; v.ctl.abort(); }, openAIImage(j.opts.model) ? 300000 : 180000); j.timedOut = false;
+  const timer = gActiveTimeout(() => { j.timedOut = true; v.ctl.abort(); }, openAIImage(j.opts.model) ? 300000 : 180000); j.timedOut = false;
   try {
     const o = { ...j.opts, useRef: !!j.ref };
     const src = await requestDocImage(w, p, o, v.ctl.signal, proseImagePrompt(w, p, story, o));
     if (S.proseGen === v && v.illustration === j && !v.ctl.signal.aborted) j.preview = src;
   } catch (e) { if (S.proseGen === v) j.error = j.timedOut ? "삽화 생성 시간이 초과되었습니다." : e.code === "cancelled" ? "삽화 생성을 중단했습니다." : (e.message || errMsg(e)); }
-  finally { clearTimeout(timer); v.busy = false; v.imageTask = false; if (S.proseGen === v && S.world === w && S.view.key === v.key) renderMain(); }
+  finally { timer(); v.busy = false; v.imageTask = false; if (S.proseGen === v && S.world === w && S.view.key === v.key) renderMain(); }
 }
 async function saveProseImage(remove = false, id = null) {
   const v = S.proseGen, j = v?.illustration, w = S.world, p = v && S.pages[v.key], target = id || j?.storyId;
@@ -3134,12 +3174,12 @@ async function generateDocImage() {
   if (portraitBusy(v.key) || S.portraitJob) { v.error = "문서 작업이 끝난 뒤 생성해 주세요."; renderMain(); return; }
   v.busy = true; v.timedOut = false; v.error = ""; v.preview = ""; v.stamp = imageDocStamp(p); v.original = portraitSrc(p); v.ctl = new AbortController();
   renderMain();
-  const timer = setTimeout(() => { v.timedOut = true; v.ctl.abort(); }, openAIImage(v.opts.model) ? 300000 : 180000);
+  const timer = gActiveTimeout(() => { v.timedOut = true; v.ctl.abort(); }, openAIImage(v.opts.model) ? 300000 : 180000);
   try {
     const src = await requestDocImage(w, p, { ...v.opts }, v.ctl.signal);
     if (S.imageGen === v && !v.ctl.signal.aborted) v.preview = src;
   } catch (e) { if (S.imageGen === v) v.error = v.timedOut ? "이미지 생성 시간이 초과되었습니다. 다시 시도해 주세요." : e.code === "cancelled" ? "이미지 생성을 중단했습니다." : (e.message || errMsg(e)); }
-  finally { clearTimeout(timer); v.busy = false; if (S.imageGen === v && S.world === w && S.view.key === v.key) renderMain(); }
+  finally { timer(); v.busy = false; if (S.imageGen === v && S.world === w && S.view.key === v.key) renderMain(); }
 }
 async function applyDocImage() {
   const v = S.imageGen, w = S.world, p = v && S.pages[v.key];
@@ -4531,6 +4571,7 @@ document.addEventListener("click", ev => {   // 길게 누른 뒤 손을 뗄 때
 }, true);
 document.addEventListener("contextmenu", ev => { if (ev.target.closest?.("a.wl.new")) ev.preventDefault(); });
 document.addEventListener("visibilitychange", () => {   // 다른 기기에서 작업하고 돌아오면 바뀐 것을 받아 온다
+  if (document.visibilityState === "visible" && (S.creating || S.gen || S.storyGen || S.checking || S.syncing || S.fixing || S.bgSync || S.edit?.aiBusy || S.proseGen?.busy || S.imageGen?.busy)) toast("진행 중인 응답을 이어받습니다.");
   if (document.visibilityState === "visible" && Sync.acct && S.ready && Date.now() - Sync.lastAt > 30000) Sync.pull();
   if (document.visibilityState === "hidden" && Sync.acct && Sync.pending()) Sync.push();
 });
