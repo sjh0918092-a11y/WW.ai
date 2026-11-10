@@ -79,8 +79,12 @@ h1.t{font-family:var(--f-display);font-weight:700;font-size:30px;line-height:1.2
 .infobox .ih{background:var(--tint);padding:10px 12px;font-family:var(--f-display);font-weight:700;font-size:15px;text-align:center}
 .portrait{padding:10px;text-align:center;border-bottom:1px solid var(--line)}
 .portrait img{display:block;max-width:100%;max-height:400px;width:auto;height:auto;margin:0 auto;object-fit:contain}
-.portrait .row{justify-content:center;gap:8px;margin-top:8px}
-.portrait .btn{font-size:12px;padding:4px 10px}
+.portrait-menu{position:relative;align-self:flex-start}
+.portrait-menu>summary{list-style:none}
+.portrait-menu>summary::-webkit-details-marker{display:none}
+.portrait-menu>summary::after{content:"▾";font-size:10px;color:var(--muted)}
+.portrait-actions{position:absolute;top:calc(100% + 4px);left:0;z-index:4;min-width:170px;padding:6px;border:1px solid var(--line);border-radius:var(--r);background:var(--sheet);box-shadow:0 6px 20px rgb(0 0 0 / .12)}
+.portrait-actions .btn{display:flex;width:100%;border:0;text-align:left}
 .infobox .ity{font-family:var(--f-mono);font-size:11px;color:var(--muted);text-align:center;padding:4px 0 2px;border-bottom:1px solid var(--line)}
 .infobox table{width:100%;border-collapse:collapse}
 .infobox th,.infobox td{padding:6px 10px;border-top:1px solid var(--line);vertical-align:top;text-align:left}
@@ -353,7 +357,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.11 · 2026-11-10";
+const APP_VERSION = "v6.12 · 2026-11-10";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -2695,13 +2699,17 @@ async function setPortrait(k, file) {
     if (S.world === w && S.view.name === "article" && S.view.key === k && !S.edit) renderMain();
   }
 }
-function portraitHtml(p, k, held) {
+function portraitHtml(p) {
+  const src = p.type === "인물" ? portraitSrc(p) : "";
+  return src ? `<div class="portrait"><img src="${esc(src)}" alt="${esc(p.title)} 프로필 이미지" decoding="async"></div>` : "";
+}
+function portraitMenuHtml(p, k, held) {
   if (p.type !== "인물") return "";
   const src = portraitSrc(p), busy = S.portraitJob?.key === k && S.portraitJob?.wid === S.world.id;
   const disabled = held || S.portraitJob || portraitBusy(k) ? "disabled" : "";
-  return `<div class="portrait">${src ? `<img src="${esc(src)}" alt="${esc(p.title)} 프로필 이미지" decoding="async">` : ""}
-    <div class="row"><button type="button" class="btn" data-portrait="${k}" ${disabled}>${busy ? "이미지 저장 중…" : src ? "이미지 변경" : "프로필 이미지 추가"}</button>${src ? `<button type="button" class="btn" data-portrait-remove="${k}" ${disabled}>삭제</button>` : ""}</div>
-    <input type="file" data-portrait-file="${k}" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" aria-label="${esc(p.title)} 프로필 이미지 선택" hidden></div>`;
+  return `<details class="portrait-menu"><summary class="btn">${busy ? "이미지 저장 중…" : "프로필 이미지"}</summary>
+    <div class="portrait-actions"><button type="button" class="btn" data-portrait="${k}" ${disabled}>${src ? "이미지 변경" : "이미지 추가"}</button>${src ? `<button type="button" class="btn dng" data-portrait-remove="${k}" ${disabled}>이미지 삭제</button>` : ""}</div>
+    <input type="file" data-portrait-file="${k}" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" aria-label="${esc(p.title)} 프로필 이미지 선택" hidden></details>`;
 }
 
 function openEditor(k) {
@@ -3351,7 +3359,7 @@ function articleHtml(k) {
       <div class="tools"><button type="button" class="btn pri" data-gen="${k}" ${S.gen || !S.sample ? "disabled" : ""}>이 문서 작성하기</button><button type="button" class="btn" data-compose="${k}">방향을 정해 작성</button></div></div>`;
   }
   const fns = [];
-  const box = p.infobox?.length || p.type === "인물" ? `<aside class="infobox"><div class="ih">${esc(p.title)}</div>${portraitHtml(p, k, held)}<div class="ity">${esc(p.type)}</div><table>${(p.infobox || []).map((r, i) => `<tr><th>${esc(r.label)}</th><td class="secb" data-ib="${i}">${blocks(r.value, fns).replace(/^<p>|<\/p>$/g, "")}</td></tr>`).join("")}</table></aside>` : "";
+  const box = p.infobox?.length || p.type === "인물" ? `<aside class="infobox"><div class="ih">${esc(p.title)}</div>${portraitHtml(p)}<div class="ity">${esc(p.type)}</div><table>${(p.infobox || []).map((r, i) => `<tr><th>${esc(r.label)}</th><td class="secb" data-ib="${i}">${blocks(r.value, fns).replace(/^<p>|<\/p>$/g, "")}</td></tr>`).join("")}</table></aside>` : "";
   let n1 = 0, n2 = 0;
   const nums = p.sections.map(s => { if ((s.level || 1) === 2 && n1) { n2++; return `${n1}.${n2}.`; } n1++; n2 = 0; return `${n1}.`; });
   const story = isStory(w), pk = story ? w.story.protagonistKey : null, card = story && k === pk && !held && S.storyCard?.wid === w.id ? S.storyCard : null;
@@ -3399,7 +3407,7 @@ function articleHtml(k) {
     ${p.categories?.length ? `<div class="cats"><b>분류</b>${p.categories.map(c => `<span>${esc(c)}</span>`).join("")}</div>` : ""}
     ${navboxesFor(w, k).map(([, nb]) => navboxHtml(nb, nb.src === k, k)).join("")}
     ${cardHtml}
-    <div class="tools"><button type="button" class="btn" data-edit="${k}">편집</button><button type="button" class="btn" data-check="${k}" ${S.checking || !S.sample ? "disabled" : ""}>설정 검사</button>${rw}<button type="button" class="btn" data-focus="${k}">설정 노트에서 보기</button>${fixed ? "" : `<button type="button" class="btn" data-mg="${k}" aria-expanded="${S.confirmMerge === k}">합치기</button>`}${k === pk ? `<button type="button" class="btn dng" disabled title="주인공 문서는 이야기의 중심이라 삭제할 수 없습니다">삭제</button>` : `<button type="button" class="btn dng" data-delpage="${k}" aria-expanded="${S.confirmDelPage === k}">삭제</button>`}</div>
+    <div class="tools"><button type="button" class="btn" data-edit="${k}">편집</button>${portraitMenuHtml(p, k, held)}<button type="button" class="btn" data-check="${k}" ${S.checking || !S.sample ? "disabled" : ""}>설정 검사</button>${rw}<button type="button" class="btn" data-focus="${k}">설정 노트에서 보기</button>${fixed ? "" : `<button type="button" class="btn" data-mg="${k}" aria-expanded="${S.confirmMerge === k}">합치기</button>`}${k === pk ? `<button type="button" class="btn dng" disabled title="주인공 문서는 이야기의 중심이라 삭제할 수 없습니다">삭제</button>` : `<button type="button" class="btn dng" data-delpage="${k}" aria-expanded="${S.confirmDelPage === k}">삭제</button>`}</div>
     ${mergeBox}${twinHtml}
     ${S.confirmDelPage === k ? `<div class="rwbox"><p style="margin:0">「${esc(p.title)}」 문서를 삭제할까요?</p>
       <p class="note">문서와 이 문서가 확정한 사실, 틀, 연표 항목이 지워집니다. 다른 문서가 이 항목을 언급한 내용은 남고, 그 링크는 미작성 문서로 돌아갑니다. 되돌릴 수 없습니다.</p>
@@ -3686,6 +3694,7 @@ function toast(msg, action) {
 
 /* ---------- events ---------- */
 document.addEventListener("click", ev => {
+  if (!ev.target.closest(".portrait-menu")) document.querySelectorAll(".portrait-menu[open]").forEach(m => { m.open = false; });
   if (!ev.target.closest(".search")) $("#sugg").hidden = true;
   const el = ev.target.closest("button, a"); if (!el) return;
   const d = el.dataset;
@@ -3911,6 +3920,7 @@ document.addEventListener("visibilitychange", () => {   // 다른 기기에서 �
   if (document.visibilityState === "hidden" && Sync.acct && Sync.pending()) Sync.push();
 });
 document.addEventListener("keydown", ev => {
+  if (ev.key === "Escape") document.querySelectorAll(".portrait-menu[open]").forEach(m => { m.open = false; m.querySelector("summary").focus(); });
   if (ev.key === "Escape") $("#sugg").hidden = true;
   if (ev.key === "Enter" && ev.target.matches?.("textarea.die-v")) { ev.preventDefault(); ev.target.blur(); }   // 주사위 칸은 한 줄. Enter는 입력을 마친다
 });

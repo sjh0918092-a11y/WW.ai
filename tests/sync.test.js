@@ -85,7 +85,7 @@ const until = async (fn, msg, ms = 15000) => { const t0 = Date.now(); while (Dat
     assert.strictEqual(await A.page.locator(".portrait img").getAttribute("src"), portrait);
     pass("프로필 이미지는 기존 문서 동기화로 다른 기기에 전달된다");
 
-    await B.page.click("[data-portrait-remove]");
+    await B.page.locator(".portrait-menu summary").click(); await B.page.click("[data-portrait-remove]");
     await until(() => !JSON.parse(row("SELECT data FROM pages WHERE wid = 'wsync1' AND pkey = 'e1'").data).portrait, "이미지 삭제가 서버에 올라감");
     await A.page.click('#side [data-act="gset"]'); await A.page.click('[data-act="acct-sync"]');
     await A.page.click('#side [data-act="home"]'); await A.page.click('.wcard button.open:has-text("동기화 세계")');
