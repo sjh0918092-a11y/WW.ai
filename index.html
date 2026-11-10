@@ -372,7 +372,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.17 · 2026-11-10";
+const APP_VERSION = "v6.18 · 2026-11-10";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -456,21 +456,21 @@ const ERR = {
   local_full: "브라우저 저장 공간이 가득 찼습니다.",
   quota_exceeded: "저장 공간 한도에 도달했습니다. 쓰지 않는 세계관을 삭제해 주세요.",
   timeout: "저장소가 응답하지 않습니다. 잠시 후 다시 열어 주세요.",
-  no_sample: "Gemini 연결 설정이 없습니다. 왼쪽 'Gemini 설정'에서 API 키나 중계 서버 주소와 접속 암호를 넣어 주세요.",
+  no_sample: "Gemini 연결 설정이 없습니다. 왼쪽 'AI 연결 설정'에서 API 키나 중계 서버 주소와 접속 암호를 넣어 주세요.",
   region: "Gemini가 지금 요청이 나간 지역을 지원하지 않습니다. 중계 서버를 쓰는 중이라면 서버 관리자에게 알려 주세요(중계 서버의 실행 지역 설정 필요). 직접 연결 중이라면 VPN을 끄거나 다른 네트워크에서 시도해 주세요.",
-  bad_key: "API 키나 중계 서버 접속 암호가 올바르지 않거나 권한이 없습니다. 'Gemini 설정'에서 확인해 주세요.",
-  model_not_found: "지정한 Gemini 모델을 찾을 수 없습니다. 'Gemini 설정'에서 모델 이름을 확인해 주세요.",
+  bad_key: "API 키나 중계 서버 접속 암호가 올바르지 않거나 권한이 없습니다. 'AI 연결 설정'에서 확인해 주세요.",
+  model_not_found: "지정한 Gemini 모델을 찾을 수 없습니다. 'AI 연결 설정'에서 모델 이름을 확인해 주세요.",
   network: "Gemini 서버에 연결하지 못했습니다. 인터넷 연결을 확인하고, 파일을 직접 열었다면 로컬 서버(예: python -m http.server)로 열어 보세요."
 };
 /* ---------- 진단 로그 ---------- */
 /* 문서 작성에 쓸 모델과 생각 깊이 (사용자 지정) */
-const PAGE_MODEL = {};   // 모델과 생각 깊이는 'Gemini 설정'에서 정한다
+const PAGE_MODEL = {};   // 모델과 생각 깊이는 'AI 연결 설정'에서 정한다
 
 /* ---------- Gemini API ---------- */
 const GKEY = "wwiki:gemini";
 const GBASE = "https://generativelanguage.googleapis.com/v1beta";
 const DEFAULT_RELAY = "https://lucky-feather-d3e9.sjh0918092.workers.dev";   // 기본 중계 서버. 주소는 공개돼도 되고, 접속 암호가 있어야 쓸 수 있다
-const GDEF = { mode: "key", relay: DEFAULT_RELAY, pass: "", key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "", check: "", checkThink: "medium", preCheck: true, imageModel: "gemini-nano-banana-2.1" };   // check: 설정 검사·수정 대조. 비우면 기본 모델
+const GDEF = { mode: "key", relay: DEFAULT_RELAY, pass: "", key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "", check: "", checkThink: "medium", preCheck: true, imageModel: "gemini-nano-banana-2.1", openaiKey: "" };   // check: 설정 검사·수정 대조. 비우면 기본 모델
 const THINKS = [["", "모델 기본값"], ["minimal", "minimal"], ["low", "low"], ["medium", "medium"], ["high", "high"]];
 let GS = (() => {
   let st = {}; try { st = JSON.parse(localStorage.getItem(GKEY) || "{}") || {}; } catch {}
@@ -2839,12 +2839,30 @@ function portraitMenuHtml(p, k, held) {
 
 /* ---------- 문서 이미지 생성: 한 장씩 미리 본 뒤 적용 ---------- */
 const IMAGE_MODELS = [
+  { id: "gpt-image-2.5-flare", label: "OpenAI · GPT Image 2.5 Flare" },
+  { id: "gpt-image-2.5-sunburst", label: "OpenAI · GPT Image 2.5 Sunburst" },
   { id: "gemini-nano-banana-2.1", label: "Nano Banana 2.1", price: .0336 },
   { id: "gemini-3.1-flash-lite-image", label: "Nano Banana 2 Lite", price: .0336 },
   { id: "gemini-3-pro-image", label: "Nano Banana Pro", price: .134 }
 ];
 const IMAGE_STYLES = ["세계관 지침 따름", "실사", "애니메이션", "웹툰", "유화", "수채화", "픽셀아트", "3D 렌더"];
 const imageDocStamp = p => JSON.stringify([p.title, p.type, p.summary, p.infobox, p.sections]);
+const openAIImage = model => /^gpt-image-/.test(model || "");
+const imageReady = model => openAIImage(model) ? !!GS.openaiKey : gReady();
+const imageSetupHint = model => openAIImage(model) ? "AI 연결 설정에서 OpenAI API 키를 저장해 주세요. ChatGPT 구독과 별도로 API 사용료가 청구됩니다." : "AI 연결 설정에서 이미지 생성이 가능한 Gemini API 연결을 저장해 주세요.";
+async function openAIImageFetch(model, prompt, ref, o, signal) {
+  const size = ({ "1:1": "1024x1024", "3:4": "1152x1536", "4:3": "1536x1152", "9:16": "864x1536", "16:9": "1536x864" })[o.ratio] || "1024x1024";
+  const values = { model, prompt, n: 1, size, quality: o.quality || "high", output_format: "png" };
+  let body, endpoint = "generations", headers = { Authorization: "Bearer " + GS.openaiKey };
+  if (ref) {
+    endpoint = "edits"; body = new FormData();
+    for (const [k, v] of Object.entries(values)) body.append(k, String(v));
+    const [meta, data] = ref.split(","), mime = /^data:([^;]+)/.exec(meta)[1];
+    body.append("image[]", new Blob([Uint8Array.from(atob(data), c => c.charCodeAt(0))], { type: mime }), "reference." + mime.split("/")[1]);
+  } else { headers["Content-Type"] = "application/json"; body = JSON.stringify(values); }
+  try { return await fetch("https://api.openai.com/v1/images/" + endpoint, { method: "POST", headers, body, signal }); }
+  catch (e) { if (e?.name === "AbortError") throw { code: "cancelled" }; throw { code: "network", message: "OpenAI에 연결하지 못했습니다. 네트워크 연결을 확인해 주세요." }; }
+}
 function imagePrompt(w, p, o) {
   return `위키 문서 「${p.title}」(${p.type})에 넣을 이미지 한 장을 생성한다. 문서에 나온 대상의 외모, 복장, 특징, 시대와 크기 관계를 따른다. 정해지지 않은 외모나 배경은 이 세계관에 맞게 구성한다. 인물이면 해당 인물, 장소면 장소, 물건이면 해당 물건을 중심으로 한다. 그림에 문서 제목이나 설명문을 쓰지 않는다.
 ## 세계관
@@ -2864,12 +2882,13 @@ async function requestDocImage(w, p, o, signal) {
   const prompt = imagePrompt(w, p, o), ref = o.useRef ? portraitSrc(p) : "";
   const m = /^data:(image\/[a-z]+);base64,(.+)$/.exec(ref);
   const parts = [{ text: prompt }, ...(m ? [{ inlineData: { mimeType: m[1], data: m[2] } }] : [])];
-  const send = () => gFetch(`/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", ...gAuth() }, body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: o.ratio, ...(model === "gemini-3.1-flash-lite-image" ? {} : { imageSize: "1K" }) } } }), signal });
+  const send = () => openAIImage(model) ? openAIImageFetch(model, prompt, ref, o, signal) : gFetch(`/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", ...gAuth() }, body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: o.ratio, ...(model === "gemini-3.1-flash-lite-image" ? {} : { imageSize: "1K" }) } } }), signal });
   const t0 = performance.now();
   try {
-    const res = await send();   // 공식 호환 API: 기존 중계 서버에서도 같은 모델을 그대로 사용
+    const res = await send();   // 공급자에 맞는 API로 한 번만 요청한다.
     if (!res.ok) throw await gError(res, model);
     const j = await res.json(), images = [];
+    if (openAIImage(model)) for (const entry of j.data || []) if (typeof entry.b64_json === "string") images.push({ mime: "image/png", data: entry.b64_json });
     const collect = x => {
       if (!x || typeof x !== "object" || x.thought === true || x.role === "user" || /thought|reason|^user$/.test(x.type || "")) return;
       const mime = x.mime_type || x.mimeType, data = x.data;
@@ -2892,17 +2911,17 @@ async function requestDocImage(w, p, o, signal) {
 function openImageGen(k) {
   const w = S.world, p = S.pages[k]; if (!w || !p) return;
   if (S.imageGen?.busy) { toast("진행 중인 이미지 생성을 마치거나 중단해 주세요."); return; }
-  S.imageGen = { wid: w.id, key: k, opts: { model: GS.imageModel || GDEF.imageModel, style: IMAGE_STYLES[0], ratio: p.type === "인물" ? "3:4" : "4:3", direction: "", useRef: !!portraitSrc(p) }, preview: "", error: "", busy: false };
+  S.imageGen = { wid: w.id, key: k, opts: { model: GS.imageModel || GDEF.imageModel, style: IMAGE_STYLES[0], ratio: p.type === "인물" ? "3:4" : "4:3", quality: "high", direction: "", useRef: !!portraitSrc(p) }, preview: "", error: "", busy: false };
   renderMain(); $(".image-gen")?.scrollIntoView({ block: "start", behavior: "smooth" });
 }
 async function generateDocImage() {
   const v = S.imageGen, w = S.world, p = v && S.pages[v.key];
   if (!v || v.busy || !w || v.wid !== w.id || !p) return;
-  if (!gReady()) { v.error = "Gemini 설정에서 이미지 생성이 가능한 유료 API 연결을 먼저 저장해 주세요."; renderMain(); return; }
+  if (!imageReady(v.opts.model)) { v.error = imageSetupHint(v.opts.model); renderMain(); return; }
   if (portraitBusy(v.key) || S.portraitJob) { v.error = "문서 작업이 끝난 뒤 생성해 주세요."; renderMain(); return; }
   v.busy = true; v.timedOut = false; v.error = ""; v.preview = ""; v.stamp = imageDocStamp(p); v.original = portraitSrc(p); v.ctl = new AbortController();
   renderMain();
-  const timer = setTimeout(() => { v.timedOut = true; v.ctl.abort(); }, 180000);
+  const timer = setTimeout(() => { v.timedOut = true; v.ctl.abort(); }, openAIImage(v.opts.model) ? 300000 : 180000);
   try {
     const src = await requestDocImage(w, p, { ...v.opts }, v.ctl.signal);
     if (S.imageGen === v && !v.ctl.signal.aborted) v.preview = src;
@@ -2927,17 +2946,18 @@ function imageGenHtml(w, k) {
   const o = v.opts, disabled = v.busy ? "disabled" : "", price = IMAGE_MODELS.find(m => m.id === o.model)?.price;
   const models = IMAGE_MODELS.some(m => m.id === o.model) ? IMAGE_MODELS : [...IMAGE_MODELS, { id: o.model, label: o.model }];
   return `<section class="image-gen" aria-label="문서 이미지 생성"><h3>AI 이미지 생성</h3>
-    ${!gReady() ? `<p class="note">Gemini 설정에서 이미지 생성이 가능한 유료 API 연결을 저장해 주세요. <button type="button" class="btn" data-act="gset">Gemini 설정</button></p>` : ""}
+    ${!imageReady(o.model) ? `<p class="note">${esc(imageSetupHint(o.model))} <button type="button" class="btn" data-act="gset">AI 연결 설정</button></p>` : ""}
     <details class="memo"><summary>세계관 공통 이미지 지침</summary><div class="guide">${esc(w.imageGuide || "지정된 이미지 지침이 없습니다.")}</div><button type="button" class="btn" data-act="image-guide" ${disabled}>이미지 지침 설정</button></details>
     <div class="two"><div><label class="lb" for="imageModel">이미지 모델</label><select id="imageModel" data-igf="model" ${disabled}>${models.map(m => `<option value="${esc(m.id)}" ${o.model === m.id ? "selected" : ""}>${esc(m.label)}</option>`).join("")}</select></div>
     <div><label class="lb" for="imageStyle">화풍</label><select id="imageStyle" data-igf="style" ${disabled}>${IMAGE_STYLES.map(s => `<option ${o.style === s ? "selected" : ""}>${s}</option>`).join("")}</select></div></div>
     <label class="lb" for="imageRatio">화면 비율</label><select id="imageRatio" data-igf="ratio" ${disabled}>${["1:1", "3:4", "4:3", "9:16", "16:9"].map(r => `<option ${o.ratio === r ? "selected" : ""}>${r}</option>`).join("")}</select>
+    ${openAIImage(o.model) ? `<label class="lb" for="imageQuality">생성 품질</label><select id="imageQuality" data-igf="quality" ${disabled}>${[["low", "낮음"], ["medium", "보통"], ["high", "높음"], ["auto", "자동"]].map(([v, label]) => `<option value="${v}" ${(o.quality || "high") === v ? "selected" : ""}>${label}</option>`).join("")}</select><p class="note">OpenAI API는 별도 과금됩니다. 품질과 크기에 따라 비용·생성 시간이 달라지며, ChatGPT 채팅과 결과가 같지는 않을 수 있습니다.</p>` : ""}
     <label class="lb" for="imageDirection">이번 이미지 추가 요청</label><textarea id="imageDirection" data-igf="direction" rows="3" maxlength="2000" placeholder="예: 상반신 초상, 항구를 배경으로, 차분한 표정" ${disabled}>${esc(o.direction)}</textarea>
     ${portraitSrc(p) ? `<label class="lb" style="font-weight:400"><input type="checkbox" data-igf="useRef" ${o.useRef ? "checked" : ""} ${disabled}>기존 이미지를 참고 이미지로 보내기</label>` : ""}
     <p class="note">공통 이미지 지침과 문서 내용을 함께 참고해 한 장을 생성합니다.${price ? ` 1K 이미지 출력비 약 $${price}/장, 입력 비용 별도.` : ""} 기존 이미지는 적용 버튼을 누를 때 바뀝니다.</p>
     ${v.error ? `<div class="banner warn" role="alert">${esc(v.error)}</div>` : ""}
     ${v.preview ? `${imageZoomHtml(v.preview, p.title + " 생성 이미지 미리보기", true)}<div class="row"><button type="button" class="btn pri" data-act="image-apply">이 이미지 적용</button><button type="button" class="btn" data-act="image-discard">미리보기 버리기</button></div>` : ""}
-    <div class="row" style="margin-top:10px"><button type="button" class="btn pri" data-act="image-generate" ${disabled || !gReady() ? "disabled" : ""}>${v.busy ? "이미지 생성 중…" : v.preview ? "다시 1장 생성" : "1장 생성"}</button><button type="button" class="btn" data-act="image-close">${v.busy ? "생성 중단" : "닫기"}</button></div></section>`;
+    <div class="row" style="margin-top:10px"><button type="button" class="btn pri" data-act="image-generate" ${disabled || !imageReady(o.model) ? "disabled" : ""}>${v.busy ? "이미지 생성 중…" : v.preview ? "다시 1장 생성" : "1장 생성"}</button><button type="button" class="btn" data-act="image-close">${v.busy ? "생성 중단" : "닫기"}</button></div></section>`;
 }
 
 function openEditor(k) {
@@ -3368,7 +3388,7 @@ function renderSide() {
   const side = $("#side"), w = S.world;
   if (!w || S.view.name === "home") {
     side.innerHTML = `<section><h4>WorldWiki.ai</h4><ul><li><button type="button" class="cur" data-act="home">세계관 목록</button></li></ul></section>
-      <section class="stat"><h4>저장 위치</h4><span>${esc(storeLabel())}</span></section><section><h4>도구</h4><ul><li><button type="button" data-act="gset" class="${S.view.name === "gset" ? "cur" : ""}">Gemini 설정${gReady() ? "" : " ⚠"}</button></li><li><button type="button" data-act="log" class="${S.view.name === "log" ? "cur" : ""}">로그 보기 (${LOG.length})</button></li></ul></section>`;
+      <section class="stat"><h4>저장 위치</h4><span>${esc(storeLabel())}</span></section><section><h4>도구</h4><ul><li><button type="button" data-act="gset" class="${S.view.name === "gset" ? "cur" : ""}">AI 연결 설정${gReady() ? "" : " ⚠"}</button></li><li><button type="button" data-act="log" class="${S.view.name === "log" ? "cur" : ""}">로그 보기 (${LOG.length})</button></li></ul></section>`;
     return;
   }
   const ents = Object.values(w.entities); const done = ents.filter(e => e.page).length;
@@ -3382,7 +3402,7 @@ function renderSide() {
     </ul></section>
     <section class="stat"><h4>문서 현황</h4><span>작성된 문서 <em>${done}</em></span><span>미작성 항목 <em>${ents.length - done}</em></span><span>연표 사건 <em>${w.timeline.length}</em></span></section>
     ${S.gen ? `<section><h4>작성 중</h4><div class="genpill"><span class="dot"></span><button type="button" class="btn" data-k="${S.gen.key}" style="padding:2px 8px">${esc(S.gen.title)}</button></div></section>` : ""}
-    <section><h4>도구</h4><ul><li><button type="button" data-act="gset" class="${S.view.name === "gset" ? "cur" : ""}">Gemini 설정${gReady() ? "" : " ⚠"}</button></li><li><button type="button" data-act="log" class="${S.view.name === "log" ? "cur" : ""}">로그 보기 (${LOG.length})</button></li></ul></section>
+    <section><h4>도구</h4><ul><li><button type="button" data-act="gset" class="${S.view.name === "gset" ? "cur" : ""}">AI 연결 설정${gReady() ? "" : " ⚠"}</button></li><li><button type="button" data-act="log" class="${S.view.name === "log" ? "cur" : ""}">로그 보기 (${LOG.length})</button></li></ul></section>
     ${S.syncing ? `<section><h4>장 반영 중</h4><div class="genpill"><span class="dot"></span><button type="button" class="btn" data-k="${S.syncing}" style="padding:2px 8px">${esc(w.entities[S.syncing]?.title || "")}</button></div></section>` : ""}
     ${rec.length ? `<section class="rec"><h4>최근 본 문서</h4><ul>${rec.map(k => `<li><button type="button" data-k="${k}" class="${k === cur ? "cur" : ""}" ${isStory(w) && missingChs(w, k).length ? `title="이번 장의 변화가 아직 반영되지 않았습니다. 열면 반영합니다"` : ""}>${esc(w.entities[k].title)}${isStory(w) && missingChs(w, k).length ? " •" : ""}</button></li>`).join("")}</ul></section>` : ""}`;
 }
@@ -3391,9 +3411,9 @@ const storeLabel = () => Sync.acct ? `서버에 저장 (${Sync.acct.id}${Sync.pe
 function gsetHtml() {
   const opt = v => THINKS.map(([x, l]) => `<option value="${x}" ${v === x ? "selected" : ""}>${esc(l)}</option>`).join("");
   const dl = `<datalist id="gmodels">${(S.gmodels || []).map(m => `<option value="${esc(m.id)}">${esc(m.label)}</option>`).join("")}</datalist>`;
-  return `<div class="sheet gset"><div class="crumb"><span>도구</span></div><h1 class="t">Gemini 설정</h1>
+  return `<div class="sheet gset"><div class="crumb"><span>도구</span></div><h1 class="t">AI 연결 설정</h1>
     <p class="note">연결 설정은 이 브라우저의 localStorage에 평문으로 저장됩니다. 공용 컴퓨터에서는 쓰지 마세요.</p>
-    <h2 class="nf-h">연결 방식</h2>
+    <h2 class="nf-h">Gemini 연결 방식</h2>
     <select id="gMode" class="txt"><option value="key" ${gRelay() ? "" : "selected"}>내 API 키로 바로 연결</option><option value="relay" ${gRelay() ? "selected" : ""}>중계 서버로 연결 (초대받은 경우)</option></select>
     <div id="gKeyBox" ${gRelay() ? "hidden" : ""}>
       <label class="lb" for="gKey">Gemini API 키 <span class="note" style="font-weight:400">Google AI Studio에서 발급 · 요청은 브라우저에서 Google로 바로 갑니다</span></label>
@@ -3407,19 +3427,23 @@ function gsetHtml() {
         <p class="note" style="margin:6px 0 0">비워 두면 기본 서버를 씁니다.</p></details>
       <div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="relay-invite">사이트 링크 복사</button><span class="note">친구에게 링크를 보내고, 접속 암호는 따로 알려 주세요.</span></div>
     </div>
-    <h2 class="nf-h">모델</h2>
+    <h2 class="nf-h">Gemini 문서 모델</h2>
     <div class="two"><div><label class="lb" for="gMain">기본 모델 <span class="note" style="font-weight:400">세계관 생성, 문서 작성, 충돌 고치기</span></label><input id="gMain" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.main)}"></div>
       <div><label class="lb" for="gMainT">생각 깊이</label><select id="gMainT">${opt(GS.mainThink)}</select></div></div>
     <div class="two"><div><label class="lb" for="gQuick">빠른 모델 <span class="note" style="font-weight:400">분위기 판별</span></label><input id="gQuick" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.quick)}"></div>
       <div><label class="lb" for="gQuickT">생각 깊이</label><select id="gQuickT">${opt(GS.quickThink)}</select></div></div>
     <div class="two"><div><label class="lb" for="gCheck">검사 모델 <span class="note" style="font-weight:400">설정 검사, 수정 대조 · 비워 두면 기본 모델</span></label><input id="gCheck" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.check || "")}" placeholder="${esc(GS.main || GDEF.main)} (기본 모델)"></div>
       <div><label class="lb" for="gCheckT">생각 깊이</label><select id="gCheckT">${opt(GS.checkThink ?? GDEF.checkThink)}</select></div></div>
-    <label class="lb" for="gImage">이미지 생성 모델</label><input id="gImage" class="txt" list="gImageModels" value="${esc(GS.imageModel || GDEF.imageModel)}"><datalist id="gImageModels">${IMAGE_MODELS.map(m => `<option value="${m.id}">${m.label}</option>`).join("")}</datalist>
+    <h2 class="nf-h">이미지 생성</h2>
+    <label class="lb" for="gImage">기본 이미지 모델</label><input id="gImage" class="txt" list="gImageModels" value="${esc(GS.imageModel || GDEF.imageModel)}"><datalist id="gImageModels">${IMAGE_MODELS.map(m => `<option value="${m.id}">${m.label}</option>`).join("")}</datalist>
+    <label class="lb" for="gOpenAI">OpenAI API 키 (이미지 생성용)</label>
+    <div class="keyrow"><input id="gOpenAI" class="txt" type="password" autocomplete="off" spellcheck="false" value="${esc(GS.openaiKey || "")}" placeholder="sk-…"><button type="button" class="btn" data-act="gkey-show" data-for="gOpenAI">보기</button></div>
+    <p class="note">선택 사항입니다. OpenAI 모델을 고르면 브라우저에서 OpenAI로 직접 요청합니다. Gemini 중계 서버는 사용하지 않습니다. <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">API 키 발급</a> · ChatGPT 구독과 별도 과금되며, 계정에 따라 조직 인증이 필요할 수 있습니다. 키는 이 브라우저에만 저장되고 세계관 백업·동기화에는 포함되지 않습니다.</p>
     <label class="lb" for="gPre" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="gPre" ${GS.preCheck !== false ? "checked" : ""}>문서 작성 직후 한 번 자동 검사하고, 어긋난 곳은 고쳐서 보여 주기 <span class="note">끄면 자동 검사하지 않습니다. 이후 검사는 문서의 설정 검사 버튼으로 실행합니다</span></label>
     <p class="note" style="margin-top:6px">자동 검사는 새 문서를 작성하거나 다시 쓸 때 한 번만 돕니다. 이후에는 설정 검사 버튼을 눌렀을 때만 검사합니다. 검사 모델을 높이거나 생각 깊이를 올리면 헛짚는 지적이 줄지만, 검사가 느려지고 사용량이 늘어납니다.</p>
     ${dl}
     <p class="note" style="margin-top:8px">모델이 지원하지 않는 생각 깊이를 고르면 그 요청은 모델 기본값으로 다시 보냅니다. 응답은 JSON 모드로 받습니다.</p>
-    <div class="row"><button type="button" class="btn pri" data-act="gset-save">저장</button><button type="button" class="btn" data-act="gset-test">연결 시험</button><button type="button" class="btn" data-act="gset-models">모델 목록 불러오기</button></div>
+    <div class="row"><button type="button" class="btn pri" data-act="gset-save">저장</button><button type="button" class="btn" data-act="gset-test">Gemini 연결 시험</button><button type="button" class="btn" data-act="gset-models">Gemini 모델 목록 불러오기</button></div>
     <p class="res" id="gRes">${esc(S.gres || "")}</p>
     <h2 class="nf-h">계정 (서버에 세계관 저장)</h2>
     ${acctHtml()}
@@ -3457,7 +3481,7 @@ async function acctAction(kind) {
 }
 function readGsetForm() {
   const v = id => ($("#" + id)?.value ?? "").trim();
-  GS = { ...GS, mode: v("gMode") === "relay" ? "relay" : "key", key: v("gKey"), relay: normRelay(v("gRelay")) || DEFAULT_RELAY, pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT"), check: v("gCheck"), checkThink: v("gCheckT"), preCheck: !!$("#gPre")?.checked, imageModel: v("gImage") || GDEF.imageModel };
+  GS = { ...GS, mode: v("gMode") === "relay" ? "relay" : "key", key: v("gKey"), relay: normRelay(v("gRelay")) || DEFAULT_RELAY, pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT"), check: v("gCheck"), checkThink: v("gCheckT"), preCheck: !!$("#gPre")?.checked, imageModel: v("gImage") || GDEF.imageModel, openaiKey: v("gOpenAI") };
   saveGS(); S.sample = gReady() ? gemini : null;
 }
 function setGres(t) { S.gres = t; const el = $("#gRes"); if (el) el.textContent = t; }
@@ -3989,7 +4013,7 @@ document.addEventListener("click", ev => {
     case "log": S.view = { name: "log" }; renderAll(); window.scrollTo({ top: 0 }); break;
     case "gset": S.view = { name: "gset" }; S.gres = ""; renderAll(); window.scrollTo({ top: 0 }); break;
     case "gkey-show": { const i = $("#" + (d.for || "gKey")); if (i) i.type = i.type === "password" ? "text" : "password"; break; }
-    case "gset-save": readGsetForm(); setGres(""); renderSide(); toast(gReady() ? "Gemini 설정을 저장했습니다." : (gRelay() ? "중계 서버 주소나 접속 암호가 비어 있어 생성 기능이 꺼집니다." : "키가 비어 있어 생성 기능이 꺼집니다.")); renderMain(); break;
+    case "gset-save": readGsetForm(); setGres(""); renderSide(); toast("AI 연결 설정을 저장했습니다."); renderMain(); break;
     case "relay-invite": {
       readGsetForm();
       const link = location.origin + location.pathname + (GS.relay !== DEFAULT_RELAY ? "#relay=" + encodeURIComponent(GS.relay) : "");

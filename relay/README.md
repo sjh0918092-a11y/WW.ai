@@ -123,9 +123,9 @@ Worker 주소를 열었을 때 `storageConfigured`가 `true`면 저장소가 연
 지침을 저장해도 기존 이미지는 바뀌지 않는다. 이미지 일괄 교체 기능은 없다.
 
 기본 모델은 `gemini-nano-banana-2.1`, 선택 모델은 `gemini-3.1-flash-lite-image`, `gemini-3-pro-image`다.
-Gemini 설정의 이미지 모델 기본값을 바꿀 수 있다. 이미지 생성은 유료 API 사용량에 포함된다.
+AI 연결 설정의 기본 이미지 모델을 바꿀 수 있다. 이미지 생성은 유료 API 사용량에 포함된다.
 
-모든 모델은 공식 `generateContent` 이미지 생성 경로를 사용하므로 기존 Worker를
+Gemini 이미지 모델은 공식 `generateContent` 이미지 생성 경로를 사용하므로 기존 Worker를
 다시 게시하거나 별도 이미지 API 키를 추가할 필요가 없다.
 네트워크 오류나 생성 실패를 자동 재시도하지 않아 중복 과금을 피한다.
 
@@ -135,3 +135,23 @@ Gemini 설정의 이미지 모델 기본값을 바꿀 수 있다. 이미지 생�
 업로드·생성 이미지는 원본 비율을 유지하며 긴 변 최대 2048px로 저장한다. 작은 원본을 늘려 저장하지는 않는다.
 문서 이미지와 생성 미리보기를 누르면 확대창에서 화면 맞춤·100% 크기로 볼 수 있다.
 이전 버전이 이미 축소 저장한 이미지의 해상도를 높이려면 원래 파일을 다시 업로드해야 한다.
+
+### OpenAI 이미지 모델
+
+**AI 연결 설정 → OpenAI API 키 (이미지 생성용)**에 키를 넣고 **저장**한다.
+이미지 생성창에서 `OpenAI · GPT Image 2.5 Flare` 또는 `OpenAI · GPT Image 2.5 Sunburst`를 선택한다.
+설정의 **기본 이미지 모델**에도 지정할 수 있다. Gemini의 문서 작성·검사 모델과 연결은 그대로 유지된다.
+
+OpenAI는 브라우저에서 `https://api.openai.com/v1/images/generations`로 직접 요청한다.
+기존 이미지 참고를 선택하면 `images/edits`에 multipart로 이미지를 함께 보낸다.
+Gemini 키·중계 암호는 OpenAI로 보내지 않으며 OpenAI 키도 Gemini로 보내지 않는다.
+OpenAI 키는 기존 연결 설정과 함께 이 브라우저 localStorage에만 저장되며 백업·서버 동기화에 포함되지 않는다.
+기존 Gemini Worker 변경·재배포는 필요 없다.
+
+ChatGPT 구독과 별도로 OpenAI API 사용료가 발생한다. 조직 인증이나 모델 접근 권한이 필요할 수 있다.
+품질은 기본 `high`, 선택지는 `low` / `medium` / `high` / `auto`다. 출력은 PNG 한 장이며,
+비율별 생성 크기는 1:1 1024×1024, 3:4 1152×1536, 4:3 1536×1152, 9:16 864×1536, 16:9 1536×864다.
+생성은 최대 5분 기다리고 자동 재시도하지 않는다. 중단해도 이미 시작한 서버 처리의 과금 취소가 보장되지는 않는다.
+공통 이미지 지침·문서·추가 요청·미리보기 적용 절차는 Gemini와 같다. ChatGPT 채팅과 같은 결과를 보장하지 않는다.
+
+공식 API 기준: https://developers.openai.com/api/docs/guides/image-generation
