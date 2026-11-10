@@ -49,7 +49,7 @@ const until = async (fn, msg, ms = 15000) => { const t0 = Date.now(); while (Dat
     /* 기기 A: 세계관 하나를 가진 상태에서 가입 */
     const A = await device();
     const backup = { app: "worldwiki", version: 1, worlds: [{ kind: "world", id: "wsync1", title: "동기화 세계", tagline: "", seed: "테스트 원안입니다.", era: "1900년", rules: [], timeline: [], userCanon: "", style: "encyc", entities: { e1: { title: "첫 문서", type: "인물", summary: "첫 문서다.", facts: [], mentions: [], page: true, box: "" } }, mainKey: "e1", createdAt: 1, updatedAt: 1000 }],
-      pages: { wsync1: { e1: { key: "e1", title: "첫 문서", type: "인물", summary: "첫 문서다.", categories: [], notices: [], infobox: [], sections: [{ heading: "개요", level: 1, body: "원래 본문이다." }], links: [], createdAt: 1, savedAt: 1000 } } } };
+      pages: { wsync1: { e1: { key: "e1", title: "첫 문서", type: "인물", summary: "첫 문서다.", categories: [], notices: [], infobox: [], sections: [{ heading: "개요", level: 1, body: "원래 본문이다." }], links: [], shortStories: [{ id: "sync-short", title: "밤의 기록", body: "정비병은 잠시 손을 멈췄다.", createdAt: 1 }], createdAt: 1, savedAt: 1000 } } } };
     const f = path.join(os.tmpdir(), "ww-sync-backup.json"); fs.writeFileSync(f, JSON.stringify(backup));
     await A.page.setInputFiles("#importFile", f); await A.page.waitForTimeout(500);
     await A.page.fill("#acId", "테스터"); await A.page.fill("#acPw", "secret1");
@@ -69,6 +69,12 @@ const until = async (fn, msg, ms = 15000) => { const t0 = Date.now(); while (Dat
     await B.page.click('.wcard button.open:has-text("동기화 세계")'); await B.page.waitForSelector(".article h2");
     assert((await B.page.locator(".article").innerText()).includes("원래 본문이다."));
     pass("다른 기기에서 같은 아이디로 로그인하면 세계관과 문서가 그대로 보인다");
+
+    await B.page.click("[data-prose-open]"); await B.page.locator(".prose-saved summary").click();
+    assert((await B.page.locator(".prose-saved .prose-text").innerText()).includes("정비병은 잠시"));
+    assert.strictEqual(JSON.parse(row("SELECT data FROM pages WHERE wid = 'wsync1' AND pkey = 'e1'").data).shortStories[0].id, "sync-short");
+    await B.page.click('[data-act="prose-close"]');
+    pass("문서에 보관한 단편도 서버를 거쳐 다른 기기에서 API 키 없이 읽는다");
 
     // 이미지도 기존 문서 데이터로 동기화하며 별도 업로드 API를 쓰지 않는다.
     const png = Buffer.from(await B.page.evaluate(() => {

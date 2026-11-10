@@ -99,6 +99,9 @@ h1.t{font-family:var(--f-display);font-weight:700;font-size:30px;line-height:1.2
 .image-gen h3{margin:0 0 8px;font-size:16px}
 .image-gen select{width:100%;padding:8px;border:1px solid var(--line);border-radius:var(--r);background:var(--sheet);color:var(--ink);font:inherit}
 .image-gen .preview{display:block;max-height:640px;max-width:100%;margin:12px auto;object-fit:contain}
+.prose-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:16px;line-height:2;margin:16px 0}
+.prose-saved{margin-top:20px;border-top:1px solid var(--line);padding-top:12px}
+.prose-saved details{margin:12px 0}
 .image-gen .guide{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0 12px;font-size:13px;color:var(--muted)}
 .infobox .ity{font-family:var(--f-mono);font-size:11px;color:var(--muted);text-align:center;padding:4px 0 2px;border-bottom:1px solid var(--line)}
 .infobox table{width:100%;border-collapse:collapse}
@@ -372,7 +375,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.19 · 2026-11-10";
+const APP_VERSION = "v6.20 · 2026-11-10";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -641,7 +644,7 @@ async function listGeminiModels() {
 }
 const LOGK = "wwiki:log";
 const LOG = (() => { try { const v = JSON.parse(localStorage.getItem(LOGK) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })();
-const KIND = { image: "이미지 생성", choices: "행동 후보", read: "문서 읽기 검사", bible: "세계관 생성", storyBible: "스토리 세계관 생성", chapterPlan: "장 계획", chapterBlock: "장 섹션", page: "문서 작성", tone: "분위기 판별", check: "설정 검사", analyze: "수정 대조", fix: "충돌 고치기" };
+const KIND = { prose: "단편 쓰기", image: "이미지 생성", choices: "행동 후보", read: "문서 읽기 검사", bible: "세계관 생성", storyBible: "스토리 세계관 생성", chapterPlan: "장 계획", chapterBlock: "장 섹션", page: "문서 작성", tone: "분위기 판별", check: "설정 검사", analyze: "수정 대조", fix: "충돌 고치기" };
 function pushLog(r) {
   LOG.push(r); if (LOG.length > 40) LOG.splice(0, LOG.length - 40);
   try { localStorage.setItem(LOGK, JSON.stringify(LOG)); } catch {}
@@ -654,7 +657,7 @@ async function callJson(kind, prompt, opts = {}, meta = {}) {
   const t0 = performance.now(); let first = null, chars = 0;
   const user = opts.onText;
   const rec = { at: Date.now(), kind, tier: opts.modelTier || "default", model: "", effort: "", in: prompt.length, ...meta };
-  const o = { progressWatch: ["page", "check", "read"].includes(kind), ...opts, onText: u => { if (first === null) first = performance.now(); chars = u.text.length; if (user) user(u); },
+  const o = { progressWatch: ["page", "check", "read", "prose"].includes(kind), ...opts, onText: u => { if (first === null) first = performance.now(); chars = u.text.length; if (user) user(u); },
     onRetry: r => { rec.retry = r.n; (rec.retries ||= []).push(r.reason ? String(r.reason).slice(0, 120) : r.mode); opts.onRetry?.(r); },
     onMeta: m => { rec.model = m.model; rec.effort = m.think || ""; if (m.retries) rec.retry = m.retries; if (m.usage) rec.tok = { i: m.usage.promptTokenCount || 0, o: m.usage.candidatesTokenCount || 0, t: m.usage.thoughtsTokenCount || 0 }; } };
   const done = () => { rec.first = first === null ? null : Math.round(first - t0); rec.total = Math.round(performance.now() - t0); rec.out = chars; };
@@ -878,7 +881,7 @@ const Sync = {
     const cur = S.world?.id, key = S.view.key;
     S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     if (cur) {
-      const busy = S.gen || S.storyGen || S.syncing || S.checking || S.edit || S.bgSync || S.portraitJob || S.imageGen?.busy;
+      const busy = S.gen || S.storyGen || S.syncing || S.checking || S.edit || S.bgSync || S.portraitJob || S.imageGen?.busy || S.proseGen?.busy;
       if (!S.worlds.some(x => x.id === cur)) { if (!busy) { S.world = null; S.view = { name: "home" }; renderAll(); } toast("다른 기기에서 이 세계관을 지웠습니다."); return; }
       if (busy) { toast("다른 기기에서 바뀐 내용을 받았습니다. 작업이 끝난 뒤 세계관을 다시 열면 보입니다."); return; }
       await openWorld(cur, key); toast("다른 기기에서 바뀐 내용을 받았습니다.");
@@ -921,7 +924,7 @@ const S = {
   gen: null, genErr: null, checking: null, sample: null, sampleReady: false,
   creating: false, createErr: null, seed: "", seedTab: "own", ownSeed: "", dice: null, whatIfs: null, first: "", guideIn: "",
   confirmDel: null, confirmRewrite: null, canonFilter: "all", focusEnt: null, nf: new Set(),
-  edit: null, refreshing: null, confirmDelPage: null, confirmMerge: null, compose: null, portraitJob: null, imageGen: null,
+  edit: null, refreshing: null, confirmDelPage: null, confirmMerge: null, compose: null, portraitJob: null, imageGen: null, proseGen: null,
   mode: "basic", storyN: 5, protoDesc: "", cast: [], regen: null, storyGen: null, syncQ: [], syncing: null, syncErr: null, hold: null, adv: null, storyCard: null
 };
 
@@ -1171,7 +1174,7 @@ function patchInfobox(box, patch) {
   }
   return out;
 }
-const PAGE_KEEP = ["createdAt", "rewrittenAt", "direction", "editedAt", "fixedAt", "stale", "conflicts", "pending", "baseAsOf", "syncedTo", "storyNotice", "portrait"];
+const PAGE_KEEP = ["createdAt", "rewrittenAt", "direction", "editedAt", "fixedAt", "stale", "conflicts", "pending", "baseAsOf", "syncedTo", "storyNotice", "portrait", "shortStories"];
 /* 기존 본문은 그대로 두고 섹션을 덧붙인 새 문서 객체. 링크, 언급, 사실은 integrate가 다시 계산한다 */
 function rebuildPage(w, k, p, addSecs, extra = {}) {
   autoLink(w, k, { sections: addSecs, infobox: [] });
@@ -1827,6 +1830,10 @@ async function mergeEntities(w, pairs) {
       dp.key = bk; dp.title = b.title; S.pages[bk] = dp; saved.add(bk);
       b.type = d.type || b.type; b.summary = d.summary || b.summary; b.box = d.box || b.box; b.page = true; if (d.stub && !b.stub) b.stub = d.stub;
     } else if (dp) {
+      if (dp.shortStories?.length) {
+        const ids = new Set((S.pages[bk].shortStories || []).map(x => x.id));
+        S.pages[bk].shortStories = [...(S.pages[bk].shortStories || []), ...dp.shortStories.filter(x => !ids.has(x.id))]; saved.add(bk);
+      }
       if (!S.pages[bk].portrait && dp.portrait) { S.pages[bk].portrait = dp.portrait; saved.add(bk); }
       purge(w, dk);
       for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === dk) delete w.navboxes[id];
@@ -1969,6 +1976,7 @@ function cancelRegen() {
 
 async function openWorld(wid, goKey) {
   const w = S.worlds.find(x => x.id === wid); if (!w) return;
+  if (S.proseGen?.busy && S.proseGen.wid !== wid) { toast("단편 생성을 마치거나 중단한 뒤 다른 세계관을 열어 주세요."); return; }
   if (S.imageGen?.busy && S.imageGen.wid !== wid) { toast("이미지 생성을 마치거나 중단한 뒤 다른 세계관을 열어 주세요."); return; }
   if (S.gen && S.gen.wid !== wid) { toast("다른 세계관의 문서를 작성하는 중입니다. 끝난 뒤 열어 주세요."); return; }
   if (S.storyGen && S.world?.id !== wid) { toast("다음 장을 쓰는 중입니다. 끝난 뒤 열어 주세요."); return; }
@@ -2057,6 +2065,7 @@ async function generatePage(k, rewrite, direction) {
     const searched = !!e.searched; delete e.searched;
     if (Array.isArray(out?.sections)) for (const s of out.sections) if (s) delete s.ch;   // 장 표시는 앱이 붙인다
     const page = integrate(w, k, out);
+    if (oldPage?.shortStories) page.shortStories = oldPage.shortStories;
     if (oldPage?.portrait) page.portrait = oldPage.portrait;   // 사용자가 올린 이미지는 AI 다시 쓰기와 별개로 유지
     if (isStory(w)) {   // 새로 쓰는 문서는 장 섹션 없이 현재 장 시점으로 처음부터 쓴다
       const st = w.story; page.baseAsOf = page.syncedTo = st.chapter;
@@ -2143,6 +2152,7 @@ function integrate(w, key, out) {
     w.navboxes[key + "-" + i] = { title, rows, members, src: key, srcTitle: e.title };
   });
   return { key, title: e.title, type, summary, categories, notices, infobox, sections, links, createdAt: Date.now(), style: w.style, check: null,
+    ...(S.world === w && S.pages[key]?.shortStories ? { shortStories: S.pages[key].shortStories } : {}),
     ...(S.world === w && S.pages[key]?.portrait ? { portrait: S.pages[key].portrait } : {}) };
 }
 
@@ -2765,6 +2775,88 @@ function readConflicts(w, raw, refs) {
 const conflictLabel = (w, c) => c.kind === "rule" ? `핵심 규칙 ${c.id}` : c.kind === "canon" ? "사용자 확정 설정"
   : c.kind === "timeline" ? `연표${c.src && w.entities[c.src] ? ` (「${w.entities[c.src].title}」)` : ""}` : `「${w.entities[c.src]?.title || "?"}」${S.pages[c.src]?.editedAt ? " (직접 수정한 문서)" : ""}`;
 
+/* ---------- 문서에서 파생한 단편: 확정 설정과 별도로 보관 ---------- */
+const PROSE_LENGTHS = { short: "약 1,000~1,800자", medium: "약 2,500~4,000자", long: "약 5,000~7,000자" };
+const shortStoriesOf = p => (Array.isArray(p?.shortStories) ? p.shortStories : []).filter(x => x && typeof x.id === "string" && typeof x.title === "string" && typeof x.body === "string");
+function prosePrompt(w, p, o) {
+  const e = w.entities[p.key];
+  return `## 문서 기반 단편 소설
+너는 가상 세계관의 단편 작가다. 아래 문서의 인물이나 사건을 중심으로 한국어 산문 한 편을 쓴다.
+## 지켜야 할 설정
+${canonBlock(w)}
+${isStory(w) ? storyBlock(w, p.key, true) + "\n" + secretsBlock(w, "write") : ""}
+## 기준 문서
+${docForCheck(p)}
+## 이 대상에 대해 확정된 사실과 관계
+${(e?.facts || []).filter(live).map(f => factLine(f)).join("\n")}
+${(e?.mentions || []).filter(live).map(m => `「${w.entities[m.from]?.title || "?"}」: ${m.text}`).join("\n")}
+${relationsOf(w, p.key).filter(live).map(r => relLine(w, r)).join("\n")}
+## 관련 항목 참고
+${related(w, p.key).map(k => entityBrief(w, k, null)).join("\n\n") || "(없음)"}
+## 독자가 요청한 내용·분위기·문체·시점
+${o.direction || "이 문서의 인물이나 사건을 가까이 느낄 수 있는 한 장면을 골라 쓴다."}
+## 분량
+${PROSE_LENGTHS[o.length] || PROSE_LENGTHS.medium}. 이는 목표 분량이며 문장 수를 억지로 채우지 않는다.
+## 작성 원칙
+- 내용, 분위기, 문체, 시점은 독자의 요청을 우선한다. 다만 확정된 신원·나이·신장·생사·관계·연표·시대·규칙과 충돌하는 요청은 그 사실을 바꾸지 않는 범위에서 해석한다.
+- 위키 문서를 소설체로 요약하거나 생애와 사건을 차례로 설명하지 않는다. 요청이 달리 정하지 않으면 구체적인 한 장면에 머물고 행동, 대화, 감각, 사물의 디테일로 감정을 보여 준다. 전투나 비극을 억지로 붙이지 않는다.
+- 대사, 감각, 사소한 행동은 창작할 수 있지만 확정 사실을 뒤집는 사건이나 인물 관계를 새로 만들지 않는다. 시점 인물이 알 수 있는 범위를 지킨다.
+- 문서, 자료, 프롬프트를 설명하거나 '작성 방향:'을 붙이지 않는다. 본문은 단편 산문만 쓴다. 위키 링크·분류·각주·설정 목록을 출력하지 않는다.
+- 이 글은 문서와 별도인 창작 단편이며, 새 대사와 세부 묘사는 세계관의 확정 사실로 등록되지 않는다.
+JSON 객체 하나만 출력: {"title":"단편 제목","body":"빈 줄로 문단을 구분한 단편 전체"}`;
+}
+function openProse(k) {
+  const w = S.world; if (!w || !S.pages[k]) return;
+  if (S.proseGen?.busy) { toast("진행 중인 단편을 마치거나 중단해 주세요."); return; }
+  if (!S.proseGen || S.proseGen.wid !== w.id || S.proseGen.key !== k) S.proseGen = { wid: w.id, key: k, opts: { direction: "", length: "medium" }, preview: null, error: "", busy: false };
+  renderMain(); $("#prosePanel")?.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+async function generateProse() {
+  const v = S.proseGen, w = S.world, p = v && S.pages[v.key];
+  if (!v || v.busy || !w || v.wid !== w.id || !p) return;
+  if (!S.sample || !gReady()) { v.error = "AI 연결 설정에서 Gemini 문서 모델 연결을 먼저 저장해 주세요."; renderMain(); return; }
+  if (portraitBusy(v.key) || S.portraitJob) { v.error = "문서 작업이 끝난 뒤 생성해 주세요."; renderMain(); return; }
+  v.busy = true; v.error = ""; v.ctl = new AbortController(); v.stamp = imageDocStamp(p); renderMain();
+  try {
+    const out = await callJson("prose", prosePrompt(w, p, v.opts), { modelTier: "default", signal: v.ctl.signal, onText: ({ text }) => { if (S.proseGen === v && $("#proseProgress")) $("#proseProgress").textContent = `단편을 쓰는 중 · ${text.length.toLocaleString()}자 수신`; }, onRetry: r => { if (S.proseGen === v && $("#proseProgress")) $("#proseProgress").textContent = `응답을 복구하는 중 · ${r.n}회`; } }, { title: p.title });
+    if (v.ctl.signal.aborted || S.proseGen !== v) return;
+    if (!out || typeof out.title !== "string" || typeof out.body !== "string" || !out.title.trim() || !out.body.trim() || out.body.length > 60000) throw new Error("단편 응답 형식이나 분량을 확인할 수 없습니다. 다시 생성해 주세요.");
+    v.preview = { id: crypto.randomUUID(), title: out.title.trim().slice(0, 100), body: out.body.trim(), direction: v.opts.direction, length: v.opts.length, createdAt: Date.now(), sourceTitle: p.title, sourceStamp: v.stamp };
+  } catch (e) { if (S.proseGen === v) v.error = e.code === "cancelled" ? "단편 생성을 중단했습니다." : (e.message || errMsg(e)); }
+  finally { v.busy = false; if (S.proseGen === v && S.world === w && S.view.key === v.key) renderMain(); }
+}
+async function saveProse(removeId = null) {
+  const v = S.proseGen, w = S.world, p = v && S.pages[v.key];
+  if (!v || v.busy || !w || v.wid !== w.id || !p || (!removeId && !v.preview)) return;
+  if (portraitBusy(v.key) || S.portraitJob) { v.error = "문서 작업이 끝난 뒤 보관해 주세요."; renderMain(); return; }
+  v.busy = true; v.saving = true; v.error = ""; renderMain();
+  try {
+    const latest = await Store.getPage(w.id, v.key); if (!latest) throw new Error("원래 문서가 삭제되었습니다.");
+    if (!removeId && (imageDocStamp(latest) !== v.preview.sourceStamp || imageDocStamp(p) !== v.preview.sourceStamp)) throw new Error("생성 중 원래 문서가 바뀌었습니다. 문서를 다시 열고 현재 내용을 기준으로 생성해 주세요.");
+    let stories = shortStoriesOf(latest);
+    if (removeId) stories = stories.filter(x => x.id !== removeId);
+    else { if (stories.length >= 20) throw new Error("문서당 20편까지 보관할 수 있습니다. 필요 없는 단편을 삭제한 뒤 보관해 주세요."); stories = [...stories, v.preview]; }
+    const next = { ...latest, shortStories: stories }; await Store.savePage(w.id, next);
+    if (S.world === w && S.pages[v.key] === p) S.pages[v.key] = next;
+    if (!removeId) v.preview = null; v.confirmDelete = null; toast(removeId ? "단편을 삭제했습니다." : "단편을 보관했습니다. 세계관 설정에는 반영하지 않습니다.");
+  } catch (e) { v.error = "단편을 저장하지 못했습니다. " + (e.message || errMsg(e)); }
+  finally { v.busy = false; v.saving = false; if (S.proseGen === v && S.world === w && S.view.key === v.key) renderMain(); }
+}
+function proseHtml(w, k) {
+  const v = S.proseGen; if (!v || v.wid !== w.id || v.key !== k) return "";
+  const disabled = v.busy ? "disabled" : "", stories = shortStoriesOf(S.pages[k]);
+  return `<section class="image-gen" id="prosePanel" aria-label="문서로 단편 쓰기"><h3>이 문서로 단편 쓰기</h3>
+    <p class="note">문서와 확정 설정을 참고해 글을 씁니다. 단편의 대사와 세부 묘사는 위키 본문이나 확정 설정에 자동 반영되지 않습니다. 기존 Gemini 기본 문서 모델을 사용합니다.</p>
+    ${!gReady() ? `<p class="note">Gemini 문서 모델 연결이 필요합니다. <button type="button" class="btn" data-act="gset">AI 연결 설정</button></p>` : ""}
+    <label class="lb" for="proseDirection">내용·분위기·문체·시점</label><textarea id="proseDirection" data-prose-field="direction" rows="4" maxlength="2000" placeholder="예: 출동 전날 밤, 정비병의 시점으로. 거인의 손을 검진하며 나누는 짧은 대화. 조용하고 따뜻하게, 감정은 행동으로 보여 줘." ${disabled}>${esc(v.opts.direction)}</textarea>
+    <label class="lb" for="proseLength">분량</label><select id="proseLength" data-prose-field="length" ${disabled}>${Object.entries(PROSE_LENGTHS).map(([id, label]) => `<option value="${id}" ${v.opts.length === id ? "selected" : ""}>${esc(label)}</option>`).join("")}</select>
+    ${v.error ? `<div class="banner warn" role="alert">${esc(v.error)}</div>` : ""}
+    ${v.busy ? `<p class="note" id="proseProgress" role="status">단편을 처리하는 중…</p>` : ""}
+    ${v.preview ? `<section class="prose-preview"><h3>${esc(v.preview.title)}</h3><div class="prose-text">${esc(v.preview.body)}</div><div class="row"><button type="button" class="btn pri" data-act="prose-save" ${disabled}>이 단편 보관</button><button type="button" class="btn" data-act="prose-discard" ${disabled}>미리보기 버리기</button></div></section>` : ""}
+    <div class="row"><button type="button" class="btn pri" data-act="prose-generate" ${disabled || !gReady() ? "disabled" : ""}>${v.busy ? "처리 중…" : v.preview ? "새 단편 생성" : "단편 생성"}</button><button type="button" class="btn" data-act="prose-close" ${v.saving ? "disabled" : ""}>${v.busy && !v.saving && v.ctl ? "생성 중단·닫기" : "닫기"}</button></div>
+    ${stories.length ? `<section class="prose-saved"><h3>보관한 단편 · ${stories.length}편</h3>${stories.slice().reverse().map(x => `<details data-prose-id="${esc(x.id)}"><summary>${esc(x.title)} · ${fmtDate(x.createdAt)}</summary>${x.sourceStamp && x.sourceStamp !== imageDocStamp(S.pages[k]) ? `<p class="note">이 단편은 이전 문서 내용을 바탕으로 생성되었습니다.</p>` : ""}${x.direction ? `<p class="note">요청: ${esc(x.direction)}</p>` : ""}<div class="prose-text">${esc(x.body)}</div><button type="button" class="btn dng" data-prose-delete="${esc(x.id)}" ${disabled}>${v.confirmDelete === x.id ? "삭제 확인" : "단편 삭제"}</button></details>`).join("")}</section>` : ""}</section>`;
+}
+
 /* ---------- 문서 이미지 업로드: 브라우저에서 축소하고 문서와 함께 저장 ---------- */
 const PORTRAIT_MAX = 1536 * 1024;   // data URL 전체 길이. 참조 이미지도 기존 중계 서버의 2MB 요청 한도에 맞춘다
 const portraitSrc = p => typeof p?.portrait === "string" && p.portrait.length <= PORTRAIT_MAX && /^data:image\/(?:webp|png|jpeg);base64,[A-Za-z0-9+/]+=*$/.test(p.portrait) ? p.portrait : "";
@@ -2790,7 +2882,7 @@ async function preparePortrait(file) {
     throw new Error("이미지를 저장할 크기로 줄이지 못했습니다. 더 작은 파일을 선택해 주세요.");
   } finally { URL.revokeObjectURL(url); }
 }
-const portraitBusy = k => S.gen || S.storyGen || S.syncing === k || S.checking === k || S.fixing || S.bgSync === k || (S.imageGen?.busy && S.imageGen.key === k) || isHeld(k);
+const portraitBusy = k => (S.proseGen?.saving && S.proseGen.key === k) || S.gen || S.storyGen || S.syncing === k || S.checking === k || S.fixing || S.bgSync === k || (S.imageGen?.busy && S.imageGen.key === k) || isHeld(k);
 async function setPortrait(k, file) {
   const w = S.world, p = S.pages[k];
   if (!w || !p) return;
@@ -3663,10 +3755,10 @@ function articleHtml(k) {
     ${p.categories?.length ? `<div class="cats"><b>분류</b>${p.categories.map(c => `<span>${esc(c)}</span>`).join("")}</div>` : ""}
     ${navboxesFor(w, k).map(([, nb]) => navboxHtml(nb, nb.src === k, k)).join("")}
     ${cardHtml}
-    <div class="tools"><button type="button" class="btn" data-edit="${k}">편집</button>${portraitMenuHtml(p, k, held)}<button type="button" class="btn" data-check="${k}" ${S.checking || !S.sample ? "disabled" : ""}>설정 검사</button>${rw}<button type="button" class="btn" data-focus="${k}">설정 노트에서 보기</button>${fixed ? "" : `<button type="button" class="btn" data-mg="${k}" aria-expanded="${S.confirmMerge === k}">합치기</button>`}${k === pk ? `<button type="button" class="btn dng" disabled title="주인공 문서는 이야기의 중심이라 삭제할 수 없습니다">삭제</button>` : `<button type="button" class="btn dng" data-delpage="${k}" aria-expanded="${S.confirmDelPage === k}">삭제</button>`}</div>
-    ${imageGenHtml(w, k)}${mergeBox}${twinHtml}
+    <div class="tools"><button type="button" class="btn" data-edit="${k}">편집</button>${portraitMenuHtml(p, k, held)}<button type="button" class="btn" data-prose-open="${k}" ${held ? "disabled" : ""}>단편 쓰기${shortStoriesOf(p).length ? ` · ${shortStoriesOf(p).length}편` : ""}</button><button type="button" class="btn" data-check="${k}" ${S.checking || !S.sample ? "disabled" : ""}>설정 검사</button>${rw}<button type="button" class="btn" data-focus="${k}">설정 노트에서 보기</button>${fixed ? "" : `<button type="button" class="btn" data-mg="${k}" aria-expanded="${S.confirmMerge === k}">합치기</button>`}${k === pk ? `<button type="button" class="btn dng" disabled title="주인공 문서는 이야기의 중심이라 삭제할 수 없습니다">삭제</button>` : `<button type="button" class="btn dng" data-delpage="${k}" aria-expanded="${S.confirmDelPage === k}">삭제</button>`}</div>
+    ${imageGenHtml(w, k)}${proseHtml(w, k)}${mergeBox}${twinHtml}
     ${S.confirmDelPage === k ? `<div class="rwbox"><p style="margin:0">「${esc(p.title)}」 문서를 삭제할까요?</p>
-      <p class="note">문서와 이 문서가 확정한 사실, 틀, 연표 항목이 지워집니다. 다른 문서가 이 항목을 언급한 내용은 남고, 그 링크는 미작성 문서로 돌아갑니다. 되돌릴 수 없습니다.</p>
+      <p class="note">문서와 이 문서가 확정한 사실, 틀, 연표 항목, 보관한 단편이 지워집니다. 다른 문서가 이 항목을 언급한 내용은 남고, 그 링크는 미작성 문서로 돌아갑니다. 되돌릴 수 없습니다.</p>
       <div class="row" style="margin-top:6px"><button type="button" class="btn dng" data-delpage-yes="${k}">삭제</button><button type="button" class="btn" data-act="delpage-no">취소</button></div></div>` : ""}
     ${p.stale ? `<div class="banner warn">직접 수정한 내용을 설정과 대조하지 못해, 설정 노트에 이전 버전의 사실이 남아 있을 수 있습니다. <button type="button" class="btn" data-refresh="${k}" style="margin-left:6px;padding:2px 10px" ${!S.sample ? "disabled" : ""}>설정과 대조해 다시 저장</button></div>` : ""}
     ${p.conflicts?.length ? `<div class="banner warn"><b>「${esc(p.conflicts[0].byTitle)}」${p.conflicts.some(c => c.byTitle !== p.conflicts[0].byTitle) ? " 등" : ""} 문서가 직접 수정되어, 이 문서의 서술 ${p.conflicts.length}곳이 설정과 맞지 않습니다.</b>
@@ -4001,6 +4093,8 @@ document.addEventListener("click", ev => {
   if (d.cfix) { openConflictFix(d.cfix); return; }
   if (d.edit) { openEditor(d.edit); return; }
   if (d.imageOpen) { openImageGen(d.imageOpen); return; }
+  if (d.proseOpen) { openProse(d.proseOpen); return; }
+  if (d.proseDelete) { const v = S.proseGen; if (v && !v.busy) { if (v.confirmDelete === d.proseDelete) saveProse(d.proseDelete); else { v.confirmDelete = d.proseDelete; el.textContent = "삭제 확인"; } } return; }
   if (d.portrait) { document.querySelector('[data-portrait-file="' + d.portrait + '"]')?.click(); return; }
   if (d.portraitRemove) { setPortrait(d.portraitRemove, null); return; }
   if (d.delpage) { S.confirmDelPage = S.confirmDelPage === d.delpage ? null : d.delpage; S.confirmRewrite = null; renderMain(); return; }
@@ -4098,6 +4192,10 @@ document.addEventListener("click", ev => {
     case "cf-back": if (S.edit) S.edit.pending = null; $("#edConflicts").innerHTML = ""; $("#edBody")?.focus(); break;
     case "ed-cancel": S.edit = null; renderMain(); window.scrollTo({ top: 0 }); break;
     case "save-canon": saveCanon(); break;
+    case "prose-generate": generateProse(); break;
+    case "prose-save": saveProse(); break;
+    case "prose-discard": if (S.proseGen && !S.proseGen.busy) { S.proseGen.preview = null; S.proseGen.error = ""; renderMain(); } break;
+    case "prose-close": if (S.proseGen?.saving) break; S.proseGen?.ctl?.abort(); S.proseGen = null; renderMain(); break;
     case "image-generate": generateDocImage(); break;
     case "image-apply": applyDocImage(); break;
     case "image-discard": if (S.imageGen && !S.imageGen.busy) { S.imageGen.preview = ""; S.imageGen.error = ""; renderMain(); } break;
@@ -4121,6 +4219,7 @@ document.addEventListener("click", ev => {
   }
 });
 document.addEventListener("input", ev => {
+  if (ev.target.dataset?.proseField && S.proseGen && !S.proseGen.busy) { const f = ev.target.dataset.proseField; if (["direction", "length"].includes(f)) S.proseGen.opts[f] = ev.target.value; }
   if (ev.target.dataset?.igf && S.imageGen && !S.imageGen.busy) { const f = ev.target.dataset.igf; S.imageGen.opts[f] = f === "useRef" ? ev.target.checked : ev.target.value; }
   if (ev.target.id === "seedTa") {
     S.seed = S.ownSeed = ev.target.value;
@@ -4158,6 +4257,7 @@ $("#searchForm").addEventListener("submit", ev => {
   if (hit) { $("#q").value = ""; $("#sugg").hidden = true; openEntity(hit[0]); } else goSearch(q);
 });
 document.addEventListener("change", ev => {
+  if (ev.target.dataset?.proseField && S.proseGen && !S.proseGen.busy) { const f = ev.target.dataset.proseField; if (["direction", "length"].includes(f)) S.proseGen.opts[f] = ev.target.value; }
   if (ev.target.dataset?.igf && S.imageGen && !S.imageGen.busy) { const f = ev.target.dataset.igf; S.imageGen.opts[f] = f === "useRef" ? ev.target.checked : ev.target.value; if (f === "model") renderMain(); }
   if (ev.target.dataset?.portraitFile && ev.target.files?.[0]) { const f = ev.target.files[0]; ev.target.value = ""; setPortrait(ev.target.dataset.portraitFile, f); }
   if (ev.target.id === "cpType" && S.compose) S.compose.type = ev.target.value;
