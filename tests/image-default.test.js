@@ -1,0 +1,13 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert'),path=require('path');
+const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+const source=html.slice(html.indexOf('const GKEY ='),html.indexOf('/* 연결 방식:'))+'\nglobalThis.settings=GS;';
+const load=previous=>{let saved=previous?JSON.stringify(previous):null;const c={localStorage:{getItem:()=>saved,setItem:(k,v)=>{saved=v;}}};vm.createContext(c);vm.runInContext(source,c);return {settings:c.settings,saved:JSON.parse(saved)};};
+const model='gpt-image-2.5-flare';
+assert.equal(load().settings.imageModel,model);
+const old={mode:'relay',pass:'existing-pass',key:'existing-gemini-key',openaiKey:'existing-openai-key',imageModel:'gemini-nano-banana-2.1'};
+const migrated=load(old);assert.equal(migrated.settings.imageModel,model);assert.equal(migrated.saved.imageDefaultVersion,1);
+for(const field of ['mode','pass','key','openaiKey'])assert.equal(migrated.saved[field],old[field]);
+assert.equal(load({...old,imageModel:'gemini-3-pro-image'}).settings.imageModel,'gemini-3-pro-image');
+assert.equal(load({...old,imageModel:'gpt-image-2.5-sunburst'}).settings.imageModel,'gpt-image-2.5-sunburst');
+assert.equal(load({...migrated.saved,imageModel:'gemini-nano-banana-2.1'}).settings.imageModel,'gemini-nano-banana-2.1');
+console.log('모두 통과 (5개): 신규 기본값·기존 기본값 이전·연결 보존·사용자 모델 보존·재선택 보존.');

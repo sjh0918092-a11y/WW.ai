@@ -372,7 +372,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.18 · 2026-11-10";
+const APP_VERSION = "v6.19 · 2026-11-10";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -470,13 +470,18 @@ const PAGE_MODEL = {};   // 모델과 생각 깊이는 'AI 연결 설정'에서 
 const GKEY = "wwiki:gemini";
 const GBASE = "https://generativelanguage.googleapis.com/v1beta";
 const DEFAULT_RELAY = "https://lucky-feather-d3e9.sjh0918092.workers.dev";   // 기본 중계 서버. 주소는 공개돼도 되고, 접속 암호가 있어야 쓸 수 있다
-const GDEF = { mode: "key", relay: DEFAULT_RELAY, pass: "", key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "", check: "", checkThink: "medium", preCheck: true, imageModel: "gemini-nano-banana-2.1", openaiKey: "" };   // check: 설정 검사·수정 대조. 비우면 기본 모델
+const GDEF = { mode: "key", relay: DEFAULT_RELAY, pass: "", key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "", check: "", checkThink: "medium", preCheck: true, imageModel: "gpt-image-2.5-flare", imageDefaultVersion: 1, openaiKey: "" };   // check: 설정 검사·수정 대조. 비우면 기본 모델
 const THINKS = [["", "모델 기본값"], ["minimal", "minimal"], ["low", "low"], ["medium", "medium"], ["high", "high"]];
 let GS = (() => {
   let st = {}; try { st = JSON.parse(localStorage.getItem(GKEY) || "{}") || {}; } catch {}
   const g = { ...GDEF, ...st };
   if (!st.mode) g.mode = st.key ? "key" : "relay";   // 처음 온 사람(친구)은 중계 서버 연결로 시작하고, 키를 쓰던 사람은 그대로 둔다
   if (!g.relay) g.relay = DEFAULT_RELAY;
+  if (!st.imageDefaultVersion) {
+    if (!st.imageModel || st.imageModel === "gemini-nano-banana-2.1") g.imageModel = GDEF.imageModel;
+    g.imageDefaultVersion = 1;
+    try { localStorage.setItem(GKEY, JSON.stringify(g)); } catch {}
+  }
   return g;
 })();
 /* 연결 방식: 내 API 키로 Google에 바로 요청하거나(key), 중계 서버를 거친다(relay) */
@@ -509,7 +514,10 @@ async function gError(res, model) {
 }
 /* 연결이 끊기면 받은 데까지 이어 받고, 그래도 안 되면 처음부터 다시 받는다 */
 const G_RETRY = 3;            // 끊긴 뒤 다시 시도할 최대 횟수
-const G_IDLE_MS = 180000;     // 이 시간 동안 아무것도 오지 않으면 끊긴 것으로 본다
+const G_IDLE_MS = 180000;     // 내부 사고 중 첫 응답은 최대 3분 기다린다
+const G_PROGRESS_IDLE_MS = 80000;   // 출력·사고 토큰이 진행된 뒤 80초간 멎었을 때만 복구
+const G_STAGE_MAX_MS = 600000;      // 문서 작성·검사 한 호출은 재시도를 포함해 최대 10분
+const G_PROGRESS_RETRY = 2;
 const G_CONT = "직전 응답이 연결 문제로 중간에 끊겼다. 끊긴 바로 그 글자부터 이어서 출력하라. 이미 출력한 부분은 반복하지 않고, 앞말이나 설명, 코드 블록 표시 없이 나머지 JSON 텍스트만 출력해 원래 JSON 객체를 끝까지 완성한다.";
 const gRetryable = e => e && (e.code === "upstream_error" || e.code === "network" || e.code === "stalled" || /^api_5/.test(e.code || ""));
 const gSleep = (ms, signal) => new Promise((res, rej) => { if (signal?.aborted) return rej({ code: "cancelled" }); const t = setTimeout(res, ms); signal?.addEventListener("abort", () => { clearTimeout(t); rej({ code: "cancelled" }); }, { once: true }); });
@@ -522,19 +530,21 @@ function joinCont(a, b) {
 }
 const gemini = {
   async stream(model, body, opts, prefix) {
-    const ctl = new AbortController(); let stalled = false, timer = null;
-    const kick = () => { clearTimeout(timer); timer = setTimeout(() => { stalled = true; ctl.abort(); }, G_IDLE_MS); };
+    const ctl = new AbortController(); let stalled = false, expired = false, timer = null, hardTimer = null, progressed = false, reader = null;
+    const kick = () => { clearTimeout(timer); timer = setTimeout(() => { stalled = true; ctl.abort(); }, opts.progressWatch && progressed ? G_PROGRESS_IDLE_MS : G_IDLE_MS); };
+    const timeoutError = () => ({ code: "stage_timeout", message: "응답 복구를 포함한 최대 대기 시간(10분)을 넘었습니다. 잠시 뒤 다시 실행해 주세요." });
     const onUser = () => ctl.abort();
     if (opts.signal) { if (opts.signal.aborted) throw { code: "cancelled" }; opts.signal.addEventListener("abort", onUser, { once: true }); }
     let text = "", finish = "", block = "", usage = null;
     try {
       kick();
+      if (opts.deadline) hardTimer = setTimeout(() => { expired = true; ctl.abort(); }, Math.max(0, opts.deadline - Date.now()));
       let res;
       try { res = await fetch(gBase() + `/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, { method: "POST", headers: { "Content-Type": "application/json", ...gAuth() }, body: JSON.stringify(body), signal: ctl.signal }); }
-      catch (e) { if (opts.signal?.aborted) throw { code: "cancelled" }; if (stalled) throw { code: "stalled", message: "응답 없음" }; throw { code: "network", message: String(e?.message || e) }; }
+      catch (e) { if (opts.signal?.aborted) throw { code: "cancelled" }; if (expired) throw timeoutError(); if (stalled) throw { code: "stalled", message: "응답 없음" }; throw { code: "network", message: String(e?.message || e) }; }
       if (!res.ok) throw await gError(res, model);
-      const reader = res.body.getReader(), dec = new TextDecoder();
-      let buf = "";
+      reader = res.body.getReader(); const dec = new TextDecoder();
+      let buf = "", lastTokens = 0;
       const handle = line => {
         if (!line.startsWith("data:")) return;
         const raw = line.slice(5).trim(); if (!raw || raw === "[DONE]") return;
@@ -542,7 +552,13 @@ const gemini = {
         if (j.error) throw { code: "upstream_error", message: [j.error.code, j.error.status, j.error.message].filter(Boolean).join(" ") };
         if (j.promptFeedback?.blockReason) block = j.promptFeedback.blockReason;
         if (j.usageMetadata) usage = j.usageMetadata;
-        const c = j.candidates?.[0]; if (!c) return;
+        const c = j.candidates?.[0];
+        if (opts.progressWatch) {
+          const tokens = (usage?.candidatesTokenCount || 0) + (usage?.thoughtsTokenCount || 0);
+          if (tokens > lastTokens || c?.finishReason || c?.content?.parts?.some(p => (typeof p.text === "string" && p.text.length > 0) || p.functionCall)) { progressed = true; kick(); }
+          lastTokens = Math.max(lastTokens, tokens);
+        }
+        if (!c) return;
         if (c.finishReason) finish = c.finishReason;
         let add = ""; for (const p of c.content?.parts || []) if (typeof p.text === "string" && !p.thought) add += p.text;
         if (add) { text += add; opts.onText?.({ text: prefix ? joinCont(prefix, text) : text }); }
@@ -550,23 +566,29 @@ const gemini = {
       try {
         for (;;) {
           const { value, done } = await reader.read(); if (done) break;
-          kick();
+          if (!opts.progressWatch) kick();   // SSE 주석·빈 이벤트만으로는 진행으로 보지 않는다
           buf += dec.decode(value, { stream: true });
           let i; while ((i = buf.indexOf("\n")) >= 0) { const line = buf.slice(0, i).replace(/\r$/, ""); buf = buf.slice(i + 1); handle(line); }
         }
         if (buf.trim()) handle(buf.trim());
       } catch (e) {
         if (opts.signal?.aborted) throw { code: "cancelled" };
+        if (expired) throw timeoutError();
         if (stalled) throw { code: "stalled", message: "응답 없음" };
         if (e?.code) throw e;
         throw { code: "upstream_error", message: String(e?.message || e) };
       }
       return { text, finish, block, usage };
     } catch (e) { throw { ...e, text }; }
-    finally { clearTimeout(timer); opts.signal?.removeEventListener("abort", onUser); }
+    finally {
+      clearTimeout(timer); clearTimeout(hardTimer); opts.signal?.removeEventListener("abort", onUser);
+      if (reader) { try { await reader.cancel(); } catch {} }
+    }
   },
   async json(prompt, opts = {}) {
     if (!gReady()) throw { code: "no_sample" };
+    if (opts.progressWatch) opts = { ...opts, deadline: Date.now() + G_STAGE_MAX_MS };
+    const retryLimit = opts.progressWatch ? G_PROGRESS_RETRY : G_RETRY;
     const tier = opts.modelTier === "quick" ? "quick" : opts.modelTier === "check" ? "check" : "main";
     const model = (tier === "check" ? (GS.check || GS.main || GDEF.main) : (GS[tier] || GDEF[tier])).trim();
     let think = (tier === "check" ? GS.checkThink ?? GDEF.checkThink : GS[tier + "Think"]) || "";
@@ -575,6 +597,7 @@ const gemini = {
     let acc = "", usage = null, retries = 0, contTried = 0;
     opts.onMeta?.({ model, think });
     for (;;) {
+      if (opts.deadline && Date.now() >= opts.deadline) throw { code: "stage_timeout", message: "응답 복구를 포함한 최대 대기 시간(10분)을 넘었습니다. 잠시 뒤 다시 실행해 주세요." };
       const cont = acc.length >= 200;   // 받은 게 어느 정도 있으면 이어 받기, 아니면 처음부터
       const body = cont ? mk([...user, { role: "model", parts: [{ text: acc }] }, { role: "user", parts: [{ text: G_CONT }] }], false) : mk(user, true);
       try {
@@ -591,16 +614,16 @@ const gemini = {
         const out = parseJsonLoose(text);
         if (out !== undefined) { opts.onMeta?.({ model, think, usage, retries }); return out; }
         if (r.finish === "MAX_TOKENS" && contTried < 2 && text.length >= 200) { contTried++; acc = text; continue; }   // 출력 한도에서 잘렸으면 이어 받는다
-        if (cont && retries < G_RETRY) { retries++; acc = ""; opts.onRetry?.({ n: retries, mode: "restart", reason: "이어 붙인 응답이 맞지 않음" }); continue; }
+        if (cont && retries < retryLimit) { retries++; acc = ""; opts.onRetry?.({ n: retries, mode: "restart", reason: "이어 붙인 응답이 맞지 않음" }); continue; }
         throw { code: "invalid_json", text, message: r.finish };
       } catch (e) {
         if (e.code === "cancelled") throw { ...e, text: acc || e.text || "" };
-        if (!gRetryable(e) || retries >= G_RETRY) { opts.onMeta?.({ model, think, usage, retries }); throw { ...e, code: e.code === "stalled" ? "upstream_error" : e.code, text: e.text || acc }; }
+        if (!gRetryable(e) || retries >= retryLimit) { opts.onMeta?.({ model, think, usage, retries }); throw { ...e, code: e.code === "stalled" ? "upstream_error" : e.code, text: e.text || acc }; }
         retries++;
         const got = cont ? joinCont(acc, e.text || "") : (e.text || "");
         acc = got.length >= 200 ? got : "";
         opts.onRetry?.({ n: retries, mode: acc ? "continue" : "restart", reason: e.message || e.code, chars: acc.length });
-        await gSleep(Math.min(8000, 1500 * 2 ** (retries - 1)), opts.signal);
+        await gSleep(Math.min(8000, 1500 * 2 ** (retries - 1), opts.deadline ? Math.max(0, opts.deadline - Date.now()) : Infinity), opts.signal);
       }
     }
   }
@@ -631,7 +654,7 @@ async function callJson(kind, prompt, opts = {}, meta = {}) {
   const t0 = performance.now(); let first = null, chars = 0;
   const user = opts.onText;
   const rec = { at: Date.now(), kind, tier: opts.modelTier || "default", model: "", effort: "", in: prompt.length, ...meta };
-  const o = { ...opts, onText: u => { if (first === null) first = performance.now(); chars = u.text.length; if (user) user(u); },
+  const o = { progressWatch: ["page", "check", "read"].includes(kind), ...opts, onText: u => { if (first === null) first = performance.now(); chars = u.text.length; if (user) user(u); },
     onRetry: r => { rec.retry = r.n; (rec.retries ||= []).push(r.reason ? String(r.reason).slice(0, 120) : r.mode); opts.onRetry?.(r); },
     onMeta: m => { rec.model = m.model; rec.effort = m.think || ""; if (m.retries) rec.retry = m.retries; if (m.usage) rec.tok = { i: m.usage.promptTokenCount || 0, o: m.usage.candidatesTokenCount || 0, t: m.usage.thoughtsTokenCount || 0 }; } };
   const done = () => { rec.first = first === null ? null : Math.round(first - t0); rec.total = Math.round(performance.now() - t0); rec.out = chars; };

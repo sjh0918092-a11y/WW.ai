@@ -18,7 +18,7 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const url = `http://127.0.0.1:${server.address().port}/`, browser = await chromium.launch();
   const ctx = await browser.newContext({ acceptDownloads: true });
-  await ctx.addInitScript(() => { if (!localStorage.getItem("wwiki:gemini")) localStorage.setItem("wwiki:gemini", JSON.stringify({ mode: "key", key: "test-key" })); });
+  await ctx.addInitScript(() => { if (!localStorage.getItem("wwiki:gemini")) localStorage.setItem("wwiki:gemini", JSON.stringify({ mode: "key", key: "test-key", imageModel: "gemini-nano-banana-2.1", imageDefaultVersion: 1 })); });
   await ctx.route("https://fonts.googleapis.com/**", r => r.abort()); await ctx.route("https://fonts.gstatic.com/**", r => r.abort());
   const page = await ctx.newPage(), errors = [], requests = []; let textCalls = 0, mode = "ok", release = null;
   page.on("pageerror", e => errors.push(e.message));
@@ -156,7 +156,7 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
     pass("세계관 이미지 지침과 문서 이미지가 기존 백업 형식에 함께 저장된다");
 
     const restored = await browser.newContext();
-    await restored.addInitScript(() => localStorage.setItem("wwiki:gemini", JSON.stringify({ mode: "key", key: "test-key" })));
+    await restored.addInitScript(() => localStorage.setItem("wwiki:gemini", JSON.stringify({ mode: "key", key: "test-key", imageModel: "gemini-nano-banana-2.1", imageDefaultVersion: 1 })));
     await restored.route("https://fonts.googleapis.com/**", r => r.abort());
     const rp = await restored.newPage(); await rp.goto(url); await rp.waitForSelector("#seedTa");
     await rp.click('[data-act="gset"]');

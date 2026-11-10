@@ -122,7 +122,7 @@ Worker 주소를 열었을 때 `storageConfigured`가 `true`면 저장소가 연
 세계관 설정 노트의 **세계관 공통 이미지 지침**은 모든 문서의 새 이미지 생성에 전달된다.
 지침을 저장해도 기존 이미지는 바뀌지 않는다. 이미지 일괄 교체 기능은 없다.
 
-기본 모델은 `gemini-nano-banana-2.1`, 선택 모델은 `gemini-3.1-flash-lite-image`, `gemini-3-pro-image`다.
+기본 이미지 모델은 `gpt-image-2.5-flare`다. Gemini 이미지 모델도 `gemini-nano-banana-2.1`, `gemini-3.1-flash-lite-image`, `gemini-3-pro-image` 중에서 선택할 수 있다.
 AI 연결 설정의 기본 이미지 모델을 바꿀 수 있다. 이미지 생성은 유료 API 사용량에 포함된다.
 
 Gemini 이미지 모델은 공식 `generateContent` 이미지 생성 경로를 사용하므로 기존 Worker를
@@ -155,3 +155,17 @@ ChatGPT 구독과 별도로 OpenAI API 사용료가 발생한다. 조직 인증�
 공통 이미지 지침·문서·추가 요청·미리보기 적용 절차는 Gemini와 같다. ChatGPT 채팅과 같은 결과를 보장하지 않는다.
 
 공식 API 기준: https://developers.openai.com/api/docs/guides/image-generation
+
+### 기본 이미지 모델과 문서 응답 복구 (v6.19)
+
+새 연결의 이미지 기본값은 OpenAI Flare다. 이전 기본값인 Nano Banana 2.1만 사용하던 연결은
+한 번 OpenAI 기본값으로 이전한다. Pro·Lite·Sunburst 등 따로 고른 모델은 보존한다.
+이후 사용자가 다시 Nano Banana 2.1로 바꾸면 다음 접속에서도 그 선택을 유지한다.
+OpenAI 키의 저장 위치와 연결 방식은 이번 변경에서 바꾸지 않는다.
+
+문서 작성(`page`)·설정 대조(`check`)·문서 내부 읽기 검사(`read`)는 출력이나 사고 토큰의
+진행을 감지한다. 첫 진행은 최대 3분 기다리며, 진행이 시작된 뒤 80초간 멎으면 해당 요청을 복구한다.
+SSE 연결 유지 주석·빈 이벤트는 진행으로 세지 않는다. 진행 중인 요청을 총 80초가 지났다는 이유로 다시 보내지 않는다.
+부분 출력은 기존 이어 받기 로직을 사용하고, 재시도는 최대 2회, 복구 시간을 포함한 호출당 최대 대기는 10분이다.
+사용자 중단은 재시도하지 않는다. 이미지 생성에는 이 정책을 적용하지 않는다.
+검사 자료의 선정 범위·프롬프트와 자동 검사 시점은 바꾸지 않았다.
