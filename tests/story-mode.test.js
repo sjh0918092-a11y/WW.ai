@@ -44,8 +44,12 @@ function planJson(p) {
   const last = n === 5;
   const affected = n === 2 ? [{ title: "북관 철령", change: "북관 철령이 여진 해적단에게 포위되었다.", kind: "update" }, { title: "이일 (인물)", change: "이일이 파직되었다.", kind: "update" }, { title: "원균 함대", change: "원균 함대가 새로 출전했다.", kind: "new" }]
     : n === 3 ? [{ title: "이일", change: "이일이 백의종군했다.", kind: "update" }] : [{ title: "한양", change: "한양에 소식이 전해졌다.", kind: "update" }];
-  return { title: `제${n}장: ${n}번째 사건`, era: `${1586 + n}년`, summary: `${n}장 줄거리. 한서린이 움직였다.`, timeline: [{ year: String(1586 + n), event: `${n}장 사건` }],
-    protagonistBlock: { heading: `${n}장 사건명`, sections: [{ heading: "출전", level: 1, body: `한서린은 [[이일(인물)]]과 함께 출전했다. (${n}장)` }, { heading: "귀환", level: 1, body: "한서린은 돌아왔다." }], infoboxPatch: [{ label: "상태", value: `${n}장 상태` }], summaryPatch: "" },
+  const memory=JSON.parse(/## 이야기의 책임 기록[^\n]*\n([^\n]+)/.exec(p)[1]);
+  const proof='한서린은 이일(인물)과 함께 출전했다.';
+  const hasChoice=p.includes('주인공의 다음 행동으로 독자가 고른 것:');
+  const continuity={updates:memory.threads.filter(t=>!['resolved','left_open'].includes(t.status)).map(t=>({id:t.id,status:last?'resolved':'progress',development:'기존 갈등을 행동의 결과로 이어갔다.',answer:last?'주인공은 출전 뒤 귀환하며 이 갈등을 매듭지었다.':'',evidence:proof})),introduced:[],choiceConsequences:hasChoice?[{kind:'outcome',detail:'선택에 따라 출전하여 귀환한 사실이 이후에도 남는다.',evidence:proof}]:[]};
+  return { continuity, revealNow:n===3?[{id:'s1',evidence:'한서린은 녹둔도 습격 때 성문을 연 장본인이라고 직접 진술했다.'}]:[], title: `제${n}장: ${n}번째 사건`, era: `${1586 + n}년`, summary: `${n}장 줄거리. 한서린이 움직였다.`, timeline: [{ year: String(1586 + n), event: `${n}장 사건` }],
+    protagonistBlock: { heading: `${n}장 사건명`, sections: [{ heading: "출전", level: 1, body: `한서린은 [[이일(인물)]]과 함께 출전했다. (${n}장)` }, { heading: "귀환", level: 1, body: "한서린은 돌아왔다." }, ...(n===3?[{heading:"진술",level:1,body:"한서린은 녹둔도 습격 때 성문을 연 장본인이라고 직접 진술했다."}]:[])], infoboxPatch: [{ label: "상태", value: `${n}장 상태` }], summaryPatch: "" },
     affected, newEntities: [{ title: "원균 함대", type: "조직", summary: "새 함대" }, ...(n === 2 ? [{ title: "새 이웃", type: "인물", summary: "옆집 사람" }] : [])], wove: [{ title: "이일", how: "이일이 출전의 계기가 되었다." }, { title: "여진 해적단(조직)", how: "해적단이 철령을 포위했다." }],
     facts: [{ about: "이일", fact: `이일은 ${n}장에 움직였다.` }], relations: [], spineRevise: n === 2 ? [{ n: 4, intent: "수정된 절정" }] : [],
     nextChoices: last ? [] : ctl.emptyChoices ? [{}, { score: 3 }] : n === 2 ? [{ action: "진격한다", reason: "적이 약하다" }, { text: "후퇴한다" }, "협상한다"] : ["진격한다", "후퇴한다", "협상한다"], ending: last ? { epilogue: "한서린은 고향으로 돌아갔다." } : null };
@@ -261,7 +265,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
       assert(pp1.includes("## 아직 드러나지 않은 진실 (쓰지 말 것)") && pp1.includes("진실(쓰지 않는다): 한서린은 녹둔도 습격 때 성문을 연 장본인이다") && pp1.includes("이 시점에 알려진 것(이것만 쓴다): 습격의 유일한 생존자"), "1장 문서에는 진실을 쓰지 말라고 하고 겉모습만 쓰게 한다");
       const ck1 = calls.filter(c => c.kind === "check" && c.prompt.includes("# 한서린")).shift().prompt;
       assert(ck1.includes("문서가 위 '진실'을 사실로 단정하거나"), "설정 검사가 진실을 흘린 서술을 잡는다");
-      assert(planPrompt.includes("## 숨겨진 진실 (독자에게 공개하지 않는다)") && planPrompt.includes("2장에서 드러나야 하는 진실: (없음)"), "2장 계획은 진실을 드러내지 않는다"); }
+      assert(planPrompt.includes("## 숨겨진 진실 (독자에게 공개하지 않는다)") && planPrompt.includes("강제 공개 기한이 아니다"), "2장 계획은 진실을 드러내지 않는다"); }
     assert(planPrompt.includes("「이일」") && planPrompt.includes("「여진 해적단」") && planPrompt.includes("「북관 철령」") && planPrompt.includes("추격한다"), "장 계획 프롬프트에 탐험과 선택이 들어간다");
     assert(planPrompt.includes("발단 의도") && planPrompt.includes("결말 의도"), "장 계획 프롬프트에는 뼈대 전체가 들어간다");
     assert(planPrompt.includes("## 사용자가 정한 등장인물") && planPrompt.includes("윤가람") && planPrompt.includes("사용자가 정한 특징 (최우선 제약): 활은"), "장 계획에도 주인공 특징과 등장인물이 들어간다");
@@ -283,7 +287,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert(!Object.values(sw.entities).some(o => /\((인물|조직)\)$/.test(o.title)), "모델이 '이일(인물)'처럼 써도 중복 항목을 만들지 않는다");
     assert(after.sections.some(s => s.body.includes("[[이일]]")) && await page.locator('.article a.wl[data-t="이일"]:not(.new)').count() > 0, "유형이 붙은 링크는 원래 문서로 이어진다");
     assert(sw.story.chapters[1].affected.some(a => a.key === kOf("이일")) && sw.story.chapters[1].wove.some(a => a.key === kOf("여진 해적단")));
-    assert(planPrompt.includes("새 항목: 이번 장에서 처음 등장하는 항목을 2~4개 만든다") && planPrompt.includes("새 인물은 이번 장 사건에 꼭 필요할 때만 1명까지") && !planPrompt.includes("새 인물을 1명 이상"), "새 항목은 만들되 새 인물은 필요할 때만");
+    assert(planPrompt.includes("새 항목은 필요할 때만 0~4개까지 만든다") && planPrompt.includes("새 인물은 이번 장 사건에 꼭 필요할 때만 1명까지") && !planPrompt.includes("새 인물을 1명 이상"), "새 항목과 새 인물은 필요할 때만 만든다");
     assert(planPrompt.includes("- 절제: 규칙은 방향이지 최대치가 아니다") && planPrompt.includes("과장 수식어("), "장 계획에도 절제 규칙");
     assert(planPrompt.includes("다른 인물의 특징 (표현 반복 참고):\n  - 이일: 아날로그 무전기 집착"), "장 계획에도 기존 인물 특징을 표현 반복 참고로 넘긴다");
     assert(planPrompt.includes("summary)에 이번 사건에서 맡은 역할과 처지를 담는다") && planPrompt.includes("서로 다른 인물의 성격이나 성향이 겹쳐도 된다"), "장 계획도 역할과 처지로 인물을 소개하고 성격 중복을 허용한다");
@@ -344,12 +348,12 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     const chs = await page.locator(".article h2 .chb").allInnerTexts();
     assert(chs.includes("2장") && chs.includes("3장"), "2장, 3장 블록 모두 생성");
     { const p3 = calls.filter(c => c.kind === "chapterPlan" && c.prompt.includes("다음 장(3장)")).pop().prompt;
-      assert(p3.includes("3장에서 드러나야 하는 진실: 한서린은 녹둔도 습격 때 성문을 연 장본인이다"), "드러날 장의 계획에서 진실을 밝히게 한다");
+      assert(p3.includes("번호가 됐다는 이유만으로 밝혀졌다고 취급하지 않는다"), "장 번호가 아니라 실제 증거로 진실을 공개한다");
       const w9 = await worldOf(page, "녹둔도 연대기");
       assert(w9.story.secrets[0].revealed === true && w9.story.secrets[0].revealedAt === 3, "드러난 진실은 확정으로 표시");
       const bk9 = calls.filter(c => c.kind === "chapterBlock").pop().prompt;
       assert(bk9.includes("## 이미 드러난 진실 (확정된 사실)") && !bk9.includes("## 아직 드러나지 않은 진실"), "드러난 뒤에는 확정 사실로 넘긴다"); }
-    ok("두 장을 건너뛰고 연 문서는 한 번의 호출로 두 장의 블록이 생성된다. 숨겨진 진실은 정한 장에서 드러난 뒤 확정 설정이 된다");
+    ok("두 장을 건너뛰고 연 문서는 한 번의 호출로 두 장의 블록이 생성된다. 숨겨진 진실은 실제 본문 근거로 드러난 뒤 확정 설정이 된다");
 
     /* 8. 편집기: 장 섹션 표시 유지 */
     await page.click('[data-edit]'); await page.waitForSelector("#edBody");
@@ -365,7 +369,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     }
     assert.strictEqual((await page.locator("h1.t").innerText()).trim(), "한서린", "마지막 장도 주인공 문서부터 보여 준다");
     { const plans = calls.filter(c => c.kind === "chapterPlan").map(c => c.prompt), byN = n => plans.filter(x => x.includes(`다음 장(${n}장)`)).pop();
-      assert(byN(3).includes("처음 등장하는 항목을 2~4개 만든다") && byN(3).includes("직전 장에 새 인물이 나왔으므로 이번 장에는 새 인물을 만들지 않는다"), "새 인물은 간간이: 직전 장에 나왔으면 이번 장은 쉰다");
+      assert(byN(3).includes("새 항목은 필요할 때만 0~4개까지 만든다") && byN(3).includes("직전 장에 새 인물이 나왔으므로 이번 장에는 새 인물을 만들지 않는다"), "새 인물은 간간이: 직전 장에 나왔으면 이번 장은 쉰다");
       assert(byN(4).includes("이번 장은 절정이다. 새 인물은 만들지 않는다") && !byN(4).includes("2~4개 만든다"), "절정에는 새 인물을 만들지 않는다");
       assert(byN(5).includes("이번 장은 결말이다. 새 인물이나 새 항목을 만들지 않는다"), "결말에는 새 항목을 만들지 않는다"); }
     assert((await page.locator(".article h2 .chb").allInnerTexts()).includes("5장"));
@@ -374,7 +378,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await page.click('.stcard [data-act="epilogue"]');
     await page.waitForFunction(() => document.querySelector("h1.t")?.textContent === "에필로그", null, { timeout: 15000 });
     assert((await page.locator("#main").innerText()).includes("한서린은 고향으로 돌아갔다."));
-    assert((await page.locator("#main").textContent()).includes("숨겨진 진실") && (await page.locator("#main").textContent()).includes("3장에서 드러남"), "에필로그에서 숨겨진 진실을 공개");
+    assert((await page.locator("#main").textContent()).includes("공개된 진실과 미사용 계획") && (await page.locator("#main").textContent()).includes("3장에서 드러남"), "에필로그에서 숨겨진 진실을 공개");
     await page.locator("details.memo summary").first().click(); await shot(page, "5-epilogue");
     assert((await sideText(page)).includes("에필로그 보기") && !(await sideText(page)).includes("다음 장으로"));
     await page.click('#side [data-k]:has-text("주인공 문서")'); await waitArticle(page, "한서린");
@@ -534,7 +538,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert.deepStrictEqual((await page.locator(".fx-pick span").allInnerTexts()).slice(0, 3), ["새 후보 하나", "새 후보 둘", "새 후보 셋"], "선택지 다시 만들기");
     await page.click('[data-act="story-back"]');
     const p7 = calls.filter(c => c.kind === "chapterPlan").pop().prompt;
-    assert(p7.includes("전체 7장 중 2장") && p7.includes("이번 장에서 결말을 내거나 갈등을 미리 정리하지 않는다") && !p7.includes('"epilogue"'), "2장 계획은 결말을 내지 않는다");
+    assert(p7.includes("전체 7장 중 2장") && p7.includes("중심 문제의 일부를 이번 장에 해결해도 된다") && !p7.includes('"epilogue"'), "중간 장은 일부 갈등을 풀고 그 결과를 이어갈 수 있다");
     w7.story = (await idbAll(page)).map(x => x[1]).find(v => v?.id === w7.id).story;
     assert.strictEqual(w7.story.status, "active"); assert.strictEqual(w7.story.chapter, 2);
     ok("장 수를 7장으로 고르면 7단계 뼈대가 생기고, 중간 장은 결말을 내지 않는다");
