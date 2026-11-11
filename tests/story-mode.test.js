@@ -47,7 +47,7 @@ function planJson(p) {
   const memory=JSON.parse(/## 이야기의 책임 기록[^\n]*\n([^\n]+)/.exec(p)[1]);
   const proof='한서린은 이일(인물)과 함께 출전했다.';
   const hasChoice=p.includes('주인공의 다음 행동으로 독자가 고른 것:');
-  const continuity={updates:memory.threads.filter(t=>!['resolved','left_open'].includes(t.status)).map(t=>({id:t.id,status:last?'resolved':'progress',development:'기존 갈등을 행동의 결과로 이어갔다.',answer:last?'주인공은 출전 뒤 귀환하며 이 갈등을 매듭지었다.':'',evidence:proof})),introduced:[],choiceConsequences:hasChoice?[{kind:'outcome',detail:'선택에 따라 출전하여 귀환한 사실이 이후에도 남는다.',evidence:proof}]:[]};
+  const continuity={updates:memory.threads.filter(t=>!['fulfilled','failed','abandoned'].includes(t.status)).map(t=>({id:t.id,status:last?'fulfilled':'changed',development:'기존 갈등을 행동의 결과로 이어갔다.',outcome:last?'주인공은 출전 뒤 귀환하며 이 갈등을 매듭지었다.':'',evidence:proof})),introduced:[],choiceConsequences:hasChoice?[{kind:'outcome',detail:'선택에 따라 출전하여 귀환한 사실이 이후에도 남는다.',evidence:proof}]:[]};
   return { continuity, revealNow:n===3?[{id:'s1',evidence:'한서린은 녹둔도 습격 때 성문을 연 장본인이라고 직접 진술했다.'}]:[], title: `제${n}장: ${n}번째 사건`, era: `${1586 + n}년`, summary: `${n}장 줄거리. 한서린이 움직였다.`, timeline: [{ year: String(1586 + n), event: `${n}장 사건` }],
     protagonistBlock: { heading: `${n}장 사건명`, sections: [{ heading: "출전", level: 1, body: `한서린은 [[이일(인물)]]과 함께 출전했다. (${n}장)` }, { heading: "귀환", level: 1, body: "한서린은 돌아왔다." }, ...(n===3?[{heading:"진술",level:1,body:"한서린은 녹둔도 습격 때 성문을 연 장본인이라고 직접 진술했다."}]:[])], infoboxPatch: [{ label: "상태", value: `${n}장 상태` }], summaryPatch: "" },
     affected, newEntities: [{ title: "원균 함대", type: "조직", summary: "새 함대" }, ...(n === 2 ? [{ title: "새 이웃", type: "인물", summary: "옆집 사람" }] : [])], wove: [{ title: "이일", how: "이일이 출전의 계기가 되었다." }, { title: "여진 해적단(조직)", how: "해적단이 철령을 포위했다." }],
@@ -538,7 +538,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert.deepStrictEqual((await page.locator(".fx-pick span").allInnerTexts()).slice(0, 3), ["새 후보 하나", "새 후보 둘", "새 후보 셋"], "선택지 다시 만들기");
     await page.click('[data-act="story-back"]');
     const p7 = calls.filter(c => c.kind === "chapterPlan").pop().prompt;
-    assert(p7.includes("전체 7장 중 2장") && p7.includes("중심 문제의 일부를 이번 장에 해결해도 된다") && !p7.includes('"epilogue"'), "중간 장은 일부 갈등을 풀고 그 결과를 이어갈 수 있다");
+    assert(p7.includes("전체 7장 중 2장") && p7.includes("목표의 일부를 성취하거나 관계가 바뀌어도 된다") && !p7.includes('"epilogue"'), "중간 장은 일부 갈등을 풀고 그 결과를 이어갈 수 있다");
     w7.story = (await idbAll(page)).map(x => x[1]).find(v => v?.id === w7.id).story;
     assert.strictEqual(w7.story.status, "active"); assert.strictEqual(w7.story.chapter, 2);
     ok("장 수를 7장으로 고르면 7단계 뼈대가 생기고, 중간 장은 결말을 내지 않는다");

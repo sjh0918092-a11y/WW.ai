@@ -382,7 +382,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.33 · 2026-11-11";
+const APP_VERSION = "v6.34 · 2026-11-11";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1420,10 +1420,27 @@ function newItemRule(w, n) {
 const storyQuote = t => stripMarks(t).replace(/\s+/g, " ").trim();
 const storyText = (value, max = 600) => typeof value === "string" ? stripMarks(value).slice(0, max).trim() : "";
 const STORY_CHOICE_KINDS = ["information", "relationship", "time", "risk", "opportunity", "outcome"];
+const STORY_THREAD_KINDS = { goal: "목표", relationship: "관계", promise: "약속", conflict: "갈등", consequence: "행동의 여파", ongoing: "진행 중인 일", mystery: "의문·단서", legacy: "이전 기록" };
+const STORY_THREAD_STATES = { active: "이어짐", changed: "변화", fulfilled: "성취·이행", failed: "좌절", abandoned: "포기", continuing: "계속됨" };
+const STORY_THREAD_CLOSED = ["fulfilled", "failed", "abandoned"];
+const storyState = value => ({ open: "active", progress: "changed", resolved: "fulfilled", left_open: "continuing", deferred: "unchanged" }[value] || value);
 function storyMemory(w) {
-  if (w.story.continuity?.version === 1) return JSON.parse(JSON.stringify(w.story.continuity));
+  const saved = w.story.continuity;
+  if ([1, 2].includes(saved?.version)) {
+    const memory = JSON.parse(JSON.stringify(saved));
+    if (!Array.isArray(memory.threads) || !Array.isArray(memory.choices)) throw new Error("이야기 진행 기록의 형식을 확인할 수 없습니다.");
+    if (memory.version === 1) {
+      memory.threads = memory.threads.map(t => {
+        const { question, answer, ...rest } = t;
+        const automatic = t.id === "main" && /^발단 「.*」이 만든 중심 갈등과 주인공의 선택은 어떻게 귀결되는가\?$/.test(question || "");
+        return { ...rest, kind: automatic ? "ongoing" : "legacy", subject: automatic ? `「${w.story.chapters[0].title}」에서 이어지는 인물들의 생활과 선택` : question || t.subject || "이전 이야기에서 이어지는 내용", status: storyState(t.status), ...(answer ? { outcome: answer } : {}), legacy: { question, status: t.status, ...(answer ? { answer } : {}) } };
+      });
+      memory.version = 2;
+    }
+    return memory;
+  }
   const first = w.story.chapters[0], incident = first.incident || first.summary || first.title;
-  return { version: 1, focus: storyText(w.seed, 1200), threads: [{ id: "main", question: `발단 「${incident}」이 만든 중심 갈등과 주인공의 선택은 어떻게 귀결되는가?`, importance: "major", status: "open", origin: { source: "chapter:1", title: first.title, quote: incident, chapter: 1 }, development: "발단에서 제기된 중심 갈등", recordedAt: 1, lastChapter: 1, history: [] }], choices: [] };
+  return { version: 2, focus: storyText(w.seed, 1200), threads: [{ id: "main", kind: "ongoing", subject: `「${first.title}」에서 시작한 인물들의 생활과 선택`, importance: "major", status: "active", origin: { source: "chapter:1", title: first.title, quote: incident, chapter: 1 }, development: "앞에서 시작한 일과 그 후속 변화", recordedAt: 1, lastChapter: 1, history: [] }], choices: [] };
 }
 function storySources(w) {
   const rows = [{ source: "seed", title: "사용자 원안", text: w.seed || "", chapter: 1 }];
@@ -1436,55 +1453,57 @@ function storySources(w) {
   return rows;
 }
 function storyMemoryBlock(w, sources = true) {
-  const memory = storyMemory(w), legacy = w.story.continuity?.version !== 1;
+  const memory = storyMemory(w), legacy = ![1, 2].includes(w.story.continuity?.version);
+  const context = { ...memory, threads: memory.threads.map(({ legacy: archived, ...thread }) => thread) };
   const catalog = sources ? storySources(w) : [], perPage = Math.max(180, Math.min(1100, Math.floor(20000 / Math.max(1, catalog.length))));
   const excerpts = sources ? catalog.map(row => {
     if (!row.source.startsWith("page:")) return { ...row, text: row.text.slice(0, 1600) };
     const p = S.pages[row.source.slice(5)], paragraphs = (p.sections || []).filter(s => !s.ch || s.ch <= w.story.chapter).flatMap(s => String(s.body || "").split(/\n{2,}/)).map(storyQuote).filter(Boolean);
-    // 개요/특징과 사건 서술을 함께 대표한다. 기존에 기록한 의문의 원문은 아래 기록에 항상 남는다.
-    const excerpts = [...new Set([p.summary || "", ...paragraphs.slice(0, 2), ...paragraphs.filter(t => /알리바이|의문|단서|약속|갈등|진술|거짓|분쟁|협박|실종|행방|침묵|목격|미해결/.test(t)).slice(0, 3)])];
-    return { ...row, text: excerpts.join("\n").slice(0, perPage) };
+    // 개요/특징과 사건 서술을 함께 대표한다. 기존에 기록한 내용의 원문은 아래 기록에 항상 남는다.
+    const samples = [0, Math.floor(paragraphs.length / 3), Math.floor(paragraphs.length * 2 / 3), paragraphs.length - 1].map(i => paragraphs[i]).filter(Boolean);
+    const excerpts = [...new Set([p.summary || "", ...samples])].filter(Boolean), share = Math.max(30, Math.floor(perPage / Math.max(1, excerpts.length)));
+    return { ...row, text: excerpts.map(t => t.slice(0, share)).join("\n").slice(0, perPage) };
   }) : [];
-  return `## 이야기의 책임 기록 (계획보다 우선하는 누적 기록)\n${JSON.stringify(memory)}\n${legacy ? "기존 세계관에는 의문 기록이 아직 없다. 아래 자료와 기존 주인공 본문에서 중요하게 제기됐지만 답하지 않은 의문을 이번 응답의 continuity.introduced에 출처 원문과 함께 복원한다. 모든 설정이나 성격을 복선으로 만들지 않고, 이미 답한 것을 미해결로 재분류하지 않는다.\n" : "이미 기록된 의문을 최근에 열지 않았다는 이유로 빼지 않는다. 해결된 내용과 과거 선택의 영향도 유지한다.\n"}${sources ? `## 기존 기록의 출처 자료 (일부 문서는 발췌이며, 언급되지 않았다는 것이 부재의 증거는 아니다)\n${JSON.stringify(excerpts)}\n` : ""}`;
+  return `## 이야기의 책임 기록 (계획보다 우선하는 누적 기록)\n${JSON.stringify(context)}\n${legacy ? "기존 세계관에는 누적 진행 기록이 아직 없다. 아래 자료와 기존 주인공 본문에서 이어지는 목표·관계·약속·갈등·행동의 여파·진행 중인 일만 continuity.introduced에 출처 원문과 함께 복원한다. 실제 의문이나 단서일 때만 mystery로 분류한다. 모든 설정을 복선이나 해결해야 할 문제로 만들지 않는다.\n" : "기록을 최근에 열지 않았다는 이유로 빼지 않는다. 성취·좌절·포기와 과거 선택의 영향도 유지한다. legacy 유형은 원문과 이력을 보존한 이전 기록이다. 질문형으로 적혀 있어도 답을 강제하지 말고, 필요한 경우 updates.kind와 subject로 실제 내용에 맞게 분류·표현을 정리한다.\n"}${sources ? `## 기존 기록의 출처 자료 (일부 문서는 발췌이며, 언급되지 않았다는 것이 부재의 증거는 아니다)\n${JSON.stringify(excerpts)}\n` : ""}`;
 }
 function prepareStoryMemory(w, n, out, choice) {
   const memory = storyMemory(w), data = out.continuity, fail = message => { throw new Error("이야기 진행 기록을 확인하지 못했습니다. " + message); };
-  if (!data || !Array.isArray(data.updates) || !Array.isArray(data.introduced) || !Array.isArray(data.choiceConsequences)) fail("미해결 의문과 선택의 영향 기록이 필요합니다.");
+  if (!data || !Array.isArray(data.updates) || !Array.isArray(data.introduced) || !Array.isArray(data.choiceConsequences)) fail("이어지는 내용과 선택의 영향 기록이 필요합니다.");
   const body = (out.protagonistBlock?.sections || []).map(s => storyQuote(s.body)).join("\n"), sourceRows = storySources(w);
   const sources = new Map(sourceRows.map(x => [x.source, { ...x, text: storyQuote(x.text) }]));
   sources.set("current", { source: "current", title: out.title, text: body, chapter: n });
-  const evidence = value => { const q = storyQuote(value); if (q.length < 12 || !body.includes(q)) fail("진전·해결·선택 결과를 뒷받침하는 이번 장 본문 인용이 없습니다."); return q; };
+  const evidence = value => { const q = storyQuote(value); if (q.length < 12 || !body.includes(q)) fail("변화·결과·선택의 영향을 뒷받침하는 이번 장 본문 인용이 없습니다."); return q; };
   const update = (thread, row) => {
-    const action = row.status, development = storyText(row.development), answer = storyText(row.answer), consequence = storyText(row.consequence);
-    if (!["deferred", "progress", "resolved", "left_open"].includes(action) || !development) fail("의문을 어떻게 처리했는지 적어야 합니다.");
-    if (action === "deferred") {
-      if (n >= totalOf(w)) fail("마지막 장의 미해결 의문은 답하거나, 남긴 이유와 결과를 본문에 밝혀야 합니다.");
-      if (["resolved", "left_open"].includes(thread.status)) fail("이미 처리한 의문을 근거 없이 미해결로 되돌릴 수 없습니다.");
-    }
-    if (action === "resolved" && !answer) fail("해결한 의문에는 원래 질문에 대한 구체적인 답이 필요합니다.");
-    if (action === "left_open" && !consequence) fail("남겨 둔 의문에는 해결하지 못한 결과가 필요합니다.");
-    const quote = action === "deferred" ? "" : evidence(row.evidence);
-    thread.history = [...(thread.history || []), { chapter: n, status: action, development, ...(answer ? { answer } : {}), ...(consequence ? { consequence } : {}), ...(quote ? { evidence: quote } : {}) }];
+    const action = storyState(row.status), development = storyText(row.development), outcome = storyText(row.outcome ?? row.answer), consequence = storyText(row.consequence);
+    if (!["unchanged", ...Object.keys(STORY_THREAD_STATES)].includes(action) || !development) fail("앞에서 시작한 내용을 이번 장에서 어떻게 이어갔는지 적어야 합니다.");
+    if (row.kind !== undefined && !Object.hasOwn(STORY_THREAD_KINDS, row.kind)) fail("이야기 기록의 유형을 확인할 수 없습니다.");
+    if (row.subject !== undefined && !storyText(row.subject, 400)) fail("이야기 기록의 내용을 비울 수 없습니다.");
+    if (STORY_THREAD_CLOSED.includes(action) && !outcome) fail("성취·좌절·포기에는 실제로 생긴 결과가 필요합니다.");
+    const quiet = ["unchanged", "continuing"].includes(action);
+    const quote = quiet && !row.evidence ? "" : evidence(row.evidence);
+    if (row.kind !== undefined) thread.kind = row.kind;
+    if (row.subject !== undefined) thread.subject = storyText(row.subject, 400);
+    thread.history = [...(thread.history || []), { chapter: n, status: action, development, ...(outcome ? { outcome } : {}), ...(consequence ? { consequence } : {}), ...(quote ? { evidence: quote } : {}) }];
     thread.lastChapter = n; thread.development = development;
-    if (action !== "deferred") thread.status = action;
-    if (answer) thread.answer = answer;
+    if (action !== "unchanged") thread.status = action;
+    if (outcome) thread.outcome = outcome;
     if (consequence) thread.consequence = consequence;
     if (quote) thread.evidence = quote;
   };
   const seen = new Set();
   for (const row of data.updates) {
     const thread = memory.threads.find(t => t.id === row?.id);
-    if (!thread || seen.has(row.id)) fail("기존 의문의 식별자가 없거나 중복됩니다.");
+    if (!thread || seen.has(row.id)) fail("기존 기록의 식별자가 없거나 중복됩니다.");
     seen.add(row.id); update(thread, row);
   }
-  for (const thread of memory.threads) if (!["resolved", "left_open"].includes(thread.status) && !seen.has(thread.id)) fail("앞서 남긴 의문의 처리 기록이 빠졌습니다: " + thread.question);
-  if (data.introduced.length > 8) fail("한 장에 지나치게 많은 새 의문이 추가되었습니다.");
+  for (const thread of memory.threads) if (!STORY_THREAD_CLOSED.includes(thread.status) && !seen.has(thread.id)) fail("앞에서 이어지는 내용의 기록이 빠졌습니다: " + thread.subject);
+  if (data.introduced.length > 8) fail("한 장에 지나치게 많은 새 기록이 추가되었습니다.");
   for (const row of data.introduced) {
-    const source = sources.get(row?.source), quote = storyQuote(row?.quote), question = storyText(row?.question, 400);
-    if (!source || quote.length < 12 || !source.text.includes(quote) || !question || !["major", "minor"].includes(row.importance)) fail("새 의문의 출처와 실제 원문을 확인할 수 없습니다.");
-    if (memory.threads.some(t => storyQuote(t.question) === storyQuote(question))) fail("같은 의문을 다른 기록으로 중복 추가할 수 없습니다.");
-    const thread = { id: "t" + cyrb53(row.source + "\n" + quote + "\n" + question).toString(36), question, importance: row.importance, status: "open", origin: { source: row.source === "current" ? "chapter:" + n : row.source, title: source.title, quote, chapter: source.chapter }, recordedAt: n, lastChapter: n, history: [] };
-    if (row.status && row.status !== "open") update(thread, row);
+    const source = sources.get(row?.source), quote = storyQuote(row?.quote), subject = storyText(row?.subject ?? row?.question, 400), kind = row?.kind ?? (row?.question ? "legacy" : "");
+    if (!source || quote.length < 12 || !source.text.includes(quote) || !subject || !Object.hasOwn(STORY_THREAD_KINDS, kind) || !["major", "minor"].includes(row.importance)) fail("새 기록의 유형·출처·실제 원문을 확인할 수 없습니다.");
+    if (memory.threads.some(t => storyQuote(t.subject) === storyQuote(subject))) fail("같은 내용을 다른 기록으로 중복 추가할 수 없습니다.");
+    const thread = { id: "t" + cyrb53(row.source + "\n" + quote + "\n" + subject).toString(36), kind, subject, importance: row.importance, status: "active", development: storyText(row.development) || "앞에서 시작한 내용", origin: { source: row.source === "current" ? "chapter:" + n : row.source, title: source.title, quote, chapter: source.chapter }, recordedAt: n, lastChapter: n, history: [] };
+    if (row.status && storyState(row.status) !== "active") update(thread, row);
     memory.threads.push(thread);
   }
   const impacts = data.choiceConsequences.map(row => {
@@ -1496,15 +1515,14 @@ function prepareStoryMemory(w, n, out, choice) {
   if (!choice && impacts.length) fail("사용자가 하지 않은 선택의 결과를 만들 수 없습니다.");
   if (impacts.length > 6) fail("선택 결과 기록이 너무 많습니다.");
   if (choice) memory.choices.push({ chapter: n, choice: choice.custom || choice.picked, consequences: impacts });
-  if (n >= totalOf(w) && memory.threads.some(t => !["resolved", "left_open"].includes(t.status))) fail("마지막 장에서 아직 처리하지 않은 의문이 있습니다.");
   return { memory, record: { updates: JSON.parse(JSON.stringify(data.updates)), introduced: memory.threads.filter(t => t.recordedAt === n).map(t => t.id), choiceConsequences: impacts } };
 }
-const STORY_RESPONSIBILITY_RULES = `- 사용자 원안·지침이 약속한 장르의 경험과 중심 갈등을 유지한다. 장르 이름만 보고 흔한 거대 음모·숨겨진 혈통·세계 멸망·배지 반납 같은 결말을 자동 선택하지 않는다. 그런 전개가 필요하면 기존 증거와 선택에서 인과적으로 나와야 한다.
-- 장이 진행된다고 사건 규모나 배후의 계층을 키울 의무는 없다. 기존 증거의 의미, 관계, 선택의 대가, 행동 가능성의 변화로도 전개할 수 있다. 기존 의문을 새 사건으로 덮지 않는다.
-- 뼈대는 잠정 계획이다. 확정된 사건·사용자 선택·앞서 만든 의문과 충돌하면 남은 계획을 바꾼다. 계획을 지키려고 이미 일어난 사실을 소급 변경하지 않는다.
-- 회수는 원래 질문에 답하는 것이다. 같은 물건을 다시 등장시키거나 '더 큰 배후가 있었다'고 말하는 것으로 완료하지 않는다. 오해였다면 왜 그렇게 보였는지 설명한다. 모든 성격과 배경 설정을 반드시 복선으로 취급하지 않는다.
+const STORY_RESPONSIBILITY_RULES = `- 사용자 원안·지침이 약속한 장르의 경험과 중심 내용을 유지한다. 장르 이름만 보고 흔한 거대 음모·숨겨진 혈통·세계 멸망·배지 반납 같은 결말을 자동 선택하지 않는다. 그런 전개가 필요하면 앞서 확정한 사건과 선택에서 인과적으로 나와야 한다.
+- 장이 진행된다고 사건 규모나 배후의 계층을 키울 의무는 없다. 인물의 목표·관계·약속·선택의 여파·생활의 변화만으로도 전개할 수 있다. 앞에서 만든 내용을 새 사건으로 덮지 않는다.
+- 뼈대는 잠정 계획이다. 확정된 사건·사용자 선택·앞서 만든 내용과 충돌하면 남은 계획을 바꾼다. 계획을 지키려고 이미 일어난 사실을 소급 변경하지 않는다.
+- 후속 전개는 내용의 종류에 맞춘다. 목표는 시도·성취·좌절·포기, 관계는 가까워짐·멀어짐·유지, 약속은 이행·변경·불이행, 결정은 그 여파를 다룰 수 있다. 실제 의문·단서일 때만 답이나 해명을 다룬다. 모든 설정을 수수께끼나 해결 과제로 바꾸지 않고, 이름을 재등장시키는 것만으로 후속 결과를 썼다고 하지 않는다. 일상과 관계는 완결 뒤에도 자연스럽게 계속될 수 있다.
 - 선택은 접근 방법뿐 아니라 사건의 향방·관계·정보·기회·결말을 바꿀 수 있다. 성공을 보장하거나 예정된 결말로 억지 합류시키지 않는다. 다시 합류해도 이미 얻거나 잃은 것과 관계 변화는 남는다.`;
-const STORY_CONTINUITY_OUTPUT = `"continuity":{"updates":[{"id":"기존 의문 id","status":"deferred/progress/resolved/left_open","development":"이번 장에서 진행한 내용 또는 미룬 이유","answer":"resolved일 때 원래 질문의 구체적 답","consequence":"left_open일 때 해결하지 못한 결과","evidence":"deferred 외에는 이번 장 protagonistBlock 본문에서 12자 이상 그대로 인용"}],"introduced":[{"source":"기존 자료 source 또는 current","quote":"실제 출처에서 12자 이상 그대로 인용","question":"이 자료가 중요하게 제기한 의문","importance":"major/minor","status":"open 또는 위 처리 상태","development":"처리 상태이면 필요","answer":"해결한 경우 답","consequence":"남긴 경우 결과","evidence":"처리 상태이면 이번 장 본문 근거"}],"choiceConsequences":[{"kind":"information/relationship/time/risk/opportunity/outcome","detail":"선택이 실제로 바꾼 내용","evidence":"이번 장 본문에서 12자 이상 그대로 인용"}]}`;
+const STORY_CONTINUITY_OUTPUT = `"continuity":{"updates":[{"id":"기존 기록 id","kind":"goal/relationship/promise/conflict/consequence/ongoing/mystery","subject":"선택: 질문형을 강요하지 않는 내용 표현","status":"unchanged/active/changed/fulfilled/failed/abandoned/continuing","development":"이어짐·변화·성취·좌절·포기·유지의 구체적 내용","outcome":"성취·좌절·포기일 때 실제 결과","consequence":"필요할 때만 후속 영향","evidence":"실제 변화·결과는 이번 protagonistBlock 본문에서 12자 이상 인용. unchanged/continuing으로 변화 없이 이어갈 때는 생략 가능"}],"introduced":[{"source":"기존 자료 source 또는 current","quote":"실제 출처에서 12자 이상 그대로 인용","kind":"goal/relationship/promise/conflict/consequence/ongoing/mystery","subject":"목표·관계·약속·갈등·행동의 여파·진행 중인 일 또는 실제 의문","importance":"major/minor","status":"active 또는 위 상태","development":"변화가 있을 때 내용","outcome":"성취·좌절·포기일 때 결과","consequence":"필요할 때만 후속 영향","evidence":"실제 변화가 있을 때 이번 장 본문 인용"}],"choiceConsequences":[{"kind":"information/relationship/time/risk/opportunity/outcome","detail":"선택이 실제로 바꾼 내용","evidence":"이번 장 본문에서 12자 이상 그대로 인용"}]}`;
 
 function chapterPlanPrompt(w, nextN, choice) {
   const st = w.story, pk = st.protagonistKey, pp = S.pages[pk], pr = st.protagonist || {}, cur = curCh(w);
@@ -1547,15 +1565,15 @@ ${choice ? `주인공의 다음 행동으로 독자가 고른 것: ${choice.cust
 
 ## 규칙
 ${STORY_RESPONSIBILITY_RULES}
-- 이번 장은 전체 ${N}장 중 ${nextN}장이다. ${st.spine[nextN - 1]?.beat || ""} 구간의 잠정 의도는 참고만 한다: ${st.spine[nextN - 1]?.intent || ""}. 이미 벌어진 사건과 독자의 행동에 맞지 않으면 이 장부터 인과에 맞게 진행하고 spineRevise로 이번 단계와 아직 진행하지 않은 뒤 계획도 수정한다.${last ? "" : ` 중심 문제의 일부를 이번 장에 해결해도 된다. 남은 ${N - nextN}개 장은 그 선택과 해결의 결과를 다룰 수 있으므로 억지로 답을 늦추지 않는다.`}
+- 이번 장은 전체 ${N}장 중 ${nextN}장이다. ${st.spine[nextN - 1]?.beat || ""} 구간의 잠정 의도는 참고만 한다: ${st.spine[nextN - 1]?.intent || ""}. 이미 벌어진 사건과 독자의 행동에 맞지 않으면 이 장부터 인과에 맞게 진행하고 spineRevise로 이번 단계와 아직 진행하지 않은 뒤 계획도 수정한다.${last ? "" : ` 목표의 일부를 성취하거나 관계가 바뀌어도 된다. 남은 ${N - nextN}개 장은 그 변화와 선택의 여파를 다룰 수 있으므로 억지로 전개를 미루지 않는다.`}
 - 탐험 반영은 선택 사항이다. 현재 사건과 실제 인과가 있는 항목만 사용하고 wove에 적는다. 관련 없는 탐험을 끼워 넣거나 읽었다는 이유만으로 핵심 배후·만능 단서로 승격하지 않는다. 없어도 되는 경우 wove는 빈 배열이다. '직접 고침'은 확정 설정으로 지키되 장면 등장을 강제하지 않는다.
-- continuity.updates에는 기존 미해결 의문 각각에 대해 이번 장의 진전/해결/미룸을 기록한다. 최근 탐험 목록에 없더라도 빠뜨리지 않는다. 미루는 deferred에는 이유, progress에는 진전, resolved에는 구체적인 answer, left_open에는 미해결을 남긴 consequence를 적는다. deferred 외에는 이번 protagonistBlock 본문에서 12자 이상을 그대로 evidence로 인용한다. 다른 사건으로 덮거나 등장만 시킨 것을 해결로 처리하지 않는다.
-- continuity.introduced에는 새로 중요하게 제기한 의문만 출처 source/quote와 함께 넣는다. 필요 없으면 빈 배열이다. 기존 자료에서 놓친 중요한 미해결 의문도 복원할 수 있다. 소품·성격·배경을 모두 복선으로 등록하지 않는다. 출처의 일부 문장을 지어내거나 이미 답한 질문을 다시 열지 않는다.
+- continuity.updates에는 앞에서 이어지는 각 기록의 유지·변화·결과를 남긴다. 유형이나 표현을 정리할 때만 kind/subject를 넣고, 그대로면 생략한다. 설명용 문자열이나 null로 채우지 않는다. 최근 탐험 목록에 없더라도 빠뜨리지 않는다. unchanged는 이번 장에 변화가 없거나 다루지 않은 이유를 적고 기존 상태를 유지한다. active/changed는 실제 전개, fulfilled/failed/abandoned는 실제 결과(outcome)를 본문 인용으로 뒷받침한다. continuing은 관계·생활·여파 등이 계속됨을 기록하며 변화가 없다면 본문 인용이나 억지 장면을 만들 필요가 없다. 종류가 다른 내용을 전부 해결/미해결로 분류하지 않는다.
+- continuity.introduced에는 이후 흐름에 중요한 목표·관계·약속·갈등·행동의 여파·진행 중인 일만 출처 source/quote와 함께 기록한다. 실제로 답을 요구하는 의문·단서만 mystery다. 질문형 문장을 만들 의무는 없다. 필요 없으면 빈 배열이다. 소품·성격·배경을 모두 복선으로 만들지 않는다.
 - revealNow와 secretRevise는 이번 장에 실제 공개나 계획 수정이 없으면 빈 배열로 둔다. 임의의 id나 예시 값을 채우지 않는다.
 - 독자의 선택이 있으면 continuity.choiceConsequences에 실제로 얻고 놓친 정보·관계·시간·위험·기회·사건 결과 중 바뀐 것을 적고 본문 evidence로 뒷받침한다. 선택을 강제로 성공시키거나 없던 선택을 지어내지 않는다. 선택이 없으면 빈 배열이다. 지난 선택 기록은 이후 장에서도 유지한다.
 - ${choice ? "주인공의 이번 장 행동은 독자의 선택에서 출발한다. 결과는 선택대로 되지 않아도 된다." : "독자의 선택이 없으니 주인공의 행동은 지금까지의 흐름에서 자연스럽게 정한다."}
 - 탐험·선택·이미 확정된 사건 때문에 뒤의 뼈대 단계를 바꿔야 하면 spineRevise로 바꾼다. ${N}단계는 항상 결말로 남겨 둔다. 바꿀 필요가 없으면 빈 배열.
-- ${last ? `이번 장이 마지막 장이다. 결말을 낸다. 중심 갈등과 주인공의 선택이 어떻게 귀결됐는지 보여 준다. 모든 의문을 resolved 또는 left_open으로 하나씩 처리한다. 남긴 의문은 이유와 결과를 실제 본문에 쓰고 모두 밝혀졌다고 끝내지 않는다. 기존에 없는 상처의 치유나 사직·희생을 의무로 만들지 않는다. ending.epilogue에 결말 이후를 3~5문장으로 쓴다. nextChoices는 빈 배열.` : `nextChoices에는 ${nextN}장이 끝날 때 주인공이 할 수 있는 다음 행동 후보 3개를 한 문장씩 쓴다. 각 후보는 객체가 아니라 문자열 하나다. 서로 방향이 달라야 한다. ending은 null.`}
+- ${last ? `이번 장이 마지막 장이다. 결말을 낸다. 장르와 원안이 실제로 맺기로 한 중심 내용과 주인공의 선택에 대응한다. 모든 관계·목표·생활 문제를 정리할 의무는 없다. 계속되는 관계·일상·노력은 unchanged 또는 continuing으로 자연스럽게 남길 수 있다. 실제로 답을 약속한 의문은 그 약속에 맞게 다루되 모든 설정을 그런 의문으로 바꾸지 않는다. 처리하지 않은 것을 모두 끝냈다고 서술하지 않는다. 기존에 없는 상처의 치유나 사직·희생을 의무로 만들지 않는다. ending.epilogue에 결말 이후를 3~5문장으로 쓴다. nextChoices는 빈 배열.` : `nextChoices에는 ${nextN}장이 끝날 때 주인공이 할 수 있는 다음 행동 후보 3개를 한 문장씩 쓴다. 각 후보는 객체가 아니라 문자열 하나다. 서로 방향이 달라야 한다. ending은 null.`}
 - 주인공이 죽을 수도 있다. 주인공이 죽으면 이후 장은 그 죽음의 여파와 유산을 중심으로 진행하고, 주인공 문서의 장 섹션은 사후 사건으로 쓴다.
 - title과 heading에는 "${nextN}장", "제${nextN}장" 같은 장 번호를 넣지 않는다. 장 번호는 앱이 따로 붙인다.
 - era는 이 장의 작중 시점이다. 이전 장(${cur.era})보다 같거나 뒤여야 한다.
@@ -1692,14 +1710,14 @@ ${story ? `
 - 스토리 모드에서는 원안에 없는 거창한 세계의 비틀기나 역사 변경을 의무로 추가하지 않는다. 현실적인 사건과 작은 공동체의 이야기도 그 규모를 유지한다.
 이 위키는 주인공 한 명을 중심으로 ${user.total || STORY_DEF}장짜리 이야기가 진행되는 스토리 모드다. 독자가 위키를 탐험한 내용이 다음 장의 줄거리에 엮인다. 설정 노트와 함께 다음을 정한다.
 ${user.desc ? `- 사용자가 정한 주인공의 특징(그대로 지키고, 바라는 것과 상처도 여기서 끌어낸다): ${user.desc}\n` : ""}${user.cast?.length ? `- 사용자가 정한 등장인물(이름은 글자 그대로 쓰고, 특징과 주인공과의 관계를 지킨다. 뼈대와 1장 줄거리에 자연스럽게 등장시킨다):\n${castText(user.cast)}\n` : ""}- protagonist: 주인공의 한 문장 정의(summary), 주인공이 바라는 것(want), 필요할 때만 결핍이나 상처(wound, 없으면 빈 문자열). 모든 인물에게 사별·죄책감 같은 과거 트라우마를 붙이지 않는다.
-- storyPromise: 원안과 지침이 약속한 이야기의 경험(focus), 발단에서 생긴 중심 질문(centralQuestion). 범인·배후·결과를 미리 정한 결말 문장이 아니라 무엇을 끝까지 다뤄야 하는지 적는다.
+- storyPromise: 원안과 지침이 약속한 이야기의 경험(focus), 처음부터 이어갈 중심 내용(central: {kind, subject}). 목표·관계·약속·갈등·행동의 여파·진행 중인 일을 장르에 맞게 고르고 질문형을 강요하지 않는다. 실제 의문일 때만 mystery로 분류한다. 예정된 답이나 결말은 정하지 않는다.
 - spine: ${user.total || STORY_DEF}장 각각의 의도. 발단·전개·위기·절정·결말 다섯 구간을 장에 나눠 배치했다(${beatsFor(user.total || STORY_DEF).map((b, i) => `${i + 1}장 ${b}`).join(", ")}). 사건 규모나 배후를 단계마다 키울 필요는 없다. 기존 의문을 풀거나 관계와 선택의 대가를 다루는 장도 가능하다. want와 기존 설정을 지키되 wound를 매 장 건드릴 의무는 없다. 각 의도는 잠정 계획이며 이후 확정 사건과 선택에 맞춰 바꿀 수 있다. 결말 단계는 방향만 정하고 구체적인 결과를 확정하지 않는다. 독자의 탐험이 결말을 바꿀 여지를 남기기 위해서다. 이 뼈대는 독자에게 공개하지 않는다.
 - chapter1: 1장(발단)의 작중 사건명(title, "1장"이나 "제1장" 같은 장 번호는 넣지 않는다), 1장의 작중 시점(era), 공개 줄거리 3~5문장(summary), 주인공의 일상을 깨는 발단 사건 한 문장(incident), 1장이 끝날 때 주인공이 할 수 있는 다음 행동 후보 3개(nextChoices, 서로 방향이 다르게).
 - secrets: 원안에 실제로 필요할 때만 감춰 둔 답을 0~3개 정한다. 필요 없으면 빈 배열이다. 장르 이름만 보고 거대 음모·숨은 혈통·상층 배후를 만들지 않는다. 처음부터 모든 의심이 하나의 만능 배후로 수렴하도록 정하지 않는다. 각각 무엇이 사실인지(truth), 그 진실이 드러나기 전까지 세상에 알려진 겉모습(cover), 드러나는 장(reveal, 2~${user.total || STORY_DEF})을 정한다. 줄거리가 기억 상실, 정체 숨김, 누명, 음모, 숨은 배후처럼 무언가를 알아 가는 이야기라면 기존 단서로 뒷받침할 수 있는 잠정 답을 넣을 수 있다. 주변 인물의 과거나 세계의 배경처럼 이야기의 반전이 아닌 것은 넣지 않는다. reveal은 공개 검토 시점이며 증거와 선택에 따라 달라질 수 있다. 1장 줄거리(chapter1)와 모든 공개 문장은 cover만으로 쓴다.
 - era(세계관 기준 시점)는 chapter1.era와 같게 한다. 연표는 1장 시점까지만 만든다.
 
 JSON 객체 하나만 출력:
-{"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"timeline":[{"year":"1947","event":"..."}],"mainTitle":"주인공 이름","tone":{"label":"...","guide":["..."]},"storyPromise":{"focus":"원안이 약속한 이야기 경험","centralQuestion":"발단에서 끝까지 다룰 중심 질문"},"protagonist":{"summary":"한 문장 정의","want":"주인공이 바라는 것","wound":"주인공의 결핍이나 상처"},"spine":[${beatsFor(user.total || STORY_DEF).map((b, i) => `{"n":${i + 1},"beat":"${b}","intent":"${i === (user.total || STORY_DEF) - 1 ? "결말의 방향만" : "..."}"}`).join(",")}],"secrets":[{"truth":"감춰진 진실","cover":"드러나기 전 알려진 겉모습","reveal":3}],"chapter1":{"title":"작중 사건명","era":"1장 작중 시점","summary":"공개 줄거리 3~5문장","incident":"발단 사건 한 문장","nextChoices":["...","...","..."]}}` : `
+{"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"timeline":[{"year":"1947","event":"..."}],"mainTitle":"주인공 이름","tone":{"label":"...","guide":["..."]},"storyPromise":{"focus":"원안이 약속한 이야기 경험","central":{"kind":"goal/relationship/promise/conflict/consequence/ongoing/mystery","subject":"장르에 맞게 이어갈 중심 내용"}},"protagonist":{"summary":"한 문장 정의","want":"주인공이 바라는 것","wound":"주인공의 결핍이나 상처"},"spine":[${beatsFor(user.total || STORY_DEF).map((b, i) => `{"n":${i + 1},"beat":"${b}","intent":"${i === (user.total || STORY_DEF) - 1 ? "결말의 방향만" : "..."}"}`).join(",")}],"secrets":[{"truth":"감춰진 진실","cover":"드러나기 전 알려진 겉모습","reveal":3}],"chapter1":{"title":"작중 사건명","era":"1장 작중 시점","summary":"공개 줄거리 3~5문장","incident":"발단 사건 한 문장","nextChoices":["...","...","..."]}}` : `
 JSON 객체 하나만 출력:
 {"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"timeline":[{"year":"1947","event":"..."}],"mainTitle":"...","tone":{"label":"...","guide":["..."]}}`}`;
 }
@@ -2063,7 +2081,9 @@ function setupStory(w, b, user = {}) {
     reveal: Math.min(N, Math.max(2, parseInt(x.reveal, 10) || N)), revealed: false }));
   w.story.continuity = storyMemory(w);
   if (storyText(b.storyPromise?.focus, 1200)) w.story.continuity.focus = storyText(b.storyPromise.focus, 1200);
-  if (storyText(b.storyPromise?.centralQuestion, 400)) w.story.continuity.threads[0].question = storyText(b.storyPromise.centralQuestion, 400);
+  const central = b.storyPromise?.central, oldQuestion = storyText(b.storyPromise?.centralQuestion, 400);
+  if (storyText(central?.subject, 400)) { w.story.continuity.threads[0].subject = storyText(central.subject, 400); w.story.continuity.threads[0].kind = Object.hasOwn(STORY_THREAD_KINDS, central.kind) ? central.kind : "ongoing"; }
+  else if (oldQuestion) { w.story.continuity.threads[0].subject = oldQuestion; w.story.continuity.threads[0].kind = "legacy"; }
   w.story.cast = [];
   for (const c of user.cast || []) {
     const k = keyOf(c.name); if (k === w.mainKey) continue;
@@ -3884,7 +3904,7 @@ ${storyMemoryBlock(w, false)}
 규칙:
 ${STORY_RESPONSIBILITY_RULES}
 - 각 후보는 ${c.n}장이 끝난 지금 주인공이 할 수 있는 구체적인 행동 한 문장이다. 서로 방향이 달라야 한다(예: 맞선다 / 피한다 / 다른 길을 찾는다).
-- 결과를 미리 쓰지 않는다. 지금까지의 사건과 인물을 이름으로 짚는다. 같은 결말에 가는 조사 방법만 세 가지로 나누지 말고, 관계·기회·위험·사건의 향방이 달라질 수 있는 구체적인 행동을 제안한다. 기존 의문과 무관한 방향도 실제 동기가 있을 때 가능하지만, 앞의 사실과 선택 결과를 지우지 않는다.
+- 결과를 미리 쓰지 않는다. 지금까지의 사건과 인물을 이름으로 짚는다. 같은 결말에 가는 조사 방법만 세 가지로 나누지 말고, 관계·기회·위험·사건의 향방이 달라질 수 있는 구체적인 행동을 제안한다. 앞서 시작한 내용과 다른 방향도 실제 동기가 있을 때 가능하지만, 앞의 사실과 선택 결과를 지우지 않는다.
 
 JSON 객체 하나만 출력: {"nextChoices":["행동 한 문장","행동 한 문장","행동 한 문장"]}`;
 }
@@ -4440,10 +4460,10 @@ function storyCardHtml(w, n) {
     <div class="row" style="margin-top:10px"><button type="button" class="btn" data-act="story-card-close">안내 닫기</button></div></section>`;
 }
 function storyMemoryHtml(w) {
-  const memory = w.story.continuity; if (memory?.version !== 1) return "";
-  const status = { open: "미해결", progress: "진전", resolved: "해결", left_open: "남겨 둔 의문" };
-  return `<details class="story-memory memo"><summary>이어지는 의문과 선택의 영향 · ${memory.threads.length}건</summary><div style="padding:12px">
-    ${memory.focus ? `<p class="note">${esc(memory.focus)}</p>` : ""}<ul>${memory.threads.map(t => `<li><b>${esc(t.question)}</b> <span class="src">· ${esc(status[t.status] || "미해결")}</span><p>${esc(t.answer || t.consequence || t.development || "")}</p><span class="src">출처: ${esc(t.origin.title || "이전 기록")} · “${esc(t.origin.quote)}”</span></li>`).join("")}</ul>
+  if (![1, 2].includes(w.story.continuity?.version)) return "";
+  const memory = storyMemory(w);
+  return `<details class="story-memory memo"><summary>이어지는 이야기와 선택의 영향 · ${memory.threads.length}건</summary><div style="padding:12px">
+    ${memory.focus ? `<p class="note">${esc(memory.focus)}</p>` : ""}<ul>${memory.threads.map(t => `<li><b>${esc(t.subject)}</b> <span class="src">· ${esc(STORY_THREAD_KINDS[t.kind] || "이전 기록")} · ${esc(STORY_THREAD_STATES[t.status] || "이어짐")}</span><p>${esc((STORY_THREAD_CLOSED.includes(t.status) ? t.outcome : "") || t.development || "")}</p>${t.consequence ? `<p>${esc(t.consequence)}</p>` : ""}<span class="src">출처: ${esc(t.origin.title || "이전 기록")} · “${esc(t.origin.quote)}”</span></li>`).join("")}</ul>
     ${memory.choices.length ? `<h4>선택이 남긴 변화</h4><ul>${memory.choices.map(c => `<li>${c.chapter}장 · ${esc(c.choice)}<ul>${c.consequences.map(x => `<li>${esc(x.detail)}</li>`).join("")}</ul></li>`).join("")}</ul>` : ""}</div></details>`;
 }
 function advanceHtml() {
@@ -4451,14 +4471,14 @@ function advanceHtml() {
   const st = w.story, c = curCh(w), n = st.chapter + 1, a = S.adv || { pick: -1, custom: "", err: "" }, g = S.storyGen;
   const head = `<div class="sheet"><div class="crumb"><span>${esc(w.title)}</span><span>이야기</span></div><h1 class="t">${(g ? g.n : n) >= totalOf(w) ? "마지막 장으로" : `${g ? g.n : n}장으로`}</h1>`;   // 진행 중이면 진행 중인 장 번호(검사 단계에서는 이미 그 장이 반영되어 있다)
   if (g) return head + `<div class="gen-live" style="margin-top:14px"><span class="dot"></span><span id="stCount">${g.n}장 줄거리를 구상하는 중</span><button type="button" class="btn" data-act="story-stop">중단</button></div>
-    <p class="note">앞서 남긴 의문과 고른 행동의 결과를 이어 ${g.n}장 줄거리를 정하고, 주인공 문서에 ${g.n}장 섹션을 덧붙입니다. 중단하거나 실패하면 지금 상태 그대로 남습니다.</p>
+    <p class="note">앞서 시작한 일과 관계, 고른 행동의 결과를 이어 ${g.n}장 줄거리를 정하고, 주인공 문서에 ${g.n}장 섹션을 덧붙입니다. 중단하거나 실패하면 지금 상태 그대로 남습니다.</p>
     <div style="margin-top:14px"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div></div>`;
   if (st.status === "ended") return head + `<p class="note">이야기가 끝났습니다.</p><div class="row"><button type="button" class="btn pri" data-act="epilogue">에필로그 보기</button></div></div>`;
   const ex = exploreScores(w, c);
   const choices = (c.nextChoices || []).filter(x => typeof x === "string" && x.trim() && !isBroken(x));
   return head + `<p class="note">${c.n}장 「${esc(c.title)}」 · 작중 ${esc(c.era)}</p>
     <h2 class="nf-h">이번 장에 탐험한 곳</h2>
-    ${ex.length ? `<ul class="adv-list">${ex.slice(0, 12).map(x => `<li><span>${linkHtml(w.entities[x.k].title)}</span><span class="src">${esc(x.kinds.join(" · "))}</span></li>`).join("")}</ul>${ex.length > 8 ? `<p class="note">최근 탐험 중 8곳까지 참고합니다. 실제 인과가 있을 때만 줄거리에 쓰이며, 앞서 기록한 의문은 탐험 여부와 관계없이 이어집니다.</p>` : `<p class="note">직접 고친 사실은 지킵니다. 탐험한 항목을 장면에 억지로 등장시키지는 않습니다.</p>`}` : ""}
+    ${ex.length ? `<ul class="adv-list">${ex.slice(0, 12).map(x => `<li><span>${linkHtml(w.entities[x.k].title)}</span><span class="src">${esc(x.kinds.join(" · "))}</span></li>`).join("")}</ul>${ex.length > 8 ? `<p class="note">최근 탐험 중 8곳까지 참고합니다. 실제 인과가 있을 때만 줄거리에 쓰이며, 앞서 기록한 목표·관계·약속·여파는 탐험 여부와 관계없이 이어집니다.</p>` : `<p class="note">직접 고친 사실은 지킵니다. 탐험한 항목을 장면에 억지로 등장시키지는 않습니다.</p>`}` : ""}
     ${storyMemoryHtml(w)}
     <h2 class="nf-h">주인공의 다음 행동</h2>
     ${!choices.length ? `<div class="row" style="margin:6px 0 4px"><button type="button" class="btn" data-act="choices-regen" ${!S.sample || a.regen ? "disabled" : ""}>${a.regen ? "선택지를 만드는 중…" : "선택지 다시 만들기"}</button><span class="note">이 장의 행동 후보가 없습니다. 지금까지의 줄거리로 새로 만들 수 있습니다. 직접 정하거나 선택 없이 진행해도 됩니다.</span></div>` : ""}
