@@ -37,9 +37,12 @@ a{color:var(--link)}
 .brand{display:flex;align-items:baseline;gap:10px;min-width:0;background:none;border:0;padding:0;cursor:pointer;text-align:left}
 .brand b{font-family:var(--f-display);font-weight:700;font-size:19px;letter-spacing:-.01em;white-space:nowrap}
 .brand span{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40vw}
-.search{position:relative;margin-left:auto;flex:1 1 260px;max-width:420px}
-.search input{width:100%;border:1px solid var(--line);background:var(--paper);border-radius:var(--r);padding:8px 12px;font-size:14px}
+.search{display:flex;gap:8px;align-items:center;position:relative;margin-left:auto;flex:1 1 260px;max-width:420px}
+.search input{flex:1;min-width:0;width:100%;border:1px solid var(--line);background:var(--paper);border-radius:var(--r);padding:8px 12px;font-size:14px}
 .search input:disabled{opacity:.55}
+.discovery-button{flex:none;width:40px;height:40px;display:grid;place-items:center;border:1px solid var(--line);border-radius:var(--r);background:var(--paper);color:var(--link);cursor:pointer;touch-action:manipulation;user-select:none;-webkit-touch-callout:none}
+.discovery-button:disabled{opacity:.45;cursor:default}
+.discovery-button svg{width:21px;height:21px;pointer-events:none}
 .sugg{position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);box-shadow:0 8px 24px rgb(0 0 0 / .12);overflow:hidden}
 .sugg button{display:flex;justify-content:space-between;gap:12px;width:100%;text-align:left;background:none;border:0;padding:8px 12px;cursor:pointer}
 .sugg button:hover,.sugg button:focus-visible{background:var(--tint)}
@@ -363,6 +366,7 @@ details.ent li{margin-bottom:3px}
     <button class="brand" id="brand" data-act="home" type="button"><b>WorldWiki.ai</b><span id="brandWorld" hidden></span></button>
     <form class="search" id="searchForm" autocomplete="off" role="search">
       <input id="q" type="search" placeholder="세계관을 열면 검색할 수 있습니다" aria-label="문서 검색 또는 새 문서 만들기" disabled>
+      <button type="button" class="discovery-button" id="discoveryBtn" aria-label="랜덤 서핑" title="새 문서 랜덤 생성 · 길게 누르거나 두 번 누르면 내용 지정" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h3c5 0 7 12 12 12h3M17 14l4 4-4 4M3 18h3c2.5 0 4.3-3 6-6s3.5-6 6-6h3M17 2l4 4-4 4"/></svg></button>
       <div class="sugg" id="sugg" hidden></div>
     </form>
   </div>
@@ -378,7 +382,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.26 · 2026-11-10";
+const APP_VERSION = "v6.27 · 2026-11-11";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -687,7 +691,7 @@ async function listGeminiModels() {
 }
 const LOGK = "wwiki:log";
 const LOG = (() => { try { const v = JSON.parse(localStorage.getItem(LOGK) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })();
-const KIND = { section: "문단 다시 쓰기", prose: "단편 쓰기", image: "이미지 생성", choices: "행동 후보", read: "문서 읽기 검사", bible: "세계관 생성", storyBible: "스토리 세계관 생성", chapterPlan: "장 계획", chapterBlock: "장 섹션", page: "문서 작성", tone: "분위기 판별", check: "설정 검사", analyze: "수정 대조", fix: "충돌 고치기" };
+const KIND = { discovery: "새 대상 탐색", section: "문단 다시 쓰기", prose: "단편 쓰기", image: "이미지 생성", choices: "행동 후보", read: "문서 읽기 검사", bible: "세계관 생성", storyBible: "스토리 세계관 생성", chapterPlan: "장 계획", chapterBlock: "장 섹션", page: "문서 작성", tone: "분위기 판별", check: "설정 검사", analyze: "수정 대조", fix: "충돌 고치기" };
 function pushLog(r) {
   LOG.push(r); if (LOG.length > 40) LOG.splice(0, LOG.length - 40);
   try { localStorage.setItem(LOGK, JSON.stringify(LOG)); } catch {}
@@ -700,7 +704,7 @@ async function callJson(kind, prompt, opts = {}, meta = {}) {
   const t0 = performance.now(); let first = null, chars = 0;
   const user = opts.onText;
   const rec = { at: Date.now(), kind, tier: opts.modelTier || "default", model: "", effort: "", in: prompt.length, ...meta };
-  const o = { progressWatch: ["page", "check", "read", "prose", "section"].includes(kind), ...opts, onText: u => { if (first === null) first = performance.now(); chars = u.text.length; if (user) user(u); },
+  const o = { progressWatch: ["page", "check", "read", "prose", "section", "discovery"].includes(kind), ...opts, onText: u => { if (first === null) first = performance.now(); chars = u.text.length; if (user) user(u); },
     onRetry: r => { rec.retry = r.n; (rec.retries ||= []).push(r.reason ? String(r.reason).slice(0, 120) : r.mode); opts.onRetry?.(r); },
     onMeta: m => { rec.model = m.model; rec.effort = m.think || ""; if (m.retries) rec.retry = m.retries; if (m.usage) rec.tok = { i: m.usage.promptTokenCount || 0, o: m.usage.candidatesTokenCount || 0, t: m.usage.thoughtsTokenCount || 0 }; } };
   const done = () => { rec.first = first === null ? null : Math.round(first - t0); rec.total = Math.round(performance.now() - t0); rec.out = chars; };
@@ -924,7 +928,7 @@ const Sync = {
     const cur = S.world?.id, key = S.view.key;
     S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     if (cur) {
-      const busy = S.gen || S.storyGen || S.syncing || S.checking || S.edit || S.bgSync || S.portraitJob || S.imageGen?.busy || S.proseGen?.busy;
+      const busy = S.gen || S.storyGen || S.syncing || S.checking || S.edit || S.bgSync || S.portraitJob || S.imageGen?.busy || S.proseGen?.busy || S.discovery?.busy;
       if (!S.worlds.some(x => x.id === cur)) { if (!busy) { S.world = null; S.view = { name: "home" }; renderAll(); } toast("다른 기기에서 이 세계관을 지웠습니다."); return; }
       if (busy) { toast("다른 기기에서 바뀐 내용을 받았습니다. 작업이 끝난 뒤 세계관을 다시 열면 보입니다."); return; }
       await openWorld(cur, key); toast("다른 기기에서 바뀐 내용을 받았습니다.");
@@ -984,7 +988,7 @@ const S = {
   ready: false, worlds: [], world: null, pages: {}, view: { name: "home" }, recent: [],
   gen: null, genErr: null, checking: null, sample: null, sampleReady: false,
   creating: false, createErr: null, seed: "", seedTab: "own", ownSeed: "", dice: null, whatIfs: null, first: "", guideIn: "",
-  worldExports: Object.create(null), confirmDel: null, confirmRewrite: null, canonFilter: "all", focusEnt: null, nf: new Set(),
+  discovery: null, worldExports: Object.create(null), confirmDel: null, confirmRewrite: null, canonFilter: "all", focusEnt: null, nf: new Set(),
   edit: null, refreshing: null, confirmDelPage: null, confirmMerge: null, compose: null, portraitJob: null, imageGen: null, proseGen: null,
   mode: "basic", storyN: 5, protoDesc: "", cast: [], regen: null, storyGen: null, syncQ: [], syncing: null, syncErr: null, hold: null, adv: null, storyCard: null
 };
@@ -2036,6 +2040,7 @@ function cancelRegen() {
 }
 
 async function openWorld(wid, goKey) {
+  if (S.discovery?.busy) { toast("새 문서 탐색을 마치거나 중단한 뒤 세계관을 열어 주세요."); return; }
   const w = S.worlds.find(x => x.id === wid); if (!w) return;
   if (S.proseGen?.busy && S.proseGen.wid !== wid) { toast("단편 생성을 마치거나 중단한 뒤 다른 세계관을 열어 주세요."); return; }
   if (S.imageGen?.busy && S.imageGen.wid !== wid) { toast("이미지 생성을 마치거나 중단한 뒤 다른 세계관을 열어 주세요."); return; }
@@ -2079,9 +2084,11 @@ async function followRedirect(w, k, to) {
   if (S.view.name === "article" && S.view.key === k) openEntity(to); else renderAll();
   toast(`「${from}」은(는) 「${title}」의 다른 이름입니다. 기존 문서로 연결했습니다.`);
 }
-async function generatePage(k, rewrite, direction) {
+async function generatePage(k, rewrite, direction, novel = false) {
+  if (S.discovery?.busy && !novel) { toast("새 문서 탐색을 마치거나 중단한 뒤 작성해 주세요."); return; }
   const w = S.world; const e = w.entities[k];
   const named = !rewrite && !S.pages[k] && !protectedEntity(w, k) ? identityOwner(w, e.title, k) : null;
+  if (novel && named) throw { code: "discovery_duplicate", existing: w.entities[named].title };
   if (named && !S.gen && !S.storyGen && !S.syncing && !S.edit) {
     S.gen = { key: k, wid: w.id, title: e.title, raw: "", t0: performance.now(), ctl: new AbortController() };
     await followRedirect(w, k, named); return;
@@ -2104,6 +2111,7 @@ async function generatePage(k, rewrite, direction) {
     }
     const out = await callJson("page", pagePrompt(w, k, rewrite ? (direction || "") : null, rewrite ? "" : (direction || "")), { signal: ctl.signal, modelTier: "default", ...PAGE_MODEL, onRetry: r => { if (S.gen) { S.gen.retry = r; updateGenLive(); } }, onText: ({ text }) => { if (S.gen) { S.gen.raw = text; updateGenLive(); } } }, { title: e.title, type: TYPES.includes(e.type) ? e.type : "", ents: Object.keys(w.entities).length });
     if (out && Object.prototype.hasOwnProperty.call(out, "redirect")) {
+      if (novel) throw { code: "discovery_duplicate", existing: out.redirect };
       if (ctl.signal.aborted) throw { code: "cancelled" };
       const title = typeof out.redirect === "string" ? norm(out.redirect) : "";
       const to = title ? Object.keys(w.entities).find(x => w.entities[x].title === title) || w.aliases?.[keyOf(title)] : null, target = w.entities[to];
@@ -2121,6 +2129,14 @@ async function generatePage(k, rewrite, direction) {
       if (S.view.name === "article" && S.view.key === k) { S.view = { name: "notfound", title: nf }; renderAll(); }
       else { renderSide(); toast(`‘${nf}’ 문서를 찾을 수 없습니다.`); }
       return;
+    }
+    if (novel) {
+      const latest = await Store.getWorld(w.id);
+      if (ctl.signal.aborted || !latest || !S.worlds.some(x => x.id === w.id)) throw { code: "cancelled" };
+      const others = Object.fromEntries(Object.entries(w.entities).filter(([id]) => id !== k));
+      if (JSON.stringify(latest.entities) !== JSON.stringify(others) || JSON.stringify(latest.aliases || {}) !== JSON.stringify(w.aliases || {})) throw new Error("기존 항목이 다른 곳에서 바뀌었습니다. 세계관을 다시 열고 시도해 주세요.");
+      const names = [out?.title, ...(Array.isArray(out?.infobox) ? out.infobox.filter(r => r && IDENTITY_LABEL.test(stripMarks(r.label).replace(/\s/g, ""))).flatMap(r => [r.value, ...[...String(r.value).matchAll(LINK_RE)].flatMap(m => [m[1], m[2] || m[1]])]) : [])];
+      for (const name of names) if (typeof name === "string" && discoveryOwner(w, name, k)) throw { code: "discovery_duplicate", existing: name };
     }
     autoLink(w, k, out);   // 링크가 빠진 기존 항목 이름은 조용히 링크한다
     const searched = !!e.searched; delete e.searched;
@@ -2147,6 +2163,7 @@ async function generatePage(k, rewrite, direction) {
     }
   } catch (err) {
     S.gen = null;
+    if (novel) throw err;
     if (rewrite) {
       restoreRewrite(w, backup); if (S.world === w && oldPage) S.pages[k] = oldPage;
       toast(err?.code === "cancelled" ? "다시 쓰기를 취소했습니다. 이전 버전을 그대로 둡니다." : "다시 쓰지 못해 이전 버전을 그대로 둡니다. " + errMsg(err));
@@ -3020,7 +3037,7 @@ async function preparePortrait(file) {
     throw new Error("이미지를 저장할 크기로 줄이지 못했습니다. 더 작은 파일을 선택해 주세요.");
   } finally { URL.revokeObjectURL(url); }
 }
-const portraitBusy = k => (S.proseGen?.saving && S.proseGen.key === k) || S.gen || S.storyGen || S.syncing === k || S.checking === k || S.fixing || S.bgSync === k || (S.imageGen?.busy && S.imageGen.key === k) || isHeld(k);
+const portraitBusy = k => S.discovery?.busy || (S.proseGen?.saving && S.proseGen.key === k) || S.gen || S.storyGen || S.syncing === k || S.checking === k || S.fixing || S.bgSync === k || (S.imageGen?.busy && S.imageGen.key === k) || isHeld(k);
 async function setPortrait(k, file) {
   const w = S.world, p = S.pages[k];
   if (!w || !p) return;
@@ -3756,9 +3773,11 @@ function renderAll() { renderTop(); renderSide(); renderMain(); }
 function renderTop() {
   const w = S.world;
   const bw = $("#brandWorld"); bw.textContent = w ? `${w.title} · 작중 ${w.era}` : ""; bw.hidden = !w;   // 세계관을 열었을 때만 이름을 보인다
+  updateDiscoveryButton();
   const q = $("#q"); q.disabled = !w; q.placeholder = w ? `「${w.title}」에서 검색하거나 새 항목 만들기` : "세계관을 열면 검색할 수 있습니다";
 }
 function renderSide() {
+  updateDiscoveryButton();
   const side = $("#side"), w = S.world;
   if (!w || S.view.name === "home") {
     side.innerHTML = `<section><h4>WorldWiki.ai</h4><ul><li><button type="button" class="cur" data-act="home">세계관 목록</button></li></ul></section>
@@ -3863,6 +3882,7 @@ function setGres(t) { S.gres = t; const el = $("#gRes"); if (el) el.textContent 
 /* 주사위 칸은 내용 길이에 맞춰 높이를 늘린다 (field-sizing을 지원하지 않는 브라우저용) */
 function fitDie(el) { el.style.height = "auto"; el.style.height = el.scrollHeight + 2 + "px"; }
 function renderMain(force) {
+  updateDiscoveryButton();
   const m = $("#main");
   if (S.ready && S.view.name === "article" && S.edit && S.edit.key === S.view.key && S.pages[S.view.key]) {
     if (!force && m.dataset.ed === S.edit.key) return;   // 편집 중에는 다른 갱신으로 입력란을 다시 그리지 않는다
@@ -3874,6 +3894,7 @@ function renderMain(force) {
   else if (S.view.name === "canon") m.innerHTML = canonHtml();
   else if (S.view.name === "notfound") m.innerHTML = notFoundHtml(S.view.title);
   else if (S.view.name === "log") m.innerHTML = logHtml();
+  else if (S.view.name === "discovery") m.innerHTML = discoveryHtml();
   else if (S.view.name === "gset") m.innerHTML = gsetHtml();
   else if (S.view.name === "fix") m.innerHTML = fixvHtml(S.view.key);
   else if (S.view.name === "compose") m.innerHTML = composeHtml(S.view.key);
@@ -4278,6 +4299,119 @@ function canonHtml() {
   </div>`;
 }
 
+/* ---------- 랜덤 서핑: 미작성 링크도 제외한 새 대상 ---------- */
+function updateDiscoveryButton() { const button = $("#discoveryBtn"); if (button) button.disabled = !S.world || !!discoveryOccupied() || !!S.discovery?.busy; }
+const discoveryOccupied = () => S.creating || S.gen || S.storyGen || S.syncing || S.checking || S.edit || S.fixing || S.bgSync || S.portraitJob || S.imageGen?.busy || S.proseGen?.busy;
+function discoveryOwner(w, title, except = null) {
+  const name = norm(title); if (!name) return null;
+  const key = keyOf(name);
+  if (key !== except && (w.entities[key] || S.pages[key])) return key;
+  if (w.aliases && Object.prototype.hasOwnProperty.call(w.aliases, key)) return w.aliases[key] || key;
+  const id = identityName(name), canonical = identityName(canonTitle(w, name));
+  return Object.entries(w.entities).find(([k, e]) => k !== except && (identityName(e.title) === id || identityName(e.title) === canonical))?.[0] || identityOwner(w, name, except) || null;
+}
+function discoveryPrompt(w, direction, rejected) {
+  const index = Object.entries(w.entities).map(([k, e]) => {
+    const otherNames = (S.pages[k]?.infobox || []).filter(r => IDENTITY_LABEL.test(stripMarks(r.label).replace(/\s/g, ""))).map(r => stripMarks(r.value));
+    return `- ${e.title} | ${e.type || "유형 미정"} | ${e.page ? "작성됨" : "빨간 링크·미작성"} | ${e.summary || e.stub?.summary || ""}${otherNames.length ? " | 다른 이름: " + otherNames.join(" / ") : ""}`;
+  }).join("\n");
+  const anchors = [...new Set([w.mainKey, ...S.recent.slice(0, 5)])].filter(k => S.pages[k]).map(k => `「${w.entities[k]?.title || S.pages[k].title}」: ${firstPara(S.pages[k]).slice(0, 600)}`).join("\n");
+  return `## 랜덤 서핑의 새 대상 선정
+세계관 위키에 아직 한 번도 등록되지 않은 새 문서의 대상을 하나 고른다. 아래의 기존 항목은 작성 여부와 무관하게 절대로 선택하지 않는다.
+${canonBlock(w)}
+## 작가 지침
+${w.guide || "(없음)"}
+${toneBlock(w)}
+${isStory(w) ? storyBlock(w, w.mainKey, true) : ""}
+## 세계관의 중심을 보여 주는 문서
+${anchors || "원안과 규칙에서 세계관의 중심 소재를 읽는다."}
+## 제외할 기존 항목 전체 (빨간 링크 포함)
+${index || "(없음)"}
+## 사용자 설명
+${direction || "세계관 안에서 새로 발견할 가치가 있는 대상을 무작위로 하나 고른다."}
+## 선정 원칙
+- 원안·작가 지침·대표 문서에서 중심 소재와 장르를 먼저 읽는다. '이 세계관의 특징이 없었어도 똑같이 존재할 문서인가?'를 자문하고, 그렇다면 다시 고른다. 세계관과 관계없는 평범한 시민의 신상이나 무관한 현실 지식 문서를 끼워 넣지 않는다.
+- 중심 소재와 직접 연결되는 역할·경험·관계·사건·생활상을 가진 새 대상을 고른다. 군사 세계관이라고 전투나 무기만 뽑지는 않는다. 정비·검진·산업·생활·문화도 중심 특징에서 자연스럽게 파생될 때 다룬다. 모든 대상을 억지로 세계적 인물이나 대사건으로 만들지 않는다.
+- 인물·장소·사건·물건·조직·제도·문화 등 종류를 다양하게 검토하되, 다양성보다 세계관과의 연결을 우선한다.
+- 기존 항목은 이름만 바꾸거나, 본명·코드명·다른 호칭으로 다시 만들지 않는다. 기존 빨간 링크는 사용자가 아직 선택하지 않은 대상이므로 재활용하지 않는다.
+- 사용자 설명이 있으면 그것이 무엇인지, 역할·종류·이름을 그대로 존중한다. 예를 들어 '미국의 마라톤 선수. 이름은 제임스 그레이'는 인물의 이름과 직업을 지정한 것이지 검색어 전체가 제목인 것이 아니다. 이름이 없으면 어울리는 이름을 짓는다. 설명을 지키면서 자연스러운 연결을 만들 수 없다면 unsuitable에 이유를 쓴다.
+- 사용자 설명이 이미 있는 대상을 뜻하면 {"existing":"기존 항목의 정확한 제목"}만 출력한다. 중복 없이 만들 수 없다면 기존 대상을 새것이라고 우기지 않는다.
+${rejected.length ? "## 이미 거절된 후보 — 다시 선택하지 않는다\n" + rejected.join("\n") : ""}
+새 후보는 JSON 하나: {"title":"새 문서 제목(60자 이하)","type":"${TYPES.join(" 또는 ")}","summary":"대상이 무엇인지 한두 문장","connection":"이 세계관의 중심 특징과 어떻게 직접 이어지는지 구체적인 이유","direction":"문서 작성 시 지킬 대상의 정체성과 작성 방향","aliases":["같은 대상의 다른 이름이 있으면"]}
+부적합하면 {"unsuitable":"이유"}.`;
+}
+function openDiscoveryPrompt() {
+  if (!S.world || discoveryOccupied() || S.discovery?.busy) { toast("현재 작업을 마치거나 중단한 뒤 새 문서를 만들 수 있습니다."); return; }
+  if (!S.discovery || S.discovery.wid !== S.world.id) S.discovery = { wid: S.world.id, direction: "", busy: false, error: "" };
+  S.discovery.error = ""; S.view = { name: "discovery" }; renderAll(); $("#discoveryDirection")?.focus();
+}
+async function discoverWorld(direction = "") {
+  const w = S.world;
+  if (!w || discoveryOccupied() || S.discovery?.busy) return;
+  const v = S.discovery = { wid: w.id, direction: String(direction).trim().slice(0, 2000), busy: false, error: "", ctl: new AbortController() };
+  S.view = { name: "discovery" };
+  if (!S.sample) { v.error = "AI 연결 설정에서 Gemini 문서 모델 연결을 저장해 주세요."; renderAll(); return; }
+  v.busy = true; renderAll(); window.scrollTo({ top: 0 });
+  const rejected = []; let candidate = null, target = null;
+  const discard = () => { if (target && !S.pages[target] && w.entities[target] === candidate) { delete w.entities[target]; S.recent = S.recent.filter(k => k !== target); } target = null; candidate = null; };
+  try {
+    for (let attempt = 0; attempt < (v.direction ? 1 : 3); attempt++) {
+      v.phase = "선정";
+      const basis = JSON.stringify([w.seed, w.era, w.rules, w.userCanon, w.guide, w.story?.chapter]);
+      const plan = await callJson("discovery", discoveryPrompt(w, v.direction, rejected), { modelTier: "default", signal: v.ctl.signal }, { title: w.title });
+      if (v.ctl.signal.aborted || S.world !== w || S.discovery !== v) throw { code: "cancelled" };
+      const stored = await Store.getWorld(w.id);
+      if (v.ctl.signal.aborted || !stored || !S.worlds.some(x => x.id === w.id)) throw { code: "cancelled" };
+      if (JSON.stringify(stored.entities) !== JSON.stringify(w.entities) || JSON.stringify(stored.aliases || {}) !== JSON.stringify(w.aliases || {})) throw new Error("기존 항목이 다른 곳에서 바뀌었습니다. 세계관을 다시 열고 시도해 주세요.");
+      if (basis !== JSON.stringify([w.seed, w.era, w.rules, w.userCanon, w.guide, w.story?.chapter])) throw new Error("탐색 중 세계관 설정이 바뀌었습니다. 현재 설정으로 다시 시도해 주세요.");
+      if (typeof plan?.unsuitable === "string") throw new Error(plan.unsuitable.slice(0, 400));
+      const named = typeof plan?.existing === "string" ? plan.existing : null;
+      const title = typeof plan?.title === "string" ? norm(plan.title) : "";
+      const aliases = Array.isArray(plan?.aliases) ? plan.aliases.filter(x => typeof x === "string").slice(0, 8) : [];
+      const duplicate = named ? discoveryOwner(w, named) : [title, ...aliases].map(name => discoveryOwner(w, name)).find(Boolean);
+      if (named && !duplicate) throw new Error("기존 대상이라는 응답을 받았지만 해당 항목을 확인하지 못했습니다. 다시 시도해 주세요.");
+      if (duplicate || named) {
+        if (v.direction) throw new Error(`「${named || w.entities[duplicate]?.title || title}」은(는) 이미 등록된 항목입니다. 빨간 링크도 새로 만들지 않습니다.`);
+        rejected.push(named || title); continue;
+      }
+      if (!title || title.length > 60 || !TYPES.includes(plan?.type) || typeof plan?.summary !== "string" || !plan.summary.trim() || typeof plan?.connection !== "string" || !plan.connection.trim()) throw new Error("새 대상의 이름·종류·세계관 연결을 확인하지 못했습니다. 다시 시도해 주세요.");
+      const key = keyOf(title);
+      if (discoveryOwner(w, title)) { rejected.push(title); continue; }
+      candidate = newEntity(title, plan.type, plan.summary.slice(0, 400)); candidate.src = "discovery";
+      w.entities[key] = candidate; target = key; v.target = key; v.phase = "작성"; S.recent = [key, ...S.recent.filter(x => x !== key)].slice(0, 8);
+      try {
+        await generatePage(key, false, [v.direction, "대상: " + plan.summary, "세계관과의 연결: " + plan.connection.slice(0, 1000), typeof plan.direction === "string" ? plan.direction.slice(0, 2000) : ""].filter(Boolean).join("\n"), true);
+        if (S.pages[key]) { target = null; candidate = null; return; }
+        throw new Error("문서를 완성하지 못했습니다. 다시 시도해 주세요.");
+      } catch (e) {
+        discard();
+        if (e.code === "discovery_duplicate") {
+          if (v.direction) throw new Error(`「${e.existing || title}」은(는) 기존 대상과 같습니다. 새 문서를 만들지 않았습니다.`);
+          rejected.push(title); continue;
+        }
+        throw e;
+      }
+    }
+    throw new Error("기존 항목과 겹치지 않는 새 대상을 고르지 못했습니다. 다시 시도하거나 내용을 지정해 주세요.");
+  } catch (e) {
+    discard(); v.error = e.code === "cancelled" ? "새 문서 생성을 중단했습니다." : (e.message || errMsg(e));
+    if (S.world === w && S.discovery === v) { S.genErr = null; S.view = { name: "discovery" }; renderAll(); }
+  } finally {
+    v.busy = false; if (S.discovery === v) { renderTop(); if (S.view.name === "discovery" && S.world === w) renderMain(); }
+  }
+}
+function discoveryHtml() {
+  const v = S.discovery, w = S.world;
+  if (!v || !w || v.wid !== w.id) return `<div class="sheet"><p>세계관을 먼저 열어 주세요.</p></div>`;
+  return `<section class="sheet"><div class="crumb"><span>${esc(w.title)}</span><span>랜덤 서핑</span></div><h1 class="t">새 문서 발견하기</h1>
+    <p class="note">세계관의 중심 소재에서 자연스럽게 뻗어 나온 새 대상을 만듭니다. 작성된 문서·빨간 링크·별칭으로 이미 등록된 대상은 선택하지 않습니다.</p>
+    <label class="lb" for="discoveryDirection">어떤 대상을 만들까요? <span class="note">선택</span></label><textarea id="discoveryDirection" rows="5" maxlength="2000" ${v.busy ? "disabled" : ""} placeholder="예: 주인공이 소속된 조직의 전담 의무관. 이름은 제임스 그레이. 현장 경험이 많은 인물.">${esc(v.direction || "")}</textarea>
+    <p class="note">이름뿐 아니라 대상의 종류·역할·특징을 적을 수 있습니다. 비워 두면 세계관에 어울리는 새 대상을 고릅니다.</p>
+    ${v.busy ? `<p role="status"><span class="dot"></span>세계관에 맞는 새 대상을 ${v.phase === "작성" ? "작성" : "선정"}하는 중…</p>` : ""}${v.error ? `<div class="banner warn" role="alert">${esc(v.error)}</div>` : ""}
+    ${!S.sample ? `<button type="button" class="btn" data-act="gset">AI 연결 설정</button>` : ""}
+    <div class="row"><button type="button" class="btn pri" data-act="discovery-create" ${v.busy || !S.sample ? "disabled" : ""}>${v.direction ? "이 내용으로 새 문서 만들기" : "랜덤으로 새 문서 만들기"}</button>${v.busy ? `<button type="button" class="btn" data-act="discovery-stop">생성 중단</button>` : `<button type="button" class="btn" data-act="discovery-back">문서로 돌아가기</button>`}</div></section>`;
+}
+
 /* ---------- search ---------- */
 function renderSugg() {
   const box = $("#sugg"), q = norm($("#q").value), w = S.world;
@@ -4446,6 +4580,9 @@ document.addEventListener("click", ev => {
       break;
     }
     case "canon": S.view = { name: "canon" }; renderAll(); window.scrollTo({ top: 0 }); break;
+    case "discovery-create": discoverWorld($("#discoveryDirection")?.value || ""); break;
+    case "discovery-stop": S.discovery?.ctl?.abort(); if (S.gen && S.gen.key === S.discovery?.target) S.gen.ctl.abort(); break;
+    case "discovery-back": if (S.world) openEntity(S.world.mainKey); break;
     case "create": { const ta = $("#seedTa"); if (ta) S.seed = ta.value; createWorld(); break; }
     case "stop": S.gen?.ctl.abort(); break;
     case "del-no": S.confirmDel = null; renderMain(); break;
@@ -4530,6 +4667,7 @@ document.addEventListener("input", ev => {
   if (S.fixv && ev.target.dataset?.fnew !== undefined) { const e = S.fixv.edits[Number(ev.target.dataset.fnew)]; if (e) e.new = ev.target.value; }
   if (ev.target.id === "sectionDirection" && S.edit?.section && !S.edit.aiBusy) S.edit.aiDirection = ev.target.value;
   if (ev.target.dataset?.ef && S.edit) S.edit.f[ev.target.dataset.ef] = ev.target.value;
+  if (ev.target.id === "discoveryDirection" && S.discovery && !S.discovery.busy) { S.discovery.direction = ev.target.value; const button = $('[data-act="discovery-create"]'); if (button) button.textContent = ev.target.value.trim() ? "이 내용으로 새 문서 만들기" : "랜덤으로 새 문서 만들기"; }
   if (ev.target.id === "q") renderSugg();
 });
 $("#q").addEventListener("focus", renderSugg);
@@ -4549,6 +4687,26 @@ document.addEventListener("change", ev => {
   if (ev.target.id === "gMode") { const r = ev.target.value === "relay"; $("#gKeyBox").hidden = r; $("#gRelayBox").hidden = !r; }
   if (ev.target.id === "importFile" && ev.target.files?.[0]) { const f = ev.target.files[0]; ev.target.value = ""; importAll(f); }
 });
+/* 랜덤 서핑 제스처: 단일 누름과 입력창 열기를 구분한다. */
+const discoveryGesture = { click: null, hold: null, suppressUntil: 0, x: 0, y: 0 };
+const discoveryButton = $("#discoveryBtn");
+const clearDiscoveryHold = () => { clearTimeout(discoveryGesture.hold); discoveryGesture.hold = null; };
+discoveryButton.addEventListener("click", ev => {
+  if (Date.now() < discoveryGesture.suppressUntil) { discoveryGesture.suppressUntil = 0; ev.preventDefault(); return; }
+  if (discoveryGesture.click || ev.detail >= 2) { clearTimeout(discoveryGesture.click); discoveryGesture.click = null; openDiscoveryPrompt(); return; }
+  const wid = S.world?.id;
+  discoveryGesture.click = setTimeout(() => { discoveryGesture.click = null; if (S.world?.id === wid) discoverWorld(); }, 350);
+});
+discoveryButton.addEventListener("dblclick", ev => { ev.preventDefault(); clearTimeout(discoveryGesture.click); discoveryGesture.click = null; if (Date.now() >= discoveryGesture.suppressUntil) openDiscoveryPrompt(); });
+discoveryButton.addEventListener("pointerdown", ev => {
+  if (ev.button !== 0 || discoveryButton.disabled) return;
+  clearDiscoveryHold(); discoveryGesture.x = ev.clientX; discoveryGesture.y = ev.clientY;
+  discoveryGesture.hold = setTimeout(() => { clearTimeout(discoveryGesture.click); discoveryGesture.click = null; discoveryGesture.suppressUntil = Date.now() + 1000; openDiscoveryPrompt(); }, 500);
+});
+discoveryButton.addEventListener("pointermove", ev => { if (Math.hypot(ev.clientX - discoveryGesture.x, ev.clientY - discoveryGesture.y) > 10) clearDiscoveryHold(); });
+for (const event of ["pointerup", "pointercancel", "pointerleave"]) discoveryButton.addEventListener(event, clearDiscoveryHold);
+discoveryButton.addEventListener("contextmenu", ev => { ev.preventDefault(); clearDiscoveryHold(); clearTimeout(discoveryGesture.click); discoveryGesture.click = null; openDiscoveryPrompt(); });
+document.addEventListener("visibilitychange", () => { if (document.hidden) clearDiscoveryHold(); });
 /* 길게 누르기 감지: 터치로 빨간 링크를 0.5초 누르면 작성 페이지 */
 const lp = { timer: null, fired: false, touch: false, x: 0, y: 0, clickT: null };
 document.addEventListener("pointerdown", ev => {
@@ -4571,7 +4729,7 @@ document.addEventListener("click", ev => {   // 길게 누른 뒤 손을 뗄 때
 }, true);
 document.addEventListener("contextmenu", ev => { if (ev.target.closest?.("a.wl.new")) ev.preventDefault(); });
 document.addEventListener("visibilitychange", () => {   // 다른 기기에서 작업하고 돌아오면 바뀐 것을 받아 온다
-  if (document.visibilityState === "visible" && (S.creating || S.gen || S.storyGen || S.checking || S.syncing || S.fixing || S.bgSync || S.edit?.aiBusy || S.proseGen?.busy || S.imageGen?.busy)) toast("진행 중인 응답을 이어받습니다.");
+  if (document.visibilityState === "visible" && (S.discovery?.busy || S.creating || S.gen || S.storyGen || S.checking || S.syncing || S.fixing || S.bgSync || S.edit?.aiBusy || S.proseGen?.busy || S.imageGen?.busy)) toast("진행 중인 응답을 이어받습니다.");
   if (document.visibilityState === "visible" && Sync.acct && S.ready && Date.now() - Sync.lastAt > 30000) Sync.pull();
   if (document.visibilityState === "hidden" && Sync.acct && Sync.pending()) Sync.push();
 });
