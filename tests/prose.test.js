@@ -7,6 +7,7 @@ const w={kind:'world',id:'prose',title:'단편 세계',seed:'거인이 있는 �
 const fixture={app:'worldwiki',version:1,worlds:[w],pages:{prose:{person:p,[friend.key]:friend,event}}};
 const read=(page,key)=>page.evaluate(key=>new Promise((resolve,reject)=>{const r=indexedDB.open('worldwiki-gemini',1);r.onsuccess=()=>{const db=r.result,t=db.transaction('kv'),q=t.objectStore('kv').get(key);q.onsuccess=()=>resolve(q.result);q.onerror=reject;t.oncomplete=()=>db.close();};r.onerror=reject;}),key);
 const write=(page,key,value)=>page.evaluate(({key,value})=>new Promise((resolve,reject)=>{const r=indexedDB.open('worldwiki-gemini',1);r.onsuccess=()=>{const db=r.result,t=db.transaction('kv','readwrite');t.objectStore('kv').put(value,key);t.oncomplete=()=>{db.close();resolve();};t.onerror=reject;};}),{key,value});
+const longBody='정비병은 창밖을 바라보며 동료의 말을 기다렸다.\n\n'.repeat(1000).slice(0,13999)+'끝';
 let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch(),ctx=await browser.newContext({acceptDownloads:true});
@@ -19,7 +20,7 @@ let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
   if(prompt.includes('## 文서'))throw new Error('unexpected');
   if(prompt.includes('## 문서 기반 단편 소설')){
    if(mode==='delay')await new Promise(resolve=>release=resolve);
-   if(mode==='bad')out={title:'빈 결과'};else out={title:'대기실 '+(++serial),body:'정비병은 손을 멈췄다.\n\n<script>window.proseXss=1</script>\n“조금만 기다려.”'};
+   if(mode==='bad')out={title:'빈 결과'};else out={title:'대기실 '+(++serial),body:mode==='long'?longBody:'정비병은 손을 멈췄다.\n\n<script>window.proseXss=1</script>\n“조금만 기다려.”'};
   }else if(prompt.includes('## 작성할 문서:'))out={...p,facts:[],relations:[],newEntities:[],timeline:[]};
   else if(prompt.includes('사용자가 직접 수정한 최종본'))out={facts:[],relations:[],timeline:[],conflicts:[],newEntities:[]};
   else throw new Error('unexpected AI call: '+prompt.slice(0,100));
@@ -33,14 +34,14 @@ let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
   await page.goto(`http://127.0.0.1:${server.address().port}`);await page.click('#side [data-act="gset"]');await page.setInputFiles('#importFile',{name:'fixture.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(fixture))});await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.includes('가져왔습니다'));await openWorld();
   const before=await read(page,'p:prose:person'),canon=await read(page,'w:prose');
   await page.click('[data-prose-open]');await page.fill('#proseDirection','출동 전날 밤. 정비병 시점, 조용하고 따뜻하게. 감정을 행동으로 표현.');await page.selectOption('#proseLength','short');await generate();
-  const prompt=requests.at(-1);for(const text of [p.title,'60m','출동은 11월이다','정비병과 친하다','조용하고 따뜻하게','약 1,000~1,800자','위키 문서를 소설체로 요약'])assert(prompt.includes(text),text);
+  const prompt=requests.at(-1);for(const text of [p.title,'60m','출동은 11월이다','정비병과 친하다','조용하고 따뜻하게','약 2,000~3,500자','위키 문서를 소설체로 요약'])assert(prompt.includes(text),text);
   assert.equal(await page.evaluate(()=>window.proseXss),undefined);assert((await page.locator('.prose-preview .prose-text').textContent()).includes('<script>'));
   assert.deepStrictEqual(await read(page,'p:prose:person'),before);assert.deepStrictEqual(await read(page,'w:prose'),canon);assert.equal(requests.length,1);
   pass('요청·문서·확정 설정으로 산문을 만들고 안전한 미리보기로만 표시한다');
   await save();const stored=await read(page,'p:prose:person');assert.equal(stored.shortStories.length,1);delete stored.shortStories;assert.deepStrictEqual(stored,{...before,savedAt:stored.savedAt});assert.deepStrictEqual(await read(page,'w:prose'),canon);
   await page.reload(); await page.waitForSelector('#main h1, #main .wcard, #gMode'); await page.click('#side [data-act="home"]'); await page.waitForSelector('.wcard');await openWorld();await page.click('[data-prose-open]');assert.equal(await page.locator('[data-prose-id]').count(),1);await page.locator('.prose-saved summary').click();assert((await page.locator('.prose-saved .prose-text').textContent()).includes('정비병'));
   pass('보관·새로고침 후에도 단편을 읽고 본문·세계관·확정 사실은 유지한다');
-  await generate();await save();assert.equal((await read(page,'p:prose:person')).shortStories.length,2);await page.locator('.prose-saved summary').first().click();await page.locator('[data-prose-delete]').first().click();assert.equal((await read(page,'p:prose:person')).shortStories.length,2);await page.locator('[data-prose-delete]').first().click();await page.waitForFunction(()=>document.querySelectorAll('[data-prose-id]').length===1);
+  const labels=await page.locator('#proseLength option').allTextContents();assert.deepStrictEqual(labels,['약 2,000~3,500자','약 5,000~8,000자','약 10,000~15,000자']);await page.selectOption('#proseLength','medium');await generate();assert(requests.at(-1).includes('약 5,000~8,000자'));mode='long';await page.selectOption('#proseLength','long');await generate();assert(requests.at(-1).includes('약 10,000~15,000자'));assert(requests.at(-1).includes('제목을 제외한 본문(공백 포함)'));assert(requests.at(-1).includes('여러 장면'));assert.equal(await page.locator('.prose-preview .prose-text').textContent(),longBody);await save();assert.equal((await read(page,'p:prose:person')).shortStories[1].body,longBody);assert.equal(longBody.length,14000);mode='ok';pass('확대된 세 분량을 UI와 요청에 반영하고 14,000자 본문을 잘라내지 않고 미리보기·저장한다');assert.equal((await read(page,'p:prose:person')).shortStories.length,2);await page.locator('.prose-saved summary').first().click();await page.locator('[data-prose-delete]').first().click();assert.equal((await read(page,'p:prose:person')).shortStories.length,2);await page.locator('[data-prose-delete]').first().click();await page.waitForFunction(()=>document.querySelectorAll('[data-prose-id]').length===1);
   pass('여러 편을 보관하고 확인을 거쳐 선택한 단편만 삭제한다');
   mode='bad';await page.click('[data-act="prose-generate"]');await page.waitForSelector('#prosePanel [role="alert"]');assert.equal((await read(page,'p:prose:person')).shortStories.length,1);
   pass('잘못된 응답은 기존 단편을 덮어쓰지 않는다');

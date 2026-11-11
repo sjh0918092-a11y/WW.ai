@@ -382,7 +382,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.34 · 2026-11-11";
+const APP_VERSION = "v6.35 · 2026-11-11";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -3101,7 +3101,7 @@ const conflictLabel = (w, c) => c.kind === "rule" ? `핵심 규칙 ${c.id}` : c.
   : c.kind === "timeline" ? `연표${c.src && w.entities[c.src] ? ` (「${w.entities[c.src].title}」)` : ""}` : `「${w.entities[c.src]?.title || "?"}」${S.pages[c.src]?.editedAt ? " (직접 수정한 문서)" : ""}`;
 
 /* ---------- 문서에서 파생한 단편: 확정 설정과 별도로 보관 ---------- */
-const PROSE_LENGTHS = { short: "약 1,000~1,800자", medium: "약 2,500~4,000자", long: "약 5,000~7,000자" };
+const PROSE_LENGTHS = { short: "약 2,000~3,500자", medium: "약 5,000~8,000자", long: "약 10,000~15,000자" };
 const shortStoriesOf = p => (Array.isArray(p?.shortStories) ? p.shortStories : []).filter(x => x && typeof x.id === "string" && typeof x.title === "string" && typeof x.body === "string");
 function prosePrompt(w, p, o) {
   const e = w.entities[p.key];
@@ -3121,10 +3121,10 @@ ${related(w, p.key).map(k => entityBrief(w, k, null)).join("\n\n") || "(없음)"
 ## 독자가 요청한 내용·분위기·문체·시점
 ${o.direction || "이 문서의 인물이나 사건을 가까이 느낄 수 있는 한 장면을 골라 쓴다."}
 ## 분량
-${PROSE_LENGTHS[o.length] || PROSE_LENGTHS.medium}. 이는 목표 분량이며 문장 수를 억지로 채우지 않는다.
+${PROSE_LENGTHS[o.length] || PROSE_LENGTHS.medium}. 제목을 제외한 본문(공백 포함)의 목표 분량이다. 선택한 범위의 하한을 기준으로 충분히 전개하고, 요약문처럼 짧게 끝내지 않는다. 반복 설명이나 군더더기로 채우지 말고 행동·대화·장면의 전개에 분량을 쓴다.
 ## 작성 원칙
 - 내용, 분위기, 문체, 시점은 독자의 요청을 우선한다. 다만 확정된 신원·나이·신장·생사·관계·연표·시대·규칙과 충돌하는 요청은 그 사실을 바꾸지 않는 범위에서 해석한다.
-- 위키 문서를 소설체로 요약하거나 생애와 사건을 차례로 설명하지 않는다. 요청이 달리 정하지 않으면 구체적인 한 장면에 머물고 행동, 대화, 감각, 사물의 디테일로 감정을 보여 준다. 전투나 비극을 억지로 붙이지 않는다.
+- 위키 문서를 소설체로 요약하거나 생애와 사건을 차례로 설명하지 않는다. 요청이 달리 정하지 않으면 구체적인 장면을 중심으로 행동, 대화, 감각, 사물의 디테일로 감정을 보여 준다. 긴 분량은 인과가 이어지는 여러 장면으로 나누어도 된다. 전투나 비극을 억지로 붙이지 않는다.
 - 대사, 감각, 사소한 행동은 창작할 수 있지만 확정 사실을 뒤집는 사건이나 인물 관계를 새로 만들지 않는다. 시점 인물이 알 수 있는 범위를 지킨다.
 - 문서, 자료, 프롬프트를 설명하거나 '작성 방향:'을 붙이지 않는다. 본문은 단편 산문만 쓴다. 위키 링크·분류·각주·설정 목록을 출력하지 않는다.
 - 이 글은 문서와 별도인 창작 단편이며, 새 대사와 세부 묘사는 세계관의 확정 사실로 등록되지 않는다.
