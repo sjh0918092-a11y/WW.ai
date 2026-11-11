@@ -1,0 +1,40 @@
+const http=require('http'),fs=require('fs'),path=require('path'),assert=require('assert'),vm=require('vm');
+const {chromium}=require('playwright');
+const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8'),c={};vm.createContext(c);vm.runInContext(html.slice(html.indexOf('function cyrb53('),html.indexOf('const LINK_RE ='))+'globalThis.makeKey=keyOf;',c);const key=c.makeKey;
+const server=http.createServer((req,res)=>{res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(html);});
+let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
+(async()=>{
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch(),ctx=await browser.newContext();
+ await ctx.addInitScript(()=>{if(!localStorage.getItem('wwiki:gemini'))localStorage.setItem('wwiki:gemini',JSON.stringify({mode:'key',key:'test-key',preCheck:false}));});
+ await ctx.route('https://fonts.googleapis.com/**',r=>r.abort());await ctx.route('https://fonts.gstatic.com/**',r=>r.abort());let calls=0;await ctx.route('**/v1beta/**',r=>{calls++;return r.abort();});
+ const page=await ctx.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const a=key('주인공'),b=key('동료'),stub=key('붉은 격납고'),alias=key('코드명');
+ const ent=(title,written)=>({title,type:'인물',summary:title,facts:[],mentions:[],page:written});
+ const doc=(k,title,other)=>({key:k,title,type:'인물',summary:title,infobox:[],sections:[{heading:'개요',level:1,body:`[[${other}]]와 함께 생활한다.\n\n`+'기록된 세계관의 이야기. '.repeat(1000)}],links:[key(other)],createdAt:1});
+ const w={kind:'world',id:'nav',title:'탐색 세계',seed:'군인의 일상',era:'1989년',guide:'',rules:[],timeline:[],relations:[],navboxes:{},aliases:{[alias]:a},entities:{[a]:ent('주인공',true),[b]:ent('동료',true),[stub]:ent('붉은 격납고',false)},mainKey:a,createdAt:1};
+ const w2={...w,id:'nav2',title:'다른 세계',aliases:{},entities:{[b]:ent('동료',true)},mainKey:b};
+ const fixture={app:'worldwiki',version:1,worlds:[w,w2],pages:{nav:{[a]:doc(a,'주인공','동료'),[b]:doc(b,'동료','주인공')},nav2:{[b]:doc(b,'동료','주인공')}}};
+ const url=`http://127.0.0.1:${server.address().port}/WW.ai/`;
+ const title=t=>page.waitForFunction(t=>document.querySelector('h1.t')?.textContent===t,t);
+ const view=v=>page.waitForFunction(v=>new URLSearchParams(location.hash.slice(1)).get('view')===v,v);
+ const hash=r=>'#'+new URLSearchParams(r).toString();
+ try {
+  await page.goto(url);await page.click('#side [data-act="gset"]');await page.setInputFiles('#importFile',{name:'fixture.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(fixture))});await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.includes('가져왔습니다'));await page.click('#side [data-act="home"]');await page.locator('[data-world="nav"]').click();await title('주인공');const first=page.url();assert(first.includes('world=nav'));assert.equal(new URL(first).pathname,'/WW.ai/');pass('세계관 문서 주소를 GitHub Pages 하위 경로에 기록한다');
+  await page.locator('.article a.wl').first().click();await title('동료');const second=page.url();await page.reload();await title('동료');assert.equal(page.url(),second);pass('문서에서 새로고침하면 동일 세계관·동일 문서를 복원한다');
+  await page.goBack();await title('주인공');assert.equal(page.url(),first);await page.goForward();await title('동료');pass('새로고침 뒤에도 뒤로·앞으로가기는 이전·다음 문서를 연다');
+  await page.click('#side [data-act="canon"]');await view('canon');await page.reload();await page.waitForSelector('#wImageGuide');assert.equal(new URLSearchParams(new URL(page.url()).hash.slice(1)).get('world'),'nav');await page.goBack();await title('동료');pass('세계관 설정 노트도 새로고침·뒤로가기로 복원한다');
+  const count=await page.evaluate(()=>history.length);await page.locator('.article a.wl').first().click();await title('주인공');await page.locator('.article a.wl').first().click();await title('동료');const count2=await page.evaluate(()=>history.length);await page.waitForTimeout(1200);assert.equal(await page.evaluate(()=>history.length),count2);assert(count2>=count);pass('화면 재렌더링·타이머는 방문 기록을 중복 추가하지 않는다');
+  await page.evaluate(()=>scrollTo(0,900));await page.waitForTimeout(150);const y=await page.evaluate(()=>scrollY);assert(y>500);await page.evaluate(()=>document.querySelector('.article a.wl').click());await title('주인공');await page.goBack();await title('동료');await page.waitForTimeout(100);assert(Math.abs(await page.evaluate(()=>scrollY)-y)<10);pass('뒤로가기는 이전 문서의 스크롤 위치도 복원한다');
+  await page.reload();await title('동료');await page.waitForTimeout(100);assert(Math.abs(await page.evaluate(()=>scrollY)-y)<10);pass('새로고침도 문서의 스크롤 위치를 복원한다');
+  await page.click('[data-section-edit="0"]');await page.waitForSelector('#edBody');await page.fill('#edBody','저장하지 않은 문단');const editUrl=page.url();await page.goBack();await page.waitForTimeout(250);assert.equal(page.url(),editUrl);assert.equal(await page.inputValue('#edBody'),'저장하지 않은 문단');await page.click('[data-act="ed-cancel"]');pass('편집 중 뒤로가기는 이동을 막아 미저장 초안을 보호한다');
+  await page.goto(url+hash({view:'article',world:'nav',key:stub}));await title('붉은 격납고');await page.waitForSelector('[data-gen]');await page.reload();await title('붉은 격납고');assert.equal(calls,0);pass('미작성 문서 복원·새로고침은 유료 생성이나 검사를 자동 시작하지 않는다');
+  await page.goto(url+hash({view:'article',world:'nav',key:alias}));await title('주인공');assert.equal(new URLSearchParams(new URL(page.url()).hash.slice(1)).get('key'),a);pass('별칭 주소는 실제 문서 주소로 정리한다');
+  await page.goto(url+hash({view:'article',world:'nav',key:'removed'}));await title('주인공');assert(page.url().includes('world=nav'));pass('삭제·합침으로 사라진 문서 주소는 해당 세계관 대문으로 복원한다');
+  await page.goto(url+hash({view:'article',world:'removed',key:a}));await page.waitForSelector('.wcard');await view('home');pass('삭제된 세계관 주소는 오류 없이 메인으로 돌아간다');
+  await page.locator('[data-world="nav"]').click();await title('주인공');await page.click('#side [data-act="home"]');await page.locator('[data-world="nav2"]').click();await title('동료');await page.goBack();await page.waitForSelector('.wcard');await page.goBack();await title('주인공');await page.goForward();await page.waitForSelector('.wcard');await page.goForward();await title('동료');assert(page.url().includes('world=nav2'));pass('세계관을 넘나드는 뒤로·앞으로가기에서도 문서 목록을 올바르게 로드한다');
+  await page.click('#side [data-act="gset"]');await page.reload();await page.waitForSelector('#gQuick');await view('gset');await page.goBack();await title('동료');pass('AI 설정도 새로고침 후 유지하며 뒤로가면 원래 세계관으로 돌아간다');
+  await page.goto(url+'#view=unknown');await page.waitForSelector('.wcard');await view('home');pass('알 수 없는 화면 주소는 안전하게 메인으로 정리한다');
+  const mobile=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});await mobile.route('https://fonts.googleapis.com/**',r=>r.abort());const mp=await mobile.newPage();await mp.goto(url+'#view=gset');await mp.waitForSelector('#gQuick');await mp.reload();await mp.waitForSelector('#gQuick');assert(mp.url().includes('view=gset'));await mobile.close();pass('모바일에서도 API 설정 없이 저장된 화면을 복원한다');
+  assert.deepStrictEqual(errors,[]);assert.equal(calls,0);console.log(`\n모두 통과 (${n}개). 실제 유료 API 호출 0회.`);
+ } finally {await browser.close();await new Promise(r=>server.close(r));}
+})().catch(e=>{console.error(e);process.exitCode=1;});

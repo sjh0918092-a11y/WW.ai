@@ -24,8 +24,8 @@ const removeImage = async page => { await page.locator(".portrait-menu summary")
 const waitSaved = page => page.waitForFunction(() => document.querySelector("#toast")?.textContent.includes("프로필 이미지를 저장했습니다.") && !document.querySelector("[data-portrait]")?.disabled);
 const open = async page => { await page.click('.wcard button.open:has-text("이미지 테스트 세계")'); await page.waitForSelector(".article h2"); };
 const reopen = async page => {
-  await page.reload(); await page.waitForSelector("#gMode, .wcard");
-  if (await page.locator("#gMode").count()) await page.click('#side [data-act="home"]');
+  await page.reload(); await page.waitForSelector("#gMode, .wcard, .article h2");
+  await page.click('#side [data-act="home"]');
   await open(page);
 };
 const importBackup = async (page, data) => {

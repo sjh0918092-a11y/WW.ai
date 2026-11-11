@@ -82,7 +82,7 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
     await generate(page); const preview = await page.locator(".image-gen .preview").getAttribute("src");
     await apply(page); assert.strictEqual((await read(page, "p:images:person")).portrait, preview);
     assert(preview.length <= 1536 * 1024);
-    await page.reload(); await page.waitForSelector(".wcard"); await openWorld(page);
+    await page.reload(); await page.waitForSelector('#main h1, #main .wcard, #gMode'); await page.click('#side [data-act="home"]'); await page.waitForSelector('.wcard'); await openWorld(page);
     assert.strictEqual(await page.locator(".portrait img").getAttribute("src"), preview);
     pass("미리보기 버리기는 원본을 유지하고 적용한 결과만 저장해 새로고침 뒤에도 유지한다");
 
@@ -144,7 +144,7 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
     await page.click('[data-act="image-apply"]'); await page.waitForSelector(".image-gen [role=alert]");
     assert((await page.locator(".image-gen [role=alert]").innerText()).includes("바뀌었습니다"));
     assert.strictEqual((await read(page, "p:images:person")).sections[0].body, "다른 기기에서 수정된 본문");
-    await page.click('[data-act="image-close"]'); await page.reload(); await page.waitForSelector(".wcard"); await openWorld(page);
+    await page.click('[data-act="image-close"]'); await page.reload(); await page.waitForSelector('#main h1, #main .wcard, #gMode'); await page.click('#side [data-act="home"]'); await page.waitForSelector('.wcard'); await openWorld(page);
     pass("생성 도중 다른 기기에서 바뀐 문서를 이전 본문으로 덮어쓰지 않는다");
 
     await page.click('#side [data-act="gset"]');

@@ -382,7 +382,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.28 · 2026-11-11";
+const APP_VERSION = "v6.29 · 2026-11-11";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -992,6 +992,95 @@ const S = {
   edit: null, refreshing: null, confirmDelPage: null, confirmMerge: null, compose: null, portraitJob: null, imageGen: null, proseGen: null,
   mode: "basic", storyN: 5, protoDesc: "", cast: [], regen: null, storyGen: null, syncQ: [], syncing: null, syncErr: null, hold: null, adv: null, storyCard: null
 };
+
+/* 주소/방문 기록에는 저장된 화면만 담는다. 복원은 생성·검사를 시작하지 않는다. */
+const Nav = {
+  active: false, restoring: false, current: "", pos: 0, pending: null, scrollTimer: null,
+  route() {
+    let view = S.view.name, key = S.view.key;
+    if (["loading"].includes(view)) return null;
+    if (["fix", "compose", "advance"].includes(view)) { view = "article"; key ||= S.world?.mainKey; }
+    const r = { view };
+    if (view !== "home" && S.world) r.world = S.world.id;
+    if (view === "article") r.key = key || S.world?.mainKey;
+    if (view === "notfound") r.title = S.view.title;
+    return r;
+  },
+  hash(r) { return "#" + new URLSearchParams(Object.entries(r).filter(([, v]) => typeof v === "string")).toString(); },
+  read() {
+    const q = new URLSearchParams(location.hash.slice(1));
+    if (!q.has("view")) return null;
+    const view = q.get("view");
+    if (!["home", "gset", "log", "article", "canon", "notfound", "discovery", "epilogue"].includes(view)) return { view: "home" };
+    return { view, ...(q.get("world") ? { world: q.get("world") } : {}), ...(q.get("key") ? { key: q.get("key") } : {}), ...(q.get("title") ? { title: q.get("title") } : {}) };
+  },
+  write(replace = false, y = 0) {
+    const r = this.route(); if (!r) return;
+    const hash = this.hash(r);
+    if (!replace && hash === this.current) return;
+    if (!replace) {
+      history.replaceState({ ...history.state, wwNav: { pos: this.pos, y: scrollY } }, "");
+      this.pos++;
+    }
+    history[replace ? "replaceState" : "pushState"]({ wwNav: { pos: this.pos, y } }, "", location.pathname + location.search + hash);
+    this.current = hash;
+  },
+  sync() { if (this.active && !this.restoring && S.ready) this.write(); },
+  async apply(r) {
+    if (r.world) {
+      if (!S.worlds.some(w => w.id === r.world)) { S.world = null; S.view = { name: "home" }; toast("저장된 세계관을 찾을 수 없습니다."); return; }
+      if (S.world?.id !== r.world) await openWorld(r.world, r.key, true);
+      if (S.world?.id !== r.world) return;
+    } else if (!["home", "gset", "log"].includes(r.view)) { S.view = { name: "home" }; return; }
+    if (!r.world && !S.gen && !S.storyGen && !S.syncing) S.world = null;
+    if (r.view === "article") {
+      let k = r.key; const w = S.world;
+      if (!w.entities[k] && w.aliases?.[k]) k = w.aliases[k];
+      if (!w.entities[k]) { k = w.mainKey; toast("이 문서는 없어져 세계관 대문을 열었습니다."); }
+      S.view = { name: "article", key: k };
+      S.recent = [k, ...S.recent.filter(x => x !== k)].slice(0, 8);
+      return;
+    }
+    if (r.view === "discovery" && S.discovery?.wid !== r.world) S.discovery = { wid: r.world, direction: "", busy: false, error: "" };
+    S.view = { name: r.view, ...(r.view === "notfound" ? { title: r.title || "" } : {}) };
+  },
+  async restore(r, state) {
+    this.pending = { r, state };
+    if (this.restoring) return;
+    this.restoring = true;
+    try {
+      while (this.pending) {
+        const next = this.pending; this.pending = null;
+        await this.apply(next.r);
+        if (this.pending) continue;
+        this.pos = next.state?.pos ?? this.pos;
+        renderAll(); this.write(true, next.state?.y || 0);
+        window.scrollTo({ top: next.state?.y || 0, behavior: "instant" });
+      }
+    } catch (e) { toast("화면을 복원하지 못했습니다. " + errMsg(e)); S.world = null; S.view = { name: "home" }; renderAll(); this.write(true); }
+    finally { this.restoring = false; }
+  }
+};
+window.addEventListener("popstate", () => {
+  if (!Nav.active) return;
+  const r = Nav.read() || { view: "home" }, state = history.state?.wwNav;
+  if (!Nav.restoring && Nav.hash(r) === Nav.current) return;
+  const crossWorld = r.world && r.world !== S.world?.id;
+  if (S.edit || S.discovery?.busy || (crossWorld && (S.gen || S.storyGen || S.syncing || S.checking || S.portraitJob || S.imageGen?.busy || S.proseGen?.busy))) {
+    toast(S.edit ? "편집 내용을 저장하거나 취소한 뒤 이동해 주세요." : "진행 중인 작업을 마치거나 중단한 뒤 이동해 주세요.");
+    if (state && state.pos !== Nav.pos) history.go(Nav.pos - state.pos);
+    else Nav.write(true);
+    return;
+  }
+  Nav.restore(r, state);
+});
+function saveNavScroll() {
+  clearTimeout(Nav.scrollTimer); Nav.scrollTimer = null;
+  if (Nav.active && !Nav.restoring && location.hash === Nav.current) history.replaceState({ ...history.state, wwNav: { pos: Nav.pos, y: scrollY } }, "");
+}
+// iOS Safari의 History API 호출 제한에 걸리지 않도록 스크롤 기록을 묶는다.
+window.addEventListener("scroll", () => { if (!Nav.scrollTimer) Nav.scrollTimer = setTimeout(saveNavScroll, 500); }, { passive: true });
+window.addEventListener("pagehide", saveNavScroll);
 
 /* 장을 반영한 문서는 설정 검사와 고치기가 끝날 때까지 이전 버전을 보여 준다. hold: { wid, key, page(이전 버전) } */
 const shownPage = k => S.hold && S.hold.key === k && S.hold.wid === S.world?.id ? S.hold.page : S.pages[k];
@@ -2039,7 +2128,7 @@ function cancelRegen() {
   else renderMain();
 }
 
-async function openWorld(wid, goKey) {
+async function openWorld(wid, goKey, restoring = false) {
   if (S.discovery?.busy) { toast("새 문서 탐색을 마치거나 중단한 뒤 세계관을 열어 주세요."); return; }
   const w = S.worlds.find(x => x.id === wid); if (!w) return;
   if (S.proseGen?.busy && S.proseGen.wid !== wid) { toast("단편 생성을 마치거나 중단한 뒤 다른 세계관을 열어 주세요."); return; }
@@ -2054,7 +2143,8 @@ async function openWorld(wid, goKey) {
   await cleanChapterTitles(w);
   const unbadged = await cleanAiSupersede(w);
   if (dedupeRelations(w)) { try { await Store.saveWorld(w); } catch {} }
-  openEntity(goKey && (w.entities[goKey] || w.aliases?.[goKey]) ? goKey : w.mainKey);
+  if (restoring) { S.view = { name: "article", key: w.mainKey }; }
+  else openEntity(goKey && (w.entities[goKey] || w.aliases?.[goKey]) ? goKey : w.mainKey);
   if (unbadged) setTimeout(() => toast(`AI 수정 때문에 잘못 붙어 있던 '설정과 맞지 않음' 경고 ${unbadged}건을 지웠습니다.`), merged ? 3800 : 0);
   if (merged) toast(`같은 대상을 가리키는데 따로 생긴 항목 ${merged}개를 원래 항목에 합쳤습니다. 예: "이름(인물)", 성이나 이름만 쓴 인물.`);
 }
@@ -3882,6 +3972,7 @@ function setGres(t) { S.gres = t; const el = $("#gRes"); if (el) el.textContent 
 /* 주사위 칸은 내용 길이에 맞춰 높이를 늘린다 (field-sizing을 지원하지 않는 브라우저용) */
 function fitDie(el) { el.style.height = "auto"; el.style.height = el.scrollHeight + 2 + "px"; }
 function renderMain(force) {
+  Nav.sync();
   updateDiscoveryButton();
   const m = $("#main");
   if (S.ready && S.view.name === "article" && S.edit && S.edit.key === S.view.key && S.pages[S.view.key]) {
@@ -4859,7 +4950,11 @@ addEventListener("resize", hideSelPop);
   if (Sync.acct) { Sync.load(); await Sync.pull(); S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)); Sync.push(); }   // 로그인되어 있으면 서버에서 바뀐 것을 받고 남은 변경을 올린다
   S.ready = true; S.view = gReady() ? { name: "home" } : { name: "gset" };
   if (invited) S.gres = "초대 링크로 중계 서버 주소가 채워졌습니다. 받은 접속 암호를 넣고 저장해 주세요.";
-  renderAll();
+  Nav.active = true;
+  if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+  const route = Nav.read();
+  if (route && !invited) await Nav.restore(route, history.state?.wwNav);
+  else { renderAll(); Nav.write(true); }
 })();
 })();
 </script>
