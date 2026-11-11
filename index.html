@@ -382,7 +382,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.27 · 2026-11-11";
+const APP_VERSION = "v6.28 · 2026-11-11";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -3823,7 +3823,7 @@ function gsetHtml() {
     <h2 class="nf-h">Gemini 문서 모델</h2>
     <div class="two"><div><label class="lb" for="gMain">기본 모델 <span class="note" style="font-weight:400">세계관 생성, 문서 작성, 충돌 고치기</span></label><input id="gMain" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.main)}"></div>
       <div><label class="lb" for="gMainT">생각 깊이</label><select id="gMainT">${opt(GS.mainThink)}</select></div></div>
-    <div class="two"><div><label class="lb" for="gQuick">빠른 모델 <span class="note" style="font-weight:400">분위기 판별</span></label><input id="gQuick" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.quick)}"></div>
+    <div class="two"><div><label class="lb" for="gQuick">빠른 모델 <span class="note" style="font-weight:400">분위기 판별·랜덤 서핑 대상 선정</span></label><input id="gQuick" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.quick)}"></div>
       <div><label class="lb" for="gQuickT">생각 깊이</label><select id="gQuickT">${opt(GS.quickThink)}</select></div></div>
     <div class="two"><div><label class="lb" for="gCheck">검사 모델 <span class="note" style="font-weight:400">설정 검사, 수정 대조 · 비워 두면 기본 모델</span></label><input id="gCheck" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.check || "")}" placeholder="${esc(GS.main || GDEF.main)} (기본 모델)"></div>
       <div><label class="lb" for="gCheckT">생각 깊이</label><select id="gCheckT">${opt(GS.checkThink ?? GDEF.checkThink)}</select></div></div>
@@ -4310,7 +4310,7 @@ function discoveryOwner(w, title, except = null) {
   const id = identityName(name), canonical = identityName(canonTitle(w, name));
   return Object.entries(w.entities).find(([k, e]) => k !== except && (identityName(e.title) === id || identityName(e.title) === canonical))?.[0] || identityOwner(w, name, except) || null;
 }
-function discoveryPrompt(w, direction, rejected) {
+function discoveryPrompt(w, direction, rejected, feedback = []) {
   const index = Object.entries(w.entities).map(([k, e]) => {
     const otherNames = (S.pages[k]?.infobox || []).filter(r => IDENTITY_LABEL.test(stripMarks(r.label).replace(/\s/g, ""))).map(r => stripMarks(r.value));
     return `- ${e.title} | ${e.type || "유형 미정"} | ${e.page ? "작성됨" : "빨간 링크·미작성"} | ${e.summary || e.stub?.summary || ""}${otherNames.length ? " | 다른 이름: " + otherNames.join(" / ") : ""}`;
@@ -4337,7 +4337,9 @@ ${direction || "세계관 안에서 새로 발견할 가치가 있는 대상을 
 - 사용자 설명이 있으면 그것이 무엇인지, 역할·종류·이름을 그대로 존중한다. 예를 들어 '미국의 마라톤 선수. 이름은 제임스 그레이'는 인물의 이름과 직업을 지정한 것이지 검색어 전체가 제목인 것이 아니다. 이름이 없으면 어울리는 이름을 짓는다. 설명을 지키면서 자연스러운 연결을 만들 수 없다면 unsuitable에 이유를 쓴다.
 - 사용자 설명이 이미 있는 대상을 뜻하면 {"existing":"기존 항목의 정확한 제목"}만 출력한다. 중복 없이 만들 수 없다면 기존 대상을 새것이라고 우기지 않는다.
 ${rejected.length ? "## 이미 거절된 후보 — 다시 선택하지 않는다\n" + rejected.join("\n") : ""}
-새 후보는 JSON 하나: {"title":"새 문서 제목(60자 이하)","type":"${TYPES.join(" 또는 ")}","summary":"대상이 무엇인지 한두 문장","connection":"이 세계관의 중심 특징과 어떻게 직접 이어지는지 구체적인 이유","direction":"문서 작성 시 지킬 대상의 정체성과 작성 방향","aliases":["같은 대상의 다른 이름이 있으면"]}
+${feedback.length ? "## 이전 선정에서 보완할 점 — 사용자 조건은 유지한다\n" + feedback.join("\n") : ""}
+연결 근거를 점검해 원안·규칙·작가 지침의 구체적인 특징에 직접 이어지면 fit을 strong, 연결이 막연하거나 부자연스러우면 weak로 쓴다. 근거가 약한데 strong이라고 우기지 않는다.
+새 후보는 JSON 하나: {"fit":"strong 또는 weak","title":"새 문서 제목(60자 이하)","type":"${TYPES.join(" 또는 ")}","summary":"대상이 무엇인지 한두 문장","connection":"이 세계관의 중심 특징과 어떻게 직접 이어지는지 구체적인 이유","direction":"문서 작성 시 지킬 대상의 정체성과 작성 방향","aliases":["같은 대상의 다른 이름이 있으면"]}
 부적합하면 {"unsuitable":"이유"}.`;
 }
 function openDiscoveryPrompt() {
@@ -4352,29 +4354,38 @@ async function discoverWorld(direction = "") {
   S.view = { name: "discovery" };
   if (!S.sample) { v.error = "AI 연결 설정에서 Gemini 문서 모델 연결을 저장해 주세요."; renderAll(); return; }
   v.busy = true; renderAll(); window.scrollTo({ top: 0 });
-  const rejected = []; let candidate = null, target = null;
+  const rejected = [], feedback = []; let candidate = null, target = null, quickAttempts = 0, usedMain = false, mainNeeded = false;
   const discard = () => { if (target && !S.pages[target] && w.entities[target] === candidate) { delete w.entities[target]; S.recent = S.recent.filter(k => k !== target); } target = null; candidate = null; };
   try {
-    for (let attempt = 0; attempt < (v.direction ? 1 : 3); attempt++) {
-      v.phase = "선정";
+    while (!usedMain) {
+      const tier = mainNeeded || quickAttempts >= (v.direction ? 1 : 3) ? "default" : "quick";
+      if (tier === "default") usedMain = true; else quickAttempts++;
+      const retryMain = reason => { if (usedMain) throw new Error(reason); feedback.push(String(reason).slice(0, 400)); mainNeeded = true; };
+      v.phase = "선정"; v.fallback = usedMain; if (S.view.name === "discovery") renderMain();
       const basis = JSON.stringify([w.seed, w.era, w.rules, w.userCanon, w.guide, w.story?.chapter]);
-      const plan = await callJson("discovery", discoveryPrompt(w, v.direction, rejected), { modelTier: "default", signal: v.ctl.signal }, { title: w.title });
+      let plan;
+      try { plan = await callJson("discovery", discoveryPrompt(w, v.direction, rejected, feedback), { modelTier: tier, signal: v.ctl.signal }, { title: w.title }); }
+      catch (e) {
+        if (usedMain || ["cancelled", "bad_key", "rate_limited", "region", "no_sample", "refused"].includes(e.code)) throw e;
+        retryMain("빠른 선정 요청에 실패했습니다. 같은 사용자 조건과 세계관으로 새 후보를 검토한다. " + (e.message || errMsg(e))); continue;
+      }
       if (v.ctl.signal.aborted || S.world !== w || S.discovery !== v) throw { code: "cancelled" };
       const stored = await Store.getWorld(w.id);
       if (v.ctl.signal.aborted || !stored || !S.worlds.some(x => x.id === w.id)) throw { code: "cancelled" };
       if (JSON.stringify(stored.entities) !== JSON.stringify(w.entities) || JSON.stringify(stored.aliases || {}) !== JSON.stringify(w.aliases || {})) throw new Error("기존 항목이 다른 곳에서 바뀌었습니다. 세계관을 다시 열고 시도해 주세요.");
       if (basis !== JSON.stringify([w.seed, w.era, w.rules, w.userCanon, w.guide, w.story?.chapter])) throw new Error("탐색 중 세계관 설정이 바뀌었습니다. 현재 설정으로 다시 시도해 주세요.");
-      if (typeof plan?.unsuitable === "string") throw new Error(plan.unsuitable.slice(0, 400));
+      if (typeof plan?.unsuitable === "string") { retryMain(plan.unsuitable.slice(0, 400)); continue; }
       const named = typeof plan?.existing === "string" ? plan.existing : null;
       const title = typeof plan?.title === "string" ? norm(plan.title) : "";
       const aliases = Array.isArray(plan?.aliases) ? plan.aliases.filter(x => typeof x === "string").slice(0, 8) : [];
       const duplicate = named ? discoveryOwner(w, named) : [title, ...aliases].map(name => discoveryOwner(w, name)).find(Boolean);
-      if (named && !duplicate) throw new Error("기존 대상이라는 응답을 받았지만 해당 항목을 확인하지 못했습니다. 다시 시도해 주세요.");
+      if (named && !duplicate) { retryMain("기존 대상이라는 응답을 받았지만 해당 항목을 확인하지 못했습니다. 사용자 조건을 유지하며 새 대상을 다시 검토한다."); continue; }
       if (duplicate || named) {
         if (v.direction) throw new Error(`「${named || w.entities[duplicate]?.title || title}」은(는) 이미 등록된 항목입니다. 빨간 링크도 새로 만들지 않습니다.`);
         rejected.push(named || title); continue;
       }
-      if (!title || title.length > 60 || !TYPES.includes(plan?.type) || typeof plan?.summary !== "string" || !plan.summary.trim() || typeof plan?.connection !== "string" || !plan.connection.trim()) throw new Error("새 대상의 이름·종류·세계관 연결을 확인하지 못했습니다. 다시 시도해 주세요.");
+      if (!title || title.length > 60 || !TYPES.includes(plan?.type) || typeof plan?.summary !== "string" || !plan.summary.trim() || typeof plan?.connection !== "string" || !plan.connection.trim()) { retryMain("새 대상의 이름·종류·세계관 연결을 확인하지 못했습니다. 다시 시도해 주세요."); continue; }
+      if (plan.fit !== "strong") { retryMain(`「${title}」의 세계관 연결 근거가 부족합니다. 사용자 조건을 바꾸지 말고 원안의 구체적 특징과 직접 이어지도록 다시 선정한다.`); continue; }
       const key = keyOf(title);
       if (discoveryOwner(w, title)) { rejected.push(title); continue; }
       candidate = newEntity(title, plan.type, plan.summary.slice(0, 400)); candidate.src = "discovery";
@@ -4407,7 +4418,7 @@ function discoveryHtml() {
     <p class="note">세계관의 중심 소재에서 자연스럽게 뻗어 나온 새 대상을 만듭니다. 작성된 문서·빨간 링크·별칭으로 이미 등록된 대상은 선택하지 않습니다.</p>
     <label class="lb" for="discoveryDirection">어떤 대상을 만들까요? <span class="note">선택</span></label><textarea id="discoveryDirection" rows="5" maxlength="2000" ${v.busy ? "disabled" : ""} placeholder="예: 주인공이 소속된 조직의 전담 의무관. 이름은 제임스 그레이. 현장 경험이 많은 인물.">${esc(v.direction || "")}</textarea>
     <p class="note">이름뿐 아니라 대상의 종류·역할·특징을 적을 수 있습니다. 비워 두면 세계관에 어울리는 새 대상을 고릅니다.</p>
-    ${v.busy ? `<p role="status"><span class="dot"></span>세계관에 맞는 새 대상을 ${v.phase === "작성" ? "작성" : "선정"}하는 중…</p>` : ""}${v.error ? `<div class="banner warn" role="alert">${esc(v.error)}</div>` : ""}
+    ${v.busy ? `<p role="status"><span class="dot"></span>${v.phase === "작성" ? "새 문서를 작성하는 중…" : v.fallback ? "후보를 다시 검토하는 중…" : "세계관에 맞는 새 대상을 선정하는 중…"}</p>` : ""}${v.error ? `<div class="banner warn" role="alert">${esc(v.error)}</div>` : ""}
     ${!S.sample ? `<button type="button" class="btn" data-act="gset">AI 연결 설정</button>` : ""}
     <div class="row"><button type="button" class="btn pri" data-act="discovery-create" ${v.busy || !S.sample ? "disabled" : ""}>${v.direction ? "이 내용으로 새 문서 만들기" : "랜덤으로 새 문서 만들기"}</button>${v.busy ? `<button type="button" class="btn" data-act="discovery-stop">생성 중단</button>` : `<button type="button" class="btn" data-act="discovery-back">문서로 돌아가기</button>`}</div></section>`;
 }
