@@ -382,7 +382,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.31 · 2026-11-11";
+const APP_VERSION = "v6.32 · 2026-11-11";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1835,6 +1835,7 @@ function crossRefs(w, p) {
 function docForCheck(p) {
   return [`# ${p.title}`, p.summary ? `한 줄 정의: ${p.summary}` : "", p.categories?.length ? `분류: ${p.categories.join(" | ")}` : "", "[인포박스]", ...(p.infobox || []).map(r => `${r.label}: ${stripMarks(r.value)}`), "[본문]", ...p.sections.map(s => `${(s.level || 1) === 2 ? "###" : "##"} ${s.ch && (s.level || 1) === 1 ? `[${s.ch}장] ` : ""}${s.heading}\n${stripMarks(s.body)}`)].filter(Boolean).join("\n");
 }
+const NUMBER_CHECK_RULE = "숫자는 주체·속성·사건·단위·시점·범위가 같은지 먼저 확인한다. 한 문장에 이름이 언급됐다는 이유만으로 다른 주체의 숫자를 연결하지 않는다. 예: 약제 A의 최초 도입 연도와 그 약제를 사용하는 부대 B의 창설 연도는 다른 대상의 다른 사건이므로 모순이 아니다. 같은 대상이어도 개발·도입·창설·제정·시행은 서로 다른 속성이다. 1960년대 같은 범위·대략적인 시기는 특정 연도와 같아야 하는 값이 아니다. 귀속 대상이나 범위가 불명확하면 숫자를 맞추라는 지적을 하지 않는다.";
 const ISSUE_JSON = `JSON 객체 하나만 출력: {"issues":[{"claim":"문서의 해당 서술(문서에서 글자 그대로)","evidence":"근거가 된 확정 설정이나 문서 안의 다른 서술(글자 그대로)","conflict":"둘이 왜 동시에 참일 수 없는지 한 문장","severity":"high 또는 low"}]}
 문제가 없으면 issues는 빈 배열.`;
 /* 검사 1: 설정 대조. 문서가 세계관의 확정 설정과 어긋나는지만 엄격하게 본다 */
@@ -1853,6 +1854,7 @@ function checkPrompt(w, key) {
 지적하기 전에 다음을 모두 확인한다. 하나라도 아니면 지적하지 않는다.
 - 근거가 될 확정 설정이 아래 목록에 실제로 있고, 그 문장을 글자 그대로 evidence에 옮길 수 있다. 기억이나 짐작, 일반 상식, 현실 역사에 기댄 지적은 하지 않는다.
 - 문서의 서술과 확정 설정이 같은 대상, 같은 시점에 관한 것이다. 이름이 비슷한 다른 대상이거나 다른 시점의 일이면 모순이 아니다.
+- ${NUMBER_CHECK_RULE}
 - 둘이 동시에 참일 수 없다. 한쪽이 다른 쪽을 자세히 풀거나 덧붙인 것, 확정 설정이 말하지 않은 빈칸을 채운 것은 모순이 아니다.
 - 지적할 것이 없는 것이 정상이다. 개수를 채우려고 지적하지 않는다.
 이 조건을 모두 갖춘 충돌의 severity는 high다.
@@ -1883,6 +1885,7 @@ function readPrompt(w, key) {
 - 앞에서 정한 능력, 한계, 제약과 뒤의 실제 행적이 맞지 않는 곳(예: 120km 넘게 걷지 못한다고 해 놓고 사막을 크게 우회하는 대기동을 손실 없이 해냄, 장갑 구성에 없던 부품이 다른 섹션에 나옴).
 - 연도·나이·학년·기수·재직 기간이 서로 맞지 않는 곳(예: 기준 시점에 1학년인 인물이 그보다 2년 전에 이미 그 학교 학생으로 활동함).
 - 인원, 횟수, 탄수, 금액처럼 서로 맞아야 하는 숫자가 어긋나는 곳.
+- ${NUMBER_CHECK_RULE}
 - 문장 하나가 스스로 말이 안 되는 곳(예: "귀환한 400명 중 절반만 살아남았다", 위원회 소속 로비스트).
 
 ## 반드시 맞춰 볼 것 (앱이 찾은, 이 문서의 두 곳 이상에 나오는 대상과 그 위치)
@@ -2373,21 +2376,32 @@ function quoteIssues(w, k) {
   return out.slice(0, 4);
 }
 
-/* ---------- 숫자 대조: 연도와 나이를 문서끼리 기계적으로 비교한다 (AI 호출 없음) ---------- */
+/* ---------- 숫자 대조: 주체와 사건이 명시된 정확한 연도만 비교한다 (AI 호출 없음) ---------- */
 const NUM_KINDS = [
   { kind: "birth", name: "출생", label: /출생|탄생|생년/, verb: /태어|출생|탄생|\d년생/ },
   { kind: "death", name: "사망", label: /사망|전사|서거|몰년|별세/, verb: /사망|숨[지을]|숨졌|전사|죽[었은]|서거|처형|별세|순직|요절/ },
-  { kind: "origin", name: "기원", label: /설립|창설|창립|제정|시행|도입|결성|건국|창간|발족|성립|개교|창단|기원/, verb: /설립|창설|창립|제정|시행|도입|결성|건국|창간|발족|성립|개교|창단/ }];
+  { kind: "founding", name: "설립·창설", label: /설립|창설|창립|결성|발족|창단/, verb: /설립|창설|창립|결성|발족|창단/ },
+  { kind: "introduction", name: "도입", label: /도입/, verb: /도입/ },
+  { kind: "development", name: "개발", label: /개발/, verb: /개발/ },
+  { kind: "enactment", name: "제정", label: /제정/, verb: /제정/ },
+  { kind: "enforcement", name: "시행", label: /시행|발효/, verb: /시행|발효/ },
+  { kind: "nation", name: "건국", label: /건국/, verb: /건국/ },
+  { kind: "publication", name: "창간", label: /창간/, verb: /창간/ },
+  { kind: "school", name: "개교", label: /개교/, verb: /개교/ },
+  { kind: "establishment", name: "성립", label: /성립/, verb: /성립/ }];
+// 범위·근사 연도를 정확한 기준값으로 취급하지 않는다. 생몰 두 날짜는 별도로 읽는다.
+const approximateYears = t => /\d{4}\s*년\s*(?:대|경|무렵|전후|이전|이후|부터|까지)|\d{4}\s*(?:년\s*)?[~～∼–—-]/.test(t);
 const yearsOf = t => [...String(t).matchAll(/(^|\D)(1\d{3}|20\d{2})\s*년/g)].map(m => +m[2]);
 const sentencesOf = t => [...String(t).matchAll(/[^.!?。\n]+[.!?。]?/g)].map(m => m[0].trim()).filter(x => x.length > 4);
-/* 항목 문서의 인포박스에서 뽑은 기준값 { birth, death, origin } 과 그 근거 줄 */
+/* 인포박스에서 소유자·사건이 명확한 기준값과 그 근거 줄만 읽는다. */
 function numFacts(p) {
   const f = {};
   for (const r of p.infobox || []) {
     const v = stripMarks(r.value), ys = yearsOf(v), line = `${r.label}: ${v}`;
-    if (!ys.length) continue;
-    if (/생몰/.test(r.label)) { f.birth ||= { y: ys[0], line }; if (ys[1]) f.death ||= { y: ys[1], line }; continue; }
-    for (const K of NUM_KINDS) if (K.label.test(r.label) && !f[K.kind]) f[K.kind] = { y: ys[0], line };
+    if (!ys.length || /\d{4}\s*년\s*(?:대|경|무렵|전후|이전|이후|부터|까지)/.test(v)) continue;
+    if (/^생몰(?:년|연도)?$/.test(r.label.trim())) { f.birth ||= { y: ys[0], line }; if (ys[1]) f.death ||= { y: ys[1], line }; continue; }
+    if (ys.length !== 1 || approximateYears(v)) continue;
+    for (const K of NUM_KINDS) if (new RegExp(`^(?:(?:최초|공식|정식|실제|최종)\\s*)?(?:${K.label.source})(?:\\s*(?:일자|연도|시기|시점|일|년))?$`).test(r.label.trim()) && !f[K.kind]) f[K.kind] = { y: ys[0], line };
   }
   return f;
 }
@@ -2399,6 +2413,27 @@ function refNames(w, k) {
 }
 function pageTexts(p) {
   return [p.summary || "", ...(p.infobox || []).map(r => `${r.label}: ${stripMarks(r.value)}`), ...p.sections.map(s => stripMarks(s.body))];
+}
+/* 이름이 목적어·수식어로 언급된 문장은 제외한다. 명시적 주어 또는 '이름의 사건 연도'만 허용한다.
+   복합절/다른 주어/소유자/비교/부정/근사 표현은 기계적으로 귀속할 수 없어 보류한다. */
+function numericSubject(sen, names, K) {
+  if (approximateYears(sen) || /(?:않|아니|못했|이전|이후|무렵|전후|보다|달리|반면|비해|라는|다는|하던|했던|되어야|되면|한다면)/.test(sen)) return false;
+  for (const name of names) {
+    let start = -1;
+    while ((start = sen.indexOf(name, start + 1)) >= 0) {
+      if (start && /[\p{L}\p{N}_]/u.test(sen[start - 1])) continue;
+      const rest = sen.slice(start + name.length).replace(/^[」』”’"')]+\s*/, "");
+      const subject = /^(?:은|는|이|가)(?=\s|[0-9(（]|$)\s*/.exec(rest);
+      const own = new RegExp(`^의\\s*(?:(?:최초|공식|정식|실제|최종)\\s*)?(?:${K.label.source})(?:\\s*(?:연도|시점|시기|일자|일))?(?:은|는|이|가|:)?(?=\\s|[0-9]|$)`).exec(rest);
+      const head = subject || own; if (!head) continue;
+      const tail = rest.slice(head[0].length);
+      if (/[\p{L}\p{N}]+(?:은|는|이|가|의)(?=\s)/u.test(tail) || /[,，;；]/.test(tail)) continue;
+      if (K.kind !== "birth" && K.kind !== "death" && /[\p{L}\p{N}]+(?:을|를)(?=\s)/u.test(tail)) continue;
+      if (!K.verb.test(rest)) continue;
+      return true;
+    }
+  }
+  return false;
 }
 /* 이 문서(k)와 관련된 숫자 모순. 이 문서가 다른 항목을 다르게 적었거나(high), 다른 문서가 이 항목을 다르게 적었거나(low), 이 문서 안에서 다르다(high) */
 function numericIssues(w, k) {
@@ -2418,7 +2453,7 @@ function numericIssues(w, k) {
   const compare = (P, E) => {   // 문서 P의 문장들을 항목 E의 인포박스 기준값과 비교한다
     const pe = S.pages[E]; if (!pe) return;
     const ref = eIsRef(P, E), why = P === E ? "" : ref ? (pe.editedAt && !S.pages[P].editedAt ? "직접 수정한 " : "먼저 쓴 ") : (S.pages[P].editedAt && !pe.editedAt ? "직접 수정한 " : "먼저 쓴 ");
-    const f = numFacts(pe); if (!f.birth && !f.death && !f.origin) return;
+    const f = numFacts(pe); if (!NUM_KINDS.some(K => f[K.kind])) return;
     const names = refNames(w, E);
     const ibox = new Set((pe.infobox || []).map(r => `${r.label}: ${stripMarks(r.value)}`));
     for (const sen of pageTexts(S.pages[P]).flatMap(sentencesOf)) {
@@ -2426,7 +2461,7 @@ function numericIssues(w, k) {
       if (!names.some(n => sen.includes(n)) || !onlyAbout(sen, E)) continue;
       const ys = yearsOf(sen);
       for (const K of NUM_KINDS) {
-        const base = f[K.kind]; if (!base || !K.verb.test(sen) || (K.kind !== "origin" && KIN.test(sen))) continue;
+        const base = f[K.kind]; if (!base || !K.verb.test(sen) || !numericSubject(sen, names, K) || KIN.test(sen)) continue;
         if (ys.length === 1 && Math.abs(ys[0] - base.y) >= 1 && !NUM_KINDS.some(O => O !== K && O.verb.test(sen))) {
           const who = P === E ? "이 문서" : `「${pe.title}」 문서`;
           const pt = S.pages[P].title;
@@ -2440,7 +2475,7 @@ function numericIssues(w, k) {
         }
       }
       const am = /(?:향년\s*)?(\d{1,3})\s*세/.exec(sen);
-      if (am && f.birth && f.death && NUM_KINDS[1].verb.test(sen) && !KIN.test(sen) && !/\d{1,3}\s*세[가-힣]*\s*(때|무렵|에)\b/.test(sen)) {
+      if (am && f.birth && f.death && numericSubject(sen, names, NUM_KINDS[1]) && NUM_KINDS[1].verb.test(sen) && !KIN.test(sen) && !/\d{1,3}\s*세[가-힣]*\s*(때|무렵|에)\b/.test(sen)) {
         const a = +am[1], d = f.death.y - f.birth.y;
         if (Math.abs(a - d) > 1) {
           const pt = S.pages[P].title, lines = `${f.birth.line} / ${f.death.line}`;
