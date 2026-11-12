@@ -382,7 +382,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.40 · 2026-11-12";
+const APP_VERSION = "v6.41 · 2026-11-12";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -2725,7 +2725,7 @@ function numericIssues(w, k) {
 /* ---------- 나이 규칙: 핵심 규칙의 나이 제한으로 출생·기간 연도를 맞춰 본다 ---------- */
 /* 숫자 대조 로직(numericIssues, quoteIssues, ageRuleIssues, 성별 규칙)을 바꿀 때마다 올린다.
    문서를 열 때 p.check.numV가 이 값과 다르면 결정론 지적만 다시 계산해 바꿔 끼운다 */
-const NUMERIC_VERSION = 4;
+const NUMERIC_VERSION = 5;
 /* 규칙 문장은 세계관마다 표현이 달라 코드로 읽지 않는다. 핵심 규칙이 바뀌었을 때만 AI가 한 번 구조로 뽑고(w.ageRules),
    판정은 그 구조로 코드가 한다. 그래서 검사할 때마다 결과가 같다 */
 const rulesText = w => (w.rules || []).join("\n");
@@ -2763,6 +2763,13 @@ function parseAgeRules(r, w) {
 }
 /* 저장된 해석이 지금 규칙의 것일 때만 쓴다. 규칙이 바뀌었는데 아직 다시 해석하지 않았으면 나이 검사를 하지 않는다 */
 const ageRules = w => w.ageRules && w.ageRules.text === rulesText(w) ? w.ageRules.rules || [] : [];
+/* 검사 결과에 찍는 표시: 숫자 대조 로직 버전 + 그때 쓴 나이 규칙 해석. 규칙이 있는데 아직 해석 전이면 "?"라서,
+   나중에 해석이 생기거나 규칙이 바뀌면 표시가 달라져 문서를 열 때 다시 계산된다 */
+const hashText = t => { let h = 2166136261; for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 16777619); return (h >>> 0).toString(36); };
+function numStamp(w) {
+  const t = rulesText(w);
+  return `${NUMERIC_VERSION}:${!t.trim() ? "-" : w.ageRules?.text === t ? hashText(t) : "?"}`;
+}
 let ageRuleCall = null;   // 같은 규칙을 동시에 두 번 해석하지 않는다
 async function ensureAgeRules(w, opts = {}) {
   const text = rulesText(w);
@@ -2804,13 +2811,22 @@ function ageRuleIssues(w, k) {
   const rules = ageRules(w); if (!rules.length) return out;
   const birth = numFacts(p).birth; if (!birth) return out;
   const head = [p.summary || "", (p.categories || []).join(" "), ...(p.infobox || []).map(r => `${r.label} ${stripMarks(r.value)}`)].join("\n");
-  const names = refNames(w, k), onlyAbout = onlyAboutFn(w), title = p.title;
-  const lockOf = (y, cal) => {   // 연도 y를 이 항목 이름과 함께 적은, 이 문서보다 기준인 다른 문서들
+  const names = refNames(w, k), title = p.title;
+  /* 연도 y를 이 항목과 함께 적은, 이 문서보다 기준인 다른 문서들. 숫자 비교가 아니라 "이 연도를 어느 문서가 정했나"를 찾는 용도라 관대하게 본다.
+     근거를 놓치면 high가 되어 자동 수정이 기준 문서와 새로 어긋나게 고치지만, 넓게 잡으면 low 표시만 남는다.
+     그래서 다른 항목 이름이 함께 나오는 문장도 인정하고(onlyAbout을 쓰지 않음), 기준 문서가 이 항목에 대해 확정한 사실(facts)도 근거로 본다 */
+  const hasY = (t, y, cal) => yearHits(t).some(h => !h.approx && h.y === y && h.cal === cal);
+  const lockOf = (y, cal) => {
     const found = [];
     for (const [P, q] of Object.entries(S.pages)) {
       if (P === k || !w.entities[P] || !pageIsRef(P, k)) continue;
-      const sen = pageTexts(q).flatMap(sentencesOf).find(t => yearHits(t).some(h => !h.approx && h.y === y && h.cal === cal) && names.some(n => hasName(t, n)) && onlyAbout(t, k) && !KIN_RE.test(t));
+      const sen = pageTexts(q).flatMap(sentencesOf).find(t => hasY(t, y, cal) && names.some(n => hasName(t, n)) && !KIN_RE.test(t));
       if (sen) found.push({ P, sen, y });
+    }
+    for (const f of w.entities[k]?.facts || []) {
+      const P = f.src;
+      if (f.sup || !P || P === k || !S.pages[P] || !w.entities[P] || found.some(x => x.P === P) || !pageIsRef(P, k) || KIN_RE.test(f.t) || !hasY(f.t, y, cal)) continue;
+      found.push({ P, sen: f.t, y });
     }
     return found.length ? found : null;
   };
@@ -2904,9 +2920,9 @@ function routeAutoConflicts(w, k, issues) {
 }
 /* 옛 버전 숫자 대조가 낸 결과를 지금 로직으로 바꿔 끼운다. AI 지적은 그대로 둔다. 갱신했으면 autoConflicts가 바뀐 문서 키들을, 아니면 null */
 function refreshNumeric(w, k) {
-  const p = S.pages[k]; if (!p?.check || p.check.numV === NUMERIC_VERSION) return null;
+  const p = S.pages[k]; if (!p?.check || p.check.numV === numStamp(w)) return null;
   const fresh = detIssues(w, k);
-  p.check = { ...p.check, issues: mergeIssues([...fresh, ...(p.check.issues || []).filter(i => !isNumIssue(i))]), numV: NUMERIC_VERSION };
+  p.check = { ...p.check, issues: mergeIssues([...fresh, ...(p.check.issues || []).filter(i => !isNumIssue(i))]), numV: numStamp(w) };
   return routeAutoConflicts(w, k, fresh);
 }
 /* 두 검사(설정 대조, 문서 읽기)를 동시에 돌려 결과를 합친다. 하나가 실패해도 다른 하나의 결과는 쓴다 */
@@ -2926,9 +2942,9 @@ function saveRouted(w, keys) { for (const x of keys || []) if (S.pages[x]) Store
 /* 문서를 열 때: 옛 버전 숫자 대조 결과면 결정론 지적만 다시 계산해 저장한다 (AI 호출 없음) */
 function refreshOnOpen(k) {
   const w = S.world, p = w && S.pages[k];
-  if (!p?.check || p.check.numV === NUMERIC_VERSION || S.checking === k || (S.gen && S.gen.key === k) || isHeld(k)) return;
+  if (!p?.check || p.check.numV === numStamp(w) || S.checking === k || (S.gen && S.gen.key === k) || isHeld(k)) return;
   let routed = null;
-  try { routed = refreshNumeric(w, k); } catch (e) { console.warn("[숫자 대조 갱신]", e); p.check.numV = NUMERIC_VERSION; }
+  try { routed = refreshNumeric(w, k); } catch (e) { console.warn("[숫자 대조 갱신]", e); p.check.numV = numStamp(w); }
   Store.savePage(w.id, p).catch(() => {}); saveRouted(w, routed);
 }
 function parseIssues(r) {
@@ -2943,7 +2959,7 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
   try {
     g.phase = "check"; show();
     const issues = await runChecks(w, k, { signal: g.ctl.signal }, page.title + label), high = autoFixList(issues, k);
-    page.check = { at: Date.now(), issues, auto: true, numV: NUMERIC_VERSION }; res.done = true;
+    page.check = { at: Date.now(), issues, auto: true, numV: numStamp(w) }; res.done = true;
     if (S.world === w && S.pages[k] === page) saveRouted(w, routeAutoConflicts(w, k, issues));
     if (!high.length || S.world !== w || S.pages[k] !== page) return res;
     g.phase = "fix"; g.nFix = high.length; show();
@@ -2970,7 +2986,7 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
     } catch { restoreRewrite(w, backup); return res; }
     for (const x of PAGE_KEEP) if (page[x] !== undefined) np[x] = page[x];
     const keep = [...high.filter((_, i) => !fixedMemo.has(i + 1)), ...issues.filter(i => !high.includes(i))];
-    np.check = { at: Date.now(), issues: keep, auto: true, numV: NUMERIC_VERSION }; np.autoFixed = { at: Date.now(), n: fixedMemo.size };
+    np.check = { at: Date.now(), issues: keep, auto: true, numV: numStamp(w) }; np.autoFixed = { at: Date.now(), n: fixedMemo.size };
     cleanupOrphans(w, k);
     S.pages[k] = np; Object.assign(res, { page: np, fixed: fixedMemo.size, keep });
   } catch (err) { /* 건너뛰었거나 실패: 작성된 문서를 그대로 보여 주며 자동 재검사를 예약하지 않는다 */ }
@@ -2986,7 +3002,7 @@ async function checkPage(k) {
   try {
     const issues = await runChecks(w, k, {}, p.title);
     if (S.pages[k] === p) {   // 검사하는 동안 문서가 바뀌었으면(장 반영 등) 옛 문서를 저장하지 않는다
-      p.check = { at: Date.now(), issues, auto: false, numV: NUMERIC_VERSION };
+      p.check = { at: Date.now(), issues, auto: false, numV: numStamp(w) };
       saveRouted(w, routeAutoConflicts(w, k, issues));
       try { await Store.savePage(w.id, p); } catch (err) { toast("검사 결과를 저장하지 못했습니다. " + errMsg(err)); }
     }

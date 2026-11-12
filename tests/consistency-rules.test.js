@@ -9,7 +9,7 @@ c.nameOwner=(w,t)=>{const ks=Object.keys(w.entities).filter(k=>w.entities[k].tit
 c.live=x=>!x.sup;c.factLine=f=>f.t;c.chOf=()=>0;
 vm.createContext(c);
 vm.runInContext(cut('/* ---------- 인용 대조','/* 두 검사(설정 대조')+'\n'+cut('const refOK =','/* ---------- 스토리 모드: 상태')+`
-Object.assign(globalThis,{yearHits,cleanCalendars,numericIssues,numFacts,spanFacts,ageRules,parseAgeRules,ageRulePrompt,ageRuleIssues,autoFixList,routeAutoConflicts,refreshNumeric,entityBrief,NUMERIC_VERSION});`,c);
+Object.assign(globalThis,{yearHits,cleanCalendars,numericIssues,numFacts,spanFacts,ageRules,parseAgeRules,ageRulePrompt,ageRuleIssues,autoFixList,routeAutoConflicts,refreshNumeric,entityBrief,NUMERIC_VERSION,numStamp});`,c);
 let n=0;const test=(name,fn)=>{fn();console.log(`  ✓ ${++n}. ${name}`);};
 const R4='전략체의 발현과 군사적 최전성기는 14세부터 19세 사이의 사춘기에 국한되며, 성인이 되는 20세를 기점으로 능력과 체격이 서서히 통상 인간으로 축소·퇴역한다.';
 const page=(title,type,o={})=>({title,type,summary:o.summary||'',categories:o.categories||[],infobox:o.infobox||[],sections:o.body?[{heading:'개요',body:o.body}]:[],links:[],createdAt:o.createdAt||1,...(o.editedAt?{editedAt:o.editedAt}:{})});
@@ -32,6 +32,37 @@ test('해결할 수 없는 나이 규칙 충돌은 먼저 쓴 문서로 넘기�
   assert.equal(viet.autoConflicts.length,1);assert.equal(viet.autoConflicts[0].by,'col');assert.equal(viet.autoConflicts[0].byTitle,'컬럼비아 3호');
   c.routeAutoConflicts(w,'col',is);assert.equal(viet.autoConflicts.length,1,'같은 (by, old)는 한 번만 단다');
   assert.deepEqual(c.routeAutoConflicts(w,'col',[]),['viet']);assert.equal(viet.autoConflicts.length,0,'다시 검사해 나오지 않으면 지운다');
+});
+const REAL_1965='1965년 3월, 미 해병대 제1전략체전대 소속 [[컬럼비아 3호]](본명 레베카 밀러, 당시 만 14세)가 다낭 해안을 통해 상륙했다.';
+test('실제 문장처럼 다른 이름이 함께 나와도 연도를 정한 기준 문서로 인정해 그 문서로 넘긴다',()=>{
+  const mk=()=>({usmc:page('미 해병대','조직',{createdAt:1}),
+    viet:page('베트남 전쟁','사건',{createdAt:1,body:REAL_1965+' 정글 백병전에서 척추 손상을 입은 [[컬럼비아 3호]]는 1973년 신체 축소를 마치고 통상 체구로 복귀했다.'}),
+    col:page('컬럼비아 3호','인물',{createdAt:2,summary:'미국의 3세대 전략체',infobox:box({'출생년도':'1953년','현역 기간':'1965년 ~ 1973년','성별':'여성'})})});
+  const w=world(mk());
+  const is=c.ageRuleIssues(w,'col');
+  assert.equal(is.length,1);assert.equal(is[0].severity,'low');assert.equal(is[0].target,'viet');assert(is[0].targetOld.includes('다낭 해안'));
+  assert.equal(c.autoFixList(is,'col').length,0,'자동 수정이 현역 시작을 1967~1972년으로 고치지 않는다');
+});
+test('기준 문서가 이 항목에 대해 확정한 사실(facts)의 연도도 근거로 인정한다',()=>{
+  const pages=()=>({usmc:page('미 해병대','조직',{createdAt:1}),viet:page('베트남 전쟁','사건',{createdAt:1,body:REAL_1965}),
+    col:page('컬럼비아 3호','인물',{createdAt:2,summary:'미국의 3세대 전략체',infobox:box({'출생년도':'1953년','현역 기간':'1965년 ~ 1973년','성별':'여성'})})});
+  let w=world(pages());
+  assert.equal(c.ageRuleIssues(w,'col')[0].severity,'high','1973년 근거가 없으면 이 문서의 연도를 고치라고 한다');
+  w=world(pages());w.entities.col.facts=[{t:'컬럼비아 3호는 1973년 신체 축소를 마치고 퇴역했다.',src:'viet'},{t:'컬럼비아 3호는 1973년 표창을 받았다.',src:'col'}];
+  let is=c.ageRuleIssues(w,'col');assert.equal(is.length,1);assert.equal(is[0].severity,'low');assert.equal(is[0].target,'viet');
+  w=world(pages());w.entities.col.facts=[{t:'컬럼비아 3호는 1973년 신체 축소를 마치고 퇴역했다.',src:'viet',sup:true}];
+  assert.equal(c.ageRuleIssues(w,'col')[0].severity,'high','대체된 사실은 근거가 아니다');
+});
+test('규칙 해석 전에 찍은 결과는 해석이 생기거나 규칙이 바뀌면 다시 계산한다',()=>{
+  const p=page('컬럼비아 3호','인물',{summary:'미국의 전략체',infobox:box({'출생':'1950년','현역 기간':'1968년 ~ 1973년','성별':'여성'})});
+  p.check={at:1,auto:true,issues:[]};
+  const w=world({p});const saved=w.ageRules;delete w.ageRules;
+  c.refreshNumeric(w,'p');assert(p.check.numV.endsWith(':?'));assert.equal(p.check.issues.length,0);
+  assert.equal(c.refreshNumeric(w,'p'),null);
+  w.ageRules=saved;assert.notEqual(c.refreshNumeric(w,'p'),null,'해석이 생기면 표시가 달라져 다시 계산한다');
+  assert.equal(p.check.issues.length,1);assert(p.check.issues[0].conflict.includes('· 나이 규칙:'));
+  const before=p.check.numV;w.rules=[R4+' 추가'];assert.notEqual(c.numStamp(w),before,'규칙을 고치면 표시가 달라진다');
+  assert.equal(c.numStamp({rules:[]}).endsWith(':-'),true);
 });
 test('현재 문서의 출생 연도만 고치면 되면 구체적인 범위로 다듬을 곳을 낸다',()=>{
   const w=world({p:page('컬럼비아 3호','인물',{summary:'미국의 전략체',infobox:box({'출생':'1950년','현역 기간':'1968년 ~ 1973년'})})});
@@ -105,7 +136,7 @@ test('옛 숫자 대조 결과는 다시 계산해 바꾸고 AI 지적은 남긴
   assert.deepEqual(c.refreshNumeric(w,'p'),[]);
   const cl=p.check.issues.map(i=>i.claim);
   assert(!cl.includes('옛 오탐 문장'));assert(cl.includes('AI가 찾은 서술'));assert(cl.includes('갑 제품은 1960년 도입되었다.'));
-  assert.equal(p.check.numV,c.NUMERIC_VERSION);assert(p.check.issues.find(i=>i.claim==='갑 제품은 1960년 도입되었다.').by==='num');
+  assert.equal(p.check.numV,c.numStamp(w));assert(p.check.issues.find(i=>i.claim==='갑 제품은 1960년 도입되었다.').by==='num');
   assert.equal(c.refreshNumeric(w,'p'),null,'이미 갱신한 결과는 다시 계산하지 않는다');
 });
 test('다른 문서가 고칠 쪽인 숫자 대조 지적에 target을 채운다',()=>{
