@@ -21,6 +21,7 @@ const Nav = {
     if (view !== "home" && S.world) r.world = S.world.id;
     if (view === "article") r.key = key || S.world?.mainKey;
     if (view === "notfound") r.title = S.view.title;
+    if (view === "category") r.cat = S.view.cat;
     return r;
   },
   hash(r) { return "#" + new URLSearchParams(Object.entries(r).filter(([, v]) => typeof v === "string")).toString(); },
@@ -28,8 +29,8 @@ const Nav = {
     const q = new URLSearchParams(location.hash.slice(1));
     if (!q.has("view")) return null;
     const view = q.get("view");
-    if (!["home", "gset", "log", "article", "canon", "notfound", "discovery", "epilogue"].includes(view)) return { view: "home" };
-    return { view, ...(q.get("world") ? { world: q.get("world") } : {}), ...(q.get("key") ? { key: q.get("key") } : {}), ...(q.get("title") ? { title: q.get("title") } : {}) };
+    if (!["home", "gset", "log", "article", "canon", "notfound", "discovery", "epilogue", "category"].includes(view)) return { view: "home" };
+    return { view, ...(q.get("cat") ? { cat: q.get("cat") } : {}), ...(q.get("world") ? { world: q.get("world") } : {}), ...(q.get("key") ? { key: q.get("key") } : {}), ...(q.get("title") ? { title: q.get("title") } : {}) };
   },
   write(replace = false, y = 0) {
     const r = this.route(); if (!r) return;
@@ -59,7 +60,7 @@ const Nav = {
       return;
     }
     if (r.view === "discovery" && S.discovery?.wid !== r.world) S.discovery = { wid: r.world, direction: "", busy: false, error: "" };
-    S.view = { name: r.view, ...(r.view === "notfound" ? { title: r.title || "" } : {}) };
+    S.view = { name: r.view, ...(r.view === "notfound" ? { title: r.title || "" } : {}), ...(r.view === "category" ? { cat: r.cat || "" } : {}) };
   },
   async restore(r, state) {
     this.pending = { r, state };

@@ -169,8 +169,13 @@ h1.t{font-family:var(--f-display);font-weight:700;font-size:30px;line-height:1.2
 .nf-h{font-family:var(--f-display);font-weight:700;font-size:20px;margin:20px 0 4px}
 .cats{display:flex;flex-wrap:wrap;gap:4px 0;align-items:center;margin:10px 0 0;padding:6px 10px;border:1px solid var(--line);border-radius:var(--r);font-size:13px}
 .cats b{font-weight:600;margin-right:8px}
-.cats span{color:var(--link)}
-.cats span+span::before{content:"|";color:var(--line);margin:0 8px}
+.cats .cat{all:unset;color:var(--link);cursor:pointer;font:inherit}
+.cats .cat:hover{text-decoration:underline}
+.cats .cat:focus-visible{outline:2px solid var(--link);outline-offset:2px;border-radius:2px}
+.cats .cat+.cat::before{content:"|";color:var(--line);margin:0 8px;display:inline-block;text-decoration:none}
+.catlist{list-style:none;margin:12px 0 18px;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px 22px}
+.catlist li{display:flex;flex-direction:column;gap:2px;min-width:0;line-height:1.4}
+.catlist small{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
 .toc ul{list-style:none;margin:6px 0 0;padding:0}
 .toc li.sub{padding-left:22px}
 .toc .n{color:var(--link);font-variant-numeric:tabular-nums}

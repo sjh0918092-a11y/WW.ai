@@ -182,6 +182,7 @@ function renderMain(force) {
   if (S.view.name === "home") m.innerHTML = homeHtml();
   else if (S.view.name === "canon") m.innerHTML = canonHtml();
   else if (S.view.name === "notfound") m.innerHTML = notFoundHtml(S.view.title);
+  else if (S.view.name === "category") m.innerHTML = categoryHtml(S.view.cat);
   else if (S.view.name === "log") m.innerHTML = logHtml();
   else if (S.view.name === "discovery") m.innerHTML = discoveryHtml();
   else if (S.view.name === "gset") m.innerHTML = gsetHtml();
@@ -321,7 +322,7 @@ function articleHtml(k) {
       <div class="row" style="margin-top:6px"><button type="button" class="btn pri" data-rw-yes="${k}">다시 쓰기</button><button type="button" class="btn" data-act="rw-no">취소</button></div>
     </div>` : "";
   return `<article class="sheet">${crumb}<h1 class="t">${esc(p.title)}</h1>
-    ${p.categories?.length ? `<div class="cats"><b>분류</b>${p.categories.map(c => `<span>${esc(c)}</span>`).join("")}</div>` : ""}
+    ${p.categories?.length ? `<div class="cats"><b>분류</b>${p.categories.map(c => `<button type="button" class="cat" data-cat="${esc(c)}" title="「${esc(c)}」 분류의 문서 보기">${esc(c)}</button>`).join("")}</div>` : ""}
     ${navboxesFor(w, k).map(([, nb]) => navboxHtml(nb, nb.src === k, k)).join("")}
     ${cardHtml}
     <div class="tools"><button type="button" class="btn" data-edit="${k}">편집</button>${portraitMenuHtml(p, k, held)}<button type="button" class="btn" data-prose-open="${k}" ${held ? "disabled" : ""}>단편 쓰기${shortStoriesOf(p).length ? ` · ${shortStoriesOf(p).length}편` : ""}</button><button type="button" class="btn" data-check="${k}" ${S.checking || !S.sample ? "disabled" : ""}>설정 검사</button>${rw}<button type="button" class="btn" data-focus="${k}">설정 노트에서 보기</button>${fixed ? "" : `<button type="button" class="btn" data-mg="${k}" aria-expanded="${S.confirmMerge === k}">합치기</button>`}${k === pk ? `<button type="button" class="btn dng" disabled title="주인공 문서는 이야기의 중심이라 삭제할 수 없습니다">삭제</button>` : `<button type="button" class="btn dng" data-delpage="${k}" aria-expanded="${S.confirmDelPage === k}">삭제</button>`}</div>
@@ -427,6 +428,16 @@ function startCompose(k) {
   S.compose = null; S.genErr = null;
   S.recent = [k, ...S.recent.filter(x => x !== k)].slice(0, 8);
   generatePage(k, false, guide);
+}
+/* 분류 문서: 같은 분류가 붙은 작성된 문서를 모아 보여 준다 */
+function categoryHtml(cat) {
+  const w = S.world, c = norm(cat || "");
+  const hits = Object.entries(S.pages).filter(([k, p]) => w.entities[k] && (p.categories || []).some(x => norm(x) === c)).sort((a, b) => a[1].title.localeCompare(b[1].title, "ko"));
+  const near = [...new Set(hits.flatMap(([, p]) => p.categories || []).map(norm))].filter(x => x && x !== c).slice(0, 12);
+  return `<div class="sheet"><div class="crumb"><span>${esc(w.title)}</span><span>분류</span></div>
+    <h1 class="t">분류: ${esc(c)}</h1>
+    ${hits.length ? `<p class="note">이 분류에 속한 문서 ${hits.length}개</p><ul class="catlist">${hits.map(([k, p]) => `<li>${linkHtml(p.title)}${p.summary ? `<small>${esc(stripMarks(p.summary))}</small>` : ""}</li>`).join("")}</ul>` : `<p class="note">이 분류에 속한 문서가 없습니다.</p>`}
+    ${near.length ? `<div class="cats"><b>함께 쓰인 분류</b>${near.map(x => `<button type="button" class="cat" data-cat="${esc(x)}">${esc(x)}</button>`).join("")}</div>` : ""}</div>`;
 }
 function notFoundHtml(t) {
   const w = S.world, tl = t.toLowerCase();

@@ -99,6 +99,7 @@ document.addEventListener("click", ev => {
   if (d.notsame) { notSame(d.notsame, d.other); return; }
   if (d.refresh) { openEditor(d.refresh); saveEdit(); return; }
   if (d.dismiss) { dismissNotes(d.dismiss, d.field); return; }
+  if (d.cat !== undefined) { if (!S.world) return; S.view = { name: "category", cat: d.cat }; renderAll(); window.scrollTo({ top: 0 }); return; }
   if (d.focus) { S.focusEnt = d.focus; S.view = { name: "canon" }; renderAll(); return; }
   if (d.filter) { S.canonFilter = d.filter; renderMain(); return; }
   if (d.mode) { S.mode = d.mode === "story" ? "story" : "basic"; if (S.seedTab === "dice" && S.dice) S.seed = diceSeed(S.dice); renderMain(); return; }   // 주사위 원안은 모드에 맞게 다시 쓴다
