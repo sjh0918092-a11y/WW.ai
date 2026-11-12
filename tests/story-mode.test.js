@@ -4,14 +4,11 @@
  * 프롬프트에 든 표지 문구로 호출 종류를 가린다.
  */
 const http = require("http"), fs = require("fs"), path = require("path"), os = require("os"), assert = require("assert");
+const { appServer } = require("./helpers/app");
 const { chromium } = require("playwright");
 
 const ROOT = path.join(__dirname, "..");
-const server = http.createServer((req, res) => {
-  const f = path.join(ROOT, req.url === "/" ? "index.html" : decodeURIComponent(req.url.split("?")[0]));
-  if (!f.startsWith(ROOT) || !fs.existsSync(f)) { res.writeHead(404); res.end(); return; }
-  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); fs.createReadStream(f).pipe(res);
-});
+const server = appServer();
 
 /* ---------- 가짜 Gemini ---------- */
 const calls = [];           // { kind, prompt }

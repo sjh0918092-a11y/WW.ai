@@ -1,5 +1,6 @@
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
-const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+const { appSource } = require("./helpers/app");
+const html=appSource();
 const cut=(a,b)=>{const i=html.indexOf(a),j=html.indexOf(b);assert(i>=0&&j>i,'구간을 찾지 못함: '+a);return html.slice(i,j);};
 const stripMarks=s=>String(s||'').replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,(_,a,b)=>b||a).replace(/\*\*|~~/g,'').trim();
 const c={S:{pages:{}},stripMarks,norm:s=>String(s||'').replace(/\s+/g,' ').trim(),yearNum:s=>parseInt(s,10),console:{warn(){}}};

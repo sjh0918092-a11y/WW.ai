@@ -1,8 +1,9 @@
 /* 실제 과금 없이 이미지 API 요청·공통 지침·미리보기와 적용을 브라우저로 검증한다. */
 const http = require("http"), fs = require("fs"), path = require("path"), assert = require("assert");
+const { appServer } = require("./helpers/app");
 const { chromium } = require("playwright");
 const ROOT = path.join(__dirname, "..");
-const server = http.createServer((req, res) => { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(fs.readFileSync(path.join(ROOT, "index.html"))); });
+const server=appServer();
 const doc = (key, title, type) => ({ key, title, type, summary: `${title}의 문서다.`, categories: [], notices: [], infobox: type === "인물" ? [{ label: "성별", value: "여성" }] : [], sections: [{ heading: "개요", level: 1, body: `${title}의 복장과 모습은 푸른색이다.` }], links: [], createdAt: 1 });
 const person = doc("person", "테스트 인물", "인물"), place = doc("place", "테스트 항구", "지명");
 const fixture = { app: "worldwiki", version: 1, worlds: [{ kind: "world", id: "images", title: "이미지 세계", seed: "바다가 있는 세계", era: "1900년", rules: [], timeline: [], style: "encyc", mainKey: "person", entities: Object.fromEntries([person, place].map(p => [p.key, { title: p.title, type: p.type, summary: p.summary, facts: [], mentions: [], page: true, box: "" }])), createdAt: 1, updatedAt: 1 }], pages: { images: { person, place } } };

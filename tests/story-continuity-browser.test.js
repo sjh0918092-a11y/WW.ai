@@ -1,7 +1,8 @@
 const http=require('http'),fs=require('fs'),path=require('path'),assert=require('assert');
+const { appServer, appSource } = require("./helpers/app");
 const {chromium}=require('playwright');
-const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
-const server=http.createServer((req,res)=>{res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(html);});
+const html=appSource();
+const server=appServer();
 const read=(p,key)=>p.evaluate(key=>new Promise(resolve=>{const r=indexedDB.open('worldwiki-gemini',1);r.onsuccess=()=>{const d=r.result,t=d.transaction('kv'),q=t.objectStore('kv').get(key);q.onsuccess=()=>resolve(q.result);t.oncomplete=()=>d.close();};}),key);
 let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`),clone=x=>JSON.parse(JSON.stringify(x));
 (async()=>{

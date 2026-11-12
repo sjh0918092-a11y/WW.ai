@@ -2,13 +2,10 @@
  * 실행: node tests/portrait.test.js (Playwright 필요)
  */
 const http = require("http"), fs = require("fs"), path = require("path"), assert = require("assert");
+const { appServer } = require("./helpers/app");
 const { chromium } = require("playwright");
 const ROOT = path.join(__dirname, "..");
-const server = http.createServer((req, res) => {
-  if (req.url !== "/") { res.writeHead(404); res.end(); return; }
-  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-  res.end(fs.readFileSync(path.join(ROOT, "index.html")));
-});
+const server = appServer();
 const entity = (title, type) => ({ title, type, summary: title, facts: [], mentions: [], page: true, box: "" });
 const doc = (key, title, type) => ({ key, title, type, summary: title, categories: [], notices: [], infobox: [], sections: [{ heading: "개요", level: 1, body: "원래 본문이다." }], links: [], createdAt: 1 });
 const backup = { app: "worldwiki", version: 1, worlds: [{ kind: "world", id: "portrait-world", title: "이미지 테스트 세계", seed: "원안", era: "1900년", rules: [], timeline: [], style: "encyc", entities: { person: entity("테스트 인물", "인물"), place: entity("테스트 항구", "지명") }, mainKey: "person", createdAt: 1, updatedAt: 1 }],

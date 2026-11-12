@@ -1,7 +1,8 @@
 /* 브라우저 가시성과 가상 시계를 사용해 모바일 복귀 동작을 재현한다. */
 const http=require('http'),fs=require('fs'),path=require('path'),assert=require('assert');
+const { appServer } = require("./helpers/app");
 const {chromium}=require('playwright');
-const server=http.createServer((req,res)=>{res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(fs.readFileSync(path.join(__dirname,'../index.html')));});
+const server=appServer();
 let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch(),ctx=await browser.newContext();

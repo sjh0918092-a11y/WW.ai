@@ -1,6 +1,7 @@
 /* 실제 대기·과금 없이 가상 시계와 SSE로 진행 감지, 복구, 중단을 검증한다. */
 const fs=require('fs'),vm=require('vm'),assert=require('assert'),path=require('path');
-const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+const { appSource } = require("./helpers/app");
+const html=appSource();
 const code=html.slice(html.indexOf('const G_RETRY ='),html.indexOf('async function listGeminiModels()'))+'\nglobalThis.subject=gemini;';
 const chunk=(text,thought=false)=>'data: '+JSON.stringify({candidates:[{content:{parts:[{text,thought}]}}]})+'\n\n';
 let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);

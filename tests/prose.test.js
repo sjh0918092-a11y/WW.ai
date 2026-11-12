@@ -1,6 +1,7 @@
 const http=require('http'),fs=require('fs'),path=require('path'),assert=require('assert');
+const { appServer } = require("./helpers/app");
 const {chromium}=require('playwright');
-const server=http.createServer((req,res)=>{res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(fs.readFileSync(path.join(__dirname,'../index.html')));});
+const server=appServer();
 const doc=(key,title,type)=>({key,title,type,summary:title+'의 기록',infobox:[{label:'성별',value:'여성'},{label:'신장',value:'60m'}],sections:[{heading:'개요',level:1,body:'1989년 출동 대기 중 정비병 [[동료]]와 만났다.'}],links:['e16a81iwb4cu'],createdAt:1});
 const p=doc('person','검증 인물','인물'),friend=doc('e16a81iwb4cu','동료','인물'),event=doc('event','항구 출동','사건');
 const w={kind:'world',id:'prose',title:'단편 세계',seed:'거인이 있는 세계',era:'1989년',rules:['거인은 60m다'],userCanon:'출동은 11월이다',timeline:[{year:'1989년',event:'항구 출동',src:'seed'}],entities:Object.fromEntries([p,friend,event].map(p=>[p.key,{title:p.title,type:p.type,summary:p.summary,facts:[{t:'정비병과 친하다',src:'seed'}],mentions:[],page:true,box:'신장: 60m'}])),mainKey:'person',createdAt:1,updatedAt:1,tone:{label:'기록',guide:[]}};

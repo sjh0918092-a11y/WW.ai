@@ -1,7 +1,8 @@
 const http=require('http'),fs=require('fs'),path=require('path'),assert=require('assert'),vm=require('vm');
+const { appServer, appSource } = require("./helpers/app");
 const {chromium}=require('playwright');
-const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8'),keyContext={};vm.createContext(keyContext);vm.runInContext(html.slice(html.indexOf('function cyrb53('),html.indexOf('const LINK_RE ='))+'globalThis.makeKey=keyOf;',keyContext);const key=keyContext.makeKey;
-const server=http.createServer((req,res)=>{res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(html);});
+const html=appSource(),keyContext={};vm.createContext(keyContext);vm.runInContext(html.slice(html.indexOf('function cyrb53('),html.indexOf('const LINK_RE ='))+'globalThis.makeKey=keyOf;',keyContext);const key=keyContext.makeKey;
+const server=appServer();
 const put=(p,k,value)=>p.evaluate(({k,value})=>new Promise(resolve=>{const r=indexedDB.open('worldwiki-gemini',1);r.onsuccess=()=>{const d=r.result,t=d.transaction('kv','readwrite');t.objectStore('kv').put(value,k);t.oncomplete=()=>{d.close();resolve();};};}),{k,value});
 const read=(p,k)=>p.evaluate(k=>new Promise(resolve=>{const r=indexedDB.open('worldwiki-gemini',1);r.onsuccess=()=>{const d=r.result,t=d.transaction('kv'),q=t.objectStore('kv').get(k);q.onsuccess=()=>resolve(q.result);t.oncomplete=()=>d.close();};}),k);
 let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
