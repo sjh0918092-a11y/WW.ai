@@ -261,7 +261,7 @@ function homeHtml() {
 function articleHtml(k) {
   const w = S.world, e = w.entities[k], p = shownPage(k), held = isHeld(k);
   if (!e) return `<div class="sheet"><p>문서를 찾을 수 없습니다.</p></div>`;
-  const crumb = `<div class="crumb"><span>${esc(w.title)}</span><span>작중 기준 ${esc(w.era)}</span>${e.type ? `<span>분류: ${esc(e.type)}</span>` : ""}${p ? `<span>작성 ${fmtDate(p.createdAt)}</span>` : ""}${p?.editedAt ? `<span>직접 수정 ${fmtDate(p.editedAt)}</span>` : ""}</div>`;
+  const crumb = `<div class="crumb"><span>${esc(w.title)}</span><span>작중 기준 ${esc(w.era)}</span>${e.type ? `<span>분류: ${(p || S.pages[k]) ? `<button type="button" class="cat" data-cat="${esc(e.type)}" title="「${esc(e.type)}」 문서 모두 보기">${esc(e.type)}</button>` : esc(e.type)}</span>` : ""}${p ? `<span>작성 ${fmtDate(p.createdAt)}</span>` : ""}${p?.editedAt ? `<span>직접 수정 ${fmtDate(p.editedAt)}</span>` : ""}</div>`;
   if (S.gen && S.gen.key === k) {
     return `<div class="sheet">${crumb}<h1 class="t">${esc(e.title)}</h1>
       <div class="gen-live"><span class="dot"></span><span id="genCount">${S.gen.phase === "check" ? "설정과 맞춰 보는 중" : S.gen.phase === "fix" ? `설정과 어긋난 ${S.gen.nFix}곳을 고치는 중` : "문서를 작성하는 중"}</span><button type="button" class="btn" data-act="stop">${S.gen.phase ? "검사 건너뛰고 보기" : "작성 중단"}</button></div>
@@ -322,7 +322,7 @@ function articleHtml(k) {
       <div class="row" style="margin-top:6px"><button type="button" class="btn pri" data-rw-yes="${k}">다시 쓰기</button><button type="button" class="btn" data-act="rw-no">취소</button></div>
     </div>` : "";
   return `<article class="sheet">${crumb}<h1 class="t">${esc(p.title)}</h1>
-    ${p.categories?.length ? `<div class="cats"><b>분류</b>${p.categories.map(c => `<button type="button" class="cat" data-cat="${esc(c)}" title="「${esc(c)}」 분류의 문서 보기">${esc(c)}</button>`).join("")}</div>` : ""}
+    ${(() => { const cs = pageCats(p); return cs.length ? `<div class="cats"><b>분류</b>${cs.map(c => `<button type="button" class="cat" data-cat="${esc(c)}" title="「${esc(c)}」 분류의 문서 보기">${esc(c)}</button>`).join("")}</div>` : ""; })()}
     ${navboxesFor(w, k).map(([, nb]) => navboxHtml(nb, nb.src === k, k)).join("")}
     ${cardHtml}
     <div class="tools"><button type="button" class="btn" data-edit="${k}">편집</button>${portraitMenuHtml(p, k, held)}<button type="button" class="btn" data-prose-open="${k}" ${held ? "disabled" : ""}>단편 쓰기${shortStoriesOf(p).length ? ` · ${shortStoriesOf(p).length}편` : ""}</button><button type="button" class="btn" data-check="${k}" ${S.checking || !S.sample ? "disabled" : ""}>설정 검사</button>${rw}<button type="button" class="btn" data-focus="${k}">설정 노트에서 보기</button>${fixed ? "" : `<button type="button" class="btn" data-mg="${k}" aria-expanded="${S.confirmMerge === k}">합치기</button>`}${k === pk ? `<button type="button" class="btn dng" disabled title="주인공 문서는 이야기의 중심이라 삭제할 수 없습니다">삭제</button>` : `<button type="button" class="btn dng" data-delpage="${k}" aria-expanded="${S.confirmDelPage === k}">삭제</button>`}</div>
@@ -429,11 +429,13 @@ function startCompose(k) {
   S.recent = [k, ...S.recent.filter(x => x !== k)].slice(0, 8);
   generatePage(k, false, guide);
 }
-/* 분류 문서: 같은 분류가 붙은 작성된 문서를 모아 보여 준다 */
+/* 문서의 분류. 생성 때 분류가 빠졌으면 유형(인물·조직 등)을 분류로 쓴다. 유형은 모든 문서의 상위 분류 역할도 한다 */
+const pageCats = p => p.categories?.length ? p.categories : p.type ? [p.type] : [];
+/* 분류 문서: 같은 분류(또는 같은 유형)가 붙은 작성된 문서를 모아 보여 준다 */
 function categoryHtml(cat) {
   const w = S.world, c = norm(cat || "");
-  const hits = Object.entries(S.pages).filter(([k, p]) => w.entities[k] && (p.categories || []).some(x => norm(x) === c)).sort((a, b) => a[1].title.localeCompare(b[1].title, "ko"));
-  const near = [...new Set(hits.flatMap(([, p]) => p.categories || []).map(norm))].filter(x => x && x !== c).slice(0, 12);
+  const hits = Object.entries(S.pages).filter(([k, p]) => w.entities[k] && (norm(p.type || "") === c || pageCats(p).some(x => norm(x) === c))).sort((a, b) => a[1].title.localeCompare(b[1].title, "ko"));
+  const near = [...new Set(hits.flatMap(([, p]) => [...pageCats(p), p.type || ""]).map(norm))].filter(x => x && x !== c).slice(0, 12);
   return `<div class="sheet"><div class="crumb"><span>${esc(w.title)}</span><span>분류</span></div>
     <h1 class="t">분류: ${esc(c)}</h1>
     ${hits.length ? `<p class="note">이 분류에 속한 문서 ${hits.length}개</p><ul class="catlist">${hits.map(([k, p]) => `<li>${linkHtml(p.title)}${p.summary ? `<small>${esc(stripMarks(p.summary))}</small>` : ""}</li>`).join("")}</ul>` : `<p class="note">이 분류에 속한 문서가 없습니다.</p>`}
