@@ -1,7 +1,8 @@
 /* OpenAI 요청을 가로채 과금 없이 실제 브라우저 설정·생성·참조·오류를 검증한다. */
 const http = require('http'), fs = require('fs'), path = require('path'), assert = require('assert');
+const { appServer } = require("./helpers/app");
 const { chromium } = require('playwright');
-const server = http.createServer((req, res) => { res.writeHead(200, {'Content-Type':'text/html; charset=utf-8'}); res.end(fs.readFileSync(path.join(__dirname,'../index.html'))); });
+const server=appServer();
 let n=0; const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));

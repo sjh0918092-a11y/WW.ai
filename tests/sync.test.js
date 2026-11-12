@@ -2,15 +2,12 @@
  * 실행: node tests/sync.test.js   (Node 22 이상, Playwright 필요)
  */
 const http = require("http"), fs = require("fs"), path = require("path"), os = require("os"), assert = require("assert");
+const { appServer } = require("./helpers/app");
 const { chromium } = require("playwright");
 const { DatabaseSync } = require("node:sqlite");
 
 const ROOT = path.join(__dirname, "..");
-const server = http.createServer((req, res) => {
-  const f = path.join(ROOT, req.url === "/" ? "index.html" : decodeURIComponent(req.url.split("?")[0]));
-  if (!f.startsWith(ROOT) || !fs.existsSync(f)) { res.writeHead(404); res.end(); return; }
-  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); fs.createReadStream(f).pipe(res);
-});
+const server = appServer();
 function fakeD1() {
   const db = new DatabaseSync(":memory:");
   const stmt = (sql, args = []) => ({

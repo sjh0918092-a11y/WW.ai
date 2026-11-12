@@ -1,5 +1,6 @@
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
-const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+const { appSource } = require("./helpers/app");
+const html=appSource();
 const stripMarks=s=>String(s||'').replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,(_,a,b)=>b||a).replace(/\*\*|~~/g,'').trim();
 const c={S:{pages:{}},stripMarks,namesOf:t=>[t],nameOwner:()=>null,yearNum:s=>parseInt(s,10)};vm.createContext(c);
 vm.runInContext(html.slice(html.indexOf('const NUM_KINDS ='),html.indexOf('/* 두 검사(설정 대조'))+'\nglobalThis.check=numericIssues;globalThis.facts=numFacts;',c);

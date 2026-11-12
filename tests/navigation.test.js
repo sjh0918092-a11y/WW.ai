@@ -1,7 +1,8 @@
 const http=require('http'),fs=require('fs'),path=require('path'),assert=require('assert'),vm=require('vm');
+const { appServer, appSource } = require("./helpers/app");
 const {chromium}=require('playwright');
-const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8'),c={};vm.createContext(c);vm.runInContext(html.slice(html.indexOf('function cyrb53('),html.indexOf('const LINK_RE ='))+'globalThis.makeKey=keyOf;',c);const key=c.makeKey;
-const server=http.createServer((req,res)=>{res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(html);});
+const html=appSource(),c={};vm.createContext(c);vm.runInContext(html.slice(html.indexOf('function cyrb53('),html.indexOf('const LINK_RE ='))+'globalThis.makeKey=keyOf;',c);const key=c.makeKey;
+const server=appServer({base:"/WW.ai/"});
 let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch(),ctx=await browser.newContext();

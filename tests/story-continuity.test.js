@@ -1,5 +1,6 @@
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
-const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+const { appSource } = require("./helpers/app");
+const html=appSource();
 const stripMarks=s=>String(s||'').replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,(_,a,b)=>b||a).replace(/\*\*|~~/g,'').trim();
 const c={S:{pages:{}},stripMarks,console,totalOf:w=>w.story.total,emptyExplore:()=>({opened:{},created:[],edited:[],searched:[]}),cyrb53:s=>[...s].reduce((h,x)=>(h*31+x.charCodeAt(0))>>>0,7),norm:s=>String(s||'').trim(),chTitle:s=>s,yearNum:s=>parseInt(s,10),curCh:w=>w.story.chapters.at(-1),chSrc:n=>'ch'+n,canonTitle:(w,s)=>s,keyOf:s=>s,newEntity:(title,type,summary)=>({title,type,summary,facts:[],mentions:[]}),addFact:(e,t,src)=>e.facts.push({t,src}),addRelation:()=>{},addTimeline:()=>{},secretsOf:w=>w.story.secrets||[],blockToSections:(ch,h,secs)=>secs.map(s=>({...s,ch})),rebuildPage:(w,k,p,secs)=>({...p,sections:[...p.sections,...secs]}),esc:s=>String(s??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]))};
 vm.createContext(c);vm.runInContext(html.slice(html.indexOf('/* 스토리 진행 기록:'),html.indexOf('function chapterPlanPrompt('))+'\nglobalThis.api={storyMemory,storySources,storyMemoryBlock,prepareStoryMemory};',c);

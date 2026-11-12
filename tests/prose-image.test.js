@@ -1,6 +1,7 @@
 const http=require('http'),fs=require('fs'),path=require('path'),assert=require('assert');
+const { appServer } = require("./helpers/app");
 const {chromium}=require('playwright');
-const server=http.createServer((req,res)=>{res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(fs.readFileSync(path.join(__dirname,'../index.html')));});
+const server=appServer();
 const read=(p,key)=>p.evaluate(key=>new Promise((resolve,reject)=>{const q=indexedDB.open('worldwiki-gemini',1);q.onsuccess=()=>{const db=q.result,t=db.transaction('kv'),r=t.objectStore('kv').get(key);r.onsuccess=()=>resolve(r.result);t.oncomplete=()=>db.close();t.onerror=reject;};}),key);
 const put=(p,key,value)=>p.evaluate(({key,value})=>new Promise((resolve,reject)=>{const q=indexedDB.open('worldwiki-gemini',1);q.onsuccess=()=>{const db=q.result,t=db.transaction('kv','readwrite');t.objectStore('kv').put(value,key);t.oncomplete=()=>{db.close();resolve();};t.onerror=reject;};}),{key,value});
 let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);

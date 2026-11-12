@@ -1,5 +1,6 @@
 const fs=require('fs'),vm=require('vm'),assert=require('assert'),path=require('path');
-const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+const { appSource } = require("./helpers/app");
+const html=appSource();
 const source=html.slice(html.indexOf('const GKEY ='),html.indexOf('/* 연결 방식:'))+'\nglobalThis.settings=GS;';
 const load=previous=>{let saved=previous?JSON.stringify(previous):null;const c={localStorage:{getItem:()=>saved,setItem:(k,v)=>{saved=v;}}};vm.createContext(c);vm.runInContext(source,c);return {settings:c.settings,saved:JSON.parse(saved)};};
 const model='gpt-image-2.5-flare';
