@@ -611,6 +611,11 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await page.click('[data-check]'); await page.waitForSelector("details.memo", { timeout: 20000 });
     ctl.readFail = false; ctl.checkIssues = null;
     assert((await page.locator("details.memo").textContent()).includes("역사는 1586년에"), "한 검사가 실패해도 다른 검사 결과는 보여 준다");
+    { const n0 = await page.locator("details.memo li").count(); await page.evaluate(() => { document.querySelector("details.memo").open = true; }); await page.locator("details.memo li", { hasText: "역사는 1586년에" }).locator(".memo-del").click();
+      await page.waitForFunction(n => document.querySelectorAll("details.memo li").length === n - 1, n0);
+      assert(!(await page.locator("details.memo").allTextContents()).join("").includes("역사는 1586년에"), "[삭제]를 누르면 그 편집자 메모가 사라진다");
+      await page.reload(); await waitArticle(page, "검사 분류");
+      assert(!(await page.locator("details.memo").allTextContents()).join("").includes("역사는 1586년에"), "삭제한 메모는 새로고침 뒤에도 돌아오지 않는다"); }
     ok("설정 대조와 문서 읽기 검사를 동시에 돌려 합치고(같은 지적은 하나로), 하나가 실패해도 다른 결과를 쓰며, 분류까지 고친다");
 
     /* 25. AI 수정은 다른 문서를 대체하지 않는다: 어긋나면 그 문서의 메모로 */

@@ -285,6 +285,9 @@ details.ent li{margin-bottom:3px}
 .memo li.lo{color:var(--muted)}
 .memo-why{display:block;font-size:12.5px;color:var(--muted)}
 .memo-fix{padding:1px 10px;font-size:12px;margin-top:4px}
+.memo-del{margin-left:8px;border:0;background:none;color:var(--link);font:12px var(--f-body);padding:2px 0;cursor:pointer;vertical-align:baseline}
+.memo-del:hover{text-decoration:underline}
+.memo-del:disabled{color:var(--muted);cursor:default;text-decoration:none}
 .memo-dot{width:7px;height:7px;border-radius:50%;background:var(--line);flex:none}
 .memo-dot.on{background:var(--warn-fg)}
 .memo-foot{padding:0 12px 12px 30px}

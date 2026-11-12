@@ -276,6 +276,13 @@ async function deletePage(k) {
     await Store.saveWorld(w); toast(`「${e.title}」 문서를 삭제했습니다.`);
   } catch (err) { toast("삭제를 저장하지 못했습니다. " + errMsg(err)); }
 }
+/* 편집자 메모 하나를 지운다. 번호는 화면에 그린 순서(S.memo.items)를 따른다 */
+async function deleteMemo(k, idx) {
+  const p = S.pages[k], it = S.memo && S.memo.k === k ? S.memo.items[idx] : null;
+  if (!p || !it || !p.check || (S.fixing && S.fixing.key === k)) return;
+  p.check.issues = (p.check.issues || []).filter(x => x !== it); renderMain();
+  try { await Store.savePage(S.world.id, p); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
+}
 async function dismissNotes(k, field) {
   const p = S.pages[k]; if (!p) return;
   if (field === "autoConflicts") p.autoDismissed = [...(p.autoDismissed || []), ...(p.autoConflicts || []).map(c => ({ by: c.by, old: c.old }))].slice(-50);   // 다시 검사해도 같은 표시를 달지 않게

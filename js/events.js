@@ -80,6 +80,7 @@ document.addEventListener("click", ev => {
   if (d.rw) { S.confirmRewrite = S.confirmRewrite === d.rw ? null : d.rw; renderMain(); if (S.confirmRewrite) $("#rwDir")?.focus(); return; }
   if (d.rwYes) { const dir = norm($("#rwDir")?.value || "").slice(0, 300); generatePage(d.rwYes, true, dir); return; }
   if (d.check) { checkPage(d.check); return; }
+  if (d.memoDel !== undefined) { deleteMemo(d.memoK, Number(d.memoDel)); return; }
   if (d.fixk) { openFixView(d.fixk, [Number(d.fix)], true); return; }
   if (d.cfix) { openConflictFix(d.cfix, d.cfield || "conflicts"); return; }
   if (d.sectionEdit !== undefined) { openSectionEditor(d.sectionKey, Number(d.sectionEdit)); return; }
