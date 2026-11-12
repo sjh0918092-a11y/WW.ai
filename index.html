@@ -382,7 +382,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.41 · 2026-11-12";
+const APP_VERSION = "v6.42 · 2026-11-12";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1348,7 +1348,7 @@ function patchInfobox(box, patch) {
   }
   return out;
 }
-const PAGE_KEEP = ["createdAt", "rewrittenAt", "direction", "editedAt", "fixedAt", "stale", "conflicts", "autoConflicts", "pending", "baseAsOf", "syncedTo", "storyNotice", "portrait", "shortStories"];
+const PAGE_KEEP = ["createdAt", "rewrittenAt", "direction", "editedAt", "fixedAt", "stale", "conflicts", "autoConflicts", "autoDismissed", "pending", "baseAsOf", "syncedTo", "storyNotice", "portrait", "shortStories"];
 /* 기존 본문은 그대로 두고 섹션을 덧붙인 새 문서 객체. 링크, 언급, 사실은 integrate가 다시 계산한다 */
 function rebuildPage(w, k, p, addSecs, extra = {}) {
   autoLink(w, k, { sections: addSecs, infobox: [] });
@@ -2198,13 +2198,13 @@ async function mergeEntities(w, pairs) {
     }
   }
   for (const [k, p] of Object.entries(S.pages)) {
-    const before = JSON.stringify([p.sections, p.infobox, p.notices, p.links, p.conflicts, p.autoConflicts]);
+    const before = JSON.stringify([p.sections, p.infobox, p.notices, p.links, p.conflicts, p.autoConflicts, p.autoDismissed]);
     for (const sec of p.sections) sec.body = cleanLinks(w, sec.body);
     for (const r of p.infobox || []) r.value = cleanLinks(w, r.value);
     p.notices = (p.notices || []).map(x => cleanLinks(w, x));
     p.links = [...new Set((p.links || []).map(re))].filter(x => x !== k);
-    for (const c of [...(p.conflicts || []), ...(p.autoConflicts || [])]) c.by = re(c.by);
-    if (JSON.stringify([p.sections, p.infobox, p.notices, p.links, p.conflicts, p.autoConflicts]) !== before) saved.add(k);
+    for (const c of [...(p.conflicts || []), ...(p.autoConflicts || []), ...(p.autoDismissed || [])]) c.by = re(c.by);
+    if (JSON.stringify([p.sections, p.infobox, p.notices, p.links, p.conflicts, p.autoConflicts, p.autoDismissed]) !== before) saved.add(k);
   }
   S.recent = [...new Set(S.recent.map(re))].filter(x => w.entities[x]);
   try {
@@ -2725,7 +2725,7 @@ function numericIssues(w, k) {
 /* ---------- 나이 규칙: 핵심 규칙의 나이 제한으로 출생·기간 연도를 맞춰 본다 ---------- */
 /* 숫자 대조 로직(numericIssues, quoteIssues, ageRuleIssues, 성별 규칙)을 바꿀 때마다 올린다.
    문서를 열 때 p.check.numV가 이 값과 다르면 결정론 지적만 다시 계산해 바꿔 끼운다 */
-const NUMERIC_VERSION = 5;
+const NUMERIC_VERSION = 6;
 /* 규칙 문장은 세계관마다 표현이 달라 코드로 읽지 않는다. 핵심 규칙이 바뀌었을 때만 AI가 한 번 구조로 뽑고(w.ageRules),
    판정은 그 구조로 코드가 한다. 그래서 검사할 때마다 결과가 같다 */
 const rulesText = w => (w.rules || []).join("\n");
@@ -2785,20 +2785,34 @@ async function ensureAgeRules(w, opts = {}) {
   ageRuleCall = { w, text, p };
   try { await p; } finally { if (ageRuleCall?.p === p) ageRuleCall = null; }
 }
-/* 인포박스에서 규칙이 정한 기간 ("1965년 ~ 1973년", "1965년 ~ 현재"). 기존 숫자 대조에는 넣지 않고 나이 규칙에만 쓴다 */
+/* 값에서 기간 하나를 읽는다: "1965년 ~ 1973년", "1965년 ~ 현재", "제1전략체전대 (1987~1991)", "1987–91", "제국력 12년 ~ 15년".
+   기간이 둘 이상 적힌 줄은 어느 쪽이 시작인지 단정할 수 없어 읽지 않는다. 기존 숫자 대조에는 넣지 않고 나이 규칙에만 쓴다 */
+function spanOf(v) {
+  if (/\d\s*년\s*(?:대|경|무렵|전후)/.test(v)) return null;
+  const found = [];
+  for (const m of v.matchAll(/(\d{1,5})\s*(년)?\s*[~～∼–—-]\s*(?:(\d{1,5})(?!\d)(?:\s*(년))?|(현재))/g)) {
+    const after = v.slice(m.index + m[0].length);
+    if (!m[2] && !m[4] && !m[5] && !/^\s*(?:$|[)\]）,.·;:]|\s)/.test(after)) continue;
+    if (/^\s*(?:명|개|척|대|기|권|호|%|인|km|m\b|kg|t\b)/.test(after)) continue;   // "100-200명" 같은 수량
+    const a = yearHits(v.slice(Math.max(0, m.index - 16), m.index) + m[1] + "년").pop();   // 앞의 기년법 표시까지 함께 읽는다
+    if (!a || a.approx) continue;
+    let end = null;
+    if (!m[5]) {   // 끝 연도는 시작 연도의 기년법을 따른다. "1987–91"처럼 두 자리로 줄인 끝 연도는 앞 두 자리를 채운다
+      let n = +m[3];
+      if (m[3].length === 2 && m[1].length === 4 && a.y > 0) { n += Math.floor(a.y / 100) * 100; if (n < a.y) n += 100; }
+      else if (m[3].length < 3 && !a.cal && a.y > 0) continue;
+      end = a.y < 0 ? -n : n;
+      if (end < a.y) continue;
+    }
+    found.push({ start: a.y, end, cal: a.cal, now: !!m[5] });
+  }
+  return found.length === 1 ? found[0] : null;
+}
 function spanFacts(p, spanWords) {
   for (const r of p.infobox || []) {
     if (!spanWords.some(x => r.label.includes(x))) continue;
-    const v = stripMarks(r.value), m = /^\s*(.*?년)\s*[~～∼–—-]\s*(.*)$/.exec(v);
-    if (!m || /\d\s*년\s*(?:대|경|무렵|전후)/.test(v)) continue;
-    const a = yearHits(m[1]); if (a.length !== 1 || a[0].approx) continue;
-    let b = null;
-    if (!/^현재/.test(m[2])) {   // 끝 연도에 기년법 표시가 없으면 시작 연도의 기년법을 따른다 ("제국력 12년 ~ 15년", "기원전 230년 ~ 180년")
-      const n = /^(\d{1,5})\s*년/.exec(m[2]), h = yearHits(m[2])[0];
-      b = h && (h.cal || h.y < 0 || /^(?:서기|기원후|AD|A\.D\.|CE)/.test(m[2]) || (!a[0].cal && a[0].y > 0)) ? h : n ? { y: a[0].y < 0 ? -+n[1] : +n[1], cal: a[0].cal } : null;
-      if (!b || b.cal !== a[0].cal || b.y < a[0].y) continue;
-    }
-    return { start: a[0].y, end: b ? b.y : null, cal: a[0].cal, label: r.label.trim(), line: `${r.label}: ${v}` };
+    const v = stripMarks(r.value), sp = spanOf(v);
+    if (sp) return { start: sp.start, end: sp.end, cal: sp.cal, now: sp.now, label: r.label.trim(), line: `${r.label}: ${v}` };
   }
   return null;
 }
@@ -2810,8 +2824,9 @@ function ageRuleIssues(w, k) {
   if (!p || p.type !== "인물") return out;
   const rules = ageRules(w); if (!rules.length) return out;
   const birth = numFacts(p).birth; if (!birth) return out;
-  const head = [p.summary || "", (p.categories || []).join(" "), ...(p.infobox || []).map(r => `${r.label} ${stripMarks(r.value)}`)].join("\n");
-  const names = refNames(w, k), title = p.title;
+  /* 부류 판정은 한 줄 정의, 분류, 인포박스의 분류·신분 같은 줄만 본다. "지휘 전력: … 전략체"처럼 다른 대상을 적은 줄로 일반 인물을 잡지 않게 */
+  const head = [p.summary || "", (p.categories || []).join(" "), ...(p.infobox || []).filter(r => /분류|신분|종족|구분|등급|유형|직업|정체|계통|세대|종류|개체/.test(r.label)).map(r => stripMarks(r.value))].join("\n");
+  const names = refNames(w, k), title = p.title, eraH = yearHits(w.era).find(h => !h.approx);
   /* 연도 y를 이 항목과 함께 적은, 이 문서보다 기준인 다른 문서들. 숫자 비교가 아니라 "이 연도를 어느 문서가 정했나"를 찾는 용도라 관대하게 본다.
      근거를 놓치면 high가 되어 자동 수정이 기준 문서와 새로 어긋나게 고치지만, 넓게 잡으면 low 표시만 남는다.
      그래서 다른 항목 이름이 함께 나오는 문장도 인정하고(onlyAbout을 쓰지 않음), 기준 문서가 이 항목에 대해 확정한 사실(facts)도 근거로 본다 */
@@ -2838,7 +2853,8 @@ function ageRuleIssues(w, k) {
     if (!R.subjects.some(x => head.includes(x))) continue;   // 이 규칙의 부류(예: 전략체, 마법소녀)인 인물만. 일반 군인의 복무 기간에는 적용하지 않는다
     const span = spanFacts(p, R.spanWords); if (!span || span.cal !== birth.cal) continue;   // 기년법이 다르면 계산하지 않는다
     cal = span.cal;
-    const b = birth.y, s = span.start, e = span.end, nm = span.label.replace(/\s*기간$/, "");
+    const nm = span.label.replace(/\s*기간$/, ""), now = span.now && eraH && eraH.cal === cal;   // "~ 현재"면 작중 기준 시점까지 이어진 것으로 계산한다
+    const b = birth.y, s = span.start, e = now ? eraH.y : span.end, endName = now ? `작중 기준 시점(${fmtY(eraH)})의 ${nm}` : `${nm} 종료`;
     const C = [];
     if (R.min !== null || R.max !== null) C.push({ v: "start", y: s, lo: R.max !== null ? s - R.max : -Infinity, hi: R.min !== null ? s - R.min : Infinity });
     if (e != null && R.end !== null) C.push({ v: "end", y: e, lo: e - (R.end + 1), hi: Infinity });   // 일찍 끝날 수는 있으니 상한만 둔다. 연도만으로 계산하므로 1년 여유
@@ -2846,8 +2862,8 @@ function ageRuleIssues(w, k) {
     const [lo, hi] = range(C);
     if (b >= lo && b <= hi) continue;
     const ruleTxt = `${R.subjects[0]}: ${R.min !== null && R.max !== null ? `${R.min}~${R.max}세` : R.min !== null ? `${R.min}세 이상` : R.max !== null ? `${R.max}세 이하` : ""}${R.min !== null || R.max !== null ? `에 ${nm} 시작` : ""}${R.end !== null ? `${R.min !== null || R.max !== null ? ", " : ""}${R.end}세 기점 종료(종료 시 ${R.end + 1}세 이하)` : ""}`;
-    const ages = `출생 ${fy(b)} 기준 ${nm} 시작 ${fy(s)}은 ${yDiff(b, s)}세${e != null ? `, 종료 ${fy(e)}은 ${yDiff(b, e)}세` : ""}`;
-    const locks = { birth: lockOf(b, cal), start: lockOf(s, cal), end: e != null ? lockOf(e, cal) : null };
+    const ages = `출생 ${fy(b)} 기준 ${nm} 시작 ${fy(s)}은 ${yDiff(b, s)}세${e != null ? now ? `, 아직 ${nm} 중인 작중 기준 ${fy(e)}에는 ${yDiff(b, e)}세` : `, 종료 ${fy(e)}은 ${yDiff(b, e)}세` : ""}`;
+    const locks = { birth: lockOf(b, cal), start: lockOf(s, cal), end: e != null && !now ? lockOf(e, cal) : null };
     const lockTxt = Object.values(locks).filter(Boolean).flat().map(x => `「${S.pages[x.P].title}」: ${x.sen}`);
     const evidence = [`핵심 규칙: ${(R.text || ruleTxt).slice(0, 100)}`, ...lockTxt.slice(0, 2).map(x => x.slice(0, 90))].join(" / ");   // 고칠 방법이 잘리지 않게 근거는 짧게
     const push = (claim, msg, severity, extra) => out.push({ claim: claim.slice(0, 300), conflict: `근거: ${evidence} · 나이 규칙: ${ages}다. 나이 규칙(${ruleTxt})과 맞지 않는다. ${msg}`.slice(0, 700), severity, by: "num", ...extra });
@@ -2857,13 +2873,13 @@ function ageRuleIssues(w, k) {
     if (lo2 <= hi2) {   // 잠긴 연도끼리는 맞는다: 이 문서의 잠기지 않은 연도를 고치면 풀린다
       const B = locks.birth ? b : Math.min(hi2, Math.max(lo2, b)), fix = [];
       if (B !== b) fix.push(`출생을 ${fy(B)}으로(기준 문서와 맞는 범위 ${yrs(lo2, hi2)})`);
-      for (const c of C) if (!locks[c.v] && (B < c.lo || B > c.hi)) fix.push(c.v === "start" ? `${nm} 시작을 ${yrs(R.min !== null ? B + R.min : -Infinity, R.max !== null ? B + R.max : Infinity)}${R.min !== null && R.max !== null ? " 사이로" : "로"}` : `${nm} 종료를 ${fy(B + R.end + 1)} 이전으로`);
+      for (const c of C) if (!locks[c.v] && (B < c.lo || B > c.hi)) fix.push(c.v === "start" ? `${nm} 시작을 ${yrs(R.min !== null ? B + R.min : -Infinity, R.max !== null ? B + R.max : Infinity)}${R.min !== null && R.max !== null ? " 사이로" : "로"}` : now ? `"현재"를 ${fy(B + R.end + 1)} 이전의 종료 연도로` : `${nm} 종료를 ${fy(B + R.end + 1)} 이전으로`);
       push(B !== b ? birth.line : span.line, `다른 기준 문서가 정한 연도는 두고 이 문서의 ${fix.join(", ")} 고친다.`, "high");
       continue;
     }
     /* 잠긴 연도끼리도 맞지 않는다: 이 문서로는 풀 수 없으니 잠근 문서 중 가장 늦게 쓴(직접 수정하지 않은) 문서로 넘긴다 */
     const cand = L.flatMap(c => locks[c.v]).filter(x => !S.pages[x.P].editedAt).sort((a, z) => (S.pages[z.P].createdAt || 0) - (S.pages[a.P].createdAt || 0));
-    const t = cand[0], lockedYears = L.map(c => `${{ birth: "출생", start: nm + " 시작", end: nm + " 종료" }[c.v]} ${fy(c.y)}`).join(", ");
+    const t = cand[0], lockedYears = L.map(c => `${{ birth: "출생", start: nm + " 시작", end: endName }[c.v]} ${fy(c.y)}`).join(", ");
     push(span.line, t ? `기준 문서가 정한 ${lockedYears}끼리 맞지 않아 이 문서만으로는 고칠 수 없다. 고칠 쪽은 「${S.pages[t.P].title}」 문서다.` : `직접 수정한 문서가 정한 ${lockedYears}끼리 맞지 않아 자동으로 고칠 곳을 정할 수 없다.`, "low",
       t ? { target: t.P, targetOld: t.sen.slice(0, 300), targetClaim: `나이 규칙(${ruleTxt})으로는 「${title}」의 ${lockedYears}을(를) 함께 맞출 수 없다(이 서술의 ${fy(t.y)}에 ${yDiff(b, t.y)}세). 이 서술의 연도나 내용을 고친다.` } : {});
   }
@@ -2890,7 +2906,10 @@ function mergeIssues(list) {
   const all = [], seen = new Map(), keyOfClaim = c => stripMarks(c).replace(/\s+/g, "").slice(0, 40);
   for (const i of list) {
     const ck = keyOfClaim(i.claim), prev = seen.get(ck);
-    if (prev) { if (i.severity === "high") prev.severity = "high"; if (!prev.conflict.includes(i.conflict)) prev.conflict = (prev.conflict + " / " + i.conflict).slice(0, 500); continue; }
+    if (prev) {
+      if (isNumIssue(prev) && !isNumIssue(i)) (prev.ai ||= []).push({ claim: i.claim, conflict: i.conflict, severity: i.severity });   // 결정론 지적을 다시 계산할 때 AI 지적을 되살리려고 따로 남긴다
+      if (i.severity === "high") prev.severity = "high"; if (!prev.conflict.includes(i.conflict)) prev.conflict = (prev.conflict + " / " + i.conflict).slice(0, 500); continue;
+    }
     seen.set(ck, i); all.push(i);
   }
   all.sort((a, b) => (b.severity === "high") - (a.severity === "high"));
@@ -2907,14 +2926,15 @@ function routeAutoConflicts(w, k, issues) {
     const old = i.targetOld || i.claim;
     (now.get(i.target) || now.set(i.target, new Set()).get(i.target)).add(old);
     T.autoConflicts ||= [];
-    if (T.autoConflicts.some(c => c.by === k && c.old === old) || T.autoConflicts.length >= 20) continue;
+    if (T.autoConflicts.some(c => c.by === k && c.old === old) || T.autoDismissed?.some(d => d.by === k && d.old === old) || T.autoConflicts.length >= 20) continue;   // 사용자가 지운 표시는 다시 달지 않는다
     T.autoConflicts.push({ by: k, byTitle, old, claim: String(i.targetClaim || i.claim).slice(0, 400), at: Date.now() });
     changed.add(i.target);
   }
   for (const [x, T] of Object.entries(S.pages)) {
-    if (x === k || !T.autoConflicts?.some(c => c.by === k)) continue;
-    const keep = T.autoConflicts.filter(c => c.by !== k || now.get(x)?.has(c.old));
-    if (keep.length !== T.autoConflicts.length) { T.autoConflicts = keep; changed.add(x); }
+    if (x === k) continue;
+    const kept = c => c.by !== k || now.get(x)?.has(c.old);
+    if (T.autoConflicts?.some(c => !kept(c))) { T.autoConflicts = T.autoConflicts.filter(kept); changed.add(x); }
+    if (T.autoDismissed?.some(c => !kept(c))) { T.autoDismissed = T.autoDismissed.filter(kept); changed.add(x); }   // 지적이 사라졌으면 지운 기록도 지운다. 나중에 다시 생기면 다시 보여 준다
   }
   return [...changed];
 }
@@ -2922,7 +2942,8 @@ function routeAutoConflicts(w, k, issues) {
 function refreshNumeric(w, k) {
   const p = S.pages[k]; if (!p?.check || p.check.numV === numStamp(w)) return null;
   const fresh = detIssues(w, k);
-  p.check = { ...p.check, issues: mergeIssues([...fresh, ...(p.check.issues || []).filter(i => !isNumIssue(i))]), numV: numStamp(w) };
+  const old = p.check.issues || [], ai = [...old.filter(i => !isNumIssue(i)), ...old.filter(isNumIssue).flatMap(i => i.ai || [])];   // 결정론 지적에 합쳐졌던 AI 지적도 남긴다
+  p.check = { ...p.check, issues: mergeIssues([...fresh, ...ai]), numV: numStamp(w) };
   return routeAutoConflicts(w, k, fresh);
 }
 /* 두 검사(설정 대조, 문서 읽기)를 동시에 돌려 결과를 합친다. 하나가 실패해도 다른 하나의 결과는 쓴다 */
@@ -3201,7 +3222,7 @@ async function applyFix() {
     page = integrate(w, k, out);
   } catch (err) { restoreRewrite(w, backup); toast("저장하지 못했습니다. " + errMsg(err)); return; }
   if (v.fromConflicts) { const fld = v.fromConflicts === true ? "conflicts" : v.fromConflicts, done = new Set(v.edits.filter(e => e.on).map(e => e.n)); old[fld] = (old[fld] || []).filter((_, i) => !done.has(i)); }   // 고친 충돌 표시는 지운다
-  Object.assign(page, { createdAt: old.createdAt, rewrittenAt: old.rewrittenAt, direction: old.direction, editedAt: old.editedAt, fixedAt: Date.now(), stale: false, conflicts: old.conflicts, autoConflicts: old.autoConflicts, pending: old.pending, check: null, baseAsOf: old.baseAsOf, syncedTo: old.syncedTo, storyNotice: old.storyNotice });
+  Object.assign(page, { createdAt: old.createdAt, rewrittenAt: old.rewrittenAt, direction: old.direction, editedAt: old.editedAt, fixedAt: Date.now(), stale: false, conflicts: old.conflicts, autoConflicts: old.autoConflicts, autoDismissed: old.autoDismissed, pending: old.pending, check: null, baseAsOf: old.baseAsOf, syncedTo: old.syncedTo, storyNotice: old.storyNotice });
   cleanupOrphans(w, k);
   S.pages[k] = page; S.fixv = null; S.memo = null;
   S.view = { name: "article", key: k }; renderAll(); window.scrollTo({ top: 0 });
@@ -4062,6 +4083,7 @@ async function deletePage(k) {
 }
 async function dismissNotes(k, field) {
   const p = S.pages[k]; if (!p) return;
+  if (field === "autoConflicts") p.autoDismissed = [...(p.autoDismissed || []), ...(p.autoConflicts || []).map(c => ({ by: c.by, old: c.old }))].slice(-50);   // 다시 검사해도 같은 표시를 달지 않게
   p[field] = []; renderMain();
   try { await Store.savePage(S.world.id, p); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
 }

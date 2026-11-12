@@ -9,7 +9,7 @@ c.nameOwner=(w,t)=>{const ks=Object.keys(w.entities).filter(k=>w.entities[k].tit
 c.live=x=>!x.sup;c.factLine=f=>f.t;c.chOf=()=>0;
 vm.createContext(c);
 vm.runInContext(cut('/* ---------- 인용 대조','/* 두 검사(설정 대조')+'\n'+cut('const refOK =','/* ---------- 스토리 모드: 상태')+`
-Object.assign(globalThis,{yearHits,cleanCalendars,numericIssues,numFacts,spanFacts,ageRules,parseAgeRules,ageRulePrompt,ageRuleIssues,autoFixList,routeAutoConflicts,refreshNumeric,entityBrief,NUMERIC_VERSION,numStamp});`,c);
+Object.assign(globalThis,{spanOf,mergeIssues,yearHits,cleanCalendars,numericIssues,numFacts,spanFacts,ageRules,parseAgeRules,ageRulePrompt,ageRuleIssues,autoFixList,routeAutoConflicts,refreshNumeric,entityBrief,NUMERIC_VERSION,numStamp});`,c);
 let n=0;const test=(name,fn)=>{fn();console.log(`  ✓ ${++n}. ${name}`);};
 const R4='전략체의 발현과 군사적 최전성기는 14세부터 19세 사이의 사춘기에 국한되며, 성인이 되는 20세를 기점으로 능력과 체격이 서서히 통상 인간으로 축소·퇴역한다.';
 const page=(title,type,o={})=>({title,type,summary:o.summary||'',categories:o.categories||[],infobox:o.infobox||[],sections:o.body?[{heading:'개요',body:o.body}]:[],links:[],createdAt:o.createdAt||1,...(o.editedAt?{editedAt:o.editedAt}:{})});
@@ -97,7 +97,7 @@ test('다른 낱말 속 이름 토막(뉘른베르크의 베르크)을 다른 �
 test('"출생년도" 라벨을 출생 연도로 읽고, 범위 값은 기존 숫자 대조에 넣지 않는다',()=>{
   const f=c.numFacts({infobox:box({'출생년도':'1953년','현역 기간':'1965년 ~ 1973년'})});
   assert.equal(f.birth.y,1953);assert.equal(Object.keys(f).length,1);
-  assert.deepEqual(JSON.parse(JSON.stringify(c.spanFacts({infobox:box({'현역 기간':'1965년 ~ 현재'})},['현역']))),{start:1965,end:null,cal:'',label:'현역 기간',line:'현역 기간: 1965년 ~ 현재'});
+  assert.deepEqual(JSON.parse(JSON.stringify(c.spanFacts({infobox:box({'현역 기간':'1965년 ~ 현재'})},['현역']))),{start:1965,end:null,cal:'',now:true,label:'현역 기간',line:'현역 기간: 1965년 ~ 현재'});
   assert.equal(c.spanFacts({infobox:box({'재위 기간':'1965년 ~ 1973년'})},['현역']),null);
 });
 test('AI 해석 결과에서 앞뒤가 맞지 않는 규칙은 버린다',()=>{
@@ -201,5 +201,53 @@ test('세계관에 적힌 연호와 연표의 연호를 기년법으로 읽는�
   }finally{c.S.world=undefined;}
   assert.deepEqual(c.cleanCalendars(['건안',' 메이지 ','서기','기원전','','12년','[[제국력]]','건안']),['건안','메이지','제국력']);
   assert.equal((html.match(/"calendars":\["서기 말고/g)||[]).length,2,'세계관 생성 프롬프트 두 곳에 calendars를 요청한다');
+});
+/* ---------- 나중에 손볼 것으로 남겼던 항목 ---------- */
+const SP=v=>{const x=c.spanOf(v);return x&&[x.start,x.end,x.cal,x.now];};
+test('괄호 안이나 "년"이 없는 기간도 읽고, 수량·여러 기간은 읽지 않는다',()=>{
+  assert.deepEqual(SP('서독 연방군 특별생체전단 (1987~1991)'),[1987,1991,'',false]);
+  assert.deepEqual(SP('1987–91'),[1987,1991,'',false]);
+  assert.deepEqual(SP('1998-02 제2전대'),[1998,2002,'',false]);
+  assert.deepEqual(SP('1965년 ~ 1973년'),[1965,1973,'',false]);
+  assert.deepEqual(SP('2004 ~ 현재'),[2004,null,'',true]);
+  assert.deepEqual(SP('제국력 12년 ~ 15년'),[12,15,'제국력',false]);
+  assert.deepEqual(SP('기원전 230년 ~ 180년'),[-230,-180,'',false]);
+  for(const v of ['병력 100-200명','제1-2대대','1965~1968, 1970~1973','1960년대 ~ 1970년대','1-3년'])assert.equal(c.spanOf(v),null,v);
+  const w=world({h:page('한나 폰 베르크','인물',{summary:'서독의 전략체',infobox:box({'출생':'1972년 8월 22일','현역':'서독 연방군 특별생체전단 (1984~1991)','성별':'여성'})})});
+  const is=c.ageRuleIssues(w,'h');assert.equal(is.length,1);assert(is[0].conflict.includes('출생을 1970년으로'),is[0].conflict);
+});
+test('"~ 현재"면 작중 기준 시점까지 이어진 것으로 보고 나이 상한을 검사한다',()=>{
+  let w=world({p:page('갑 전략체','인물',{summary:'현역 전략체',infobox:box({'출생':'1990년','현역 기간':'2004년 ~ 현재','성별':'여성'})})});
+  let is=c.ageRuleIssues(w,'p');assert.equal(is.length,1);assert.equal(is[0].severity,'high');
+  assert(is[0].conflict.includes('작중 기준 2016년에는 26세'),is[0].conflict);assert(is[0].conflict.includes('"현재"를 2011년 이전의 종료 연도로'),is[0].conflict);
+  w=world({p:page('갑 전략체','인물',{summary:'현역 전략체',infobox:box({'출생':'1998년','현역 기간':'2012년 ~ 현재','성별':'여성'})})});
+  assert.equal(c.ageRuleIssues(w,'p').length,0);
+  w=world({p:page('갑 전략체','인물',{summary:'현역 전략체',infobox:box({'출생':'1990년','현역 기간':'2004년 ~ 현재','성별':'여성'})})});w.era='2010년대';
+  assert.equal(c.ageRuleIssues(w,'p').length,0,'기준 시점이 근사하면 계산하지 않는다');
+});
+test('부류는 한 줄 정의·분류·분류 성격의 인포박스 줄로만 판정한다',()=>{
+  let w=world({p:page('갑 장군','인물',{summary:'미국 육군의 장군',infobox:box({'출생':'1914년','복무 기간':'1936년 ~ 1972년','지휘 전력':'제1전략체전대 전략체 12기'})})});
+  assert.equal(c.ageRuleIssues(w,'p').length,0,'지휘한 대상을 적은 줄로 장군을 전략체로 보지 않는다');
+  w=world({p:page('을 병사','인물',{summary:'미국의 군인',infobox:box({'출생':'1950년','신분':'3세대 전략체','현역 기간':'1968년 ~ 1973년'})})});
+  assert.equal(c.ageRuleIssues(w,'p').length,1,'신분 줄에 적힌 부류는 인정한다');
+});
+test('결정론 지적에 합쳐진 AI 지적은 다시 계산해도 남는다',()=>{
+  const p=page('갑 제품','물건',{infobox:box({'최초 도입':'1954년'}),body:'갑 제품은 1960년 도입되었다.'});
+  const w=world({p});
+  const num=c.numericIssues(w,'p');
+  p.check={at:1,auto:false,issues:c.mergeIssues([...num,{claim:'갑 제품은 1960년 도입되었다.',conflict:'근거: 개요 · 개요와 연혁의 도입 시점이 다르다',severity:'high'}])};
+  assert.equal(p.check.issues.length,1);assert.equal(p.check.issues[0].ai.length,1);
+  p.check.numV='옛 표시';p.infobox=box({'최초 도입':'1960년'});   // 숫자 대조는 사라지는 상황
+  c.refreshNumeric(w,'p');
+  assert.equal(p.check.issues.length,1);assert(p.check.issues[0].conflict.includes('개요와 연혁의'));assert.equal(p.check.issues[0].by,undefined);
+});
+test('사용자가 지운 자동 대조 표시는 다시 검사해도 다시 달지 않고, 지적이 사라지면 지운 기록도 정리한다',()=>{
+  const viet=page('베트남 전쟁','사건',{createdAt:1});const w=world({viet,col:page('컬럼비아 3호','인물',{createdAt:2})});
+  const is=[{claim:'현역 기간',conflict:'x',severity:'low',target:'viet',targetOld:'1965년 상륙'}];
+  viet.autoDismissed=[{by:'col',old:'1965년 상륙'}];
+  c.routeAutoConflicts(w,'col',is);assert.equal((viet.autoConflicts||[]).length,0);
+  c.routeAutoConflicts(w,'col',[]);assert.equal(viet.autoDismissed.length,0);
+  c.routeAutoConflicts(w,'col',is);assert.equal(viet.autoConflicts.length,1,'나중에 다시 생긴 지적은 다시 보여 준다');
+  assert(html.includes('p.autoDismissed = [...(p.autoDismissed || [])'),'표시 지우기가 지운 기록을 남긴다');
 });
 console.log(`\n모두 통과 (${n}개). AI 호출 0회.`);
