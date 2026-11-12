@@ -193,6 +193,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert((await sideText(page)).includes("녹둔도의 밤"));
     const pagePrompt = calls.filter(c => c.kind === "page").pop().prompt;
     assert(pagePrompt.includes("'1장', '2장', '장', '이야기', '주인공' 같은 이야기 바깥의 구분은 본문에 쓰지 않는다"), "스토리 문서에 장 표기를 쓰지 말라는 규칙");
+    assert(pagePrompt.includes("[[ ]] 안의 제목은 본명 풀 네임으로 정한다") && pagePrompt.includes("[[조슬린 앤 케인|인디펜던스]]"), "인물 링크 제목은 본명 풀 네임으로 정하라는 지침");
     assert(pagePrompt.includes("이야기 진행 상황") && pagePrompt.includes("녹둔도 습격") && !pagePrompt.includes("결말 의도"), "주인공 문서 프롬프트: 발단 사건 포함, 뼈대 미포함");
     const sb = calls.find(c => c.kind === "storyBible").prompt;
     assert(sb.includes("활은 잘 쏘지만 겁이 많은 막내 무관") && sb.includes("- 윤가람 — 특징: 북관 출신 궁수 — 주인공과의 관계: 소꿉친구이자 맞수") && !sb.includes("지울 사람"), "주인공 특징과 등장인물이 세계관 생성에 들어간다");
