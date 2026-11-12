@@ -9,7 +9,7 @@ c.nameOwner=(w,t)=>{const ks=Object.keys(w.entities).filter(k=>w.entities[k].tit
 c.live=x=>!x.sup;c.factLine=f=>f.t;c.chOf=()=>0;
 vm.createContext(c);
 vm.runInContext(cut('/* ---------- 인용 대조','/* 두 검사(설정 대조')+'\n'+cut('const refOK =','/* ---------- 스토리 모드: 상태')+`
-Object.assign(globalThis,{numericIssues,numFacts,spanFacts,ageRules,parseAgeRules,ageRulePrompt,ageRuleIssues,autoFixList,routeAutoConflicts,refreshNumeric,entityBrief,NUMERIC_VERSION});`,c);
+Object.assign(globalThis,{yearHits,numericIssues,numFacts,spanFacts,ageRules,parseAgeRules,ageRulePrompt,ageRuleIssues,autoFixList,routeAutoConflicts,refreshNumeric,entityBrief,NUMERIC_VERSION});`,c);
 let n=0;const test=(name,fn)=>{fn();console.log(`  ✓ ${++n}. ${name}`);};
 const R4='전략체의 발현과 군사적 최전성기는 14세부터 19세 사이의 사춘기에 국한되며, 성인이 되는 20세를 기점으로 능력과 체격이 서서히 통상 인간으로 축소·퇴역한다.';
 const page=(title,type,o={})=>({title,type,summary:o.summary||'',categories:o.categories||[],infobox:o.infobox||[],sections:o.body?[{heading:'개요',body:o.body}]:[],links:[],createdAt:o.createdAt||1,...(o.editedAt?{editedAt:o.editedAt}:{})});
@@ -66,7 +66,7 @@ test('다른 낱말 속 이름 토막(뉘른베르크의 베르크)을 다른 �
 test('"출생년도" 라벨을 출생 연도로 읽고, 범위 값은 기존 숫자 대조에 넣지 않는다',()=>{
   const f=c.numFacts({infobox:box({'출생년도':'1953년','현역 기간':'1965년 ~ 1973년'})});
   assert.equal(f.birth.y,1953);assert.equal(Object.keys(f).length,1);
-  assert.deepEqual(JSON.parse(JSON.stringify(c.spanFacts({infobox:box({'현역 기간':'1965년 ~ 현재'})},['현역']))),{start:1965,end:null,label:'현역 기간',line:'현역 기간: 1965년 ~ 현재'});
+  assert.deepEqual(JSON.parse(JSON.stringify(c.spanFacts({infobox:box({'현역 기간':'1965년 ~ 현재'})},['현역']))),{start:1965,end:null,cal:'',label:'현역 기간',line:'현역 기간: 1965년 ~ 현재'});
   assert.equal(c.spanFacts({infobox:box({'재위 기간':'1965년 ~ 1973년'})},['현역']),null);
 });
 test('AI 해석 결과에서 앞뒤가 맞지 않는 규칙은 버린다',()=>{
@@ -115,5 +115,43 @@ test('다른 문서가 고칠 쪽인 숫자 대조 지적에 target을 채운다
   const is=c.numericIssues(w,'ref');
   assert.equal(is.length,1);assert.equal(is[0].severity,'low');assert.equal(is[0].target,'late');assert.equal(is[0].targetOld,'갑 인물은 1931년 사망했다.');
   assert(!c.numericIssues(w,'late')[0].target);
+});
+/* ---------- 연도 읽기: 서기 네 자리 밖의 세계관 ---------- */
+const Y=t=>c.yearHits(t).filter(h=>!h.approx).map(h=>(h.cal?h.cal+' ':'')+h.y);
+test('주사위의 여섯 시대 연도를 읽는다 (기원전, 세 자리, 23세기, 31세기, 가상 기년법)',()=>{
+  assert.deepEqual(Y('스키피오는 기원전 202년 자마에서 승리했다.'),['-202']);
+  assert.deepEqual(Y('조조는 208년 적벽에서 패했다.'),['208']);
+  assert.deepEqual(Y('장보고는 828년에 청해진을 설치했다.'),['828']);
+  assert.deepEqual(Y('화성 정착지는 2250년 독립을 선언했다.'),['2250']);
+  assert.deepEqual(Y('3050년 겨울, 적도 도시가 얼어붙었다.'),['3050']);
+  assert.deepEqual(Y('대멸종력 312년에 첫 정착지가 세워졌다.'),['대멸종력 312']);
+  assert.deepEqual(Y('제국 기원 45년 황제가 즉위했다.'),['제국기원 45']);
+  assert.deepEqual(Y('기원전 12년 원정이 끝났다.'),['-12']);
+});
+test('기간과 경과 표현은 연도로 보지 않는다',()=>{
+  for(const t of ['그는 300년 동안 잠들어 있었다.','300년간 이어진 전쟁','갑은 300년을 살았다.','제국은 건국 후 312년에 무너졌다.','그로부터 120년 뒤 탑이 무너졌다.','12년 만에 귀환했다.','재위 12년에 숨졌다.','징역 15년형을 받았다.','150년의 세월이 흘렀다.','경력 15년의 기사','500년이 지나도록','3,000년 전의 유적'])assert.deepEqual(Y(t),[],t);
+  for(const t of ['1950년을 기점으로 바뀌었다.','6·25 전쟁 후 1953년 정전되었다.'])assert.equal(Y(t).length,1,'서기 네 자리는 예전처럼 읽는다: '+t);
+  assert(c.yearHits('800년대 초').every(h=>h.approx));assert(c.yearHits('기원전 230년 ~ 180년').every(h=>h.approx));
+});
+test('세 자리 연도와 가상 기년법도 숫자 대조와 사망 나이 계산을 한다',()=>{
+  const ref=page('갑 왕','인물',{createdAt:1,infobox:box({'출생':'제국력 250년','사망':'제국력 312년','성별':'남성'})});
+  let w=world({ref,late:page('을 전쟁','사건',{createdAt:2,body:'갑 왕은 제국력 310년 사망했다.'})});
+  let is=c.numericIssues(w,'late');assert.equal(is.length,1);assert(is[0].conflict.includes('제국력 312년'),is[0].conflict);
+  w=world({ref,late:page('을 전쟁','사건',{createdAt:2,body:'갑 왕은 310년 사망했다.'})});
+  assert.equal(c.numericIssues(w,'late').length,0,'기년법이 다른(표시 없는) 연도와는 비교하지 않는다');
+  w=world({ref:page('병 장군','인물',{createdAt:1,infobox:box({'출생':'기원전 230년','사망':'기원전 183년','성별':'남성'})}),late:page('정 전쟁','사건',{createdAt:2,body:'병 장군은 기원전 185년 사망했다.'})});
+  is=c.numericIssues(w,'late');assert.equal(is.length,1);assert(is[0].conflict.includes('기원전 183년'),is[0].conflict);
+  w=world({ref:page('무 황제','인물',{infobox:box({'출생':'155년','사망':'220년','성별':'남성'}),body:'무 황제는 향년 40세로 사망했다.'})});
+  is=c.numericIssues(w,'ref');assert.equal(is.length,1);assert(is[0].conflict.includes('64~65세'),is[0].conflict);
+  w=world({ref:page('기 장군','인물',{infobox:box({'출생':'기원전 10년','사망':'20년','성별':'남성'}),body:'기 장군은 향년 29세로 사망했다.'})});
+  assert.equal(c.numericIssues(w,'ref').length,0,'기원전에서 서기로 넘어갈 때 0년은 없다');
+});
+test('가상 기년법의 기간으로 나이 규칙을 판정하고 수정 연도도 같은 기년법으로 쓴다',()=>{
+  const girl={rules:[{rule:'R1',subjects:['마법소녀'],startMin:10,startMax:15,endAge:16,spanWords:['활동']}]};
+  const w=world({p:page('갑 소녀','인물',{categories:['마법소녀'],infobox:box({'출생':'성력 300년','활동 기간':'성력 312년 ~ 318년'})})},['마법소녀 규칙'],girl);
+  assert.deepEqual(JSON.parse(JSON.stringify(c.spanFacts(c.S.pages.p,['활동']))).cal,'성력');
+  const is=c.ageRuleIssues(w,'p');assert.equal(is.length,1);assert(is[0].conflict.includes('성력 301년~성력 302년'),is[0].conflict);
+  const w2=world({p:page('갑 소녀','인물',{categories:['마법소녀'],infobox:box({'출생':'300년','활동 기간':'성력 312년 ~ 318년'})})},['마법소녀 규칙'],girl);
+  assert.equal(c.ageRuleIssues(w2,'p').length,0,'출생과 기간의 기년법이 다르면 계산하지 않는다');
 });
 console.log(`\n모두 통과 (${n}개). AI 호출 0회.`);
