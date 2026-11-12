@@ -382,7 +382,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.35 · 2026-11-11";
+const APP_VERSION = "v6.36 · 2026-11-12";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1344,12 +1344,13 @@ function rebuildPage(w, k, p, addSecs, extra = {}) {
 /* ---------- 스토리 모드 프롬프트 ---------- */
 /* 숨겨진 진실: 이야기가 나중에 밝히려고 감춘 답. 드러나는 장 전까지 위키(작중 사람들)는 겉으로 알려진 것만 안다 */
 const secretsOf = w => (isStory(w) && Array.isArray(w.story.secrets)) ? w.story.secrets : [];
-const hiddenSecrets = w => secretsOf(w).filter(x => !x.revealed);
+const hiddenSecrets = w => secretsOf(w).filter(x => !x.revealed && !x.pendingDisclosure);
 function secretsBlock(w, mode) {
-  const hid = hiddenSecrets(w), shown = secretsOf(w).filter(x => x.revealed);
-  if (!hid.length && !shown.length) return "";
-  if (mode === "check") return hid.length ? `\n## 아직 드러나지 않은 진실 (이 시점의 작중 사람들은 모른다)\n${hid.map(x => `- 진실: ${x.truth} / 이 시점에 알려진 것: ${x.cover}`).join("\n")}\n문서가 위 '진실'을 사실로 단정하거나, 분류·인포박스·한 줄 정의·인물 관계로 드러내거나, 답을 가리키는 해설을 붙였으면 모순으로 지적한다(severity high, evidence에는 '아직 드러나지 않은 진실'이라고 적는다). 혐의나 주장으로 쓴 것, 해설 없는 단서는 지적하지 않는다.\n` : "";
-  return `${hid.length ? `\n## 아직 드러나지 않은 진실 (쓰지 말 것)
+  const hid = hiddenSecrets(w), shown = secretsOf(w).filter(x => x.revealed), pending = secretsOf(w).filter(x => !x.revealed && x.pendingDisclosure);
+  const note = pending.length ? `\n## 공개 여부 확인이 필요한 기록\n${pending.map(x => `- id ${x.id}: ${x.truth} (이전 장 본문에 공개 표시가 있었으나 인용 확인은 보류됨)`).join("\n")}\n이미 작성된 실제 본문을 우선한다. 이 메모만으로 공개를 확정하거나 모두가 아직 모른다고 단정하지 않는다.\n` : "";
+  if (!hid.length && !shown.length && !pending.length) return "";
+  if (mode === "check") return note + (hid.length ? `\n## 아직 드러나지 않은 진실 (이 시점의 작중 사람들은 모른다)\n${hid.map(x => `- 진실: ${x.truth} / 이 시점에 알려진 것: ${x.cover}`).join("\n")}\n문서가 위 '진실'을 사실로 단정하거나, 분류·인포박스·한 줄 정의·인물 관계로 드러내거나, 답을 가리키는 해설을 붙였으면 모순으로 지적한다(severity high, evidence에는 '아직 드러나지 않은 진실'이라고 적는다). 혐의나 주장으로 쓴 것, 해설 없는 단서는 지적하지 않는다.\n` : "");
+  return note + `${hid.length ? `\n## 아직 드러나지 않은 진실 (쓰지 말 것)
 이 위키는 작중 사람들이 지금 시점에 아는 것으로 쓴다. 아래 진실은 이야기 뒤에서 드러날 답이라 아직 아무도 모른다.
 ${hid.map(x => `- 진실(쓰지 않는다): ${x.truth}\n  이 시점에 알려진 것(이것만 쓴다): ${x.cover}`).join("\n")}
 - 진실을 사실로 단정하지 않고, 분류·인포박스·한 줄 정의·인물 관계로도 드러내지 않는다.
@@ -1423,7 +1424,17 @@ const STORY_CHOICE_KINDS = ["information", "relationship", "time", "risk", "oppo
 const STORY_THREAD_KINDS = { goal: "목표", relationship: "관계", promise: "약속", conflict: "갈등", consequence: "행동의 여파", ongoing: "진행 중인 일", mystery: "의문·단서", legacy: "이전 기록" };
 const STORY_THREAD_STATES = { active: "이어짐", changed: "변화", fulfilled: "성취·이행", failed: "좌절", abandoned: "포기", continuing: "계속됨" };
 const STORY_THREAD_CLOSED = ["fulfilled", "failed", "abandoned"];
-const storyState = value => ({ open: "active", progress: "changed", resolved: "fulfilled", left_open: "continuing", deferred: "unchanged" }[value] || value);
+const storyState = value => {
+  const state = String(value || "").normalize("NFKC").trim().toLowerCase().replace(/[ -]+/g, "_");
+  return ({ open: "active", progress: "changed", progressed: "changed", in_progress: "changed", updated: "changed", resolved: "fulfilled", completed: "fulfilled", left_open: "continuing", ongoing: "continuing", deferred: "unchanged", maintained: "unchanged", "이어짐": "active", "진행중": "active", "진행_중": "active", "변화": "changed", "진전": "changed", "성취": "fulfilled", "성취·이행": "fulfilled", "이행": "fulfilled", "완료": "fulfilled", "해결": "fulfilled", "좌절": "failed", "실패": "failed", "포기": "abandoned", "계속됨": "continuing", "유지": "unchanged", "보류": "unchanged" }[state] || state);
+};
+// 의미를 추측하지 않고 서식·문장부호 차이만 흡수한다. 확인되지 않은 인용은 적용하지 않는다.
+const storyComparable = t => storyQuote(t).normalize("NFKC").replace(/[“”‘’「」『』"'`.,!?…:;()[\]{}·—–-]/g, "").replace(/\s+/g, " ").trim();
+function storyMatchedQuote(body, value) {
+  const quote = storyQuote(value), a = storyComparable(body), b = storyComparable(quote);
+  return b.length >= 6 && a.includes(b) ? quote : "";
+}
+
 function storyMemory(w) {
   const saved = w.story.continuity;
   if ([1, 2].includes(saved?.version)) {
@@ -1466,15 +1477,18 @@ function storyMemoryBlock(w, sources = true) {
   }) : [];
   return `## 이야기의 책임 기록 (계획보다 우선하는 누적 기록)\n${JSON.stringify(context)}\n${legacy ? "기존 세계관에는 누적 진행 기록이 아직 없다. 아래 자료와 기존 주인공 본문에서 이어지는 목표·관계·약속·갈등·행동의 여파·진행 중인 일만 continuity.introduced에 출처 원문과 함께 복원한다. 실제 의문이나 단서일 때만 mystery로 분류한다. 모든 설정을 복선이나 해결해야 할 문제로 만들지 않는다.\n" : "기록을 최근에 열지 않았다는 이유로 빼지 않는다. 성취·좌절·포기와 과거 선택의 영향도 유지한다. legacy 유형은 원문과 이력을 보존한 이전 기록이다. 질문형으로 적혀 있어도 답을 강제하지 말고, 필요한 경우 updates.kind와 subject로 실제 내용에 맞게 분류·표현을 정리한다.\n"}${sources ? `## 기존 기록의 출처 자료 (일부 문서는 발췌이며, 언급되지 않았다는 것이 부재의 증거는 아니다)\n${JSON.stringify(excerpts)}\n` : ""}`;
 }
-function prepareStoryMemory(w, n, out, choice) {
-  const memory = storyMemory(w), data = out.continuity, fail = message => { throw new Error("이야기 진행 기록을 확인하지 못했습니다. " + message); };
-  if (!data || !Array.isArray(data.updates) || !Array.isArray(data.introduced) || !Array.isArray(data.choiceConsequences)) fail("이어지는 내용과 선택의 영향 기록이 필요합니다.");
+function prepareStoryMemory(w, n, out, choice, tolerant = false) {
+  const memory = storyMemory(w), data = out.continuity || {}, warnings = [], accepted = [], fail = message => { throw new Error("이야기 진행 기록을 확인하지 못했습니다. " + message); };
+  const recover = (fn, label) => { try { return fn(); } catch (e) { if (!tolerant) throw e; warnings.push(label + ": " + (e.message || "형식 확인 필요")); return null; } };
+  const rows = key => { if (Array.isArray(data[key])) return data[key]; if (!tolerant) fail("이어지는 내용과 선택의 영향 기록이 필요합니다."); warnings.push(({ updates: "기존 이야기", introduced: "새 이야기", choiceConsequences: "선택 결과" }[key]) + " 기록 누락: 이전 기록을 유지했습니다."); return []; };
+  const updates = rows("updates"), introduced = rows("introduced"), choices = rows("choiceConsequences");
   const body = (out.protagonistBlock?.sections || []).map(s => storyQuote(s.body)).join("\n"), sourceRows = storySources(w);
   const sources = new Map(sourceRows.map(x => [x.source, { ...x, text: storyQuote(x.text) }]));
   sources.set("current", { source: "current", title: out.title, text: body, chapter: n });
-  const evidence = value => { const q = storyQuote(value); if (q.length < 12 || !body.includes(q)) fail("변화·결과·선택의 영향을 뒷받침하는 이번 장 본문 인용이 없습니다."); return q; };
+  const evidence = value => { const q = storyMatchedQuote(body, value); if (!q) fail("변화·결과·선택의 영향을 뒷받침하는 이번 장 본문 인용이 없습니다."); return q; };
   const update = (thread, row) => {
-    const action = storyState(row.status), development = storyText(row.development), outcome = storyText(row.outcome ?? row.answer), consequence = storyText(row.consequence);
+    const action = storyState(row.status ?? row.state), outcome = storyText(row.outcome ?? row.answer ?? row.result), consequence = storyText(row.consequence);
+    const development = storyText(row.development || row.description || row.change || row.detail || row.summary) || outcome || consequence || storyText(row.evidence) || (["unchanged", "continuing"].includes(action) ? thread.development || "이전 상태를 유지한다." : "");
     if (!["unchanged", ...Object.keys(STORY_THREAD_STATES)].includes(action) || !development) fail("앞에서 시작한 내용을 이번 장에서 어떻게 이어갔는지 적어야 합니다.");
     if (row.kind !== undefined && !Object.hasOwn(STORY_THREAD_KINDS, row.kind)) fail("이야기 기록의 유형을 확인할 수 없습니다.");
     if (row.subject !== undefined && !storyText(row.subject, 400)) fail("이야기 기록의 내용을 비울 수 없습니다.");
@@ -1491,38 +1505,44 @@ function prepareStoryMemory(w, n, out, choice) {
     if (quote) thread.evidence = quote;
   };
   const seen = new Set();
-  for (const row of data.updates) {
+  for (const row of updates) recover(() => {
     const thread = memory.threads.find(t => t.id === row?.id);
     if (!thread || seen.has(row.id)) fail("기존 기록의 식별자가 없거나 중복됩니다.");
-    seen.add(row.id); update(thread, row);
+    update(thread, row); seen.add(row.id); accepted.push({ ...row, status: storyState(row.status ?? row.state) });
+  }, "기존 기록 " + (row?.id || "미지정"));
+  for (const thread of memory.threads) if (!STORY_THREAD_CLOSED.includes(thread.status) && !seen.has(thread.id)) {
+    if (!tolerant) fail("앞에서 이어지는 내용의 기록이 빠졌습니다: " + thread.subject);
+    warnings.push(`「${thread.subject}」의 이번 장 갱신을 확인하지 못해 이전 상태를 유지했습니다.`);
+    (thread.history ||= []).push({ chapter: n, status: "unchanged", development: "진행 기록 확인 보류: 이전 상태 유지", pending: true });
   }
-  for (const thread of memory.threads) if (!STORY_THREAD_CLOSED.includes(thread.status) && !seen.has(thread.id)) fail("앞에서 이어지는 내용의 기록이 빠졌습니다: " + thread.subject);
-  if (data.introduced.length > 8) fail("한 장에 지나치게 많은 새 기록이 추가되었습니다.");
-  for (const row of data.introduced) {
+  if (introduced.length > 8) { if (!tolerant) fail("한 장에 지나치게 많은 새 기록이 추가되었습니다."); warnings.push("새 기록이 많아 첫 8건만 확인했습니다."); }
+  for (const row of introduced.slice(0, 8)) recover(() => {
     const source = sources.get(row?.source), quote = storyQuote(row?.quote), subject = storyText(row?.subject ?? row?.question, 400), kind = row?.kind ?? (row?.question ? "legacy" : "");
     if (!source || quote.length < 12 || !source.text.includes(quote) || !subject || !Object.hasOwn(STORY_THREAD_KINDS, kind) || !["major", "minor"].includes(row.importance)) fail("새 기록의 유형·출처·실제 원문을 확인할 수 없습니다.");
     if (memory.threads.some(t => storyQuote(t.subject) === storyQuote(subject))) fail("같은 내용을 다른 기록으로 중복 추가할 수 없습니다.");
     const thread = { id: "t" + cyrb53(row.source + "\n" + quote + "\n" + subject).toString(36), kind, subject, importance: row.importance, status: "active", development: storyText(row.development) || "앞에서 시작한 내용", origin: { source: row.source === "current" ? "chapter:" + n : row.source, title: source.title, quote, chapter: source.chapter }, recordedAt: n, lastChapter: n, history: [] };
     if (row.status && storyState(row.status) !== "active") update(thread, row);
     memory.threads.push(thread);
-  }
-  const impacts = data.choiceConsequences.map(row => {
+  }, "새 기록 " + (row?.subject || row?.question || "미지정"));
+  const impacts = [];
+  for (const row of choices.slice(0, 6)) recover(() => {
     const detail = storyText(row?.detail, 500);
     if (!STORY_CHOICE_KINDS.includes(row?.kind) || !detail) fail("선택이 남긴 구체적인 영향이 필요합니다.");
-    return { kind: row.kind, detail, evidence: evidence(row.evidence) };
-  });
-  if (choice && !impacts.length) fail("선택한 행동이 이번 장에 남긴 영향을 기록해야 합니다.");
-  if (!choice && impacts.length) fail("사용자가 하지 않은 선택의 결과를 만들 수 없습니다.");
-  if (impacts.length > 6) fail("선택 결과 기록이 너무 많습니다.");
-  if (choice) memory.choices.push({ chapter: n, choice: choice.custom || choice.picked, consequences: impacts });
-  return { memory, record: { updates: JSON.parse(JSON.stringify(data.updates)), introduced: memory.threads.filter(t => t.recordedAt === n).map(t => t.id), choiceConsequences: impacts } };
+    const quote = evidence(row.evidence); if (!choice) fail("사용자가 하지 않은 선택의 결과를 만들 수 없습니다.");
+    impacts.push({ kind: row.kind, detail, evidence: quote });
+  }, "선택 결과");
+  if (choices.length > 6) { if (!tolerant) fail("선택 결과 기록이 너무 많습니다."); warnings.push("선택 결과 첫 6건만 확인했습니다."); }
+  if (choice && !impacts.length) { if (!tolerant) fail("선택한 행동이 이번 장에 남긴 영향을 기록해야 합니다."); warnings.push("고른 행동은 보관했지만 구체적인 결과 기록은 확인이 필요합니다."); }
+  if (choice) memory.choices.push({ chapter: n, choice: choice.custom || choice.picked, consequences: impacts, ...(!impacts.length ? { pending: true } : {}) });
+  return { memory, record: { updates: JSON.parse(JSON.stringify(accepted)), introduced: memory.threads.filter(t => t.recordedAt === n).map(t => t.id), choiceConsequences: impacts, warnings } };
+
 }
 const STORY_RESPONSIBILITY_RULES = `- 사용자 원안·지침이 약속한 장르의 경험과 중심 내용을 유지한다. 장르 이름만 보고 흔한 거대 음모·숨겨진 혈통·세계 멸망·배지 반납 같은 결말을 자동 선택하지 않는다. 그런 전개가 필요하면 앞서 확정한 사건과 선택에서 인과적으로 나와야 한다.
 - 장이 진행된다고 사건 규모나 배후의 계층을 키울 의무는 없다. 인물의 목표·관계·약속·선택의 여파·생활의 변화만으로도 전개할 수 있다. 앞에서 만든 내용을 새 사건으로 덮지 않는다.
 - 뼈대는 잠정 계획이다. 확정된 사건·사용자 선택·앞서 만든 내용과 충돌하면 남은 계획을 바꾼다. 계획을 지키려고 이미 일어난 사실을 소급 변경하지 않는다.
 - 후속 전개는 내용의 종류에 맞춘다. 목표는 시도·성취·좌절·포기, 관계는 가까워짐·멀어짐·유지, 약속은 이행·변경·불이행, 결정은 그 여파를 다룰 수 있다. 실제 의문·단서일 때만 답이나 해명을 다룬다. 모든 설정을 수수께끼나 해결 과제로 바꾸지 않고, 이름을 재등장시키는 것만으로 후속 결과를 썼다고 하지 않는다. 일상과 관계는 완결 뒤에도 자연스럽게 계속될 수 있다.
 - 선택은 접근 방법뿐 아니라 사건의 향방·관계·정보·기회·결말을 바꿀 수 있다. 성공을 보장하거나 예정된 결말로 억지 합류시키지 않는다. 다시 합류해도 이미 얻거나 잃은 것과 관계 변화는 남는다.`;
-const STORY_CONTINUITY_OUTPUT = `"continuity":{"updates":[{"id":"기존 기록 id","kind":"goal/relationship/promise/conflict/consequence/ongoing/mystery","subject":"선택: 질문형을 강요하지 않는 내용 표현","status":"unchanged/active/changed/fulfilled/failed/abandoned/continuing","development":"이어짐·변화·성취·좌절·포기·유지의 구체적 내용","outcome":"성취·좌절·포기일 때 실제 결과","consequence":"필요할 때만 후속 영향","evidence":"실제 변화·결과는 이번 protagonistBlock 본문에서 12자 이상 인용. unchanged/continuing으로 변화 없이 이어갈 때는 생략 가능"}],"introduced":[{"source":"기존 자료 source 또는 current","quote":"실제 출처에서 12자 이상 그대로 인용","kind":"goal/relationship/promise/conflict/consequence/ongoing/mystery","subject":"목표·관계·약속·갈등·행동의 여파·진행 중인 일 또는 실제 의문","importance":"major/minor","status":"active 또는 위 상태","development":"변화가 있을 때 내용","outcome":"성취·좌절·포기일 때 결과","consequence":"필요할 때만 후속 영향","evidence":"실제 변화가 있을 때 이번 장 본문 인용"}],"choiceConsequences":[{"kind":"information/relationship/time/risk/opportunity/outcome","detail":"선택이 실제로 바꾼 내용","evidence":"이번 장 본문에서 12자 이상 그대로 인용"}]}`;
+const STORY_CONTINUITY_OUTPUT = `"continuity":{"updates":[{"id":"기존 기록 id","status":"changed","development":"이어짐·변화·성취·좌절·포기·유지의 구체적 내용","outcome":"성취·좌절·포기일 때 실제 결과","consequence":"필요할 때만 후속 영향","evidence":"실제 변화·결과는 이번 protagonistBlock 본문에서 12자 이상 인용. unchanged/continuing으로 변화 없이 이어갈 때는 생략 가능"}],"introduced":[{"source":"기존 자료 source 또는 current","quote":"실제 출처에서 12자 이상 그대로 인용","kind":"ongoing","subject":"목표·관계·약속·갈등·행동의 여파·진행 중인 일 또는 실제 의문","importance":"major","status":"active","development":"변화가 있을 때 내용","outcome":"성취·좌절·포기일 때 결과","consequence":"필요할 때만 후속 영향","evidence":"실제 변화가 있을 때 이번 장 본문 인용"}],"choiceConsequences":[{"kind":"information/relationship/time/risk/opportunity/outcome","detail":"선택이 실제로 바꾼 내용","evidence":"이번 장 본문에서 12자 이상 그대로 인용"}]}`;
 
 function chapterPlanPrompt(w, nextN, choice) {
   const st = w.story, pk = st.protagonistKey, pp = S.pages[pk], pr = st.protagonist || {}, cur = curCh(w);
@@ -1541,8 +1561,8 @@ ${toneBlock(w)}${w.guide ? `## 작가 지침 (사용자 지정)\n${w.guide}\n\n`
 - 결핍이나 상처: ${pr.wound || "(정해지지 않음)"}
 ${pr.desc ? `- 사용자가 정한 특징 (최우선 제약): ${pr.desc}\n` : ""}${st.cast?.length ? `\n## 사용자가 정한 등장인물 (최우선 제약. 특징과 주인공과의 관계를 지키고, 이야기에 꾸준히 등장시킨다)\n${castText(st.cast.map(c => ({ ...c, name: w.entities[c.key]?.title || c.name })))}\n` : ""}
 ${secretsOf(w).length ? `## 숨겨진 진실 (독자에게 공개하지 않는다)
-${secretsOf(w).map(x => `- ${x.revealed ? "[이미 드러남] " : ""}${x.truth} / 드러나기 전 알려진 것: ${x.cover} / 공개 검토 계획 ${x.reveal}장`).join("\n")}
-- reveal 장 번호는 공개를 검토할 잠정 시점이며 강제 공개 기한이 아니다. 이번 장의 증거와 선택으로 실제 알게 된 경우만 revealNow에 {id, evidence}를 넣는다. evidence는 protagonistBlock 본문에서 실제로 드러나는 대목을 12자 이상 그대로 인용한다. 번호가 됐다는 이유만으로 밝혀졌다고 취급하지 않는다.
+${secretsOf(w).map(x => `- [id: ${x.id}] ${x.revealed ? "[이미 드러남] " : x.pendingDisclosure ? "[공개 여부 확인 필요] " : ""}${x.truth} / 드러나기 전 알려진 것: ${x.cover} / 공개 검토 계획 ${x.reveal}장`).join("\n")}
+- reveal 장 번호는 공개를 검토할 잠정 시점이며 강제 공개 기한이 아니다. 이번 장의 증거와 선택으로 실제 알게 된 경우만 위에 표시된 정확한 id를 사용해 revealNow에 {id, evidence}를 넣는다. 이전 장 본문에 이미 공개된 대목을 정리하는 경우 source에 해당 chapter:n 또는 page:키를 함께 쓴다. evidence는 protagonistBlock 본문에서 실제로 드러나는 대목을 12자 이상 그대로 인용한다. 번호가 됐다는 이유만으로 밝혀졌다고 취급하지 않는다.
 - 아직 드러나지 않은 답은 summary, protagonistBlock, affected, facts에 사실로 쓰지 않는다. 독자의 선택으로 조사 경로를 놓쳤다면 미공개로 남을 수 있으며 그 결과를 인정한다.
 - 아직 공개되지 않은 진실은 집필 계획이다. 이미 확정된 단서나 사실을 지키면서 사용자 선택과 사건 때문에 바꿔야 한다면 secretRevise에 id, truth, cover, reason, source, quote를 적는다. source/quote는 아래 출처 자료 또는 current의 원문이다. 이미 공개된 진실이나 앞에서 확정한 사실은 바꾸지 않는다.
 
@@ -1554,6 +1574,10 @@ ${st.chapters.map(c => `- ${c.n}장 「${c.title}」 (${c.era}): ${c.summary}${c
 
 ## 주인공 문서의 현재 내용
 ${pp ? docText(pp, w) : "(아직 작성되지 않음)"}
+
+## 이전 진행 기록에서 확인을 보류한 항목
+${JSON.stringify(st.chapters.filter(c => c.continuity?.warnings?.length).slice(-3).map(c => ({ chapter: c.n, notes: c.continuity.warnings })))}
+위 메모는 새 사실이 아니다. 기존 본문과 기록을 보고 이번 응답에서 정확한 갱신을 작성하되, 이전 상태를 근거 없이 완료 처리하지 않는다.
 
 ${storyMemoryBlock(w)}
 
@@ -1567,6 +1591,8 @@ ${choice ? `주인공의 다음 행동으로 독자가 고른 것: ${choice.cust
 ${STORY_RESPONSIBILITY_RULES}
 - 이번 장은 전체 ${N}장 중 ${nextN}장이다. ${st.spine[nextN - 1]?.beat || ""} 구간의 잠정 의도는 참고만 한다: ${st.spine[nextN - 1]?.intent || ""}. 이미 벌어진 사건과 독자의 행동에 맞지 않으면 이 장부터 인과에 맞게 진행하고 spineRevise로 이번 단계와 아직 진행하지 않은 뒤 계획도 수정한다.${last ? "" : ` 목표의 일부를 성취하거나 관계가 바뀌어도 된다. 남은 ${N - nextN}개 장은 그 변화와 선택의 여파를 다룰 수 있으므로 억지로 전개를 미루지 않는다.`}
 - 탐험 반영은 선택 사항이다. 현재 사건과 실제 인과가 있는 항목만 사용하고 wove에 적는다. 관련 없는 탐험을 끼워 넣거나 읽었다는 이유만으로 핵심 배후·만능 단서로 승격하지 않는다. 없어도 되는 경우 wove는 빈 배열이다. '직접 고침'은 확정 설정으로 지키되 장면 등장을 강제하지 않는다.
+- 기록 유형 kind는 goal, relationship, promise, conflict, consequence, ongoing, mystery 중 하나를, 중요도 importance는 major 또는 minor 중 하나를 쓴다.
+- 상태 값은 unchanged, active, changed, fulfilled, failed, abandoned, continuing 중 하나만 쓴다. 슬래시로 나열한 값을 그대로 출력하지 않는다.
 - continuity.updates에는 앞에서 이어지는 각 기록의 유지·변화·결과를 남긴다. 유형이나 표현을 정리할 때만 kind/subject를 넣고, 그대로면 생략한다. 설명용 문자열이나 null로 채우지 않는다. 최근 탐험 목록에 없더라도 빠뜨리지 않는다. unchanged는 이번 장에 변화가 없거나 다루지 않은 이유를 적고 기존 상태를 유지한다. active/changed는 실제 전개, fulfilled/failed/abandoned는 실제 결과(outcome)를 본문 인용으로 뒷받침한다. continuing은 관계·생활·여파 등이 계속됨을 기록하며 변화가 없다면 본문 인용이나 억지 장면을 만들 필요가 없다. 종류가 다른 내용을 전부 해결/미해결로 분류하지 않는다.
 - continuity.introduced에는 이후 흐름에 중요한 목표·관계·약속·갈등·행동의 여파·진행 중인 일만 출처 source/quote와 함께 기록한다. 실제로 답을 요구하는 의문·단서만 mystery다. 질문형 문장을 만들 의무는 없다. 필요 없으면 빈 배열이다. 소품·성격·배경을 모두 복선으로 만들지 않는다.
 - revealNow와 secretRevise는 이번 장에 실제 공개나 계획 수정이 없으면 빈 배열로 둔다. 임의의 id나 예시 값을 채우지 않는다.
@@ -1589,7 +1615,7 @@ ${entityIndex(w, [pk])}
 
 ## 출력
 JSON 객체 하나만 출력:
-{"title":"이 장의 작중 사건명","era":"이 장의 작중 시점","summary":"공개 줄거리 3~5문장","timeline":[{"year":"연도","event":"..."}],"protagonistBlock":{"heading":"작중 사건명","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}],"infoboxPatch":[{"label":"상태","value":"..."}],"summaryPatch":""},"affected":[{"title":"항목 제목","change":"이번 장에서 이 항목에 일어난 일 한 문장","kind":"update 또는 new"}],"newEntities":[{"title":"...","type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의"}],"wove":[{"title":"탐험 항목 제목","how":"이 항목이 이번 장 사건에서 맡은 역할 한 문장"}],"facts":[{"about":"항목 제목","fact":"..."}],"relations":[{"a":"인물 제목","b":"인물 제목","rel":"관계 이름","story":"..."}],"spineRevise":[{"n":4,"intent":"..."}],"revealNow":[{"id":"실제로 드러난 진실 id","evidence":"이번 본문에서 인용"}],"secretRevise":[{"id":"미공개 진실 id","truth":"수정한 답","cover":"현재 알려진 것","reason":"앞선 사실을 유지하며 바꾸는 이유","source":"자료 source 또는 current","quote":"근거 원문"}],${STORY_CONTINUITY_OUTPUT},"nextChoices":["...","...","..."],"ending":${last ? '{"epilogue":"결말 이후 3~5문장"}' : "null"}}`;
+{"title":"이 장의 작중 사건명","era":"이 장의 작중 시점","summary":"공개 줄거리 3~5문장","timeline":[{"year":"연도","event":"..."}],"protagonistBlock":{"heading":"작중 사건명","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}],"infoboxPatch":[{"label":"상태","value":"..."}],"summaryPatch":""},"affected":[{"title":"항목 제목","change":"이번 장에서 이 항목에 일어난 일 한 문장","kind":"update 또는 new"}],"newEntities":[{"title":"...","type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의"}],"wove":[{"title":"탐험 항목 제목","how":"이 항목이 이번 장 사건에서 맡은 역할 한 문장"}],"facts":[{"about":"항목 제목","fact":"..."}],"relations":[{"a":"인물 제목","b":"인물 제목","rel":"관계 이름","story":"..."}],"spineRevise":[{"n":4,"intent":"..."}],"revealNow":[],"secretRevise":[],${STORY_CONTINUITY_OUTPUT},"nextChoices":["...","...","..."],"ending":${last ? '{"epilogue":"결말 이후 3~5문장"}' : "null"}}`;
 }
 function chapterBlockPrompt(w, key, chs) {
   const p = S.pages[key], e = w.entities[key];
@@ -3790,7 +3816,7 @@ function openAdvance() {
 /* 장 계획을 world와 주인공 문서에 적용한다. 동기식으로 한 번에 끝내고, 새 주인공 문서를 돌려준다 */
 function applyChapter(w, n, out, choice) {
   const st = w.story, pk = st.protagonistKey, src = chSrc(n), pb = out.protagonistBlock;
-  const progress = prepareStoryMemory(w, n, out, choice);
+  const progress = prepareStoryMemory(w, n, out, choice, true);
   const before = new Set(Object.keys(w.entities));
   const prevEra = curCh(w).era || w.era;
   let era = norm(out.era || "").slice(0, 40) || prevEra;
@@ -3818,16 +3844,25 @@ function applyChapter(w, n, out, choice) {
   for (const r of (Array.isArray(out.relations) ? out.relations : []).slice(0, 12)) addRelation(w, src, r);
   for (const t of (Array.isArray(out.timeline) ? out.timeline : []).slice(0, 4)) addTimeline(w, t, src, n);
   const narrativeBody = storyQuote(pb.sections.map(s => s.body).join("\n")), sources = new Map(storySources(w).map(row => [row.source, storyQuote(row.text)])); sources.set("current", narrativeBody);
+  const warn = text => progress.record.warnings.push(text);
+  const secretFor = value => {
+    const id = typeof value === "string" ? value : value?.id || value?.secretId;
+    return secretsOf(w).find(x => x.id === id || (typeof id === "string" && storyComparable(x.truth) === storyComparable(id)));
+  };
   for (const r of (Array.isArray(out.secretRevise) ? out.secretRevise : [])) {
-    const secret = secretsOf(w).find(x => x.id === r?.id), quote = storyQuote(r?.quote);
-    if (!secret || secret.revealed || !storyText(r.truth, 300) || !storyText(r.cover, 300) || !storyText(r.reason) || quote.length < 12 || !sources.get(r.source)?.includes(quote)) throw new Error("미공개 진실의 계획 수정 근거를 확인하지 못했습니다.");
+    const secret = secretFor(r), quote = storyMatchedQuote(sources.get(r?.source) || "", r?.quote);
+    if (!secret || secret.revealed || !storyText(r?.truth, 300) || !storyText(r?.cover, 300) || !storyText(r?.reason) || !quote) { warn("미공개 진실의 계획 수정 근거가 확인되지 않아 이전 계획을 유지했습니다."); continue; }
     (secret.revisions ||= []).push({ chapter: n, truth: secret.truth, cover: secret.cover, reason: storyText(r.reason), source: r.source, quote });
     secret.truth = storyText(r.truth, 300); secret.cover = storyText(r.cover, 300);
   }
   for (const r of (Array.isArray(out.revealNow) ? out.revealNow : [])) {
-    const secret = secretsOf(w).find(x => x.id === r?.id), quote = storyQuote(r?.evidence);
-    if (!secret || quote.length < 12 || !narrativeBody.includes(quote)) throw new Error("진실이 실제로 드러난 본문 근거를 확인하지 못했습니다.");
-    if (!secret.revealed) { secret.revealed = true; secret.revealedAt = n; secret.evidence = quote; }
+    const secret = secretFor(r);
+    if (!secret) { warn("공개 표시의 비밀 ID를 확인하지 못해 상태를 바꾸지 않았습니다."); continue; }
+    if (secret.revealed) continue;
+    const source = typeof r === "object" && r.source ? sources.get(r.source) : narrativeBody;
+    const quote = storyMatchedQuote(source || "", typeof r === "object" ? r.evidence || r.quote : r) || storyMatchedQuote(narrativeBody, secret.truth);
+    if (!quote) { secret.pendingDisclosure = { chapter: n }; warn(`비밀 ${secret.id}의 공개 근거 확인이 필요합니다. 본문은 보존하고 공개 확정은 보류했습니다.`); continue; }
+    secret.revealed = true; secret.revealedAt = n; secret.evidence = quote; delete secret.pendingDisclosure;
   }
   for (const r of (Array.isArray(out.spineRevise) ? out.spineRevise : [])) {
     const s = st.spine[(+r?.n || 0) - 1]; if (!s || s.n < n || !r.intent) continue;
@@ -4455,16 +4490,20 @@ function storyCardHtml(w, n) {
   return `<section class="stcard" aria-label="이번 장 안내">${endBtn}<h3><span class="chb">${n}장</span>${esc(c.title)}</h3><p class="src">작중 ${esc(c.era)}${c.choice ? ` · 고른 행동: ${esc(c.choice.custom || c.choice.picked)}` : ""}</p>
     ${prev ? `<h4>지난 이야기 · ${prev.n}장 「${esc(prev.title)}」</h4><p>${esc(prev.summary)}</p>` : ""}
     <h4>이번 장에 엮인 탐험</h4>${wove.length ? `<p>${wove.map(x => linkHtml(w.entities[x.key].title)).join(" · ")}</p>` : `<p class="note">엮인 탐험이 없습니다. 이번 장은 뼈대대로 흘러갑니다.</p>`}
-    ${fresh.length ? `<h4>이번 장에 새로 등장</h4><p>${fresh.map(k => linkHtml(w.entities[k].title)).join(" · ")}</p>` : ""}
+    ${c.continuity?.warnings?.length ? `<p class="note">본문은 보관했습니다. 일부 진행 기록은 확인이 필요하며 이전 상태를 유지했습니다.</p>` : ""}${fresh.length ? `<h4>이번 장에 새로 등장</h4><p>${fresh.map(k => linkHtml(w.entities[k].title)).join(" · ")}</p>` : ""}
     ${aff.length ? `<h4>이번 장에 영향을 받은 문서</h4><p>${aff.map(a => linkHtml(w.entities[a.key].title)).join(" · ")}</p><p class="note" style="margin-top:4px">무엇이 바뀌었는지는 아래 ${n}장 섹션과 각 문서에서 확인할 수 있습니다. 파란 링크는 열면 이번 장의 변화를 덧붙이고, 빨간 링크는 이번 장 시점으로 새로 작성합니다.</p>` : ""}
     <div class="row" style="margin-top:10px"><button type="button" class="btn" data-act="story-card-close">안내 닫기</button></div></section>`;
+}
+function storyRecordNotes(w) {
+  const notes = w.story.chapters.filter(c => c.continuity?.warnings?.length);
+  return notes.length ? `<details class="story-record-notes"><summary>진행 기록 확인 메모 · ${notes.length}개 장</summary>${notes.map(c => `<p>${c.n}장: 본문은 보관했으며 확인하지 못한 갱신은 이전 상태를 유지했습니다.</p><ul>${c.continuity.warnings.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`).join("")}</details>` : "";
 }
 function storyMemoryHtml(w) {
   if (![1, 2].includes(w.story.continuity?.version)) return "";
   const memory = storyMemory(w);
   return `<details class="story-memory memo"><summary>이어지는 이야기와 선택의 영향 · ${memory.threads.length}건</summary><div style="padding:12px">
-    ${memory.focus ? `<p class="note">${esc(memory.focus)}</p>` : ""}<ul>${memory.threads.map(t => `<li><b>${esc(t.subject)}</b> <span class="src">· ${esc(STORY_THREAD_KINDS[t.kind] || "이전 기록")} · ${esc(STORY_THREAD_STATES[t.status] || "이어짐")}</span><p>${esc((STORY_THREAD_CLOSED.includes(t.status) ? t.outcome : "") || t.development || "")}</p>${t.consequence ? `<p>${esc(t.consequence)}</p>` : ""}<span class="src">출처: ${esc(t.origin.title || "이전 기록")} · “${esc(t.origin.quote)}”</span></li>`).join("")}</ul>
-    ${memory.choices.length ? `<h4>선택이 남긴 변화</h4><ul>${memory.choices.map(c => `<li>${c.chapter}장 · ${esc(c.choice)}<ul>${c.consequences.map(x => `<li>${esc(x.detail)}</li>`).join("")}</ul></li>`).join("")}</ul>` : ""}</div></details>`;
+    ${storyRecordNotes(w)}${memory.focus ? `<p class="note">${esc(memory.focus)}</p>` : ""}<ul>${memory.threads.map(t => `<li><b>${esc(t.subject)}</b> <span class="src">· ${esc(STORY_THREAD_KINDS[t.kind] || "이전 기록")} · ${esc(STORY_THREAD_STATES[t.status] || "이어짐")}</span><p>${esc((STORY_THREAD_CLOSED.includes(t.status) ? t.outcome : "") || t.development || "")}</p>${t.consequence ? `<p>${esc(t.consequence)}</p>` : ""}<span class="src">출처: ${esc(t.origin.title || "이전 기록")} · “${esc(t.origin.quote)}”</span></li>`).join("")}</ul>
+    ${memory.choices.length ? `<h4>선택이 남긴 변화</h4><ul>${memory.choices.map(c => `<li>${c.chapter}장 · ${esc(c.choice)}<ul>${c.consequences.map(x => `<li>${esc(x.detail)}</li>`).join("")}</ul>${c.pending ? `<span class="src">고른 행동은 보관됨 · 결과 기록 확인 필요</span>` : ""}</li>`).join("")}</ul>` : ""}</div></details>`;
 }
 function advanceHtml() {
   const w = S.world; if (!isStory(w)) return `<div class="sheet"><p class="note">스토리 모드 세계관이 아닙니다.</p></div>`;
