@@ -382,7 +382,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.37 · 2026-11-12";
+const APP_VERSION = "v6.38 · 2026-11-12";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -691,7 +691,7 @@ async function listGeminiModels() {
 }
 const LOGK = "wwiki:log";
 const LOG = (() => { try { const v = JSON.parse(localStorage.getItem(LOGK) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })();
-const KIND = { discovery: "새 대상 탐색", section: "문단 다시 쓰기", prose: "단편 쓰기", image: "이미지 생성", choices: "행동 후보", read: "문서 읽기 검사", bible: "세계관 생성", storyBible: "스토리 세계관 생성", chapterPlan: "장 계획", chapterBlock: "장 섹션", page: "문서 작성", tone: "분위기 판별", check: "설정 검사", analyze: "수정 대조", fix: "충돌 고치기" };
+const KIND = { discovery: "새 대상 탐색", section: "문단 다시 쓰기", prose: "단편 쓰기", image: "이미지 생성", choices: "행동 후보", read: "문서 읽기 검사", ageRule: "나이 규칙 해석", bible: "세계관 생성", storyBible: "스토리 세계관 생성", chapterPlan: "장 계획", chapterBlock: "장 섹션", page: "문서 작성", tone: "분위기 판별", check: "설정 검사", analyze: "수정 대조", fix: "충돌 고치기" };
 function pushLog(r) {
   LOG.push(r); if (LOG.length > 40) LOG.splice(0, LOG.length - 40);
   try { localStorage.setItem(LOGK, JSON.stringify(LOG)); } catch {}
@@ -2675,88 +2675,122 @@ function numericIssues(w, k) {
   }
   return out.slice(0, 8);
 }
-/* ---------- 나이 규칙: 핵심 규칙의 나이 범위로 출생·현역 연도를 맞춰 본다 (AI 호출 없음) ---------- */
+/* ---------- 나이 규칙: 핵심 규칙의 나이 제한으로 출생·기간 연도를 맞춰 본다 ---------- */
 /* 숫자 대조 로직(numericIssues, quoteIssues, ageRuleIssues, 성별 규칙)을 바꿀 때마다 올린다.
    문서를 열 때 p.check.numV가 이 값과 다르면 결정론 지적만 다시 계산해 바꿔 끼운다 */
-const NUMERIC_VERSION = 1;
-/* 인포박스의 현역·복무·가동 기간 ("1965년 ~ 1973년", "1965년 ~ 현재"). 기존 숫자 대조에는 넣지 않고 나이 규칙에만 쓴다 */
-function spanFacts(p) {
+const NUMERIC_VERSION = 2;
+/* 규칙 문장은 세계관마다 표현이 달라 코드로 읽지 않는다. 핵심 규칙이 바뀌었을 때만 AI가 한 번 구조로 뽑고(w.ageRules),
+   판정은 그 구조로 코드가 한다. 그래서 검사할 때마다 결과가 같다 */
+const rulesText = w => (w.rules || []).join("\n");
+function ageRulePrompt(w) {
+  return `다음은 가상 세계관의 핵심 규칙이다. 이 중 "어떤 부류의 존재가 어떤 기간(활동, 복무, 재위, 각성 상태 등)을 몇 살에 시작하거나 끝내는지"를 나이 숫자로 정한 규칙만 골라 구조로 옮겨라.
+
+## 핵심 규칙
+${(w.rules || []).map((r, i) => `R${i + 1}. ${r}`).join("\n") || "(없음)"}
+
+## 옮기는 법
+- subjects: 규칙이 적용되는 부류를 문서에서 그대로 쓰일 낱말로 1~3개(예: 전략체, 마법소녀, 엘프, 용기사). "사람", "모든 인물"처럼 누구에게나 해당하는 말은 쓰지 않는다. 그런 규칙은 넣지 않는다.
+- startMin, startMax: 그 기간을 시작할 수 있는 나이의 하한과 상한(세). 한쪽만 정해져 있으면 다른 쪽은 null. "열네 살"은 14로 바꾼다.
+- endAge: 그 기간이 끝나는 나이(세. 예: "20세를 기점으로 퇴역", "열여섯이 되면 힘을 잃는다" → 20, 16). 정해져 있지 않으면 null.
+- spanWords: 인포박스에서 이 기간을 적는 줄의 이름에 들어갈 낱말 1~6개(예: 현역, 복무, 활동, 재위, 각성, 계약).
+- 규칙에 나이 숫자가 없으면 넣지 않는다. 규칙이 말하지 않은 숫자를 짐작해 채우지 않는다.
+- 예: "엘프는 100세부터 300세 사이에 성년식을 치르고 숲의 수호자가 된다" → {"rule":"R?","subjects":["엘프"],"startMin":100,"startMax":300,"endAge":null,"spanWords":["수호자","수호","활동"]}
+- 예: "18세 이상의 기사만 서약할 수 있다" → {"rule":"R?","subjects":["기사"],"startMin":18,"startMax":null,"endAge":null,"spanWords":["서약","기사","복무"]}
+
+JSON 객체 하나만 출력: {"rules":[{"rule":"R번호","subjects":["..."],"startMin":숫자 또는 null,"startMax":숫자 또는 null,"endAge":숫자 또는 null,"spanWords":["..."]}]}
+해당하는 규칙이 없으면 rules는 빈 배열.`;
+}
+/* AI 결과에서 앞뒤가 맞는 것만 남긴다 */
+function parseAgeRules(r, w) {
+  const num = x => x === null || x === undefined || x === "" ? null : Number.isInteger(+x) && +x >= 0 && +x <= 100000 ? +x : NaN;
+  const words = (a, n) => (Array.isArray(a) ? a : []).map(x => stripMarks(String(x || "")).trim()).filter(x => x.length >= 1 && x.length <= 20).slice(0, n);
+  const out = [];
+  for (const x of (Array.isArray(r?.rules) ? r.rules : []).slice(0, 8)) {
+    const subjects = words(x?.subjects, 3), spanWords = words(x?.spanWords, 6), min = num(x?.startMin), max = num(x?.startMax), end = num(x?.endAge);
+    if (!subjects.length || !spanWords.length || [min, max, end].some(Number.isNaN) || (min === null && max === null && end === null)) continue;
+    if ((min !== null && max !== null && min > max) || (end !== null && ((max ?? min ?? 0) >= end))) continue;
+    const i = /^R(\d+)$/.exec(String(x?.rule || "").trim()), text = i && w?.rules?.[+i[1] - 1] ? stripMarks(w.rules[+i[1] - 1]) : "";
+    out.push({ subjects, min, max, end, spanWords, text });
+  }
+  return out;
+}
+/* 저장된 해석이 지금 규칙의 것일 때만 쓴다. 규칙이 바뀌었는데 아직 다시 해석하지 않았으면 나이 검사를 하지 않는다 */
+const ageRules = w => w.ageRules && w.ageRules.text === rulesText(w) ? w.ageRules.rules || [] : [];
+let ageRuleCall = null;   // 같은 규칙을 동시에 두 번 해석하지 않는다
+async function ensureAgeRules(w, opts = {}) {
+  const text = rulesText(w);
+  if (w.ageRules?.text === text) return;
+  if (!text.trim()) { w.ageRules = { text, rules: [] }; return; }
+  if (ageRuleCall?.w === w && ageRuleCall.text === text) return ageRuleCall.p;
+  const p = (async () => {
+    const r = await callJson("ageRule", ageRulePrompt(w), { modelTier: "check", ...opts }, { title: "핵심 규칙 · 나이 규칙 해석" });
+    if (rulesText(w) !== text) return;
+    w.ageRules = { text, rules: parseAgeRules(r, w) };
+    try { await Store.saveWorld(w); } catch {}
+  })();
+  ageRuleCall = { w, text, p };
+  try { await p; } finally { if (ageRuleCall?.p === p) ageRuleCall = null; }
+}
+/* 인포박스에서 규칙이 정한 기간 ("1965년 ~ 1973년", "1965년 ~ 현재"). 기존 숫자 대조에는 넣지 않고 나이 규칙에만 쓴다 */
+function spanFacts(p, spanWords) {
   for (const r of p.infobox || []) {
-    if (!/현역|복무|가동|활동|전력화|배치/.test(r.label)) continue;
+    if (!spanWords.some(x => r.label.includes(x))) continue;
     const v = stripMarks(r.value), m = /^\s*(1\d{3}|20\d{2})\s*년\s*[~～∼–—-]\s*(?:(1\d{3}|20\d{2})\s*년|현재)/.exec(v);
     if (!m || /\d{4}\s*년\s*(?:대|경|무렵|전후)/.test(v) || (m[2] && +m[2] < +m[1])) continue;
-    return { start: +m[1], end: m[2] ? +m[2] : null, line: `${r.label}: ${v}` };
+    return { start: +m[1], end: m[2] ? +m[2] : null, label: r.label.trim(), line: `${r.label}: ${v}` };
   }
   return null;
 }
-/* 핵심 규칙에서 나이 규칙을 읽는다: "X의 발현…은 14세부터 19세 사이…, 20세를 기점으로 … 퇴역" → { subject, min, max, retire }.
-   규칙은 사용자가 고칠 수 있으므로 규칙 텍스트가 바뀌면 다시 읽는다. 주체나 숫자를 못 읽은 규칙은 쓰지 않는다 */
-let ageRuleMemo = { text: null, rules: [] };
-function ageRules(w) {
-  const text = (w.rules || []).join("\n");
-  if (ageRuleMemo.text === text) return ageRuleMemo.rules;
-  const rules = [];
-  for (const r of w.rules || []) {
-    const t = stripMarks(r);
-    const sub = /^\s*([가-힣A-Za-z0-9]{2,20}?)(?:의|은|는|이|가)\s/.exec(t);
-    const rg = /(\d{1,2})\s*세\s*(?:부터|에서|~|～|∼|–|-)\s*(\d{1,2})\s*세/.exec(t);
-    if (!sub || !rg) continue;
-    const min = +rg[1], max = +rg[2]; if (!(min > 0 && min <= max)) continue;
-    const after = t.slice(rg.index + rg[0].length), rt = /(\d{1,2})\s*세[^.。]{0,12}?(?:기점|이후|부터|넘)/.exec(after);
-    const retire = rt && +rt[1] > max && /퇴역|은퇴|축소|상실|소멸|쇠퇴|약화/.test(after) ? +rt[1] : null;
-    rules.push({ subject: sub[1], min, max, retire, text: t });
-  }
-  ageRuleMemo = { text, rules };
-  return rules;
-}
 /* 이름이 다른 낱말의 일부로 들어간 경우(뉘른베르크의 베르크)는 이름으로 보지 않는다 */
 const hasName = (t, n) => { let i = -1; while ((i = t.indexOf(n, i + 1)) >= 0) if (!i || !/[\p{L}\p{N}_]/u.test(t[i - 1])) return true; return false; };
-/* 이 인물 문서(k)의 출생·현역 연도가 나이 규칙과 맞는지. 다른 기준 문서가 함께 적은 연도는 잠긴 것으로 보고 고칠 곳에서 뺀다 */
+/* 이 인물 문서(k)의 출생·기간 연도가 나이 규칙과 맞는지. 다른 기준 문서가 함께 적은 연도는 잠긴 것으로 보고 고칠 곳에서 뺀다 */
 function ageRuleIssues(w, k) {
   const p = S.pages[k], out = [];
   if (!p || p.type !== "인물") return out;
   const rules = ageRules(w); if (!rules.length) return out;
-  const birth = numFacts(p).birth, span = spanFacts(p);
-  if (!birth || !span) return out;
+  const birth = numFacts(p).birth; if (!birth) return out;
   const head = [p.summary || "", (p.categories || []).join(" "), ...(p.infobox || []).map(r => `${r.label} ${stripMarks(r.value)}`)].join("\n");
   const names = refNames(w, k), onlyAbout = onlyAboutFn(w), title = p.title;
   const lockOf = y => {   // 연도 y를 이 항목 이름과 함께 적은, 이 문서보다 기준인 다른 문서들
-    const re = new RegExp(`(^|\\D)${y}\\s*년(?!\\s*(?:대|경|무렵|전후))`), out = [];
+    const re = new RegExp(`(^|\\D)${y}\\s*년(?!\\s*(?:대|경|무렵|전후))`), found = [];
     for (const [P, q] of Object.entries(S.pages)) {
       if (P === k || !w.entities[P] || !pageIsRef(P, k)) continue;
       const sen = pageTexts(q).flatMap(sentencesOf).find(t => re.test(t) && names.some(n => hasName(t, n)) && onlyAbout(t, k) && !KIN_RE.test(t));
-      if (sen) out.push({ P, sen, y });
+      if (sen) found.push({ P, sen, y });
     }
-    return out.length ? out : null;
+    return found.length ? found : null;
   };
   const range = cs => cs.reduce((a, c) => [Math.max(a[0], c.lo), Math.min(a[1], c.hi)], [-Infinity, Infinity]);
+  const yrs = (a, b) => a === b ? `${a}년` : b === Infinity ? `${a}년 이후` : a === -Infinity ? `${b}년 이전` : `${a}~${b}년`;
   for (const R of rules) {
-    if (!head.includes(R.subject)) continue;   // 이 규칙의 주체(예: 전략체)인 인물만. 일반 군인의 복무 기간에는 적용하지 않는다
-    const b = birth.y, s = span.start, e = span.end;
-    const C = [{ v: "start", y: s, lo: s - R.max, hi: s - R.min }];
-    if (e != null && R.retire) C.push({ v: "end", y: e, lo: e - (R.retire + 1), hi: Infinity });   // 부상 등으로 일찍 퇴역할 수는 있으니 상한만 둔다
+    if (!R.subjects.some(x => head.includes(x))) continue;   // 이 규칙의 부류(예: 전략체, 마법소녀)인 인물만. 일반 군인의 복무 기간에는 적용하지 않는다
+    const span = spanFacts(p, R.spanWords); if (!span) continue;
+    const b = birth.y, s = span.start, e = span.end, nm = span.label.replace(/\s*기간$/, "");
+    const C = [];
+    if (R.min !== null || R.max !== null) C.push({ v: "start", y: s, lo: R.max !== null ? s - R.max : -Infinity, hi: R.min !== null ? s - R.min : Infinity });
+    if (e != null && R.end !== null) C.push({ v: "end", y: e, lo: e - (R.end + 1), hi: Infinity });   // 일찍 끝날 수는 있으니 상한만 둔다. 연도만으로 계산하므로 1년 여유
+    if (!C.length) continue;
     const [lo, hi] = range(C);
     if (b >= lo && b <= hi) continue;
-    const ruleTxt = `${R.subject}: ${R.min}~${R.max}세에 현역 시작${R.retire ? `, ${R.retire}세 기점 퇴역(종료 시 ${R.retire + 1}세 이하)` : ""}`;
-    const ages = `출생 ${b}년 기준 현역 시작 ${s}년은 ${s - b}세${e != null ? `, 종료 ${e}년은 ${e - b}세` : ""}`;
+    const ruleTxt = `${R.subjects[0]}: ${R.min !== null && R.max !== null ? `${R.min}~${R.max}세` : R.min !== null ? `${R.min}세 이상` : R.max !== null ? `${R.max}세 이하` : ""}${R.min !== null || R.max !== null ? `에 ${nm} 시작` : ""}${R.end !== null ? `${R.min !== null || R.max !== null ? ", " : ""}${R.end}세 기점 종료(종료 시 ${R.end + 1}세 이하)` : ""}`;
+    const ages = `출생 ${b}년 기준 ${nm} 시작 ${s}년은 ${s - b}세${e != null ? `, 종료 ${e}년은 ${e - b}세` : ""}`;
     const locks = { birth: lockOf(b), start: lockOf(s), end: e != null ? lockOf(e) : null };
     const lockTxt = Object.values(locks).filter(Boolean).flat().map(x => `「${S.pages[x.P].title}」: ${x.sen}`);
-    const evidence = [`핵심 규칙: ${R.text.slice(0, 100)}`, ...lockTxt.slice(0, 2).map(x => x.slice(0, 90))].join(" / ");   // 고칠 방법이 잘리지 않게 근거는 짧게
+    const evidence = [`핵심 규칙: ${(R.text || ruleTxt).slice(0, 100)}`, ...lockTxt.slice(0, 2).map(x => x.slice(0, 90))].join(" / ");   // 고칠 방법이 잘리지 않게 근거는 짧게
     const push = (claim, msg, severity, extra) => out.push({ claim: claim.slice(0, 300), conflict: `근거: ${evidence} · 나이 규칙: ${ages}다. 나이 규칙(${ruleTxt})과 맞지 않는다. ${msg}`.slice(0, 700), severity, by: "num", ...extra });
-    if (lo <= hi && !locks.birth) { push(birth.line, `현역 기간을 그대로 두려면 이 문서의 출생을 ${lo === hi ? lo : `${lo}~${hi}`}년 ${lo === hi ? "으로" : "사이로"} 고친다.`, "high"); continue; }
+    if (lo <= hi && !locks.birth) { push(birth.line, `${span.label}을(를) 그대로 두려면 이 문서의 출생을 ${yrs(lo, hi)}${lo === hi ? "으로" : " 사이로"} 고친다.`, "high"); continue; }
     const L = C.filter(c => locks[c.v]); if (locks.birth) L.push({ v: "birth", y: b, lo: b, hi: b });
     const [lo2, hi2] = range(L);
     if (lo2 <= hi2) {   // 잠긴 연도끼리는 맞는다: 이 문서의 잠기지 않은 연도를 고치면 풀린다
       const B = locks.birth ? b : Math.min(hi2, Math.max(lo2, b)), fix = [];
-      if (B !== b) fix.push(`출생을 ${B}년으로(기준 문서와 맞는 범위 ${lo2 === hi2 || hi2 === Infinity ? lo2 + "년" + (hi2 === Infinity ? " 이후" : "") : `${lo2}~${hi2}년`})`);
-      for (const c of C) if (!locks[c.v] && (B < c.lo || B > c.hi)) fix.push(c.v === "start" ? `현역 시작을 ${B + R.min}~${B + R.max}년 사이로` : `현역 종료를 ${B + R.retire + 1}년 이전으로`);
+      if (B !== b) fix.push(`출생을 ${B}년으로(기준 문서와 맞는 범위 ${yrs(lo2, hi2)})`);
+      for (const c of C) if (!locks[c.v] && (B < c.lo || B > c.hi)) fix.push(c.v === "start" ? `${nm} 시작을 ${yrs(R.min !== null ? B + R.min : -Infinity, R.max !== null ? B + R.max : Infinity)}${R.min !== null && R.max !== null ? " 사이로" : "로"}` : `${nm} 종료를 ${B + R.end + 1}년 이전으로`);
       push(B !== b ? birth.line : span.line, `다른 기준 문서가 정한 연도는 두고 이 문서의 ${fix.join(", ")} 고친다.`, "high");
       continue;
     }
     /* 잠긴 연도끼리도 맞지 않는다: 이 문서로는 풀 수 없으니 잠근 문서 중 가장 늦게 쓴(직접 수정하지 않은) 문서로 넘긴다 */
-    const cand = L.filter(c => c.v !== "birth" || locks.birth).flatMap(c => locks[c.v]).filter(x => !S.pages[x.P].editedAt)
-      .sort((a, z) => (S.pages[z.P].createdAt || 0) - (S.pages[a.P].createdAt || 0));
-    const t = cand[0], lockedYears = L.map(c => `${{ birth: "출생", start: "현역 시작", end: "현역 종료" }[c.v]} ${c.y}년`).join(", ");
+    const cand = L.flatMap(c => locks[c.v]).filter(x => !S.pages[x.P].editedAt).sort((a, z) => (S.pages[z.P].createdAt || 0) - (S.pages[a.P].createdAt || 0));
+    const t = cand[0], lockedYears = L.map(c => `${{ birth: "출생", start: nm + " 시작", end: nm + " 종료" }[c.v]} ${c.y}년`).join(", ");
     push(span.line, t ? `기준 문서가 정한 ${lockedYears}끼리 맞지 않아 이 문서만으로는 고칠 수 없다. 고칠 쪽은 「${S.pages[t.P].title}」 문서다.` : `직접 수정한 문서가 정한 ${lockedYears}끼리 맞지 않아 자동으로 고칠 곳을 정할 수 없다.`, "low",
       t ? { target: t.P, targetOld: t.sen.slice(0, 300), targetClaim: `나이 규칙(${ruleTxt})으로는 「${title}」의 ${lockedYears}을(를) 함께 맞출 수 없다(이 서술의 ${t.y}년에 ${t.y - b}세). 이 서술의 연도나 내용을 고친다.` } : {});
   }
@@ -2821,10 +2855,11 @@ function refreshNumeric(w, k) {
 /* 두 검사(설정 대조, 문서 읽기)를 동시에 돌려 결과를 합친다. 하나가 실패해도 다른 하나의 결과는 쓴다 */
 async function runChecks(w, k, opts, label) {
   const p = S.pages[k];
-  const rs = await Promise.allSettled([
+  const [ar, ...rs] = await Promise.allSettled([
+    ensureAgeRules(w, opts),   // 핵심 규칙이 바뀌었을 때만 AI를 부른다. 실패하면 나이 검사만 건너뛴다
     callJson("check", checkPrompt(w, k), { modelTier: "check", ...opts }, { title: label }),
     callJson("read", readPrompt(w, k), { modelTier: "check", ...opts }, { title: label })]);
-  if (rs.some(r => r.status === "rejected" && r.reason?.code === "cancelled")) throw { code: "cancelled" };
+  if ([ar, ...rs].some(r => r.status === "rejected" && r.reason?.code === "cancelled")) throw { code: "cancelled" };
   const num = detIssues(w, k);
   if (rs.every(r => r.status === "rejected") && !num.length) throw rs[0].reason;   // AI 검사가 모두 실패해도 숫자 대조 결과는 쓴다
   return mergeIssues([...num, ...rs.filter(r => r.status === "fulfilled").flatMap(r => parseIssues(r.value))]);

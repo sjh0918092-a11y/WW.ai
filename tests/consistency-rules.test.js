@@ -9,12 +9,14 @@ c.nameOwner=(w,t)=>{const ks=Object.keys(w.entities).filter(k=>w.entities[k].tit
 c.live=x=>!x.sup;c.factLine=f=>f.t;c.chOf=()=>0;
 vm.createContext(c);
 vm.runInContext(cut('/* ---------- 인용 대조','/* 두 검사(설정 대조')+'\n'+cut('const refOK =','/* ---------- 스토리 모드: 상태')+`
-Object.assign(globalThis,{numericIssues,numFacts,spanFacts,ageRules,ageRuleIssues,autoFixList,routeAutoConflicts,refreshNumeric,entityBrief,NUMERIC_VERSION});`,c);
+Object.assign(globalThis,{numericIssues,numFacts,spanFacts,ageRules,parseAgeRules,ageRulePrompt,ageRuleIssues,autoFixList,routeAutoConflicts,refreshNumeric,entityBrief,NUMERIC_VERSION});`,c);
 let n=0;const test=(name,fn)=>{fn();console.log(`  ✓ ${++n}. ${name}`);};
 const R4='전략체의 발현과 군사적 최전성기는 14세부터 19세 사이의 사춘기에 국한되며, 성인이 되는 20세를 기점으로 능력과 체격이 서서히 통상 인간으로 축소·퇴역한다.';
 const page=(title,type,o={})=>({title,type,summary:o.summary||'',categories:o.categories||[],infobox:o.infobox||[],sections:o.body?[{heading:'개요',body:o.body}]:[],links:[],createdAt:o.createdAt||1,...(o.editedAt?{editedAt:o.editedAt}:{})});
-/* pages: {키: 문서}. 세계관 항목은 문서에서 만든다 */
-const world=(pages,rules=[R4],extra={})=>{c.S.pages=pages;const entities={};for(const [k,p] of Object.entries(pages))entities[k]={title:p.title,type:p.type,facts:[],mentions:[]};Object.assign(entities,extra);return {era:'2016년',rules,entities};};
+/* AI가 핵심 규칙을 해석해 돌려줄 구조 (규칙이 바뀔 때만 한 번 부른다) */
+const AI_R4={rules:[{rule:'R1',subjects:['전략체'],startMin:14,startMax:19,endAge:20,spanWords:['현역','복무','활동']}]};
+/* pages: {키: 문서}. 세계관 항목은 문서에서 만든다. w.ageRules는 그 규칙 텍스트로 저장된 해석이다 */
+const world=(pages,rules=[R4],ai=AI_R4)=>{c.S.pages=pages;const entities={};for(const [k,p] of Object.entries(pages))entities[k]={title:p.title,type:p.type,facts:[],mentions:[]};const w={era:'2016년',rules,entities};w.ageRules={text:rules.join('\n'),rules:c.parseAgeRules(ai,w)};return w;};
 const box=o=>Object.entries(o).map(([label,value])=>({label,value}));
 
 test('해결할 수 없는 나이 규칙 충돌은 먼저 쓴 문서로 넘기고 자동 수정에서 뺀다',()=>{
@@ -44,9 +46,12 @@ test('규칙의 주체가 아닌 인물(일반 군인의 복무 기간)에는 �
   const w=world({p:page('갑 장군','인물',{summary:'미국 육군의 장군',infobox:box({'출생':'1914년','복무 기간':'1936년 ~ 1972년'})})});
   assert.equal(c.ageRuleIssues(w,'p').length,0);
 });
-test('규칙에서 나이 숫자를 읽지 못하면 검사 전체를 건너뛴다',()=>{
-  const w=world({p:page('컬럼비아 3호','인물',{summary:'미국의 전략체',infobox:box({'출생':'1950년','현역 기간':'1968년 ~ 1973년'})})},['전략체의 발현은 사춘기에 국한되며 성인이 되면 서서히 퇴역한다.']);
+test('규칙에서 나이 규칙을 찾지 못했거나 규칙이 바뀐 뒤 아직 해석하지 않았으면 건너뛴다',()=>{
+  const p=()=>page('컬럼비아 3호','인물',{summary:'미국의 전략체',infobox:box({'출생':'1950년','현역 기간':'1968년 ~ 1973년'})});
+  let w=world({p:p()},['전략체의 발현은 사춘기에 국한되며 성인이 되면 서서히 퇴역한다.'],{rules:[]});
   assert.equal(c.ageRules(w).length,0);assert.equal(c.ageRuleIssues(w,'p').length,0);
+  w=world({p:p()});assert.equal(c.ageRuleIssues(w,'p').length,1);
+  w.rules=[R4+' (수정)'];assert.equal(c.ageRuleIssues(w,'p').length,0,'옛 규칙의 해석은 쓰지 않는다');
 });
 test('"현재"와 "이래"가 든 문장의 연도를 창설 연도로 보지 않는다',()=>{
   const w=world({o:page('국제생체무기사찰단','조직',{infobox:box({'설립일':'1975년 1월 1일'}),body:'2016년 겨울 현재 국제생체무기사찰단은 창설 이래 가장 심각한 외교적 교착에 빠져 있다.'})});
@@ -61,8 +66,28 @@ test('다른 낱말 속 이름 토막(뉘른베르크의 베르크)을 다른 �
 test('"출생년도" 라벨을 출생 연도로 읽고, 범위 값은 기존 숫자 대조에 넣지 않는다',()=>{
   const f=c.numFacts({infobox:box({'출생년도':'1953년','현역 기간':'1965년 ~ 1973년'})});
   assert.equal(f.birth.y,1953);assert.equal(Object.keys(f).length,1);
-  assert.deepEqual(JSON.parse(JSON.stringify(c.spanFacts({infobox:box({'현역 기간':'1965년 ~ 현재'})}))),{start:1965,end:null,line:'현역 기간: 1965년 ~ 현재'});
-  const r=c.ageRules({rules:[R4]});assert.equal(r.length,1);assert.deepEqual([r[0].subject,r[0].min,r[0].max,r[0].retire],['전략체',14,19,20]);
+  assert.deepEqual(JSON.parse(JSON.stringify(c.spanFacts({infobox:box({'현역 기간':'1965년 ~ 현재'})},['현역']))),{start:1965,end:null,label:'현역 기간',line:'현역 기간: 1965년 ~ 현재'});
+  assert.equal(c.spanFacts({infobox:box({'재위 기간':'1965년 ~ 1973년'})},['현역']),null);
+});
+test('AI 해석 결과에서 앞뒤가 맞지 않는 규칙은 버린다',()=>{
+  const w={rules:[R4]};
+  const r=c.parseAgeRules({rules:[AI_R4.rules[0],{rule:'R1',subjects:[],startMin:1,startMax:2,endAge:null,spanWords:['활동']},{rule:'R1',subjects:['갑'],startMin:19,startMax:14,endAge:null,spanWords:['활동']},{rule:'R1',subjects:['갑'],startMin:'열넷',startMax:null,endAge:null,spanWords:['활동']},{rule:'R1',subjects:['갑'],startMin:null,startMax:null,endAge:null,spanWords:['활동']},{rule:'R1',subjects:['갑'],startMin:14,startMax:19,endAge:18,spanWords:['활동']},{rule:'R1',subjects:['갑'],startMin:14,startMax:19,endAge:null,spanWords:[]}]},w);
+  assert.equal(r.length,1);assert.deepEqual([r[0].subjects,r[0].min,r[0].max,r[0].end],[['전략체'],14,19,20]);assert.equal(r[0].text,R4);
+  assert.equal(c.parseAgeRules(null,w).length,0);assert.equal(c.parseAgeRules({rules:'없음'},w).length,0);
+  const pr=c.ageRulePrompt({rules:[R4,'둘째 규칙']});assert(pr.includes('R1. '+R4));assert(pr.includes('R2. 둘째 규칙'));
+});
+test('장르와 표현이 달라도 해석된 구조로 같은 판정을 한다 (마법소녀, 엘프, 하한만 있는 규칙)',()=>{
+  const girl={rules:[{rule:'R1',subjects:['마법소녀'],startMin:10,startMax:15,endAge:16,spanWords:['활동']}]};
+  const rg=['마법소녀는 열 살에서 열다섯 살 사이에 각성하며, 열여섯이 되면 힘을 서서히 잃는다.'];
+  let w=world({p:page('갑 소녀','인물',{categories:['마법소녀'],infobox:box({'출생':'2000년','활동 기간':'2012년 ~ 2018년'})})},rg,girl);
+  let is=c.ageRuleIssues(w,'p');assert.equal(is.length,1);assert(is[0].conflict.includes('출생을 2001~2002년 사이로'),is[0].conflict);
+  w=world({p:page('갑 소녀','인물',{categories:['마법소녀'],infobox:box({'출생':'2001년','활동 기간':'2012년 ~ 2017년'})})},rg,girl);assert.equal(c.ageRuleIssues(w,'p').length,0);
+  const elf={rules:[{rule:'R1',subjects:['엘프'],startMin:100,startMax:300,endAge:null,spanWords:['수호']}]};
+  w=world({p:page('을 엘프','인물',{summary:'숲의 엘프',infobox:box({'출생':'1900년','수호 기간':'1950년 ~ 현재'})})},['엘프는 100세부터 300세 사이에 숲의 수호자가 된다.'],elf);
+  is=c.ageRuleIssues(w,'p');assert.equal(is.length,1);assert(is[0].conflict.includes('1650~1850년'),is[0].conflict);
+  const knight={rules:[{rule:'R1',subjects:['기사'],startMin:18,startMax:null,endAge:null,spanWords:['서약']}]};
+  w=world({p:page('병 기사','인물',{summary:'왕국의 기사',infobox:box({'출생':'1960년','서약 기간':'1970년 ~ 1990년'})})},['18세 이상의 기사만 서약할 수 있다.'],knight);
+  is=c.ageRuleIssues(w,'p');assert.equal(is.length,1);assert(is[0].conflict.includes('1952년 이전'),is[0].conflict);
 });
 test('검사 맥락은 검사할 문서와 연도가 겹치는 오래된 사실을 남기고, focus가 없으면 예전처럼 최신 6개다',()=>{
   const facts=[{t:'갑은 1931년 전사했다.',src:'a'},...Array.from({length:9},(_,i)=>({t:`갑의 일화 ${i+1}`,src:'a'}))];
