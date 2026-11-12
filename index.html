@@ -382,7 +382,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.36 · 2026-11-12";
+const APP_VERSION = "v6.37 · 2026-11-12";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1250,9 +1250,29 @@ function canonBlock(w) {
 /* 검사의 기준: 검사하는 문서(p)보다 먼저 정해진 설정만. 원안·사용자 지정·이야기 장 줄거리·직접 수정한 문서는 언제나 기준이다.
    나중에 쓴 문서가 정한 설정과 어긋나면, 고칠 쪽은 그 나중 문서이므로 그쪽 검사에서 잡힌다 */
 const refOK = (src, p) => { if (!src || src === "seed" || src === "user" || chOf(src) || !p) return true; const q = S.pages[src]; if (!q) return true; return !!q.editedAt || (q.createdAt || 0) <= (p.createdAt || 0); };
-function entityBrief(w, k, excludeSrc, okSrc) {
+/* 검사할 문서(focus)와 관련된 것부터 n개 고른다. focus가 없으면 예전처럼 최신 n개.
+   점수: focus의 연도와 겹침 > focus에 나온 다른 항목 이름과 겹침 > 생사·소속·연도가 든 사실. 동점이면 오래된 것(기준)부터 */
+let focusMemo = null;
+function focusInfo(w, focus) {
+  if (focusMemo && focusMemo.w === w && focusMemo.focus === focus) return focusMemo;
+  const years = new Set([...String(focus).matchAll(/(^|\D)(1\d{3}|20\d{2})(?!\d)/g)].map(m => m[2]));
+  const names = [];   // [항목 키, 이름]
+  for (const [x, o] of Object.entries(w.entities)) for (const n of namesOf(o.title)) if (focus.includes(n)) names.push([x, n]);
+  return (focusMemo = { w, focus, years, names });
+}
+function pickRelevant(w, self, items, textOf, n, focus) {
+  if (!focus) return items.slice(-n);
+  const fi = focusInfo(w, focus), others = fi.names.filter(([x]) => x !== self).map(([, n]) => n);
+  const score = t => {
+    const ys = [...String(t).matchAll(/(^|\D)(1\d{3}|20\d{2})(?!\d)/g)].map(m => m[2]);
+    return (ys.some(y => fi.years.has(y)) ? 4 : 0) + (others.some(x => t.includes(x)) ? 2 : 0) + (ys.length || /사망|전사|숨[지졌]|죽[었은]|생존|살아|소속|입대|가입|탈퇴|퇴역|은퇴/.test(t) ? 1 : 0);
+  };
+  const top = new Set(items.map((x, i) => ({ i, s: score(textOf(x)) })).sort((a, b) => b.s - a.s || a.i - b.i).slice(0, n).map(x => x.i));
+  return items.filter((_, i) => top.has(i));   // 고른 것은 원래 순서대로 보여 준다
+}
+function entityBrief(w, k, excludeSrc, okSrc, focus) {
   const o = w.entities[k];
-  const facts = o.facts.filter(f => f.src !== excludeSrc && live(f) && (!okSrc || okSrc(f.src))).slice(-6).map(f => "- " + factLine(f)).join("\n");
+  const facts = pickRelevant(w, k, o.facts.filter(f => f.src !== excludeSrc && live(f) && (!okSrc || okSrc(f.src))), f => f.t, 6, focus).map(f => "- " + factLine(f)).join("\n");
   const own = !okSrc || !S.pages[k] || okSrc(k);   // 그 항목의 문서가 나중에 쓰였으면 그 문서의 정의와 인포박스는 기준에서 뺀다
   const summary = own ? o.summary : (o.stub?.summary || ""), box = own ? o.box : "";
   return `### 「${o.title}」${o.type ? " · " + o.type : ""}${summary ? " — " + summary : ""}${box ? "\n정보: " + box : ""}${facts ? "\n" + facts : ""}`;
@@ -1328,7 +1348,7 @@ function patchInfobox(box, patch) {
   }
   return out;
 }
-const PAGE_KEEP = ["createdAt", "rewrittenAt", "direction", "editedAt", "fixedAt", "stale", "conflicts", "pending", "baseAsOf", "syncedTo", "storyNotice", "portrait", "shortStories"];
+const PAGE_KEEP = ["createdAt", "rewrittenAt", "direction", "editedAt", "fixedAt", "stale", "conflicts", "autoConflicts", "pending", "baseAsOf", "syncedTo", "storyNotice", "portrait", "shortStories"];
 /* 기존 본문은 그대로 두고 섹션을 덧붙인 새 문서 객체. 링크, 언급, 사실은 integrate가 다시 계산한다 */
 function rebuildPage(w, k, p, addSecs, extra = {}) {
   autoLink(w, k, { sections: addSecs, infobox: [] });
@@ -1944,11 +1964,11 @@ facts에는 이 문서가 링크한 항목 중 중요한 것(인물, 조직, 사
 }
 /* 제목의 표기들: "白頭(백두)"는 "白頭"와 "백두"로도 찾는다 */
 const namesOf = t => { const m = String(t).match(/^(.+?)\((.+)\)$/); return [t, ...(m ? [m[1].trim(), m[2].trim()] : [])].filter(x => x.length >= 2); };
-function checkBrief(w, k, key) {
+function checkBrief(w, k, key, focus) {
   const o = w.entities[k], p = S.pages[key], ok = src => refOK(src, p);
-  const ms = o.mentions.filter(m => m.from !== key && live(m) && ok(m.from)).slice(-2).map(m => `- 「${w.entities[m.from]?.title || "?"}」의 서술: ${m.text}`);
-  const rs = relationsOf(w, k).filter(x => x.src !== key && live(x) && ok(x.src)).slice(-3).map(x => "- 관계: " + relLine(w, x));
-  return [entityBrief(w, k, key, ok), ...ms, ...rs].join("\n");
+  const ms = pickRelevant(w, k, o.mentions.filter(m => m.from !== key && live(m) && ok(m.from)), m => m.text, 2, focus).map(m => `- 「${w.entities[m.from]?.title || "?"}」의 서술: ${m.text}`);
+  const rs = pickRelevant(w, k, relationsOf(w, k).filter(x => x.src !== key && live(x) && ok(x.src)), x => relLine(w, x), 3, focus).map(x => "- 관계: " + relLine(w, x));
+  return [entityBrief(w, k, key, ok, focus), ...ms, ...rs].join("\n");
 }
 /* 문서 안에서 두 곳 이상에 나오는 대상(항목 이름, 연도)과 그 위치. 검사 모델이 무엇을 맞춰 볼지 고르지 않아도 되게 앱이 먼저 짚어 준다 */
 function crossRefs(w, p) {
@@ -1989,7 +2009,8 @@ function checkPrompt(w, key) {
   const named = Object.entries(w.entities).filter(([x, o]) => x !== key && !base.includes(x) && namesOf(o.title).some(n => plain.includes(n)))
     .sort((a, b) => (b[1].page ? 1 : 0) - (a[1].page ? 1 : 0)).slice(0, 8).map(([x]) => x);   // 링크 없이 이름만 나온 항목도 대조한다
   const keys = [...base, ...named];
-  const ctx = keys.map(k => checkBrief(w, k, key)).join("\n\n");
+  const focus = docForCheck(p);   // 검사할 문서와 관련된 사실부터 넣는다. 최신순으로 자르면 기준이 되는 오래된 사실이 먼저 빠진다
+  const ctx = keys.map(k => checkBrief(w, k, key, focus)).join("\n\n");
   const ok = src => refOK(src, p);
   const own = [...w.entities[key].facts.filter(f => f.src !== key && live(f) && ok(f.src)).map(f => "- " + factLine(f)), ...w.entities[key].mentions.filter(m => m.from !== key && live(m) && ok(m.from)).map(m => `- 「${w.entities[m.from]?.title || "?"}」의 서술: ${m.text}`), ...relationsOf(w, key).filter(x => x.src !== key && live(x) && ok(x.src)).map(x => "- 관계: " + relLine(w, x))].join("\n");
   return `다음 위키 문서가 세계관의 확정 설정과 어긋나는지 검사하라. 문서 안의 앞뒤 모순은 다른 검사가 따로 보므로 여기서는 보지 않는다. 단순히 새로 추가된 정보나 해석의 차이는 문제 삼지 마라. 문체, 어투, 표현 방식은 지적하지 않는다.
@@ -2175,13 +2196,13 @@ async function mergeEntities(w, pairs) {
     }
   }
   for (const [k, p] of Object.entries(S.pages)) {
-    const before = JSON.stringify([p.sections, p.infobox, p.notices, p.links, p.conflicts]);
+    const before = JSON.stringify([p.sections, p.infobox, p.notices, p.links, p.conflicts, p.autoConflicts]);
     for (const sec of p.sections) sec.body = cleanLinks(w, sec.body);
     for (const r of p.infobox || []) r.value = cleanLinks(w, r.value);
     p.notices = (p.notices || []).map(x => cleanLinks(w, x));
     p.links = [...new Set((p.links || []).map(re))].filter(x => x !== k);
-    for (const c of p.conflicts || []) c.by = re(c.by);
-    if (JSON.stringify([p.sections, p.infobox, p.notices, p.links, p.conflicts]) !== before) saved.add(k);
+    for (const c of [...(p.conflicts || []), ...(p.autoConflicts || [])]) c.by = re(c.by);
+    if (JSON.stringify([p.sections, p.infobox, p.notices, p.links, p.conflicts, p.autoConflicts]) !== before) saved.add(k);
   }
   S.recent = [...new Set(S.recent.map(re))].filter(x => w.entities[x]);
   try {
@@ -2517,8 +2538,8 @@ function quoteIssues(w, k) {
     if (x === k) continue;
     for (const o of quotesOf(p)) for (const q of mine) {
       if (!o.day || o.day !== q.day || !(o.speaker.includes(q.speaker) || q.speaker.includes(o.speaker)) || sameText(o.text, q.text)) continue;
-      if (ref(p, here)) out.push({ claim: q.text.slice(0, 300), conflict: `근거: 「${p.title}」에 먼저 기록된 같은 자리의 말: "${o.text.slice(0, 160)}" — ${o.by} · 인용 대조: 같은 사람이 같은 날 한 말이 문서마다 다르다. 이 문서의 인용을 「${p.title}」의 인용과 글자 그대로 맞추거나, 인용을 빼고 간접 서술로 바꾼다.`.slice(0, 500), severity: "high" });
-      else out.push({ claim: q.text.slice(0, 300), conflict: `근거: 「${p.title}」의 같은 자리 인용: "${o.text.slice(0, 160)}" — ${o.by} · 인용 대조: 같은 사람이 같은 날 한 말이 문서마다 다르다. 이 문서가 기준이므로 고칠 쪽은 「${p.title}」 문서다.`.slice(0, 500), severity: "low" });
+      if (ref(p, here)) out.push({ claim: q.text.slice(0, 300), conflict: `근거: 「${p.title}」에 먼저 기록된 같은 자리의 말: "${o.text.slice(0, 160)}" — ${o.by} · 인용 대조: 같은 사람이 같은 날 한 말이 문서마다 다르다. 이 문서의 인용을 「${p.title}」의 인용과 글자 그대로 맞추거나, 인용을 빼고 간접 서술로 바꾼다.`.slice(0, 500), severity: "high", by: "num" });
+      else out.push({ claim: q.text.slice(0, 300), conflict: `근거: 「${p.title}」의 같은 자리 인용: "${o.text.slice(0, 160)}" — ${o.by} · 인용 대조: 같은 사람이 같은 날 한 말이 문서마다 다르다. 이 문서가 기준이므로 고칠 쪽은 「${p.title}」 문서다.`.slice(0, 500), severity: "low", by: "num", target: x, targetOld: o.text.slice(0, 300) });
     }
   }
   return out.slice(0, 4);
@@ -2549,7 +2570,7 @@ function numFacts(p) {
     if (!ys.length || /\d{4}\s*년\s*(?:대|경|무렵|전후|이전|이후|부터|까지)/.test(v)) continue;
     if (/^생몰(?:년|연도)?$/.test(r.label.trim())) { f.birth ||= { y: ys[0], line }; if (ys[1]) f.death ||= { y: ys[1], line }; continue; }
     if (ys.length !== 1 || approximateYears(v)) continue;
-    for (const K of NUM_KINDS) if (new RegExp(`^(?:(?:최초|공식|정식|실제|최종)\\s*)?(?:${K.label.source})(?:\\s*(?:일자|연도|시기|시점|일|년))?$`).test(r.label.trim()) && !f[K.kind]) f[K.kind] = { y: ys[0], line };
+    for (const K of NUM_KINDS) if (new RegExp(`^(?:(?:최초|공식|정식|실제|최종)\\s*)?(?:${K.label.source})(?:\\s*(?:일자|연도|년도|시기|시점|일|년))?$`).test(r.label.trim()) && !f[K.kind]) f[K.kind] = { y: ys[0], line };
   }
   return f;
 }
@@ -2565,7 +2586,7 @@ function pageTexts(p) {
 /* 이름이 목적어·수식어로 언급된 문장은 제외한다. 명시적 주어 또는 '이름의 사건 연도'만 허용한다.
    복합절/다른 주어/소유자/비교/부정/근사 표현은 기계적으로 귀속할 수 없어 보류한다. */
 function numericSubject(sen, names, K) {
-  if (approximateYears(sen) || /(?:않|아니|못했|이전|이후|무렵|전후|보다|달리|반면|비해|라는|다는|하던|했던|되어야|되면|한다면)/.test(sen)) return false;
+  if (approximateYears(sen) || /(?:않|아니|못했|이전|이후|무렵|전후|이래|현재|보다|달리|반면|비해|라는|다는|하던|했던|되어야|되면|한다면)/.test(sen)) return false;
   for (const name of names) {
     let start = -1;
     while ((start = sen.indexOf(name, start + 1)) >= 0) {
@@ -2583,21 +2604,27 @@ function numericSubject(sen, names, K) {
   }
   return false;
 }
+/* 어느 쪽이 기준인가: 한쪽만 직접 수정했으면 그쪽, 아니면 먼저 쓴 문서. true면 문서 A가 문서 B보다 기준 */
+function pageIsRef(A, B) {
+  if (A === B) return true;
+  const a = S.pages[A], b = S.pages[B];
+  if (!!a.editedAt !== !!b.editedAt) return !!a.editedAt;
+  return (a.createdAt || 0) <= (b.createdAt || 0);
+}
+const KIN_RE = /아버지|어머니|부친|모친|부모|아내|남편|배우자|형제|자매|형이|형은|동생|아들|딸|자녀|손자|조부|할아버지|할머니|삼촌|이모|고모|가족|연인|약혼/;
+/* 다른 항목 이름이 함께 나오면 누구 이야기인지 알 수 없어 비교하지 않는다 */
+function onlyAboutFn(w) {
+  const named = Object.keys(w.entities).filter(x => S.pages[x] || w.entities[x].type === "인물").map(x => [x, refNames(w, x)]);
+  return (sen, E) => named.every(([x, ns]) => x === E || !ns.some(n => sen.includes(n)));
+}
 /* 이 문서(k)와 관련된 숫자 모순. 이 문서가 다른 항목을 다르게 적었거나(high), 다른 문서가 이 항목을 다르게 적었거나(low), 이 문서 안에서 다르다(high) */
 function numericIssues(w, k) {
   const out = [], seen = new Set(), here = S.pages[k]; if (!here) return out;
-  const push = (claim, evidence, conflict, severity) => { const key = claim + "|" + evidence; if (seen.has(key)) return; seen.add(key); out.push({ claim: claim.slice(0, 300), conflict: `근거: ${evidence.slice(0, 200)} · 숫자 대조: ${conflict}`.slice(0, 400), severity }); };
+  /* target: 고칠 쪽이 다른 문서일 때 그 문서 키, targetOld: 그 문서에서 고칠 서술 */
+  const push = (claim, evidence, conflict, severity, target, targetOld) => { const key = claim + "|" + evidence; if (seen.has(key)) return; seen.add(key); out.push({ claim: claim.slice(0, 300), conflict: `근거: ${evidence.slice(0, 200)} · 숫자 대조: ${conflict}`.slice(0, 400), severity, by: "num", ...(target ? { target, targetOld: String(targetOld).slice(0, 300) } : {}) }); };
   const eraY = yearNum(w.era);
-  const KIN = /아버지|어머니|부친|모친|부모|아내|남편|배우자|형제|자매|형이|형은|동생|아들|딸|자녀|손자|조부|할아버지|할머니|삼촌|이모|고모|가족|연인|약혼/;
-  const named = Object.keys(w.entities).filter(x => S.pages[x] || w.entities[x].type === "인물").map(x => [x, refNames(w, x)]);
-  const onlyAbout = (sen, E) => named.every(([x, ns]) => x === E || !ns.some(n => sen.includes(n)));   // 다른 항목 이름이 함께 나오면 누구 이야기인지 알 수 없어 비교하지 않는다
-  /* 어느 쪽이 기준인가: 한쪽만 직접 수정했으면 그쪽, 아니면 먼저 쓴 문서. true면 항목 E의 인포박스가 기준 */
-  const eIsRef = (P, E) => {
-    if (P === E) return true;
-    const e = S.pages[E], q = S.pages[P];
-    if (!!e.editedAt !== !!q.editedAt) return !!e.editedAt;
-    return (e.createdAt || 0) <= (q.createdAt || 0);
-  };
+  const KIN = KIN_RE, onlyAbout = onlyAboutFn(w);
+  const eIsRef = (P, E) => pageIsRef(E, P);   // true면 항목 E의 인포박스가 기준
   const compare = (P, E) => {   // 문서 P의 문장들을 항목 E의 인포박스 기준값과 비교한다
     const pe = S.pages[E]; if (!pe) return;
     const ref = eIsRef(P, E), why = P === E ? "" : ref ? (pe.editedAt && !S.pages[P].editedAt ? "직접 수정한 " : "먼저 쓴 ") : (S.pages[P].editedAt && !pe.editedAt ? "직접 수정한 " : "먼저 쓴 ");
@@ -2615,10 +2642,10 @@ function numericIssues(w, k) {
           const pt = S.pages[P].title;
           if (ref) {   // 항목 문서의 인포박스가 기준: 다르게 적은 P가 고칠 쪽
             if (P === k) push(sen, `${why}${who} 인포박스 ${base.line}`, `「${pe.title}」의 ${K.name} 연도가 ${ys[0]}년으로 적혀 있지만 ${why}${who} 인포박스에는 ${base.y}년이다. 이 문서를 그에 맞춘다.`, "high");
-            else push(base.line, `「${pt}」의 서술: ${sen}`, `「${pt}」 문서가 이 항목의 ${K.name} 연도를 ${ys[0]}년으로 적었다. 이 문서가 기준이므로 고칠 쪽은 「${pt}」 문서다.`, "low");
+            else push(base.line, `「${pt}」의 서술: ${sen}`, `「${pt}」 문서가 이 항목의 ${K.name} 연도를 ${ys[0]}년으로 적었다. 이 문서가 기준이므로 고칠 쪽은 「${pt}」 문서다.`, "low", P, sen);
           } else {     // 먼저 쓴(또는 직접 수정한) P가 기준: 항목 문서 E의 인포박스가 고칠 쪽
             if (E === k) push(base.line, `${why}「${pt}」 문서: ${sen}`, `${why}「${pt}」 문서가 이 항목의 ${K.name} 연도를 ${ys[0]}년으로 확정했는데 이 문서 인포박스는 ${base.y}년이다. 이 문서의 인포박스와 그와 얽힌 서술을 ${ys[0]}년에 맞춘다.`, "high");
-            else push(sen, `「${pe.title}」 인포박스 ${base.line}`, `「${pe.title}」 문서가 ${K.name} 연도를 ${base.y}년으로 적었지만 ${why}이 문서가 기준이므로 고칠 쪽은 「${pe.title}」 문서다.`, "low");
+            else push(sen, `「${pe.title}」 인포박스 ${base.line}`, `「${pe.title}」 문서가 ${K.name} 연도를 ${base.y}년으로 적었지만 ${why}이 문서가 기준이므로 고칠 쪽은 「${pe.title}」 문서다.`, "low", E, base.line);
           }
         }
       }
@@ -2629,10 +2656,10 @@ function numericIssues(w, k) {
           const pt = S.pages[P].title, lines = `${f.birth.line} / ${f.death.line}`;
           if (ref) {
             if (P === k) push(sen, `${why}「${pe.title}」 인포박스 ${lines}`, `사망 나이가 ${a}세로 적혀 있지만 ${why}「${pe.title}」 인포박스의 출생·사망 연도로 계산하면 ${d - 1}~${d}세다. 이 문서를 그에 맞춘다.`, "high");
-            else push(f.death.line, `「${pt}」의 서술: ${sen}`, `「${pt}」 문서가 사망 나이를 ${a}세로 적었지만 이 문서의 연도로 계산하면 ${d - 1}~${d}세다. 이 문서가 기준이므로 고칠 쪽은 「${pt}」 문서다.`, "low");
+            else push(f.death.line, `「${pt}」의 서술: ${sen}`, `「${pt}」 문서가 사망 나이를 ${a}세로 적었지만 이 문서의 연도로 계산하면 ${d - 1}~${d}세다. 이 문서가 기준이므로 고칠 쪽은 「${pt}」 문서다.`, "low", P, sen);
           } else {
             if (E === k) push(f.death.line, `${why}「${pt}」 문서: ${sen}`, `${why}「${pt}」 문서가 사망 나이를 ${a}세로 확정했는데 이 문서의 출생·사망 연도로는 ${d - 1}~${d}세다. 이 문서의 연도를 그 나이에 맞춘다.`, "high");
-            else push(sen, `「${pe.title}」 인포박스 ${lines}`, `「${pe.title}」 문서의 연도로 계산하면 ${d - 1}~${d}세지만 ${why}이 문서가 기준이므로 고칠 쪽은 「${pe.title}」 문서다.`, "low");
+            else push(sen, `「${pe.title}」 인포박스 ${lines}`, `「${pe.title}」 문서의 연도로 계산하면 ${d - 1}~${d}세지만 ${why}이 문서가 기준이므로 고칠 쪽은 「${pe.title}」 문서다.`, "low", E, f.death.line);
           }
         }
       }
@@ -2648,6 +2675,149 @@ function numericIssues(w, k) {
   }
   return out.slice(0, 8);
 }
+/* ---------- 나이 규칙: 핵심 규칙의 나이 범위로 출생·현역 연도를 맞춰 본다 (AI 호출 없음) ---------- */
+/* 숫자 대조 로직(numericIssues, quoteIssues, ageRuleIssues, 성별 규칙)을 바꿀 때마다 올린다.
+   문서를 열 때 p.check.numV가 이 값과 다르면 결정론 지적만 다시 계산해 바꿔 끼운다 */
+const NUMERIC_VERSION = 1;
+/* 인포박스의 현역·복무·가동 기간 ("1965년 ~ 1973년", "1965년 ~ 현재"). 기존 숫자 대조에는 넣지 않고 나이 규칙에만 쓴다 */
+function spanFacts(p) {
+  for (const r of p.infobox || []) {
+    if (!/현역|복무|가동|활동|전력화|배치/.test(r.label)) continue;
+    const v = stripMarks(r.value), m = /^\s*(1\d{3}|20\d{2})\s*년\s*[~～∼–—-]\s*(?:(1\d{3}|20\d{2})\s*년|현재)/.exec(v);
+    if (!m || /\d{4}\s*년\s*(?:대|경|무렵|전후)/.test(v) || (m[2] && +m[2] < +m[1])) continue;
+    return { start: +m[1], end: m[2] ? +m[2] : null, line: `${r.label}: ${v}` };
+  }
+  return null;
+}
+/* 핵심 규칙에서 나이 규칙을 읽는다: "X의 발현…은 14세부터 19세 사이…, 20세를 기점으로 … 퇴역" → { subject, min, max, retire }.
+   규칙은 사용자가 고칠 수 있으므로 규칙 텍스트가 바뀌면 다시 읽는다. 주체나 숫자를 못 읽은 규칙은 쓰지 않는다 */
+let ageRuleMemo = { text: null, rules: [] };
+function ageRules(w) {
+  const text = (w.rules || []).join("\n");
+  if (ageRuleMemo.text === text) return ageRuleMemo.rules;
+  const rules = [];
+  for (const r of w.rules || []) {
+    const t = stripMarks(r);
+    const sub = /^\s*([가-힣A-Za-z0-9]{2,20}?)(?:의|은|는|이|가)\s/.exec(t);
+    const rg = /(\d{1,2})\s*세\s*(?:부터|에서|~|～|∼|–|-)\s*(\d{1,2})\s*세/.exec(t);
+    if (!sub || !rg) continue;
+    const min = +rg[1], max = +rg[2]; if (!(min > 0 && min <= max)) continue;
+    const after = t.slice(rg.index + rg[0].length), rt = /(\d{1,2})\s*세[^.。]{0,12}?(?:기점|이후|부터|넘)/.exec(after);
+    const retire = rt && +rt[1] > max && /퇴역|은퇴|축소|상실|소멸|쇠퇴|약화/.test(after) ? +rt[1] : null;
+    rules.push({ subject: sub[1], min, max, retire, text: t });
+  }
+  ageRuleMemo = { text, rules };
+  return rules;
+}
+/* 이름이 다른 낱말의 일부로 들어간 경우(뉘른베르크의 베르크)는 이름으로 보지 않는다 */
+const hasName = (t, n) => { let i = -1; while ((i = t.indexOf(n, i + 1)) >= 0) if (!i || !/[\p{L}\p{N}_]/u.test(t[i - 1])) return true; return false; };
+/* 이 인물 문서(k)의 출생·현역 연도가 나이 규칙과 맞는지. 다른 기준 문서가 함께 적은 연도는 잠긴 것으로 보고 고칠 곳에서 뺀다 */
+function ageRuleIssues(w, k) {
+  const p = S.pages[k], out = [];
+  if (!p || p.type !== "인물") return out;
+  const rules = ageRules(w); if (!rules.length) return out;
+  const birth = numFacts(p).birth, span = spanFacts(p);
+  if (!birth || !span) return out;
+  const head = [p.summary || "", (p.categories || []).join(" "), ...(p.infobox || []).map(r => `${r.label} ${stripMarks(r.value)}`)].join("\n");
+  const names = refNames(w, k), onlyAbout = onlyAboutFn(w), title = p.title;
+  const lockOf = y => {   // 연도 y를 이 항목 이름과 함께 적은, 이 문서보다 기준인 다른 문서들
+    const re = new RegExp(`(^|\\D)${y}\\s*년(?!\\s*(?:대|경|무렵|전후))`), out = [];
+    for (const [P, q] of Object.entries(S.pages)) {
+      if (P === k || !w.entities[P] || !pageIsRef(P, k)) continue;
+      const sen = pageTexts(q).flatMap(sentencesOf).find(t => re.test(t) && names.some(n => hasName(t, n)) && onlyAbout(t, k) && !KIN_RE.test(t));
+      if (sen) out.push({ P, sen, y });
+    }
+    return out.length ? out : null;
+  };
+  const range = cs => cs.reduce((a, c) => [Math.max(a[0], c.lo), Math.min(a[1], c.hi)], [-Infinity, Infinity]);
+  for (const R of rules) {
+    if (!head.includes(R.subject)) continue;   // 이 규칙의 주체(예: 전략체)인 인물만. 일반 군인의 복무 기간에는 적용하지 않는다
+    const b = birth.y, s = span.start, e = span.end;
+    const C = [{ v: "start", y: s, lo: s - R.max, hi: s - R.min }];
+    if (e != null && R.retire) C.push({ v: "end", y: e, lo: e - (R.retire + 1), hi: Infinity });   // 부상 등으로 일찍 퇴역할 수는 있으니 상한만 둔다
+    const [lo, hi] = range(C);
+    if (b >= lo && b <= hi) continue;
+    const ruleTxt = `${R.subject}: ${R.min}~${R.max}세에 현역 시작${R.retire ? `, ${R.retire}세 기점 퇴역(종료 시 ${R.retire + 1}세 이하)` : ""}`;
+    const ages = `출생 ${b}년 기준 현역 시작 ${s}년은 ${s - b}세${e != null ? `, 종료 ${e}년은 ${e - b}세` : ""}`;
+    const locks = { birth: lockOf(b), start: lockOf(s), end: e != null ? lockOf(e) : null };
+    const lockTxt = Object.values(locks).filter(Boolean).flat().map(x => `「${S.pages[x.P].title}」: ${x.sen}`);
+    const evidence = [`핵심 규칙: ${R.text.slice(0, 100)}`, ...lockTxt.slice(0, 2).map(x => x.slice(0, 90))].join(" / ");   // 고칠 방법이 잘리지 않게 근거는 짧게
+    const push = (claim, msg, severity, extra) => out.push({ claim: claim.slice(0, 300), conflict: `근거: ${evidence} · 나이 규칙: ${ages}다. 나이 규칙(${ruleTxt})과 맞지 않는다. ${msg}`.slice(0, 700), severity, by: "num", ...extra });
+    if (lo <= hi && !locks.birth) { push(birth.line, `현역 기간을 그대로 두려면 이 문서의 출생을 ${lo === hi ? lo : `${lo}~${hi}`}년 ${lo === hi ? "으로" : "사이로"} 고친다.`, "high"); continue; }
+    const L = C.filter(c => locks[c.v]); if (locks.birth) L.push({ v: "birth", y: b, lo: b, hi: b });
+    const [lo2, hi2] = range(L);
+    if (lo2 <= hi2) {   // 잠긴 연도끼리는 맞는다: 이 문서의 잠기지 않은 연도를 고치면 풀린다
+      const B = locks.birth ? b : Math.min(hi2, Math.max(lo2, b)), fix = [];
+      if (B !== b) fix.push(`출생을 ${B}년으로(기준 문서와 맞는 범위 ${lo2 === hi2 || hi2 === Infinity ? lo2 + "년" + (hi2 === Infinity ? " 이후" : "") : `${lo2}~${hi2}년`})`);
+      for (const c of C) if (!locks[c.v] && (B < c.lo || B > c.hi)) fix.push(c.v === "start" ? `현역 시작을 ${B + R.min}~${B + R.max}년 사이로` : `현역 종료를 ${B + R.retire + 1}년 이전으로`);
+      push(B !== b ? birth.line : span.line, `다른 기준 문서가 정한 연도는 두고 이 문서의 ${fix.join(", ")} 고친다.`, "high");
+      continue;
+    }
+    /* 잠긴 연도끼리도 맞지 않는다: 이 문서로는 풀 수 없으니 잠근 문서 중 가장 늦게 쓴(직접 수정하지 않은) 문서로 넘긴다 */
+    const cand = L.filter(c => c.v !== "birth" || locks.birth).flatMap(c => locks[c.v]).filter(x => !S.pages[x.P].editedAt)
+      .sort((a, z) => (S.pages[z.P].createdAt || 0) - (S.pages[a.P].createdAt || 0));
+    const t = cand[0], lockedYears = L.map(c => `${{ birth: "출생", start: "현역 시작", end: "현역 종료" }[c.v]} ${c.y}년`).join(", ");
+    push(span.line, t ? `기준 문서가 정한 ${lockedYears}끼리 맞지 않아 이 문서만으로는 고칠 수 없다. 고칠 쪽은 「${S.pages[t.P].title}」 문서다.` : `직접 수정한 문서가 정한 ${lockedYears}끼리 맞지 않아 자동으로 고칠 곳을 정할 수 없다.`, "low",
+      t ? { target: t.P, targetOld: t.sen.slice(0, 300), targetClaim: `나이 규칙(${ruleTxt})으로는 「${title}」의 ${lockedYears}을(를) 함께 맞출 수 없다(이 서술의 ${t.y}년에 ${t.y - b}세). 이 서술의 연도나 내용을 고친다.` } : {});
+  }
+  return out;
+}
+/* 인물 문서 인포박스에 성별이 없으면 채우게 한다 */
+function genderIssues(w, k) {
+  const p0 = S.pages[k];
+  if (!p0 || p0.type !== "인물" || (p0.infobox || []).some(r => /성별/.test(r.label))) return [];
+  return [{ claim: (p0.infobox || [])[0] ? `${p0.infobox[0].label}: ${p0.infobox[0].value}` : p0.summary || p0.title, conflict: "근거: 인물 문서 규칙 · 인포박스에 '성별' 줄이 없다. 본문의 서술과 대명사에 맞는 성별(남성, 여성, 설정상 필요하면 그 밖의 표현)을 '성별: …' 줄로 인포박스에 더한다.", severity: "high", by: "num" }];
+}
+/* 결정론 지적 전부 (숫자 대조 → 나이 규칙 → 인용 대조 → 성별 규칙). 하나가 실패해도 나머지는 쓴다 */
+function detIssues(w, k) {
+  let num = [];
+  for (const [name, fn] of [["숫자 대조", numericIssues], ["나이 규칙", ageRuleIssues], ["인용 대조", quoteIssues], ["성별 규칙", genderIssues]]) {
+    try { num = num.concat(fn(w, k)); } catch (e) { console.warn(`[${name}]`, e); }
+  }
+  return num.map(i => ({ ...i, by: "num" }));
+}
+/* 결정론 지적인가. 옛 저장 데이터에는 by 표시가 없으므로 conflict 문구로 알아본다 */
+const isNumIssue = i => i.by === "num" || /· (?:숫자 대조|인용 대조|나이 규칙):/.test(i.conflict || "") || /^근거: 인물 문서 규칙 ·/.test(i.conflict || "");
+/* 같은 서술에 대한 지적은 하나로 합치고, 다듬을 곳을 앞에 둔다 */
+function mergeIssues(list) {
+  const all = [], seen = new Map(), keyOfClaim = c => stripMarks(c).replace(/\s+/g, "").slice(0, 40);
+  for (const i of list) {
+    const ck = keyOfClaim(i.claim), prev = seen.get(ck);
+    if (prev) { if (i.severity === "high") prev.severity = "high"; if (!prev.conflict.includes(i.conflict)) prev.conflict = (prev.conflict + " / " + i.conflict).slice(0, 500); continue; }
+    seen.set(ck, i); all.push(i);
+  }
+  all.sort((a, b) => (b.severity === "high") - (a.severity === "high"));
+  return all.slice(0, 10);
+}
+/* 작성 직후 자동으로 고칠 지적: 다듬을 곳 중 고칠 대상이 이 문서인 것만. 다른 문서가 고칠 대상이면 이 문서를 고쳐도 풀리지 않고 다른 서술만 망가진다 */
+const autoFixList = (issues, k) => issues.filter(i => i.severity === "high" && (!i.target || i.target === k));
+/* 다른 문서가 고칠 대상인 지적을 그 문서의 autoConflicts에 단다. 이 문서(k)를 다시 검사해 더 이상 나오지 않는 지적은 지운다.
+   p.conflicts는 직접 수정한 문서가 낸 것만 남기므로(cleanAiSupersede) 따로 둔다. 바뀐 문서 키들을 돌려준다 */
+function routeAutoConflicts(w, k, issues) {
+  const changed = new Set(), now = new Map(), byTitle = w.entities[k]?.title || S.pages[k]?.title || "?";
+  for (const i of issues) {
+    const T = i.target && i.target !== k && S.pages[i.target]; if (!T) continue;
+    const old = i.targetOld || i.claim;
+    (now.get(i.target) || now.set(i.target, new Set()).get(i.target)).add(old);
+    T.autoConflicts ||= [];
+    if (T.autoConflicts.some(c => c.by === k && c.old === old) || T.autoConflicts.length >= 20) continue;
+    T.autoConflicts.push({ by: k, byTitle, old, claim: String(i.targetClaim || i.claim).slice(0, 400), at: Date.now() });
+    changed.add(i.target);
+  }
+  for (const [x, T] of Object.entries(S.pages)) {
+    if (x === k || !T.autoConflicts?.some(c => c.by === k)) continue;
+    const keep = T.autoConflicts.filter(c => c.by !== k || now.get(x)?.has(c.old));
+    if (keep.length !== T.autoConflicts.length) { T.autoConflicts = keep; changed.add(x); }
+  }
+  return [...changed];
+}
+/* 옛 버전 숫자 대조가 낸 결과를 지금 로직으로 바꿔 끼운다. AI 지적은 그대로 둔다. 갱신했으면 autoConflicts가 바뀐 문서 키들을, 아니면 null */
+function refreshNumeric(w, k) {
+  const p = S.pages[k]; if (!p?.check || p.check.numV === NUMERIC_VERSION) return null;
+  const fresh = detIssues(w, k);
+  p.check = { ...p.check, issues: mergeIssues([...fresh, ...(p.check.issues || []).filter(i => !isNumIssue(i))]), numV: NUMERIC_VERSION };
+  return routeAutoConflicts(w, k, fresh);
+}
 /* 두 검사(설정 대조, 문서 읽기)를 동시에 돌려 결과를 합친다. 하나가 실패해도 다른 하나의 결과는 쓴다 */
 async function runChecks(w, k, opts, label) {
   const p = S.pages[k];
@@ -2655,19 +2825,19 @@ async function runChecks(w, k, opts, label) {
     callJson("check", checkPrompt(w, k), { modelTier: "check", ...opts }, { title: label }),
     callJson("read", readPrompt(w, k), { modelTier: "check", ...opts }, { title: label })]);
   if (rs.some(r => r.status === "rejected" && r.reason?.code === "cancelled")) throw { code: "cancelled" };
-  let num = []; try { num = numericIssues(w, k); } catch (e) { console.warn("[숫자 대조]", e); }
-  try { num = num.concat(quoteIssues(w, k)); } catch (e) { console.warn("[인용 대조]", e); }
-  { const p0 = S.pages[k];   // 인물 문서 인포박스에 성별이 없으면 채우게 한다
-    if (p0 && p0.type === "인물" && !(p0.infobox || []).some(r => /성별/.test(r.label))) num.push({ claim: (p0.infobox || [])[0] ? `${p0.infobox[0].label}: ${p0.infobox[0].value}` : p0.summary || p0.title, conflict: "근거: 인물 문서 규칙 · 인포박스에 '성별' 줄이 없다. 본문의 서술과 대명사에 맞는 성별(남성, 여성, 설정상 필요하면 그 밖의 표현)을 '성별: …' 줄로 인포박스에 더한다.", severity: "high" }); }
+  const num = detIssues(w, k);
   if (rs.every(r => r.status === "rejected") && !num.length) throw rs[0].reason;   // AI 검사가 모두 실패해도 숫자 대조 결과는 쓴다
-  const all = [], seen = new Map(), keyOfClaim = c => stripMarks(c).replace(/\s+/g, "").slice(0, 40);
-  for (const i of [...num, ...rs.filter(r => r.status === "fulfilled").flatMap(r => parseIssues(r.value))]) {
-    const ck = keyOfClaim(i.claim), prev = seen.get(ck);
-    if (prev) { if (i.severity === "high") prev.severity = "high"; if (!prev.conflict.includes(i.conflict)) prev.conflict = (prev.conflict + " / " + i.conflict).slice(0, 500); continue; }
-    seen.set(ck, i); all.push(i);
-  }
-  all.sort((a, b) => (b.severity === "high") - (a.severity === "high"));
-  return all.slice(0, 10);
+  return mergeIssues([...num, ...rs.filter(r => r.status === "fulfilled").flatMap(r => parseIssues(r.value))]);
+}
+/* 다른 문서에 단 자동 대조 표시를 저장한다 */
+function saveRouted(w, keys) { for (const x of keys || []) if (S.pages[x]) Store.savePage(w.id, S.pages[x]).catch(() => {}); }
+/* 문서를 열 때: 옛 버전 숫자 대조 결과면 결정론 지적만 다시 계산해 저장한다 (AI 호출 없음) */
+function refreshOnOpen(k) {
+  const w = S.world, p = w && S.pages[k];
+  if (!p?.check || p.check.numV === NUMERIC_VERSION || S.checking === k || (S.gen && S.gen.key === k) || isHeld(k)) return;
+  let routed = null;
+  try { routed = refreshNumeric(w, k); } catch (e) { console.warn("[숫자 대조 갱신]", e); p.check.numV = NUMERIC_VERSION; }
+  Store.savePage(w.id, p).catch(() => {}); saveRouted(w, routed);
 }
 function parseIssues(r) {
   return (Array.isArray(r?.issues) ? r.issues : []).filter(i => i && i.claim && (i.evidence || i.conflict)).slice(0, 8)   // 근거 없는 지적은 버린다
@@ -2680,8 +2850,9 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
   show ||= () => { if (S.view.name === "article" && S.view.key === k) renderMain(); else renderSide(); };
   try {
     g.phase = "check"; show();
-    const issues = await runChecks(w, k, { signal: g.ctl.signal }, page.title + label), high = issues.filter(i => i.severity === "high");
-    page.check = { at: Date.now(), issues, auto: true }; res.done = true;
+    const issues = await runChecks(w, k, { signal: g.ctl.signal }, page.title + label), high = autoFixList(issues, k);
+    page.check = { at: Date.now(), issues, auto: true, numV: NUMERIC_VERSION }; res.done = true;
+    if (S.world === w && S.pages[k] === page) saveRouted(w, routeAutoConflicts(w, k, issues));
     if (!high.length || S.world !== w || S.pages[k] !== page) return res;
     g.phase = "fix"; g.nFix = high.length; show();
     const f = pageToSource(w, page);
@@ -2706,8 +2877,8 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
       np = integrate(w, k, out);
     } catch { restoreRewrite(w, backup); return res; }
     for (const x of PAGE_KEEP) if (page[x] !== undefined) np[x] = page[x];
-    const keep = [...high.filter((_, i) => !fixedMemo.has(i + 1)), ...issues.filter(i => i.severity !== "high")];
-    np.check = { at: Date.now(), issues: keep, auto: true }; np.autoFixed = { at: Date.now(), n: fixedMemo.size };
+    const keep = [...high.filter((_, i) => !fixedMemo.has(i + 1)), ...issues.filter(i => !high.includes(i))];
+    np.check = { at: Date.now(), issues: keep, auto: true, numV: NUMERIC_VERSION }; np.autoFixed = { at: Date.now(), n: fixedMemo.size };
     cleanupOrphans(w, k);
     S.pages[k] = np; Object.assign(res, { page: np, fixed: fixedMemo.size, keep });
   } catch (err) { /* 건너뛰었거나 실패: 작성된 문서를 그대로 보여 주며 자동 재검사를 예약하지 않는다 */ }
@@ -2723,7 +2894,8 @@ async function checkPage(k) {
   try {
     const issues = await runChecks(w, k, {}, p.title);
     if (S.pages[k] === p) {   // 검사하는 동안 문서가 바뀌었으면(장 반영 등) 옛 문서를 저장하지 않는다
-      p.check = { at: Date.now(), issues, auto: false };
+      p.check = { at: Date.now(), issues, auto: false, numV: NUMERIC_VERSION };
+      saveRouted(w, routeAutoConflicts(w, k, issues));
       try { await Store.savePage(w.id, p); } catch (err) { toast("검사 결과를 저장하지 못했습니다. " + errMsg(err)); }
     }
   } catch (err) { toast(errMsg(err)); }
@@ -2857,12 +3029,13 @@ ${f.body}
 JSON 객체 하나만 출력:
 {"edits":[{"memo":1,"field":"summary, cats, infobox, body 중 하나","old":"원문 그대로의 일부","new":"고친 내용"}],"note":"전체적으로 무엇을 고쳤는지 한 문장"}`;
 }
-/* 다른 문서의 직접 수정과 어긋난 서술(p.conflicts)을 AI로 고친다. 직접 수정한 쪽이 기준이다 */
-function openConflictFix(k) {
-  const p = S.pages[k]; if (!p?.conflicts?.length) return;
+/* 다른 문서와 어긋난 서술을 AI로 고친다. field가 "conflicts"면 다른 문서의 직접 수정(그쪽이 기준),
+   "autoConflicts"면 자동 대조가 이 문서를 고칠 대상으로 정한 지적이다 */
+function openConflictFix(k, field = "conflicts") {
+  const p = S.pages[k], list = p?.[field]; if (!list?.length) return;
   if (S.gen && S.gen.key === k) { toast("이 문서를 작성하는 중입니다."); return; }
-  const items = p.conflicts.map(c => ({ claim: c.old, conflict: `「${c.byTitle}」 문서를 사용자가 직접 수정해 이렇게 확정했다: ${c.claim}. 이 확정 내용에 맞게 이 문서의 해당 서술과 그와 얽힌 서술을 고친다.`, severity: "high" }));
-  S.fixv = { key: k, items, sel: new Set(items.map((_, i) => i)), phase: "pick", edits: [], note: "", err: "", skipped: 0, fromConflicts: true };
+  const items = list.map(c => ({ claim: c.old, conflict: field === "autoConflicts" ? `「${c.byTitle}」 문서의 설정과 맞추려면 이 문서의 이 서술을 고쳐야 한다: ${c.claim}` : `「${c.byTitle}」 문서를 사용자가 직접 수정해 이렇게 확정했다: ${c.claim}. 이 확정 내용에 맞게 이 문서의 해당 서술과 그와 얽힌 서술을 고친다.`, severity: "high" }));
+  S.fixv = { key: k, items, sel: new Set(items.map((_, i) => i)), phase: "pick", edits: [], note: "", err: "", skipped: 0, fromConflicts: field };
   S.view = { name: "fix", key: k }; renderAll(); window.scrollTo({ top: 0 });
   runFixBatch();
 }
@@ -2919,8 +3092,8 @@ async function applyFix() {
     for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === k) delete w.navboxes[id];
     page = integrate(w, k, out);
   } catch (err) { restoreRewrite(w, backup); toast("저장하지 못했습니다. " + errMsg(err)); return; }
-  if (v.fromConflicts) { const done = new Set(v.edits.filter(e => e.on).map(e => e.n)); old.conflicts = (old.conflicts || []).filter((_, i) => !done.has(i)); }   // 고친 충돌 표시는 지운다
-  Object.assign(page, { createdAt: old.createdAt, rewrittenAt: old.rewrittenAt, direction: old.direction, editedAt: old.editedAt, fixedAt: Date.now(), stale: false, conflicts: old.conflicts, pending: old.pending, check: null, baseAsOf: old.baseAsOf, syncedTo: old.syncedTo, storyNotice: old.storyNotice });
+  if (v.fromConflicts) { const fld = v.fromConflicts === true ? "conflicts" : v.fromConflicts, done = new Set(v.edits.filter(e => e.on).map(e => e.n)); old[fld] = (old[fld] || []).filter((_, i) => !done.has(i)); }   // 고친 충돌 표시는 지운다
+  Object.assign(page, { createdAt: old.createdAt, rewrittenAt: old.rewrittenAt, direction: old.direction, editedAt: old.editedAt, fixedAt: Date.now(), stale: false, conflicts: old.conflicts, autoConflicts: old.autoConflicts, pending: old.pending, check: null, baseAsOf: old.baseAsOf, syncedTo: old.syncedTo, storyNotice: old.storyNotice });
   cleanupOrphans(w, k);
   S.pages[k] = page; S.fixv = null; S.memo = null;
   S.view = { name: "article", key: k }; renderAll(); window.scrollTo({ top: 0 });
@@ -4198,7 +4371,7 @@ function renderMain(force) {
   else if (S.view.name === "compose") m.innerHTML = composeHtml(S.view.key);
   else if (S.view.name === "advance") m.innerHTML = advanceHtml();
   else if (S.view.name === "epilogue") m.innerHTML = epilogueHtml();
-  else m.innerHTML = articleHtml(S.view.key);
+  else { refreshOnOpen(S.view.key); m.innerHTML = articleHtml(S.view.key); }
   document.querySelectorAll("textarea.die-v").forEach(fitDie);
   if (S.view.name === "canon" && S.focusEnt) { const d = document.getElementById("ent-" + S.focusEnt); if (d) { d.open = true; d.scrollIntoView({ block: "center" }); } S.focusEnt = null; }
 }
@@ -4317,7 +4490,7 @@ function articleHtml(k) {
   const hi = (chk?.issues || []).filter(i => i.severity === "high"), lo = (chk?.issues || []).filter(i => i.severity !== "high");   // 편집자 메모는 설정 충돌만 다룬다
   S.memo = { k, items: [...hi, ...lo] };
   const fixBtn = n => `<button type="button" class="btn memo-fix" data-fix="${n}" data-fixk="${k}" ${S.fixing || (S.gen && S.gen.key === k) || !S.sample ? "disabled" : ""}>${S.fixing && S.fixing.key === k && S.fixing.i === n ? "고치는 중…" : "고치기"}</button>`;
-  const item = (i, n, cls) => `<li class="${cls}">${esc(i.claim)}${i.conflict ? `<span class="memo-why">${esc(i.conflict)}</span>` : ""}${fixBtn(n)}</li>`;
+  const item = (i, n, cls) => `<li class="${cls}">${esc(i.claim)}${i.conflict ? `<span class="memo-why">${esc(i.conflict)}</span>` : ""}${i.target && i.target !== k ? "" : fixBtn(n)}</li>`;   // 다른 문서가 고칠 대상이면 이 문서의 고치기 버튼은 두지 않는다
   const chkHtml = S.bgSync === k ? `<p class="memo-line"><span class="dot"></span>확정 사실을 정리하는 중</p>` : S.checking === k ? `<p class="memo-line"><span class="dot"></span>설정 노트와 맞춰 보는 중 <span class="src" id="chkTick"></span></p>`
     : (hi.length || lo.length) ? `<details class="memo"${hi.length ? " open" : ""}><summary><span class="memo-dot${hi.length ? " on" : ""}"></span>편집자 메모${hi.length ? ` · 다듬을 곳 ${hi.length}` : ""}${lo.length ? ` · 참고 ${lo.length}` : ""}${chk ? `<span class="src">${fmtDate(chk.at)}</span>` : ""}</summary><ul>${hi.map((i, n) => item(i, n, "")).join("")}${lo.map((i, n) => item(i, hi.length + n, "lo")).join("")}</ul>${hi.length + lo.length > 1 ? `<div class="memo-foot"><button type="button" class="btn" data-act="fixv-open" ${S.gen && S.gen.key === k ? "disabled" : ""}>여러 곳 한꺼번에 교정하기</button></div>` : ""}</details>`
     : chk ? `<p class="memo-line">설정 노트와 맞춰 봤습니다 <span class="src">${fmtDate(chk.at)}</span></p>` : "";
@@ -4342,6 +4515,10 @@ function articleHtml(k) {
     ${p.conflicts?.length ? `<div class="banner warn"><b>「${esc(p.conflicts[0].byTitle)}」${p.conflicts.some(c => c.byTitle !== p.conflicts[0].byTitle) ? " 등" : ""} 문서가 직접 수정되어, 이 문서의 서술 ${p.conflicts.length}곳이 설정과 맞지 않습니다.</b>
       <ul>${p.conflicts.map(c => `<li>${esc(c.old)} <span class="src">→ ${linkHtml(c.byTitle)}: ${esc(c.claim)}</span></li>`).join("")}</ul>
       <div class="row" style="margin-top:4px"><button type="button" class="btn pri" data-cfix="${k}" ${S.gen || S.fixing || !S.sample ? "disabled" : ""}>AI로 고치기</button><button type="button" class="btn" data-edit="${k}">편집해서 고치기</button><button type="button" class="btn" data-rw="${k}" ${S.gen || !S.sample ? "disabled" : ""}>다시 쓰기</button><button type="button" class="btn" data-dismiss="${k}" data-field="conflicts">표시 지우기</button></div></div>` : ""}
+    ${(() => { const ac = (p.autoConflicts || []).filter(c => w.entities[c.by]); if (!ac.length) return "";   // 자동 대조가 이 문서를 고칠 대상으로 정한 지적
+      return `<div class="banner warn"><b>「${esc(ac[0].byTitle)}」${ac.some(c => c.byTitle !== ac[0].byTitle) ? " 등" : ""} 문서와 맞지 않는 서술 ${ac.length}곳 (자동 대조)</b>
+      <ul>${ac.map(c => `<li>${esc(c.old)} <span class="src">→ ${linkHtml(c.byTitle)}: ${esc(c.claim)}</span></li>`).join("")}</ul>
+      <div class="row" style="margin-top:4px"><button type="button" class="btn pri" data-cfix="${k}" data-cfield="autoConflicts" ${S.gen || S.fixing || !S.sample ? "disabled" : ""}>AI로 고치기</button><button type="button" class="btn" data-edit="${k}">편집해서 고치기</button><button type="button" class="btn" data-dismiss="${k}" data-field="autoConflicts">표시 지우기</button></div></div>`; })()}
     ${p.pending?.length ? `<div class="banner warn"><b>이 문서의 수정 내용이 직접 정한 설정과 충돌한 채 저장되었습니다.</b>
       <ul>${p.pending.map(c => `<li><span class="sev">${esc(c.label)}</span>${esc(c.old)} <span class="src">↔ 수정본: ${esc(c.claim)}</span></li>`).join("")}</ul>
       <div class="row" style="margin-top:4px"><button type="button" class="btn" data-edit="${k}">편집</button><button type="button" class="btn" data-act="canon">설정 노트 열기</button><button type="button" class="btn" data-dismiss="${k}" data-field="pending">표시 지우기</button></div></div>` : ""}
@@ -4837,7 +5014,7 @@ document.addEventListener("click", ev => {
   if (d.rwYes) { const dir = norm($("#rwDir")?.value || "").slice(0, 300); generatePage(d.rwYes, true, dir); return; }
   if (d.check) { checkPage(d.check); return; }
   if (d.fixk) { openFixView(d.fixk, [Number(d.fix)], true); return; }
-  if (d.cfix) { openConflictFix(d.cfix); return; }
+  if (d.cfix) { openConflictFix(d.cfix, d.cfield || "conflicts"); return; }
   if (d.sectionEdit !== undefined) { openSectionEditor(d.sectionKey, Number(d.sectionEdit)); return; }
   if (d.edit) { openEditor(d.edit); return; }
   if (d.imageOpen) { openImageGen(d.imageOpen); return; }
