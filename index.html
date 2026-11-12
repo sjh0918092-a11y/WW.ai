@@ -104,6 +104,7 @@ h1.t{font-family:var(--f-display);font-weight:700;font-size:30px;line-height:1.2
 .image-gen .preview{display:block;max-height:640px;max-width:100%;margin:12px auto;object-fit:contain}
 .section-edit{float:right;margin-left:12px;border:0;background:none;color:var(--link);font:12px var(--f-body);padding:5px 0;cursor:pointer}
 .section-edit:disabled{color:var(--muted);cursor:default}
+.nb-src .section-edit{float:none;margin-left:8px;padding:0}
 .section-ai{padding:12px;border:1px solid var(--line);border-radius:var(--r);margin:16px 0}
 .prose-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:16px;line-height:2;margin:16px 0}
 .prose-saved{margin-top:20px;border-top:1px solid var(--line);padding-top:12px}
@@ -382,7 +383,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.42 · 2026-11-12";
+const APP_VERSION = "v6.43 · 2026-11-12";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -3885,8 +3886,41 @@ function openEditor(k) {
   if (S.edit?.aiBusy || S.edit?.saving) { toast("진행 중인 문단 수정을 마치거나 중단해 주세요."); return; }
   const p = S.pages[k]; if (!p) return;
   if (isHeld(k)) { toast("이 문서에 반영한 장을 설정과 맞춰 보는 중입니다. 끝난 뒤 편집해 주세요."); return; }
-  if (!S.edit || S.edit.key !== k || S.edit.section) S.edit = { key: k, f: pageToSource(S.world, p) };
+  if (S.edit?.navboxOnly && S.edit.key === k) S.edit = { key: k, f: S.edit.f };   // 틀 편집 초안을 이어서 전체 편집
+  else if (!S.edit || S.edit.key !== k || S.edit.section || S.edit.navboxOnly) S.edit = { key: k, f: pageToSource(S.world, p) };
   S.confirmRewrite = null; S.confirmDelPage = null; renderMain(true); window.scrollTo({ top: 0 });
+}
+/* 틀 편집은 이 문서가 만든 틀(구성원 명단)만 바꾼다. 본문·인포박스·분류·이미지·단편은 그대로 둔다. */
+const navboxBaseStamp = p => JSON.stringify([imageDocStamp(p), p.type, p.summary, p.categories, p.notices, p.infobox, p.sections]);
+function openNavboxEditor(k) {
+  const w = S.world, p = w && S.pages[k]; if (!p) return;
+  if (S.edit?.aiBusy || S.edit?.saving) { toast("진행 중인 문단 수정을 마치거나 중단해 주세요."); return; }
+  if (isHeld(k)) { toast("이 문서에 반영한 장을 설정과 맞춰 보는 중입니다. 끝난 뒤 편집해 주세요."); return; }
+  if (portraitBusy(k) || S.portraitJob) { toast("문서 작업이 끝난 뒤 틀을 편집해 주세요."); return; }
+  S.edit = { key: k, f: pageToSource(w, p), navboxOnly: { stamp: navboxBaseStamp(p) } };
+  S.confirmRewrite = null; S.confirmDelPage = null; S.view = { name: "article", key: k };
+  renderAll(); window.scrollTo({ top: 0 }); $("#edNavbox")?.focus();
+}
+function navboxEditOut(w, p, ed) {
+  const src = pageToSource(w, p); src.navbox = ed.f.navbox;
+  const out = sourceToOut(src);
+  for (const field of ["type", "summary", "categories", "notices", "infobox"]) if (p[field] !== undefined) out[field] = p[field];
+  out.sections = p.sections.map(s => ({ ...s }));
+  return out;
+}
+function navboxEditHtml(k) {
+  const w = S.world, ed = S.edit, f = ed.f, title = S.pages[k]?.title || "";
+  const members = navboxesFor(w, k).filter(([, nb]) => nb.src !== k);
+  return `<div class="sheet ed"><div class="crumb"><span>${esc(w.title)}</span><span>틀 편집</span></div><h1 class="t">${esc(title)} <span class="note">틀 편집</span></h1>
+    <p class="note">「${esc(title)}」 문서가 만든 틀만 수정합니다. 본문·인포박스·분류·이미지·단편은 유지합니다. 틀을 모두 지우려면 칸을 비우고 저장합니다.</p>
+    <label class="lb" for="edNavbox">틀</label><textarea id="edNavbox" data-ef="navbox" rows="${Math.max(8, Math.min(24, f.navbox.split("\n").length + 2))}" placeholder="${esc("= 독수리 중대 대원 =\n== 창설 대원 ==\n[[캡틴 리버티]] — 1번, 개문 임무\n[[레드 호크]] — 2번")}">${esc(f.navbox)}</textarea>
+    <details class="ed-help" open><summary>문법 안내</summary><dl class="kv">
+      <dt>= 틀 제목 =</dt><dd>틀 하나. 한 문서에 두 개까지 둘 수 있습니다</dd><dt>== 행 이름 ==</dt><dd>틀 안의 줄(예: 창설 대원, 보충 대원)</dd>
+      <dt>[[항목]] — 설명</dt><dd>한 줄에 구성원 하나. " — " 뒤는 작은 글씨 설명</dd></dl></details>
+    ${members.length ? `<p class="note">이 문서가 속한 다른 틀(${members.map(([, nb]) => esc(nb.title)).join(", ")})은 그 틀을 만든 문서에서 편집합니다.</p>` : ""}
+    <p class="note">저장하면 수정한 틀을 기존 설정과 대조한 뒤 반영합니다. 구성원에서 뺀 항목의 소속 언급은 지워지고, 새로 넣은 항목은 링크로 연결됩니다.</p>
+    <div id="edConflicts"></div><div class="banner warn" id="edErr" hidden></div>
+    <div class="row"><button type="button" class="btn pri" id="edSave" data-act="ed-save">저장</button><button type="button" class="btn" data-edit="${k}">문서 전체 편집으로</button><button type="button" class="btn" data-act="ed-cancel">취소</button></div></div>`;
 }
 function edStatus(msg, busy) {
   const btn = $("#edSave"), err = $("#edErr");
@@ -3909,7 +3943,8 @@ async function saveEdit(skipCheck) {
   let out;
   try {
     if (ed.section && sectionBaseStamp(w, S.pages[k]) !== ed.section.stamp) throw new Error("원본 문서가 바뀌었습니다. 초안을 복사한 뒤 문서를 다시 열어 주세요.");
-    out = ed.section ? sectionEditOut(w, S.pages[k], ed) : sourceToOut(ed.f);
+    if (ed.navboxOnly && navboxBaseStamp(S.pages[k]) !== ed.navboxOnly.stamp) throw new Error("원본 문서가 바뀌었습니다. 초안을 복사한 뒤 틀 편집을 다시 열어 주세요.");
+    out = ed.section ? sectionEditOut(w, S.pages[k], ed) : ed.navboxOnly ? navboxEditOut(w, S.pages[k], ed) : sourceToOut(ed.f);
   } catch (err) { edStatus(esc(err.message || errMsg(err))); return; }
   if (!out.sections.some(s => s.body.trim())) { edStatus("본문이 비어 있습니다. 섹션 아래에 내용을 적어 주세요."); return; }
   if (skipCheck || !S.sample) { commitEdit(ed, out, null, [], {}); return; }
@@ -3972,6 +4007,7 @@ function clearBadges(k) {
 async function commitEdit(ed, out, r, conflicts, ch) {
   const w = S.world, k = ed.key, e = w.entities[k]; let old = S.pages[k];
   if (S.edit !== ed || !old || ed.saving) return;
+  if (ed.navboxOnly && navboxBaseStamp(old) !== ed.navboxOnly.stamp) { edStatus("원본 문서가 바뀌었습니다. 초안을 복사한 뒤 틀 편집을 다시 열어 주세요."); return; }
   if (ed.section) {
     ed.saving = true; edStatus("", true);
     try {
@@ -4001,6 +4037,10 @@ async function commitEdit(ed, out, r, conflicts, ch) {
     page.sections = out.sections;
     for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === k) delete w.navboxes[id];
     Object.assign(w.navboxes, ownNavboxes);
+  }
+  if (ed.navboxOnly) {
+    for (const field of ["title", "type", "summary", "categories", "notices", "infobox", "style", "portrait", "shortStories"]) { if (old[field] !== undefined) page[field] = old[field]; else delete page[field]; }
+    page.sections = old.sections;
   }
   Object.assign(page, { createdAt: old.createdAt, rewrittenAt: old.rewrittenAt, direction: old.direction, editedAt: Date.now(), stale: !r, baseAsOf: old.baseAsOf, syncedTo: old.syncedTo, storyNotice: old.storyNotice });
   if (r) {
@@ -4675,6 +4715,7 @@ function articleHtml(k) {
 }
 function editHtml(k) {
   if (S.edit.section) return sectionEditHtml(k);
+  if (S.edit.navboxOnly) return navboxEditHtml(k);
   const w = S.world, f = S.edit.f, e = w.entities[k];
   const ta = (id, ef, rows, ph) => `<textarea id="${id}" data-ef="${ef}" rows="${rows}" ${ph ? `placeholder="${esc(ph)}"` : ""}>${esc(f[ef])}</textarea>`;
   return `<div class="sheet ed"><div class="crumb"><span>${esc(w.title)}</span><span>문서 편집</span></div>
@@ -4708,7 +4749,7 @@ function navboxHtml(nb, open, cur) {
   };
   return `<details class="navbox"${open ? " open" : ""}><summary><span class="nb-t">${esc(nb.title)}</span><span class="nb-n">${nb.members.length}</span><span class="nb-tog" aria-hidden="true"></span></summary>
     <div class="nb-body">${nb.rows.map(r => `<div class="nb-row">${r.label ? `<div class="nb-l">${esc(r.label)}</div>` : ""}<ul>${r.items.map(item).join("")}</ul></div>`).join("")}
-    ${nb.src !== cur ? `<div class="nb-src">${linkHtml(nb.srcTitle, nb.srcTitle + " 문서")}</div>` : ""}</div></details>`;
+    <div class="nb-src">${nb.src !== cur ? linkHtml(nb.srcTitle, nb.srcTitle + " 문서") + " " : ""}<button type="button" class="section-edit" data-navbox-edit="${esc(nb.src)}" aria-label="${esc(nb.title)} 틀 편집" ${isHeld(nb.src) || portraitBusy(nb.src) ? "disabled" : ""}>[편집]</button></div></div></details>`;
 }
 function openCompose(k) {
   const w = S.world; if (!w || !w.entities[k]) return;
@@ -5146,6 +5187,7 @@ document.addEventListener("click", ev => {
   if (d.fixk) { openFixView(d.fixk, [Number(d.fix)], true); return; }
   if (d.cfix) { openConflictFix(d.cfix, d.cfield || "conflicts"); return; }
   if (d.sectionEdit !== undefined) { openSectionEditor(d.sectionKey, Number(d.sectionEdit)); return; }
+  if (d.navboxEdit) { openNavboxEditor(d.navboxEdit); return; }
   if (d.edit) { openEditor(d.edit); return; }
   if (d.imageOpen) { openImageGen(d.imageOpen); return; }
   if (d.proseIllustrate) { openProseImage(d.proseIllustrate); return; }
