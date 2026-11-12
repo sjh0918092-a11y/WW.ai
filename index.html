@@ -382,7 +382,7 @@ details.ent li{margin-bottom:3px}
 (() => {
 "use strict";
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜) */
-const APP_VERSION = "v6.39 · 2026-11-12";
+const APP_VERSION = "v6.40 · 2026-11-12";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1744,7 +1744,8 @@ ${guide}
 - 작중 기준 시점(era)은 원안의 시대감에 맞게 하나 정한다(예: "1987년", "2049년 가을"). 위키 문서들은 이 시점에 작성된 것으로 취급한다.
 - 원안의 비틀기는 이 세계의 볼거리를 실제로 만들어 내야 한다. 비틀기가 장르의 쾌감(메카물이면 기체가 싸우고, 무협이면 고수가 겨루고, 판타지면 마법이 판을 뒤집는다)을 낳는 무대를 갖추고, 그 쾌감이 역사의 결정적 순간에 실제로 쓰이게 한다. 동시에 새 요소는 기존 질서(강대국의 경쟁, 경제, 종교, 관료제의 관성 등)와 부딪히고 섞이며, 저항과 지역 차가 있다. 비틀기가 깊게 바꾼 영역은 2~4개로 정한다. 원안이 실제 역사를 바탕으로 한다면, 비틀기 때문에 실제와 결과가 달라진 사건을 연표에 적어도 하나 둔다. 실제 역사를 그대로 따라가며 이름만 바꾸지 않는다.
 - 핵심 규칙(rules)은 이 세계가 현실과 다른 점, 사회 구조, 기술 수준, 금기 등 모든 문서가 지켜야 할 대전제 5~8개. 이 중 적어도 하나는 이 세계의 장르적 볼거리를 떠받치는 규칙(예: 기체의 등급 체계, 무공의 경지, 마법의 대가)으로 쓴다. 각각 한 문장. 무난한 일반론 대신 구체적으로 쓰되, 개별 은어나 풍습처럼 문서 하나에서 다룰 만한 세부 소재는 규칙에 넣지 않는다. 그런 것은 나중에 해당 문서가 생길 때 정해진다.
-- 연표(timeline)는 기준 시점까지의 주요 사건 7~12개, 연도 오름차순. year는 연도만(예: "1947"). 거창한 사건만 넣지 말고 추문, 사고, 우스꽝스러운 사건도 섞는다. 사건마다 고유명사를 넣는다.
+- 연표(timeline)는 기준 시점까지의 주요 사건 7~12개, 연도 오름차순. year는 이 세계가 쓰는 표기 그대로 연도만(예: "1947", "기원전 202", "건안 13", "제국력 312").
+- 이 세계의 문서가 서기 말고 다른 기년법이나 연호(예: 건안, 메이지, 제국력, 성력)로 연도를 적는다면 그 이름을 calendars에 모두 적는다. 서기만 쓰면 빈 배열. 거창한 사건만 넣지 말고 추문, 사고, 우스꽝스러운 사건도 섞는다. 사건마다 고유명사를 넣는다.
 - 먼저 원안의 장르와 문화권을 판별해 분위기 지침(tone)을 정하고, 세계관 이름, 핵심 규칙, 연표의 고유명사와 어휘도 그 분위기에 맞춘다.${guide ? ` 아래 작가 지침에 장르나 분위기가 적혀 있으면 tone에 그대로 반영한다.` : ""}
 ${TONE_SPEC}
 ${story ? (first ? `- mainTitle은 사용자가 지정한 주인공 "${first}"를 글자 그대로 쓴다. 이 인물이 이야기의 주인공이고 위키의 첫 문서가 된다. 핵심 규칙이나 연표 중 하나 이상이 이 인물과 연결되게 한다.` : "- mainTitle은 이 원안에서 가장 흥미로운 이야기를 끌고 갈 주인공 인물의 이름이다. 이 인물이 위키의 첫 문서가 된다. 핵심 규칙이나 연표 중 하나 이상이 이 인물과 연결되게 한다.")
@@ -1763,9 +1764,9 @@ ${user.desc ? `- 사용자가 정한 주인공의 특징(그대로 지키고, �
 - era(세계관 기준 시점)는 chapter1.era와 같게 한다. 연표는 1장 시점까지만 만든다.
 
 JSON 객체 하나만 출력:
-{"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"timeline":[{"year":"1947","event":"..."}],"mainTitle":"주인공 이름","tone":{"label":"...","guide":["..."]},"storyPromise":{"focus":"원안이 약속한 이야기 경험","central":{"kind":"goal/relationship/promise/conflict/consequence/ongoing/mystery","subject":"장르에 맞게 이어갈 중심 내용"}},"protagonist":{"summary":"한 문장 정의","want":"주인공이 바라는 것","wound":"주인공의 결핍이나 상처"},"spine":[${beatsFor(user.total || STORY_DEF).map((b, i) => `{"n":${i + 1},"beat":"${b}","intent":"${i === (user.total || STORY_DEF) - 1 ? "결말의 방향만" : "..."}"}`).join(",")}],"secrets":[{"truth":"감춰진 진실","cover":"드러나기 전 알려진 겉모습","reveal":3}],"chapter1":{"title":"작중 사건명","era":"1장 작중 시점","summary":"공개 줄거리 3~5문장","incident":"발단 사건 한 문장","nextChoices":["...","...","..."]}}` : `
+{"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"calendars":["서기 말고 이 세계가 쓰는 기년법·연호 이름"],"timeline":[{"year":"1947","event":"..."}],"mainTitle":"주인공 이름","tone":{"label":"...","guide":["..."]},"storyPromise":{"focus":"원안이 약속한 이야기 경험","central":{"kind":"goal/relationship/promise/conflict/consequence/ongoing/mystery","subject":"장르에 맞게 이어갈 중심 내용"}},"protagonist":{"summary":"한 문장 정의","want":"주인공이 바라는 것","wound":"주인공의 결핍이나 상처"},"spine":[${beatsFor(user.total || STORY_DEF).map((b, i) => `{"n":${i + 1},"beat":"${b}","intent":"${i === (user.total || STORY_DEF) - 1 ? "결말의 방향만" : "..."}"}`).join(",")}],"secrets":[{"truth":"감춰진 진실","cover":"드러나기 전 알려진 겉모습","reveal":3}],"chapter1":{"title":"작중 사건명","era":"1장 작중 시점","summary":"공개 줄거리 3~5문장","incident":"발단 사건 한 문장","nextChoices":["...","...","..."]}}` : `
 JSON 객체 하나만 출력:
-{"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"timeline":[{"year":"1947","event":"..."}],"mainTitle":"...","tone":{"label":"...","guide":["..."]}}`}`;
+{"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"calendars":["서기 말고 이 세계가 쓰는 기년법·연호 이름"],"timeline":[{"year":"1947","event":"..."}],"mainTitle":"...","tone":{"label":"...","guide":["..."]}}`}`;
 }
 /* 세계에서 아직 비어 있는 영역: 항목 유형 분포와 연표의 긴 공백 */
 function worldGaps(w) {
@@ -2085,7 +2086,7 @@ async function createWorld() {
     const w = { kind: "world", id: "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       title: norm(b.title).slice(0, 40), tagline: String(b.tagline || "").slice(0, 160), seed, style: "encyc",
       era: String(b.era || "미상").slice(0, 40), historical: b.historical === true || b.historical === "true", guide, tone: normTone(b.tone, ""), rules: (Array.isArray(b.rules) ? b.rules : []).map(r => stripMarks(asText(r))).filter(Boolean).slice(0, 10),
-      timeline: [], userCanon: "", entities: {}, mainKey: null, createdAt: Date.now() };
+      calendars: cleanCalendars(b.calendars), timeline: [], userCanon: "", entities: {}, mainKey: null, createdAt: Date.now() };
     for (const t of (Array.isArray(b.timeline) ? b.timeline : [])) addTimeline(w, t, "seed");
     const mt = first || norm(b.mainTitle || b.title);
     w.mainKey = keyOf(mt); w.entities[w.mainKey] = newEntity(mt, "", "");
@@ -2567,13 +2568,29 @@ const NUM_KINDS = [
 const CAL_NOT = /^(?:경|이|전|실|능|노|권|병|체|매|화|활|효|세|협|압|재|학|시|기|정|중|동|인|국|저|마|위|장|탄|추|무|근|담|염|법|도|공|내|외|원|역|자|수|풍|청|필|합|극|박|지|열|전|탈|군사|경제|생산|상상|집중|판단|기억|영향|원심|구심|전투|정신|사고|추진|지구|결단|통솔|순발|응집|설득|표현|이해|창의|생명|경쟁|공격|방어|마법|전투|노동|구매|폭발|파괴|회복|저항|흡인|장악|돌파|지도|정치|외교|자본)력$/;
 const YEAR_DUR = /^\s*(?:동안|간|만(?!료)|뒤|후(?!반)|전(?!후|반)|째|차(?!례)|이상|이하|이내|가량|남짓|정도|쯤|여(?![름])|넘|마다|씩|형)/;   // 년 뒤에 오면 기간이다
 const YEAR_OK_AFTER = /^(?:$|[\s,.)\]」』·:;~～∼–—-]|에(?!\s*걸쳐)|부터|까지|경|대|무렵|생|도(?:\s|$|에|의|부터))/;   // 엄격한 연도 뒤에 올 수 있는 것
-function yearHits(t) {
-  t = String(t || ""); const out = [];
+/* 이 세계가 쓰는 기년법·연호 이름: 세계관을 만들 때 AI가 적은 것(w.calendars) + 연표 연도 칸("건안 13")의 이름.
+   연호는 새 문서가 늘릴 수 있으므로 연표에서 계속 모은다. "○○력", "○○ 기원"은 목록에 없어도 기년법으로 본다 */
+const CAL_SKIP = /^(?:서기|기원전|기원후|AD|A\.D\.|BCE?|B\.C\.|CE|약|대략|초|말|봄|여름|가을|겨울|초반|중반|후반|전반|초기|중기|말기|이른|늦은|무렵|경|연도|년)$/i;
+const cleanCalendars = a => [...new Set((Array.isArray(a) ? a : []).map(x => stripMarks(String(x || "")).replace(/\s+/g, " ").trim()).filter(x => x.length >= 1 && x.length <= 10 && /^[가-힣A-Za-z][가-힣A-Za-z ]*$/.test(x) && !CAL_SKIP.test(x)))].slice(0, 40);
+let calMemo = null;
+function calInfo(w) {
+  if (!w) return { re: null };
+  const sig = JSON.stringify([w.calendars || [], (w.timeline || []).map(t => t.year)]);
+  if (calMemo && calMemo.w === w && calMemo.sig === sig) return calMemo;
+  const names = new Set(cleanCalendars(w.calendars));
+  for (const t of w.timeline || []) { const m = /^\s*([가-힣A-Za-z][가-힣A-Za-z ]{0,9}?)\s*(?:\d{1,5}|원)\s*년?\s*$/.exec(String(t.year || "")); if (m) for (const x of cleanCalendars([m[1]])) names.add(x); }
+  const alt = [...names].sort((a, b) => b.length - a.length).map(x => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "\\s*")).join("|");
+  return (calMemo = { w, sig, re: alt ? new RegExp(`(?:^|[^가-힣A-Za-z])(${alt})\\s*$`) : null, one: alt ? new RegExp(`(?:^|[^가-힣A-Za-z])(${alt})\\s*원년`, "g") : null });
+}
+function yearHits(t, w = S.world) {
+  t = String(t || ""); const out = [], ci = calInfo(w);
+  if (ci.one) for (const m of t.matchAll(ci.one)) out.push({ y: 1, cal: m[1].replace(/\s+/g, ""), approx: false, at: m.index });   // "건안 원년"
   for (const m of t.matchAll(/(^|[^\d,.])(\d{1,5})\s*년/g)) {
     const at = m.index + m[1].length, before = t.slice(Math.max(0, at - 16), at), after = t.slice(at + m[0].length - m[1].length);
     if (/^0/.test(m[2]) && m[2].length !== 4) continue;   // "0079년"만 연도로 본다
-    const mk = /(?:(기원전|BCE?|B\.C\.)|(서기|기원후|AD|A\.D\.|CE)|([가-힣]{1,6}력|[가-힣]{1,6}\s?기원))\s*$/.exec(before);
-    const cal = mk?.[3] && !CAL_NOT.test(mk[3]) ? mk[3].replace(/\s+/g, "") : "", marked = !!(mk && (mk[1] || mk[2] || cal));
+    const lm = ci.re && ci.re.exec(before);   // 이 세계의 연호 ("건안 13년", "메이지 45년")
+    const mk = lm ? null : /(?:(기원전|BCE?|B\.C\.)|(서기|기원후|AD|A\.D\.|CE)|([가-힣]{1,6}력|[가-힣]{1,6}\s?기원))\s*$/.exec(before);
+    const cal = lm ? lm[1].replace(/\s+/g, "") : mk?.[3] && !CAL_NOT.test(mk[3]) ? mk[3].replace(/\s+/g, "") : "", marked = !!(lm || (mk && (mk[1] || mk[2] || cal)));
     let y = +m[2]; if (mk?.[1]) y = -y;
     if (YEAR_DUR.test(after)) continue;
     const legacy = !marked && y >= 1000 && y <= 2099;
@@ -2581,9 +2598,9 @@ function yearHits(t) {
       if (m[2].length <= 2 || !YEAR_OK_AFTER.test(after) || /(?:후|뒤|이후|만에|전|지나|지난)\s*$/.test(before)) continue;   // 기간이나 어떤 일로부터 몇 해인지일 수 있다
     }
     const approx = /^\s*(?:대|경|무렵|전후|이전|이후|부터|까지)/.test(after) || /^\s*[~～∼–—-]\s*(?:[가-힣A-Z.]*\s*)?\d/.test(after) || /[~～∼–—-]\s*(?:[가-힣A-Z.]*\s*)?$/.test(before);
-    out.push({ y, cal, approx });
+    out.push({ y, cal, approx, at });
   }
-  return out;
+  return out.sort((a, b) => a.at - b.at);
 }
 const sameYear = (a, b) => a.cal === b.cal && a.y === b.y;
 const fmtY = h => h.cal ? `${h.cal} ${h.y}년` : h.y < 0 ? `기원전 ${-h.y}년` : `${h.y}년`;
@@ -2708,7 +2725,7 @@ function numericIssues(w, k) {
 /* ---------- 나이 규칙: 핵심 규칙의 나이 제한으로 출생·기간 연도를 맞춰 본다 ---------- */
 /* 숫자 대조 로직(numericIssues, quoteIssues, ageRuleIssues, 성별 규칙)을 바꿀 때마다 올린다.
    문서를 열 때 p.check.numV가 이 값과 다르면 결정론 지적만 다시 계산해 바꿔 끼운다 */
-const NUMERIC_VERSION = 3;
+const NUMERIC_VERSION = 4;
 /* 규칙 문장은 세계관마다 표현이 달라 코드로 읽지 않는다. 핵심 규칙이 바뀌었을 때만 AI가 한 번 구조로 뽑고(w.ageRules),
    판정은 그 구조로 코드가 한다. 그래서 검사할 때마다 결과가 같다 */
 const rulesText = w => (w.rules || []).join("\n");

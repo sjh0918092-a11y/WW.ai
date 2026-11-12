@@ -9,7 +9,7 @@ c.nameOwner=(w,t)=>{const ks=Object.keys(w.entities).filter(k=>w.entities[k].tit
 c.live=x=>!x.sup;c.factLine=f=>f.t;c.chOf=()=>0;
 vm.createContext(c);
 vm.runInContext(cut('/* ---------- 인용 대조','/* 두 검사(설정 대조')+'\n'+cut('const refOK =','/* ---------- 스토리 모드: 상태')+`
-Object.assign(globalThis,{yearHits,numericIssues,numFacts,spanFacts,ageRules,parseAgeRules,ageRulePrompt,ageRuleIssues,autoFixList,routeAutoConflicts,refreshNumeric,entityBrief,NUMERIC_VERSION});`,c);
+Object.assign(globalThis,{yearHits,cleanCalendars,numericIssues,numFacts,spanFacts,ageRules,parseAgeRules,ageRulePrompt,ageRuleIssues,autoFixList,routeAutoConflicts,refreshNumeric,entityBrief,NUMERIC_VERSION});`,c);
 let n=0;const test=(name,fn)=>{fn();console.log(`  ✓ ${++n}. ${name}`);};
 const R4='전략체의 발현과 군사적 최전성기는 14세부터 19세 사이의 사춘기에 국한되며, 성인이 되는 20세를 기점으로 능력과 체격이 서서히 통상 인간으로 축소·퇴역한다.';
 const page=(title,type,o={})=>({title,type,summary:o.summary||'',categories:o.categories||[],infobox:o.infobox||[],sections:o.body?[{heading:'개요',body:o.body}]:[],links:[],createdAt:o.createdAt||1,...(o.editedAt?{editedAt:o.editedAt}:{})});
@@ -153,5 +153,22 @@ test('가상 기년법의 기간으로 나이 규칙을 판정하고 수정 연�
   const is=c.ageRuleIssues(w,'p');assert.equal(is.length,1);assert(is[0].conflict.includes('성력 301년~성력 302년'),is[0].conflict);
   const w2=world({p:page('갑 소녀','인물',{categories:['마법소녀'],infobox:box({'출생':'300년','활동 기간':'성력 312년 ~ 318년'})})},['마법소녀 규칙'],girl);
   assert.equal(c.ageRuleIssues(w2,'p').length,0,'출생과 기간의 기년법이 다르면 계산하지 않는다');
+});
+test('세계관에 적힌 연호와 연표의 연호를 기년법으로 읽는다',()=>{
+  try{
+    c.S.world={calendars:['건안'],timeline:[{year:'메이지 45',event:'천황 붕어'},{year:'1947',event:'정부 수립'},{year:'기원전 202',event:'자마 전투'},{year:'봄 1950',event:'개전'}]};
+    assert.deepEqual(Y('조조는 건안 13년 적벽에서 패했다.'),['건안 13']);
+    assert.deepEqual(Y('건안 원년 헌제가 허창으로 옮겼다.'),['건안 1']);
+    assert.deepEqual(Y('메이지 45년 여름'),['메이지 45'],'연표 연도 칸의 연호도 모은다');
+    assert.deepEqual(Y('다이쇼 3년'),[],'모르는 연호의 두 자리 숫자는 여전히 연도로 보지 않는다');
+    assert.deepEqual(Y('건안 13년 동안'),[],'연호가 붙어도 기간 표현은 연도가 아니다');
+    const ref=page('갑 장수','인물',{createdAt:1,infobox:box({'출생':'건안 5년','성별':'남성'})});
+    let w=world({ref,late:page('을 전투','사건',{createdAt:2,body:'갑 장수는 건안 7년 태어났다.'})});c.S.world.entities=w.entities;
+    assert.equal(c.numericIssues(w,'late').length,1);
+    w=world({ref,late:page('을 전투','사건',{createdAt:2,body:'갑 장수는 207년 태어났다.'})});
+    assert.equal(c.numericIssues(w,'late').length,0,'연호와 서기는 서로 비교하지 않는다');
+  }finally{c.S.world=undefined;}
+  assert.deepEqual(c.cleanCalendars(['건안',' 메이지 ','서기','기원전','','12년','[[제국력]]','건안']),['건안','메이지','제국력']);
+  assert.equal((html.match(/"calendars":\["서기 말고/g)||[]).length,2,'세계관 생성 프롬프트 두 곳에 calendars를 요청한다');
 });
 console.log(`\n모두 통과 (${n}개). AI 호출 0회.`);
