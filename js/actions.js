@@ -382,7 +382,7 @@ function integrate(w, key, out) {
   const sections = (Array.isArray(out?.sections) ? out.sections : []).filter(s => s && (s.body || s.heading)).map(s => { const x = { heading: String(s.heading || "").replace(/^#+\s*/, "").replace(/^\d+(\.\d+)*\.?\s+/, "").slice(0, 80), level: s.level === 2 ? 2 : 1, body: String(s.body || "") }; if (s.ch > 0) x.ch = +s.ch; return x; });
   if (sections.length && sections[0].level === 2) sections[0].level = 1;
   if (!sections.some(s => s.body.trim())) throw { code: "bad_page" };
-  const categories = (Array.isArray(out.categories) ? out.categories : []).filter(x => typeof x === "string" && x.trim()).slice(0, 8).map(x => stripMarks(x).slice(0, 40));
+  const categories = [...new Set((Array.isArray(out.categories) ? out.categories : []).filter(x => typeof x === "string" && x.trim()).map(x => norm(stripMarks(x)).slice(0, 40)))].filter(x => x && !TYPES.includes(x)).slice(0, 6);   // 유형 이름은 분류로 두지 않는다(유형으로 이미 모아 볼 수 있다)
   const infobox = (Array.isArray(out.infobox) ? out.infobox : []).filter(r => r && r.label && r.value).slice(0, 10).map(r => ({ label: String(r.label).slice(0, 30), value: String(r.value).slice(0, 300) }));
   const type = TYPES.includes(out.type) ? out.type : (String(out.type || "").slice(0, 8) || "개념");
   const summary = stripMarks(out.summary).slice(0, 220);

@@ -32,7 +32,7 @@ const TONE = { label: "테스트 사극", guide: ["한자어를 섞는다", "건
 const BASE = { tagline: "테스트 세계", historical: false, rules: ["규칙 하나", "규칙 둘", "규칙 셋", "규칙 넷", "규칙 다섯"], timeline: [{ year: "1580", event: "녹둔도 개척" }, { year: "1585", event: "북관 철령 완공" }], tone: TONE };
 function pageJson(title) {
   const links = title === "한서린" ? "[[북관 철령]]과 [[이일]], [[한양]]" : title === "대문 항목" ? "[[북관 철령]]" : title === "마커스 벡" ? "[[대문 항목]]" : title === "칼 슈미트" ? "[[벡]]" : "[[한서린]]";
-  return { title, type: title === "한서린" || title === "이일" || /벡|슈미트/.test(title) ? "인물" : "지명", summary: `${title}은 테스트 항목이다.`, categories: ["테스트"], notices: [], infobox: [{ label: "상태", value: "생존" }, ...(title === "한서린" || title === "이일" || /벡|슈미트/.test(title) ? [{ label: "성별", value: "여성" }] : [])],
+  return { title, type: title === "한서린" || title === "이일" || /벡|슈미트/.test(title) ? "인물" : "지명", summary: `${title}은 테스트 항목이다.`, categories: ["테스트", "인물", " 테스트 "], notices: [], infobox: [{ label: "상태", value: "생존" }, ...(title === "한서린" || title === "이일" || /벡|슈미트/.test(title) ? [{ label: "성별", value: "여성" }] : [])],
     sections: [{ heading: "개요", level: 1, body: `${title}은 ${links}와 얽힌 항목이다.` }, ...(title === "이일" ? [{ heading: "특징", level: 1, body: "" }, { heading: "아날로그 무전기 집착", level: 2, body: "이일은 낡은 무전기만 쓴다." }] : []), { heading: "역사", level: 1, body: `${title}의 역사는 1586년에 시작되었다.` }],
     facts: [], relations: [], navboxes: [], newEntities: [], timeline: [] };
 }
@@ -596,11 +596,14 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     ctl.checkIssues = null; ctl.readIssues = null; ctl.fixEdits = null;
     { const rd = calls.filter(c => c.kind === "read" && c.prompt.includes("# 검사 분류")).shift().prompt, ck = calls.filter(c => c.kind === "check" && c.prompt.includes("# 검사 분류")).shift().prompt;
       assert(rd.includes("분류: 테스트") && rd.includes("한 줄 정의: 검사 분류은 테스트 항목이다."), "검사에 분류와 한 줄 정의가 들어간다");
+      assert(!rd.includes("분류: 테스트 | ") && !rd.includes("인물 | 테스트"), "유형 이름과 중복 분류는 저장하지 않는다");
       assert(rd.includes("## 반드시 맞춰 볼 것") && rd.includes("분류는 항목 하나하나를 인포박스와 본문에 맞춰 본다") && rd.includes("대조 과정은 출력하지 않고"), "문서 읽기에 앱이 찾은 대조 대상 목록이 들어간다");
       assert(rd.includes("앞에서 정한 능력, 한계, 제약과 뒤의 실제 행적이 맞지 않는 곳") && rd.includes("같은 사건을 섹션마다 다르게 쓴 곳"), "능력 설정 대 실전 기록 같은 문서 안의 모순을 본다");
       assert(!rd.includes("## 핵심 규칙") && !rd.includes("## 관련 항목의 확정 설정"), "문서 읽기에는 설정 자료를 넣지 않는다");
       assert(ck.includes("## 핵심 규칙") && ck.includes("문서 안의 앞뒤 모순은 다른 검사가 따로 보므로") && !ck.includes("## 반드시 맞춰 볼 것"), "설정 대조는 설정과의 충돌만 본다");
       assert(calls.filter(c => c.kind === "fix").pop().prompt.includes("[cats] (분류, | 로 구분)\n테스트"), "고치기에 분류가 들어간다");
+      { const pp = calls.filter(c => c.kind === "page" && c.prompt.includes("「검사 분류」")).pop()?.prompt || calls.filter(c => c.kind === "page").pop().prompt;
+        assert(pp.includes("분류는 최소한으로(2~4개)") && /이 세계관에 이미 있는 분류[^\n]*테스트\(\d+\)/.test(pp) && pp.includes('"군인"이 있으면 "프랑스의 군인"'), "문서 작성에 기존 분류 목록과 넓은 분류 우선 지침이 들어간다"); }
       assert.strictEqual((calls.filter(c => c.kind === "fix").pop().prompt.match(/문서의 서술: 분류: 테스트/g) || []).length, 1, "두 검사가 같은 문장을 지적하면 하나로 합친다"); }
     assert.strictEqual((await page.locator(".cats .cat").allInnerTexts()).join(","), "고친 분류", "분류도 자동으로 고친다");
     ctl.readFail = true; ctl.checkIssues = [{ claim: "역사는 1586년에", evidence: "규칙 하나", conflict: "x", severity: "low" }];
