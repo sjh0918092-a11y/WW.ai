@@ -16,11 +16,13 @@ function appServer({ base = "/" } = {}) {
   });
 }
 
-/* index.html에 외부 스크립트·스타일을 제자리에 펼친 글. 함수 구간을 잘라 vm으로 돌리는 테스트가 쓴다 */
+/* index.html에 외부 스크립트·스타일을 제자리에 펼친 글. 함수 구간을 잘라 vm으로 돌리는 테스트가 쓴다.
+ * 연달아 불러오는 스크립트는 한 <script>로 이어 붙여, 파일 경계를 넘는 구간도 그대로 잘라 쓸 수 있게 한다 */
+const LOCAL_SCRIPT = /<script src="(?!https?:)([^"?]+)(?:\?[^"]*)?"><\/script>/;
 function appSource() {
   const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
   return html
-    .replace(/<script src="(?!https?:)([^"?]+)(?:\?[^"]*)?"><\/script>/g, (_, f) => "<script>\n" + fs.readFileSync(path.join(ROOT, f), "utf8") + "</script>")
+    .replace(new RegExp(`${LOCAL_SCRIPT.source}(?:\\s*${LOCAL_SCRIPT.source})*`, "g"), run => "<script>\n" + run.match(new RegExp(LOCAL_SCRIPT.source, "g")).map(tag => fs.readFileSync(path.join(ROOT, LOCAL_SCRIPT.exec(tag)[1]), "utf8")).join("") + "</script>")
     .replace(/<link rel="stylesheet" href="(?!https?:)([^"?]+)(?:\?[^"]*)?">/g, (_, f) => "<style>\n" + fs.readFileSync(path.join(ROOT, f), "utf8") + "</style>");
 }
 
