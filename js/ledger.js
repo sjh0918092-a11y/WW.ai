@@ -126,7 +126,7 @@ function timelineIssues(w, k) {
 }
 
 /* ---------- 사건 장부 ----------
-   w.events: [{ k(사건 항목 키, 항목이 없으면 이름의 키), name, date, place, nums: [{name, value, unit}], parts(참가 항목 키), result, src, createdAt }]
+   w.events: [{ k(사건 항목 키, 항목이 없으면 이름의 키), name, kind?(그 세계의 짧은 사건 유형 이름. 옛 기록에는 없다), date, place, nums: [{name, value, unit}], parts(참가 항목 키), result, src, createdAt }]
    문서가 날짜·장소·수치까지 구체적으로 서술한 사건만 생성 응답의 "events"로 받는다.
    처음 기록된 값이 기준이다(refOK와 같은 원칙). 사용자가 직접 고친 문서의 기록은 언제나 기준이다 */
 const EVENTS_PER_PAGE = 6;
@@ -138,7 +138,8 @@ function normEvent(w, x) {
   const nums = (Array.isArray(x.nums) ? x.nums : []).map(n => n && typeof n === "object" ? { name: evText(n.name, 30), value: evText(n.value, 30), unit: evText(n.unit, 20) } : null).filter(n => n && n.name && n.value).slice(0, 10);
   if (!date || (!place && !nums.length)) return null;   // 날짜와, 장소나 수치가 있어야 구체적인 기록이다
   const parts = [...new Set((Array.isArray(x.participants) ? x.participants : []).map(t => kOf(w, evText(t, 80))).filter(k => w.entities[k]))].slice(0, 12);
-  return { k: kOf(w, name), name, date, place, nums, parts, result: evText(x.result, 200) };
+  const kind = evKind(w, x.kind);
+  return { k: kOf(w, name), name, ...(kind ? { kind } : {}), date, place, nums, parts, result: evText(x.result, 200) };
 }
 /* 이 문서(src)의 사건 기록을 새로 받는다. 이 문서가 전에 남긴 기록은 바꿔 끼운다 */
 function ingestEvents(w, src, list) {
@@ -221,8 +222,54 @@ ${cand.map(([m, r]) => `- 이 문서: 「${m.name}」 ${m.date}${m.place ? ", " 
 두 기록이 같은 사건을 가리키면 날짜, 장소, 수치가 어긋나는 곳을 지적하고(evidence에는 다른 문서의 기록을 옮긴다), 다른 사건이면 지적하지 않는다.
 ` : ""}`;
 }
-const EVENTS_SPEC = `events에는 이 문서가 날짜와 함께 장소나 수치까지 구체적으로 서술한 사건만 0~4개 넣는다. 막연히 언급만 한 사건, 날짜가 없는 사건은 넣지 않는다. name은 사건 항목을 링크했다면 그 제목을 글자 그대로 쓰고, 장부에 이미 있는 사건이면 장부의 사건 이름, 수치 이름, 단위를 똑같이 쓴다. nums의 value에는 단위 없이 값만 쓴다. participants에는 참가한 항목 제목을 글자 그대로 쓴다.`;
-const EVENTS_JSON = `"events":[{"name":"사건 이름","date":"날짜(문서에 쓴 그대로)","place":"장소","nums":[{"name":"수치 이름(예: 거리, 수심, 병력, 사상자)","value":"값","unit":"단위"}],"participants":["참가 항목 제목"],"result":"결과 한 문장"}]`;
+/* ---------- 사건 유형 ----------
+   같은 유형의 사건을 문서마다 서로 모른 채 되풀이하지 않게, 쓰는 단계에서 같은 유형의 기존 사건을 보여 준다 */
+const EVENT_KINDS_N = 30, EVENT_SAME_KIND_N = 8;
+const kindKey = t => norm(stripMarks(String(t || ""))).replace(/[\s·.,]/g, "").toLowerCase();
+/* 장부에 쓰인 유형 이름(많이 쓴 순). kind가 없는 옛 기록은 건너뛴다 */
+function eventKinds(w) {
+  const n = new Map(), name = new Map();
+  for (const e of w.events || []) { const k = kindKey(e.kind); if (!k) continue; n.set(k, (n.get(k) || 0) + 1); if (!name.has(k)) name.set(k, e.kind); }
+  return [...n.keys()].sort((a, b) => n.get(b) - n.get(a)).slice(0, EVENT_KINDS_N).map(k => name.get(k));
+}
+/* 응답의 kind: 기존 이름과 같은 종류(띄어쓰기·대소문자만 다름)면 기존 이름으로 맞춘다 */
+function evKind(w, t) {
+  const v = evText(t, 20); if (!v) return "";
+  return (w.events || []).find(e => e.kind && kindKey(e.kind) === kindKey(v))?.kind || v;
+}
+/* 이 문서가 다룰 만한 유형의 기존 사건. 유형은 이 항목·관련 항목의 사건 유형과 항목 설명에 이름이 나온 유형.
+   그런 유형이 없으면 모든 유형에서 고른다. 관련도: 참가자가 겹침 > 관련 유형 > 여러 번 되풀이된 유형 > 먼저 쓴 문서 */
+function sameKindEvents(w, key, rel = [], text = "") {
+  const near = new Set([key, ...rel]), all = (w.events || []).filter(e => e.kind && S.pages[e.src]);
+  if (!all.length) return [];
+  const ent = w.entities[key];
+  const txt = [text, ent?.title, ent?.summary, ...(ent?.facts || []).filter(f => !f.sup).map(f => f.t)].filter(Boolean).join("\n");
+  const relK = new Set([...all.filter(e => near.has(e.k) || near.has(e.src) || e.parts.some(p => near.has(p))).map(e => kindKey(e.kind)),
+    ...eventKinds(w).filter(k => txt.includes(k)).map(kindKey)]);
+  const cnt = new Map(); for (const e of all) cnt.set(kindKey(e.kind), (cnt.get(kindKey(e.kind)) || 0) + 1);
+  const pool = all.filter(e => e.src !== key && e.k !== key && (!relK.size || relK.has(kindKey(e.kind))));
+  const score = e => e.parts.filter(p => near.has(p)).length * 4 + (relK.has(kindKey(e.kind)) ? 2 : 0) + (cnt.get(kindKey(e.kind)) > 1 ? 1 : 0);
+  const seen = new Set(), out = [];
+  for (const e of pool.sort((a, b) => score(b) - score(a) || eventRank(a, b))) {
+    const id = e.k + "|" + e.src; if (seen.has(id)) continue; seen.add(id);
+    out.push(e); if (out.length >= EVENT_SAME_KIND_N) break;
+  }
+  return out;
+}
+const SAME_KIND_HEAD = "| 유형 | 사건 | 날짜 | 장소 | 참가 | 결과 | 출처 문서 |\n|---|---|---|---|---|---|---|";
+function sameKindBlock(w, key, rel = [], text = "") {
+  const list = sameKindEvents(w, key, rel, text); if (!list.length) return "";
+  return `## 같은 유형의 기존 사건 (다른 문서가 이미 기록한 것)
+${SAME_KIND_HEAD}
+${list.map(e => `| ${cell(e.kind)} | ${cell(e.name)} | ${cell(e.date)} | ${cell(e.place)} | ${cell(e.parts.map(p => w.entities[p]?.title).filter(Boolean).join(", "))} | ${cell(e.result)} | 「${cell(S.pages[e.src]?.title || "?")}」 |`).join("\n")}
+기존 사건과 같은 유형의 사건을 새로 쓸 때는 둘 중 하나를 한다. (가) 기존 사건과의 관계(같은 배후, 영향을 받음, 대응해서 일어남 등)를 밝힌다. (나) 다른 유형의 사건을 고른다. 서로 모르는 듯이 같은 유형을 반복하지 않는다.
+
+`;
+}
+const eventKindsNote = w => { const ks = eventKinds(w); return ks.length ? ` 이미 쓰는 유형 이름: ${ks.join(", ")}. 같은 종류면 이 이름을 글자 그대로 쓰고, 새 종류일 때만 새 이름을 짓는다.` : ""; };
+const EVENTS_SPEC_BASE = `events에는 이 문서가 날짜와 함께 장소나 수치까지 구체적으로 서술한 사건만 0~4개 넣는다. 막연히 언급만 한 사건, 날짜가 없는 사건은 넣지 않는다. name은 사건 항목을 링크했다면 그 제목을 글자 그대로 쓰고, 장부에 이미 있는 사건이면 장부의 사건 이름, 수치 이름, 단위를 똑같이 쓴다. nums의 value에는 단위 없이 값만 쓴다. participants에는 참가한 항목 제목을 글자 그대로 쓴다. kind에는 이 세계에서 쓰는 짧은 사건 유형 이름(예: 결투, 침투, 사고, 조약, 쿠데타)을 하나 쓴다.`;
+const eventsSpec = w => EVENTS_SPEC_BASE + eventKindsNote(w);
+const EVENTS_JSON = `"events":[{"name":"사건 이름","kind":"사건 유형","date":"날짜(문서에 쓴 그대로)","place":"장소","nums":[{"name":"수치 이름(예: 거리, 수심, 병력, 사상자)","value":"값","unit":"단위"}],"participants":["참가 항목 제목"],"result":"결과 한 문장"}]`;
 
 /* ---------- 용어 정의 ----------
    w.glossary: [{ term, definition, src, confirmed, at, alts?: [{ definition, src, at }] }]

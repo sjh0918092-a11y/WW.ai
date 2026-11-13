@@ -16,7 +16,7 @@ vm.runInContext([
   cut("const sentencesOf =", "/* 인포박스에서"), cut("function pageTexts(p)", "/* 이름이 목적어"),
   cut("const namesOf =", "function checkBrief"),
   require("fs").readFileSync(require("path").join(__dirname, "..", "js", "ledger.js"), "utf8").replace('"use strict";', ""),
-  "Object.assign(globalThis,{WC_LIMIT,WC_ITEMS_MAX,promptTimeline,TIMELINE_PROMPT_N,worldCheckPrompt,parseWorldCheck,worldCheckAction,ingestTerms,purgeTerms,pickTerm,glossaryBlock,findTerm,normEvent,ingestEvents,eventIssues,eventCandidates,eventBlock,eventCheckBlock,addFact,addMention,compactFacts,promptFacts,promptMentions,FACT_CAP,MENTION_CAP,addTimeline,acceptTimeline,acceptPageTimeline,timelineSubject,keyOf,norm,stripMarks});"
+  "Object.assign(globalThis,{eventsSpec,EVENTS_JSON,WC_LIMIT,WC_ITEMS_MAX,promptTimeline,TIMELINE_PROMPT_N,worldCheckPrompt,parseWorldCheck,worldCheckAction,ingestTerms,purgeTerms,pickTerm,glossaryBlock,findTerm,normEvent,ingestEvents,eventIssues,eventCandidates,eventBlock,eventCheckBlock,addFact,addMention,compactFacts,promptFacts,promptMentions,FACT_CAP,MENTION_CAP,addTimeline,acceptTimeline,acceptPageTimeline,timelineSubject,keyOf,norm,stripMarks});"
 ].join("\n"), c);
 let n = 0; const tests = []; const test = (name, fn) => tests.push([name, fn]);
 const ent = title => ({ title, type: "", summary: "", facts: [], mentions: [], page: false, box: "" });
@@ -269,6 +269,67 @@ test("용어 정의가 모든 문서 프롬프트와 문서 읽기 검사에 들
   assert(html.includes(",${TERMS_JSON}}")); assert(html.includes("ingestTerms(w, key, out.terms)"));
   assert(html.includes("if (w.glossary) purgeTerms(w, key);"));
   assert(html.includes("data-term-pick=") && html.includes("어느 쪽으로 할까요?"));
+});
+
+/* ---------- 사건 유형: 쓰는 단계에서 같은 유형의 반복을 막는다 ---------- */
+const kindWorld = () => {
+  const w = world("북해 공국", "남해 왕국", "서해 연방", "동해 제국", "한서진", "카이 마루", "레아 벨", "조약 문서");
+  const K = t => c.keyOf(t);
+  c.S.pages = { [K("북해 공국")]: doc("북해 공국", 1), [K("남해 왕국")]: doc("남해 왕국", 2), [K("서해 연방")]: doc("서해 연방", 3), [K("조약 문서")]: doc("조약 문서", 4) };
+  const ev = (name, kind, date, parts, extra = {}) => ({ name, kind, date, place: "해저", participants: parts, result: name + "의 결과", ...extra });
+  c.ingestEvents(w, K("북해 공국"), [ev("북해 해저 침입자 제압", "침투", "2015년 3월 1일", ["북해 공국", "한서진"])]);
+  c.ingestEvents(w, K("남해 왕국"), [ev("남해 해저 침입자 제압", "침 투", "2016년 4월 2일", ["남해 왕국", "카이 마루"])]);
+  c.ingestEvents(w, K("조약 문서"), [ev("해역 조약", "조약", "2017년 1월 1일", ["조약 문서"])]);
+  return { w, K };
+};
+test("events의 kind를 저장하고, 띄어쓰기만 다른 유형 이름은 기존 이름으로 맞춘다. 기존 유형 이름 목록을 프롬프트에 준다", () => {
+  const { w, K } = kindWorld();
+  assert.deepEqual(w.events.map(e => e.kind), ["침투", "침투", "조약"], "같은 종류는 기존 이름 그대로");
+  assert.deepEqual(c.eventKinds(w), ["침투", "조약"], "많이 쓴 순");
+  const spec = c.eventsSpec(w);
+  assert(spec.includes("kind에는 이 세계에서 쓰는 짧은 사건 유형 이름") && spec.includes("이미 쓰는 유형 이름: 침투, 조약.") && spec.includes("같은 종류면 이 이름을 글자 그대로"));
+  assert(c.EVENTS_JSON.includes('"kind":"사건 유형"'));
+  assert(!c.eventsSpec(world("x")).includes("이미 쓰는 유형 이름"), "유형이 없으면 목록을 넣지 않는다");
+  for (const f of ["prompts.js", "edit-source.js"]) {
+    const src = require("fs").readFileSync(require("path").join(__dirname, "..", "js", f), "utf8");
+    assert(src.includes("${eventsSpec(w)}") && !src.includes("${EVENTS_SPEC}"), f + "는 유형 목록이 든 지시를 쓴다");
+  }
+});
+test("문서를 쓸 때 같은 유형의 기존 사건 표(날짜, 장소, 참가자, 결과, 출처 문서)와 연결 지시를 넣는다", () => {
+  const { w, K } = kindWorld();
+  c.S.pages[K("서해 연방")] = doc("서해 연방", 3);
+  w.entities[K("서해 연방")].summary = "해저 침투를 막아 온 연방";
+  const b = c.sameKindBlock(w, K("서해 연방"), []);
+  assert(b.startsWith("## 같은 유형의 기존 사건") && b.includes("| 유형 | 사건 | 날짜 | 장소 | 참가 | 결과 | 출처 문서 |"));
+  assert(b.includes("| 침투 | 북해 해저 침입자 제압 | 2015년 3월 1일 | 해저 | 북해 공국, 한서진 | 북해 해저 침입자 제압의 결과 | 「북해 공국」 |"));
+  assert(b.includes("남해 해저 침입자 제압") && !b.includes("해역 조약"), "설명에 나온 유형만 고른다");
+  assert(b.includes("(가) 기존 사건과의 관계(같은 배후, 영향을 받음, 대응해서 일어남 등)를 밝힌다. (나) 다른 유형의 사건을 고른다. 서로 모르는 듯이 같은 유형을 반복하지 않는다."));
+  const near = c.sameKindEvents(w, K("레아 벨"), [K("카이 마루")]);
+  assert.equal(near[0].name, "남해 해저 침입자 제압", "참가자가 겹치는 사건이 먼저");
+  assert(c.sameKindEvents(w, K("북해 공국"), []).every(e => e.src !== K("북해 공국")), "이 문서가 남긴 기록은 빼고");
+  for (let i = 0; i < 12; i++) c.ingestEvents(w, "p" + i, [{ name: "침투 " + i, kind: "침투", date: "2020년", place: "해저" }]);
+  for (let i = 0; i < 12; i++) c.S.pages["p" + i] = doc("p" + i, 10 + i);
+  assert.equal(c.sameKindEvents(w, K("서해 연방"), []).length, 8, "많아야 8개");
+  const src = require("fs").readFileSync(require("path").join(__dirname, "..", "js", "prompts.js"), "utf8");
+  assert(src.includes('${eventBlock(w, key, rel)}${sameKindBlock(w, key, rel, guide || "")}'), "문서 생성 프롬프트에 넣는다");
+});
+test("kind가 없는 옛 장부 항목이 있어도 깨지지 않는다", () => {
+  const { w, K } = kindWorld();
+  w.events.push({ k: "old", name: "옛 사건", date: "1990년", place: "북해", nums: [], parts: [K("한서진")], result: "", src: K("남해 왕국") });
+  assert.deepEqual(c.eventKinds(w), ["침투", "조약"]);
+  const b = c.sameKindBlock(w, K("한서진"), []);
+  assert(!b.includes("옛 사건") && b.includes("침입자 제압"), "kind가 없는 기록은 표에 넣지 않는다");
+  assert.equal(c.sameKindBlock(world("x"), "x", []), "", "장부가 비면 넣지 않는다");
+  const w2 = world("갑"); w2.events = [{ k: "a", name: "옛", date: "1990년", place: "p", nums: [], parts: [], src: "z" }];
+  assert.equal(c.sameKindBlock(w2, c.keyOf("갑"), []), ""); assert.equal(c.eventsSpec(w2).includes("이미 쓰는"), false);
+  assert(c.eventBlock(w, K("한서진"), []).includes("옛 사건"), "사건 장부 표는 그대로");
+  assert.equal(c.normEvent(w, { name: "새", date: "2000년", place: "p" }).kind, undefined, "kind가 없으면 저장하지 않는다");
+});
+test("문체 지침에 '최초·유일' 주장 제한이 들어간다", () => {
+  const core = require("fs").readFileSync(require("path").join(__dirname, "..", "js", "core.js"), "utf8");
+  const desc = core.slice(core.indexOf("desc: `작중의 팬들이"), core.indexOf("`", core.indexOf("desc: `작중의 팬들이") + 7));
+  assert(desc.includes("'최초', '유일', '처음', '사상 첫' 같은 주장은, 위에 주어진 확정 설정이나 사건 장부로 뒷받침될 때만 쓴다. 근거가 없으면 쓰지 않는다."));
+  assert(html.includes("- 문체: ${st.desc}") && html.includes("const st = STYLES.encyc;"), "문서 생성 프롬프트가 이 문체 지침을 쓴다");
 });
 
 /* ---------- 5단계: 세계 전체 점검 ---------- */
