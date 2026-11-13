@@ -124,7 +124,7 @@ let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
   g=await red('길드 서기관');assert(!at(g.at)[0].prompt.includes('## 이번 각도'));assert(!at(g.at)[0].prompt.includes('"angleUsed"'));w=await read(page,'w:mage');assert.equal(w.angleLast,false);assert.equal((await read(page,'p:mage:'+key('길드 서기관'))).angle,undefined);
   pass('빨간 링크 문서: 예시 장면 없이 각도를 섹션 하나로 얹고 단어 중간 링크는 풀어 빈 항목을 만들지 않으며, angleUsed가 true일 때만 기록하고, 다음 빨간 링크에는 연속으로 쓰지 않는다');
 
-  pageAngleUsed=false;g=await red('패배주의 연구회 회장','인물',[{t:'늘 침울하고 비관적인 성격이다',src:pupil}]);pp=at(g.at)[0].prompt;assert(pp.includes('## 이번 각도: 「마법을 거의 못 쓰는 학생」'));assert(pp.includes('늘 침울하고 비관적인 성격이다'));assert(pp.includes('확정 사실·언급과 충돌하면 각도를 버린다'));assert(pp.includes('성격이나 태도가 정해져 있지 않을 때만'));assert(pp.includes('이전 장면: 낙제생 축제 포스터가 붙은 복도. 이와 다른 장면·인물·장소를 쓴다'));assert(pp.includes('생일(월·일)은 1월 1일로 한다'));assert(!pp.includes('감정 반전 축이 아니므로'));
+  pageAngleUsed=false;g=await red('패배주의 연구회 회장','인물',[{t:'늘 침울하고 비관적인 성격이다',src:pupil}]);pp=at(g.at)[0].prompt;assert(pp.includes('## 이번 각도: 「마법을 거의 못 쓰는 학생」'));assert(pp.includes('늘 침울하고 비관적인 성격이다'));assert(pp.includes('확정 사실·언급과 충돌하면 각도를 버린다'));assert(pp.includes('성격이나 태도가 정해져 있지 않을 때만'));assert(pp.includes('이전 장면: 낙제생 축제 포스터가 붙은 복도. 이와 다른 장면·인물·장소를 쓴다'));assert(pp.includes('생일(월·일)은 1월 1일로 한다'));assert(pp.includes('실존 인물이거나 실존 인물을 바탕으로 한 인물(대체역사에서 재해석한 인물 포함)이면 이 날짜를 쓰지 않고 실제 생일을 따른다'));assert(!pp.includes('감정 반전 축이 아니므로'));
   w=await read(page,'w:mage');assert.deepStrictEqual(w.angles.map(a=>a.count),[1,1,1,1]);assert.equal(w.angleLast,false);assert.equal((await read(page,'p:mage:'+key('패배주의 연구회 회장'))).angle,undefined);
   pass('인물 문서는 감정 반전 축만 쓰고, 같은 각도의 이전 장면을 피하라고 알리며, 확정 사실과 충돌해 angleUsed가 false면 count와 p.angle을 남기지 않는다');
 
