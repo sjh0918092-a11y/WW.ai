@@ -1,7 +1,7 @@
 "use strict";
 /* 기본 도구: 버전, 이스케이프, 키 생성, 원안 주사위, 예시·문서 종류·오류 문구 */
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜). index.html의 ?v= 값도 같은 번호로 함께 올린다 (tests/assets.test.js가 확인) */
-const APP_VERSION = "v6.48 · 2026-11-13";
+const APP_VERSION = "v6.49 · 2026-11-13";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -12,7 +12,7 @@ const LINK_RE = /\[\[([^\[\]|]+?)(?:\|([^\[\]]+?))?\]\]/g;
 /* 모델이 글 대신 {"action": "...", "reason": "..."} 같은 묶음을 보낼 때가 있다. 그 안의 글을 꺼낸다 */
 const asText = x => typeof x === "string" ? x : (x && typeof x === "object") ? (["text", "choice", "action", "label", "title", "content", "description", "desc", "summary", "value", "rule", "guide"].map(k => x[k]).find(v => typeof v === "string" && v.trim()) || Object.values(x).filter(v => typeof v === "string").join(" — ")) : (x == null ? "" : String(x));
 const isBroken = t => /\[object Object\]/.test(String(t || ""));
-const stripMarks = s => String(s || "").replace(/\[\*[^\]]*\]/g, "").replace(LINK_RE, (m, a, b) => b || a).replace(/\*\*|~~/g, "").trim();
+const stripMarks = s => String(s || "").replace(/<br\s*\/?>/gi, " ").replace(/\[\*[^\]]*\]/g, "").replace(LINK_RE, (m, a, b) => b || a).replace(/\*\*|~~/g, "").trim();
 const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej({ code: "timeout", message: "응답 시간 초과" }), ms))]);
 const fmtDate = t => { try { return new Date(t).toLocaleDateString("ko-KR", { year: "numeric", month: "short", day: "numeric" }); } catch { return ""; } };
 

@@ -23,7 +23,7 @@ function extractFootnotes(src, fns) {
   return text;
 }
 function blocks(body, fns) {
-  const text = extractFootnotes(String(body), fns);
+  const text = extractFootnotes(String(body).replace(/<br\s*\/?>/gi, "\n"), fns);   // 모델이 줄바꿈으로 쓴 <br>은 실제 줄바꿈으로 보여 준다(저장값은 그대로 둬 편집 칸의 한 줄 형식을 지킨다)
   let html = "";
   for (const blk of text.split(/\n{2,}/)) {
     const lines = blk.split("\n").map(l => l.replace(/\s+$/, "")).filter(l => l.trim());
