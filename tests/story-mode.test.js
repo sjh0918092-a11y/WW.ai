@@ -614,6 +614,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     { const n0 = await page.locator("details.memo li").count(); await page.evaluate(() => { document.querySelector("details.memo").open = true; }); await page.locator("details.memo li", { hasText: "역사는 1586년에" }).locator(".memo-del").click();
       await page.waitForFunction(n => document.querySelectorAll("details.memo li").length === n - 1, n0);
       assert(!(await page.locator("details.memo").allTextContents()).join("").includes("역사는 1586년에"), "[삭제]를 누르면 그 편집자 메모가 사라진다");
+      await page.evaluate(() => Store.q);   // 화면은 바로 바뀌고 저장은 뒤따르므로 저장이 끝난 뒤 새로고침한다
       await page.reload(); await waitArticle(page, "검사 분류");
       assert(!(await page.locator("details.memo").allTextContents()).join("").includes("역사는 1586년에"), "삭제한 메모는 새로고침 뒤에도 돌아오지 않는다"); }
     ok("설정 대조와 문서 읽기 검사를 동시에 돌려 합치고(같은 지적은 하나로), 하나가 실패해도 다른 결과를 쓰며, 분류까지 고친다");

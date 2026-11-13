@@ -46,11 +46,20 @@ const ANGLE_CANDIDATES = 15, ANGLE_PICK = 8;
 /* 후보를 낼 축. 축마다 최소 하나씩 후보를 낸다 */
 const ANGLE_AXES = [
   ["감정 반전", "이 세계에서 당연히 고통인 것을 즐기는 사람, 당연히 영광인 것을 귀찮아하는 사람"],
-  ["일상화", "이 설정이 오래 지속되면서 시시하고 평범해진 것들(상품, 관광, 놀이, 관용구)"],
+  ["일상화", "이 설정이 작중 시점까지 이어지면서 사람들에게 익숙해지고 평범해진 것들. 형태는 아래 경과 시간에 맞춘다"],
   ["의외의 수혜자", "이 체계로 엉뚱하게 돈을 벌거나 이득을 본 사람과 산업"],
-  ["문화적 반응", "종교, 예술, 방송, 유행, 스포츠화"],
+  ["문화적 반응", "종교, 예술, 방송, 유행, 스포츠화 같은 사회의 반응. 형태는 아래 경과 시간에 맞춘다"],
   ["체계의 지지자", "이 체계를 진심으로 옹호하는 사람과 그 논리"],
   ["개인적 관계", "우정, 가족, 편지 같은 사적인 연결"]];
+/* 핵심 설정이 성립한 뒤 작중 시점까지의 햇수. 작중 시점(w.era)과 연표의 가장 이른 연도를 같은 기년법으로 읽을 수 있을 때만 구하고, 아니면 null */
+function worldSpan(w) {
+  const era = yearHits(w?.era || "", w)[0]; if (!era) return null;
+  const years = (Array.isArray(w?.timeline) ? w.timeline : []).filter(t => t && !t.sup).flatMap(t => { const y = String(t.year ?? "").trim(); return yearHits(/\d$/.test(y) ? y + "년" : /원$/.test(y) ? y + "년" : y, w); }).filter(h => h.cal === era.cal);
+  if (!years.length) return null;
+  const first = Math.min(...years.map(h => h.y)), n = yDiff(first, era.y);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+const spanLine = n => n === null ? "경과 시간 알 수 없음. 원안과 연표를 보고 판단할 것" : n < 1 ? "세계의 핵심 설정이 성립한 뒤 작중 시점까지 1년이 채 되지 않음" : `세계의 핵심 설정이 성립한 뒤 작중 시점까지 약 ${n}년`;
 const angleBasis = a => a.consequence || a.why || "";
 const liveAngles = w => Array.isArray(w?.angles) ? w.angles.filter(a => a && a.id && a.label && !a.off) : [];
 function pickAngle(w, rand = Math.random, direction = "") {
@@ -74,19 +83,27 @@ ${toneBlock(w)}
 ## 이미 위키에 있는 항목 전체 (작성된 문서와 빨간 링크)
 ${JSON.stringify(index)}
 이미 문서나 빨간 링크로 다뤄진 영역은 각도로 내지 않는다. 위 항목의 소재를 이름만 바꿔 다시 꺼내지 않는다.
+## 세계의 경과 시간
+${spanLine(worldSpan(w))}
+'일상화'와 '문화적 반응' 축의 후보는 경과 시간에 맞는 형태로 낸다.
+- 며칠~몇 달: 부정과 혼란, 소문과 음모론, 사재기, 첫 농담과 유행어, 서툰 첫 적응
+- 몇 년: 임시방편의 제도화, 새 직업, 반대 운동, 세대 간 인식 차이
+- 수십 년 이상: 일상화, 상품, 관광, 전통, 향수
+- 시작점이 없는 세계(원래부터 그랬던 세계): 신화, 민담, 속담, 관습
+경과 시간에 맞지 않는 결과(예: 사태 일주일 만에 생긴 관광 산업)는 safe를 통과하지 못한 것으로 보고 버린다. 나머지 축(감정 반전, 의외의 수혜자, 체계의 지지자, 개인적 관계)은 경과 시간과 관계없이 낸다.
 ## 할 일 1: 후보 ${ANGLE_CANDIDATES}개
 아래 축마다 최소 하나씩, 모두 ${ANGLE_CANDIDATES}개의 후보를 낸다. 축마다 감정의 결이 달라야 한다.
 ${ANGLE_AXES.map(([name, desc]) => `- ${name}: ${desc}`).join("\n")}
 각 후보에는 다음을 쓴다.
 - label: 각도 한 줄 설명(40자 이하). 세계 규칙을 직업·기관 이름으로 바꿔 말한 것은 각도가 아니다.
-- consequence: 원안의 규칙이나 설정이 수십 년 지속되었을 때 생기는 2차·3차 결과. 규칙을 다시 말하거나 요약한 것은 근거로 인정하지 않는다.
+- consequence: 핵심 설정이 작중 시점까지 지속된 기간 동안 생겼을 법한 2차·3차 결과. 규칙을 다시 말하거나 요약한 것은 근거로 인정하지 않는다.
 - surprise: 원안을 읽은 사람이 바로 떠올리지 못할 이유.
 - safe: 어떤 세계 규칙도 어기지 않고, 톤 지침의 어조로 쓸 수 있는 이유.
 ## 할 일 2: ${ANGLE_PICK}개 고르기
 후보 중 ${ANGLE_PICK}개를 고른다. 기준은 "원안을 읽은 사람이 바로 떠올릴 법한가? 그렇다면 버린다"이다. 단 safe를 설명하지 못하는 후보는 의외성이 높아도 버린다. 장르·분위기·세계 규칙을 바꾸는 후보('갑자기 코미디', '다른 행성 이야기' 같은 것)도 버린다. 고른 것이 한 축에 몰리지 않게 한다.
 ## 할 일 3: 작성된 문서 분류
 위 항목 중 '작성됨'인 문서가 각각 고른 각도 중 어디에 해당하는지 고른다. 세계의 중심 시선이거나 어느 각도에도 맞지 않으면 null로 둔다.
-JSON 하나만 출력: {"candidates":[{"id":"c1","axis":"${ANGLE_AXES.map(x => x[0]).join(" 또는 ")}","label":"각도 한 줄 설명","consequence":"규칙이 오래 지속되어 생긴 2차·3차 결과","surprise":"바로 떠올리지 못할 이유","safe":"규칙을 어기지 않고 톤 지침의 어조로 쓸 수 있는 이유"}],"picked":["고른 후보 id ${ANGLE_PICK}개"],"classify":[{"key":"문서 key","angle":"고른 후보 id 또는 null"}]}`;
+JSON 하나만 출력: {"candidates":[{"id":"c1","axis":"${ANGLE_AXES.map(x => x[0]).join(" 또는 ")}","label":"각도 한 줄 설명","consequence":"핵심 설정이 작중 시점까지 지속된 기간 동안 생겼을 법한 결과","surprise":"바로 떠올리지 못할 이유","safe":"규칙을 어기지 않고 톤 지침의 어조로 쓸 수 있는 이유"}],"picked":["고른 후보 id ${ANGLE_PICK}개"],"classify":[{"key":"문서 key","angle":"고른 후보 id 또는 null"}]}`;
 }
 const squash = t => String(t || "").replace(/[\s.,·'"「」()\-]/g, "");
 /* 규칙을 다시 말한 것뿐인 결과는 근거로 인정하지 않는다 */
