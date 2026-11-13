@@ -63,7 +63,10 @@ function conflictContext(w, k, linkKeys) {
   (w.rules || []).forEach((r, i) => { refs["R" + (i + 1)] = { kind: "rule", i }; R.push(`R${i + 1}. ${r}`); });
   const U = (w.userCanon || "").trim(); if (U) refs.U = { kind: "canon" };
   let n = 0;
-  for (const t of w.timeline) { if (t.src === k || (t.sup && t.sup.by !== k)) continue; n++; refs["T" + n] = { kind: "timeline", t }; T.push(`T${n}. ${t.year}: ${t.event}`); }
+  // 연표는 다 남겨 두므로 대조에는 고른 것만 보낸다. 원안 연표와 직접 수정한 문서의 항목은 언제나 넣는다
+  const tlAll = w.timeline.filter(t => t.src !== k && (!t.sup || t.sup.by === k));
+  const tlPick = new Set(pickRelevant(w, k, tlAll, t => `${t.year}년 ${t.event}`, TIMELINE_PROMPT_N, [k, ...linkKeys].map(x => w.entities[x]?.title || "").join("\n")));
+  for (const t of tlAll) { if (!tlPick.has(t) && t.src !== "seed" && !S.pages[t.src]?.editedAt) continue; n++; refs["T" + n] = { kind: "timeline", t }; T.push(`T${n}. ${t.year}: ${t.event}`); }
   const active = x => !x.sup || x.sup.by === k;
   n = 0;
   for (const ek of [k, ...linkKeys]) {

@@ -11,11 +11,12 @@ vm.runInContext([
   cut("const FACT_CAP =", "/* 링크가 걸린 문장부터"),
   cut("const yearNum =", "/* 사실과 언급의 상태"), "const live = x => !x.sup;",
   cut("let focusMemo = null;", "function entityBrief"), "const yearHits = () => [];",
+  cut("const TIMELINE_PROMPT_N =", "function canonBlock"),
   cut("const refOK =", "/* 검사할 문서(focus)"), "const chOf = () => 0;",
   cut("const sentencesOf =", "/* 인포박스에서"), cut("function pageTexts(p)", "/* 이름이 목적어"),
   cut("const namesOf =", "function checkBrief"),
   require("fs").readFileSync(require("path").join(__dirname, "..", "js", "ledger.js"), "utf8").replace('"use strict";', ""),
-  "Object.assign(globalThis,{worldCheckPrompt,parseWorldCheck,worldCheckAction,ingestTerms,purgeTerms,pickTerm,glossaryBlock,findTerm,normEvent,ingestEvents,eventIssues,eventCandidates,eventBlock,eventCheckBlock,addFact,addMention,compactFacts,promptFacts,promptMentions,FACT_CAP,MENTION_CAP,addTimeline,acceptTimeline,acceptPageTimeline,timelineSubject,keyOf,norm,stripMarks});"
+  "Object.assign(globalThis,{promptTimeline,TIMELINE_PROMPT_N,worldCheckPrompt,parseWorldCheck,worldCheckAction,ingestTerms,purgeTerms,pickTerm,glossaryBlock,findTerm,normEvent,ingestEvents,eventIssues,eventCandidates,eventBlock,eventCheckBlock,addFact,addMention,compactFacts,promptFacts,promptMentions,FACT_CAP,MENTION_CAP,addTimeline,acceptTimeline,acceptPageTimeline,timelineSubject,keyOf,norm,stripMarks});"
 ].join("\n"), c);
 let n = 0; const tests = []; const test = (name, fn) => tests.push([name, fn]);
 const ent = title => ({ title, type: "", summary: "", facts: [], mentions: [], page: false, box: "" });
@@ -76,6 +77,34 @@ test("문서 작성 프롬프트는 연표를 0~2개, 세계에 영향을 준 �
 });
 test("설정 노트 초안 지침은 수량 한도의 경계를 분명히 쓰게 한다", () => {
   assert(html.includes("수량 한도는 '최대 N', 'N 이하'"));
+});
+
+test("연표도 저장할 때는 48개를 넘어도 지우지 않는다", () => {
+  const w = world("한서진");
+  for (let i = 0; i < 5; i++) c.addTimeline(w, { year: String(1000 + i), event: "원안 사건 " + i }, "seed");
+  for (let i = 0; i < 120; i++) c.addTimeline(w, { year: String(1100 + i), event: "사건 " + i }, "doc" + i);
+  assert.equal(w.timeline.length, 125); assert.equal(w.timeline[5].event, "사건 0");
+});
+test("연표를 프롬프트에 넣을 때 고른다: 원안·직접 수정한 문서는 언제나, 나머지는 관련된 것부터, 연도 순서대로", () => {
+  const w = world("한서진", "카이 마루");
+  for (let i = 0; i < 3; i++) c.addTimeline(w, { year: String(1000 + i), event: "원안 사건 " + i }, "seed");
+  for (let i = 0; i < 100; i++) c.addTimeline(w, { year: String(1100 + i), event: (i === 2 ? "카이 마루가 진수되었다 " : "사건 ") + i }, "doc" + i);
+  c.addTimeline(w, { year: "1050", event: "대체된 사건" }, "docX"); w.timeline.find(t => t.event === "대체된 사건").sup = { by: "y" };
+  c.S.pages = { doc5: { title: "직접 고친 문서", editedAt: 1 } };
+  let got = c.promptTimeline(w, null);
+  assert.equal(got.length, 3 + 1 + c.TIMELINE_PROMPT_N);
+  assert(got.some(t => t.event === "원안 사건 0") && got.some(t => t.src === "doc5")); assert(!got.some(t => t.sup));
+  assert.deepEqual(got.map(t => +t.year), got.map(t => +t.year).slice().sort((a, b) => a - b), "연도 순서 그대로");
+  assert(!got.some(t => t.event === "카이 마루가 진수되었다 2"), "초점이 없으면 최근 것부터");
+  got = c.promptTimeline(w, "카이 마루의 문서");
+  assert(got.some(t => t.event === "카이 마루가 진수되었다 2"), "초점에 나온 항목의 사건은 오래되어도 넣는다");
+  c.S.pages = {};
+});
+test("연표 상한 삭제가 없어지고 문서 작성·설정 대조가 고른 연표를 쓴다", () => {
+  assert(!html.includes("w.timeline.length > 48"));
+  assert(html.includes("const tl = promptTimeline(w, focus)"));
+  assert(html.includes("${canonBlock(w, [e.title, e.summary"));
+  assert(html.includes("ok(t.src)) }, focus)}"));
 });
 
 /* ---------- 2단계: 사실·언급 보존 ---------- */

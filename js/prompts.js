@@ -168,7 +168,7 @@ function pagePrompt(w, key, rewriteDir = null, guide = "", angle = null, angleMo
   const st = STYLES.encyc;
   return `너는 가상 세계관 위키 「${w.title}」의 집필자다. 이 위키는 실존하지 않는 세계를 다루며, 작중 기준 시점은 ${w.era}이다. 현실 세계, AI, '설정'이라는 단어 등 세계 바깥의 시선은 언급하지 말고 작중의 백과사전처럼 쓴다.
 
-${canonBlock(w)}
+${canonBlock(w, [e.title, e.summary, ...e.facts.filter(live).map(f => f.t), ...e.mentions.filter(live).map(m => m.text)].join("\n"))}
 ${isStory(w) ? "\n" + storyBlock(w, key, true) + "\n" : ""}
 ${toneBlock(w)}${w.guide ? `## 작가 지침 (사용자 지정)
 ${w.guide}
@@ -373,7 +373,7 @@ function checkPrompt(w, key) {
 - 지적할 것이 없는 것이 정상이다. 개수를 채우려고 지적하지 않는다.
 이 조건을 모두 갖춘 충돌의 severity는 high다.
 
-${canonBlock({ ...w, timeline: (w.timeline || []).filter(t => t.src !== key && ok(t.src)) })}
+${canonBlock({ ...w, timeline: (w.timeline || []).filter(t => t.src !== key && ok(t.src)) }, focus)}
 ${isStory(w) ? `\n${storyBlock(w, key)}\n${secretsBlock(w, "check")}\n이 문서는 ${p.baseAsOf || 1}~${p.syncedTo || p.baseAsOf || 1}장 시점에 작성되었다. 이 문서가 그 시점 이후의 일을 아는 것처럼 서술하면 모순으로 본다. 제목 앞에 [n장]이 붙은 섹션은 그 장에 일어난 일을 기록한 섹션이다.\n` : ""}
 ## 이 항목에 대해 다른 문서가 확정한 사실
 ${own || "(없음)"}
