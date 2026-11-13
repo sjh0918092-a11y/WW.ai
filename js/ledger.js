@@ -363,18 +363,97 @@ function parseWorldCheck(w, r) {
       keywords: wcList(x.keywords, 30, 3).filter(t => t.length >= 2), detail: evText(x.detail, 500), link, undecided: link ? wcList(x.undecided, 120, 6) : [], alts: wcAlts(x.alts, link), fix: evText(x.fix, 300), status: "open" };
   }).filter(x => x.title && x.detail && (x.docs.length || x.link));
 }
-/* 핵심어가 본문에 글자 그대로 들어 있는 문서를 관련 문서에 더한다. 뜻은 판단하지 않는다 */
-function wcExpandDocs(w, x) {
-  if (!x.keywords?.length) return 0;
-  let n = 0;
-  for (const [k, p] of wcPages(w)) {
-    if (x.docs.length >= WC_DOCS_MAX) break;
-    if (x.docs.includes(k)) continue;
-    const text = [p.title, ...pageTexts(p)].join("\n");
-    if (x.keywords.some(kw => text.includes(kw))) { x.docs.push(k); n++; }
+/* 문서에서 핵심어가 든 문장을 앞뒤 문장과 묶어 max곳까지(문자열 포함 여부만 본다) */
+function wcSnips(p, keywords, max = 3) {
+  const out = [];
+  if (!keywords?.length) return out;
+  for (const text of pageTexts(p)) {
+    const ss = sentencesOf(text);
+    for (let i = 0; i < ss.length && out.length < max; i++) {
+      if (!keywords.some(kw => ss[i].includes(kw))) continue;
+      out.push(ss.slice(Math.max(0, i - 1), i + 2).join(" ").slice(0, 400)); i += 1;
+    }
+    if (out.length >= max) break;
   }
-  return n;
+  if (!out.length && keywords.some(kw => String(p.title || "").includes(kw))) out.push(String(p.summary || p.title).slice(0, 400));
+  return out;
 }
+/* 핵심어가 본문에 글자 그대로 들어 있지만 아직 관련 문서가 아닌 문서. 바로 넣지 않고 판단을 받는다 */
+function wcCandidates(w, x) {
+  if (!x.keywords?.length) return [];
+  const out = [];
+  for (const [k, p] of wcPages(w)) {
+    if (out.length >= 30) break;
+    if (x.docs.includes(k)) continue;
+    const snips = wcSnips(p, x.keywords);
+    if (snips.length) out.push({ k, snips });
+  }
+  return out;
+}
+const wcQuote = t => "  > " + String(t).replace(/\n/g, " ");
+function wcJudgePrompt(w, groups) {
+  return `## 관련 문서 판단
+너는 가상 세계관 위키 「${w.title}」(작중 기준 시점 ${w.era})의 편집장이다. 세계 전체 점검이 찾은 패턴마다, 핵심어 검색으로 걸린 문서의 서술이 그 패턴에 속하는지 판단한다.
+- 낱말이 같다고 같은 패턴인 것은 아니고, 표현이 달라도 같은 패턴일 수 있다. 서술의 날짜, 장소, 경위(출격, 발생 경로) 같은 앞뒤 맥락으로 판단한다.
+- yes: 이 패턴에 속한다. no: 속하지 않는다(시기나 경위가 다른 별개의 일). unsure: 이 서술만으로는 정할 수 없다.
+
+${groups.map(([x, cands], i) => `### 패턴 ${i + 1}: ${x.title}
+설명: ${x.detail}
+이미 관련 문서로 정한 것: ${x.docs.map(k => `「${S.pages[k]?.title || "?"}」`).join(", ") || "(없음)"}
+${cands.map((c, j) => `- ${i + 1}-${j + 1} 「${S.pages[c.k]?.title || "?"}」\n${c.snips.map(wcQuote).join("\n")}`).join("\n")}`).join("\n\n")}
+
+JSON 객체 하나만 출력: {"judgments":[{"id":"1-1","verdict":"yes, no, unsure 중 하나"}]}`;
+}
+/* 핵심어로 걸린 문서를 quick 모델에게 한 번에 묻는다. yes는 관련 문서, unsure는 체크를 끈 추가 후보(extra), no는 버린다.
+   판단을 받지 못한 문서는 unsure로 둔다 */
+async function wcJudgeCandidates(w, found) {
+  const groups = found.map(x => [x, wcCandidates(w, x)]).filter(([, c]) => c.length);
+  if (!groups.length) return false;
+  let r = null;
+  try { r = await callJson("worldCheck", wcJudgePrompt(w, groups), { modelTier: "quick" }, { title: w.title + " · 관련 문서 판단" }); } catch {}
+  const verdict = new Map((Array.isArray(r?.judgments) ? r.judgments : []).filter(j => j && typeof j === "object").map(j => [String(j.id || "").trim(), String(j.verdict || "").trim().toLowerCase()]));
+  groups.forEach(([x, cands], i) => cands.forEach((c, j) => {
+    const v = verdict.get(`${i + 1}-${j + 1}`);
+    if (v === "yes") { if (x.docs.length < WC_DOCS_MAX) x.docs.push(c.k); }
+    else if (v !== "no") (x.extra ||= []).push({ k: c.k, on: false, snip: c.snips[0].slice(0, 200) });
+  }));
+  return true;
+}
+/* 1차 점검으로 관련 문서와 핵심어가 정해진 뒤, 그 문서들의 본문 서술(핵심어 문장과 앞뒤)을 보내 link와 alts를 한 번 더 받는다 */
+function wcLinkPrompt(w, list) {
+  return `## 연결 설정 다듬기
+너는 가상 세계관 위키 「${w.title}」(작중 기준 시점 ${w.era})의 편집장이다. 세계 전체 점검이 찾은 패턴마다 관련 문서의 본문 서술을 함께 보고 연결 설정(link)과 대안(alts)을 다시 쓴다.
+- 이 서술에 적힌 출처, 소속, 원인과 충돌하지 않게 하라. 충돌을 피할 수 없으면 기존 서술을 살리는 방향으로 설정을 짜라(예: 일부는 국가 소속으로 오인됐다).
+${WC_LINK_RULES}
+
+## 사용자 확정 설정
+${(w.userCanon || "").trim() || "(없음)"}
+
+${list.map(([x, docs], i) => `## 패턴 ${i + 1}: ${x.title}
+설명: ${x.detail}
+지금 link: ${x.link || "(없음)"}
+### 관련 문서의 본문 서술
+${docs.map(([k, snips]) => `「${S.pages[k]?.title || "?"}」\n${snips.map(wcQuote).join("\n")}`).join("\n")}
+### 관련 문서의 확정 사실
+${wcFactBlock(w, x.docs, 6) || "(없음)"}`).join("\n\n")}
+
+JSON 객체 하나만 출력: {"findings":[{"n":1,"link":"결정된 설정 한두 문장","undecided":[],"alts":["성격이 다른 대안 설정 한두 문장"]}]}`;
+}
+async function wcRefineLinks(w, found) {
+  const list = found.map(x => [x, x.docs.slice(0, 15).map(k => [k, S.pages[k] ? wcSnips(S.pages[k], x.keywords) : []]).filter(([, sn]) => sn.length)]).filter(([x, docs]) => docs.length);
+  if (!list.length) return false;
+  let r;
+  try { r = await callJson("worldCheck", wcLinkPrompt(w, list), { modelTier: "check" }, { title: w.title + " · 연결 설정 다듬기" }); } catch { return false; }   // 실패하면 1차 결과를 그대로 쓴다
+  let n = 0;
+  for (const y of (Array.isArray(r?.findings) ? r.findings : [])) {
+    const x = list[(parseInt(y?.n, 10) || 0) - 1]?.[0], link = evText(y?.link, 400);
+    if (!x || !link) continue;
+    x.link = link; x.undecided = wcList(y.undecided, 120, 6); x.alts = wcAlts(y.alts, link); n++;
+  }
+  return n > 0;
+}
+/* 일괄 고치기 대상: 관련 문서와, 사용자가 체크한 추가 후보 */
+const wcTargets = x => [...(x.docs || []), ...(x.extra || []).filter(e => e.on && !(x.docs || []).includes(e.k)).map(e => e.k)];
 /* link에 정하지 않은 표현이 남은 결과 하나만 다시 받는 프롬프트 */
 function worldCheckRetryPrompt(w, x) {
   const evs = (w.events || []).filter(e => S.pages[e.src] && (x.docs.includes(e.src) || x.docs.includes(e.k) || e.parts.some(p => x.docs.includes(p)))).sort(eventRank).map(e => eventRow(w, e, "")).slice(0, 40);
@@ -423,7 +502,9 @@ async function runWorldCheck() {
     const r = await callJson("worldCheck", worldCheckPrompt(w), { modelTier: "check" }, { title: w.title + " · 세계 전체 점검" });
     if (S.world !== w) return;
     const found = parseWorldCheck(w, r);
-    for (const x of found) wcExpandDocs(w, x);
+    await wcJudgeCandidates(w, found);   // 핵심어로 걸린 문서는 판단을 받아 yes만 넣는다
+    if (S.world !== w) return;
+    await wcRefineLinks(w, found);       // 관련 문서의 본문 서술을 보고 link와 alts를 한 번 더 받는다
     await Promise.all(found.filter(x => x.undecided.length).map(x => wcRetryLink(w, x)));   // 정하지 않은 link는 그 결과만 한 번 다시 받는다
     for (const x of found) { x.linkBad = !!x.undecided.length; delete x.undecided; }
     if (S.world !== w) return;
@@ -436,7 +517,7 @@ async function runWorldCheck() {
 }
 /* 연결을 확정한 뒤 관련 문서마다 확정 설정을 반영한다(wcFixDoc: 기존 고치기 흐름).
    사용자가 직접 고친 문서는 고치지 않고 '직접 확인 필요'로 남긴다. keys를 주면 그 문서만 다시 시도한다 */
-async function worldCheckBatch(w, x, keys = x.docs) {
+async function worldCheckBatch(w, x, keys = wcTargets(x)) {
   if (S.wcRun || !x.linked) return;
   const b = x.batch ||= { done: [], none: [], failed: [], manual: [] };
   for (const f of WC_BATCH) b[f] ||= [];
@@ -462,6 +543,12 @@ async function worldCheckBatch(w, x, keys = x.docs) {
   if (S.view.name === "canon") { renderMain(); document.getElementById("wc-" + x.id)?.scrollIntoView({ block: "center" }); }
   toast(`관련 문서 ${todo.length}개 중 ${b.done.length}개를 고쳤습니다.${b.failed.length ? ` 실패 ${b.failed.length}개는 다시 시도할 수 있습니다.` : ""}${b.manual.length ? ` 직접 고친 문서 ${b.manual.length}개는 직접 확인해 주세요.` : ""}`);
 }
+/* 추가 후보의 체크. 일괄 고치기는 체크한 후보에만 적용한다 */
+async function wcToggleExtra(id, k, on) {
+  const w = S.world, x = w?.worldCheck?.items?.find(y => y.id === id), e = x?.extra?.find(y => y.k === k); if (!e) return;
+  e.on = !!on; S.wcFocus = id;
+  try { await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
+}
 /* 제안 하나에 대한 사용자의 선택. arg: fix면 문서 키, alt면 대안 번호, edit면 사용자가 고친 문장 */
 async function worldCheckAction(id, what, arg) {
   const w = S.world, x = w?.worldCheck?.items?.find(y => y.id === id); if (!x) return;
@@ -482,7 +569,7 @@ async function worldCheckAction(id, what, arg) {
   if (what === "retry") { if (x.status === "linked" && x.batch?.failed?.length) await worldCheckBatch(w, x, x.batch.failed.slice()); return; }
   if (what === "keep") x.status = "kept";
   else if (what === "fix") {
-    const p = S.pages[arg]; if (!p || !x.docs.includes(arg)) return;
+    const p = S.pages[arg]; if (!p || !wcTargets(x).concat((x.extra || []).map(e => e.k)).includes(arg)) return;
     if (S.gen && S.gen.key === arg) { toast("이 문서를 작성하는 중입니다."); return; }
     if (x.status === "open") x.status = "fix";
     try { await Store.saveWorld(w); } catch {}

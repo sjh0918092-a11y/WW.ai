@@ -284,6 +284,7 @@ $("#searchForm").addEventListener("submit", ev => {
   if (hit) { $("#q").value = ""; $("#sugg").hidden = true; openEntity(hit[0]); } else goSearch(q);
 });
 document.addEventListener("change", ev => {
+  if (ev.target.dataset?.wcExtra) { wcToggleExtra(ev.target.dataset.wcExtra, ev.target.dataset.wcDoc, ev.target.checked); return; }
   if (ev.target.dataset?.worldExport && S.world) { const field = ev.target.dataset.worldExport; if (["images", "stories"].includes(field)) (S.worldExports[S.world.id] ||= { images: true, stories: true })[field] = ev.target.checked; return; }
   if (ev.target.dataset?.proseImage === "model" && S.proseGen?.illustration && !S.proseGen.busy) { S.proseGen.illustration.opts.model = ev.target.value; renderMain(); return; }
   if (ev.target.dataset?.proseImage && S.proseGen?.illustration && !S.proseGen.busy) { const f = ev.target.dataset.proseImage; if (["model", "style", "ratio", "direction"].includes(f)) S.proseGen.illustration.opts[f] = ev.target.value; }

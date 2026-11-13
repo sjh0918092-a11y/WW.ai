@@ -38,6 +38,13 @@ const read = (p, k) => p.evaluate(k => new Promise(resolve => { const r = indexe
   await ctx.route("**/v1beta/models/**", async r => {
     const prompt = JSON.parse(r.request().postData()).contents[0].parts[0].text;
     if (prompt.includes("## 세계 전체 점검")) { prompts.push(prompt); try { await r.fulfill({ contentType: "text/event-stream", body: "data: " + JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(wcReply) }] }, finishReason: "STOP" }] }) + "\n\n" }); } catch {} return; }
+    if (prompt.startsWith("## 관련 문서 판단")) {   // 핵심어로 걸린 문서: 첫째는 yes, 나머지는 unsure
+      prompts.push(prompt);
+      const ids = [...prompt.matchAll(/^- (\d+-\d+) 「/gm)].map(m => m[1]);
+      const judgments = ids.map((id, i) => ({ id, verdict: i === 0 ? "yes" : "unsure" }));
+      try { await r.fulfill({ contentType: "text/event-stream", body: "data: " + JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ judgments }) }] }, finishReason: "STOP" }] }) + "\n\n" }); } catch {}
+      return;
+    }
     if (prompt.includes("편집자가 남긴 메모")) {   // 세계 점검 반영: 고치기 흐름
       prompts.push(prompt);
       const old = ["앞바다에서 맞붙었다.", "출격한 기지다."].find(t => prompt.includes(t));
@@ -107,17 +114,22 @@ const read = (p, k) => p.evaluate(k => new Promise(resolve => { const r = indexe
     await page.click('#side [data-act="canon"]'); await page.waitForSelector("#worldCheck");
     assert.equal(prompts.length, before, "설정 노트를 열어도 점검하지 않는다");
     await page.click('[data-act="world-check"]'); await page.waitForSelector("[data-wc]");
-    assert.equal(prompts.length, before + 1); const wp = prompts[prompts.length - 1];
+    assert.equal(prompts.length, before + 2, "점검 한 번과 관련 문서 판단 한 번"); const wp = prompts[before];
     assert(wp.includes("- 북해 기지 (지명): 북해의 해저 기지")); assert(wp.includes("## 사건 장부")); assert(wp.includes("- Type-05: 소녀 한 명의 개인 이름 [사용자 확정]")); assert(wp.includes("- 2015: 한서진이 해저 결투에서 이겼다"));
     assert.equal(await page.locator("[data-wc]").count(), 2);
     saved = await read(page, "w:sea"); assert.equal(saved.worldCheck.items.length, 2); assert(saved.worldCheck.items.every(x => x.status === "open")); assert.equal(saved.userCanon, "", "고르기 전에는 아무것도 바꾸지 않는다");
     pass("세계 전체 점검은 버튼을 눌렀을 때 한 번만 부르고, 결과를 제안 목록으로 보여 준다");
 
     const [a, b] = saved.worldCheck.items;
-    assert.deepEqual(a.docs, [duel, hero, stub], "핵심어 본문 검색으로 관련 문서를 보강한다");
+    assert.deepEqual(a.docs, [duel, hero], "핵심어로 걸린 문서는 판단에서 yes인 것만 관련 문서에 넣는다");
+    assert.deepEqual(a.extra.map(e => [e.k, e.on]), [[stub, false]], "unsure는 체크가 꺼진 추가 후보로");
+    const judge = prompts.find(p => p.startsWith("## 관련 문서 판단")); assert(judge && judge.includes("「북해 기지」\n  > "));
+    assert.equal(await page.isChecked(`[data-wc-extra="${a.id}"][data-wc-doc="${stub}"]`), false);
+    await page.check(`[data-wc-extra="${a.id}"][data-wc-doc="${stub}"]`);
+    await page.waitForFunction(([id, k]) => S.world.worldCheck.items.find(x => x.id === id).extra.find(e => e.k === k).on, [a.id, stub]);
     assert(await page.locator(`[data-wc-alts="${a.id}"]`).isVisible()); assert.equal(await page.locator(`[data-wc-alts="${b.id}"]`).count(), 0, "대안이 없으면 [다른 안 보기]가 없다");
     assert.equal(await page.locator(`#wc-${a.id} [data-wc-fix]`).first().isVisible(), false, "문서별 [고치기]는 펼치기 안에 있다");
-    const nFix = prompts.length;
+    const nFix = prompts.length;   // 이후 프롬프트는 고치기 흐름만
     await page.click(`[data-wc-link="${a.id}"]`);
     await page.waitForFunction(id => { const x = S.world.worldCheck.items.find(y => y.id === id); return x.batch && !S.wcRun; }, a.id);
     assert.equal(await page.inputValue("#userTa"), "- 북해의 잠항 병기 침투는 모두 한 조직의 작전이다.");

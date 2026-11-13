@@ -102,12 +102,15 @@ function wcItemHtml(w, x) {
   const title = k => S.pages[k]?.title || w.entities[k]?.title || "?";
   const id = esc(x.id), run = S.wcRun, alts = Array.isArray(x.alts) ? x.alts : [], docs = x.docs || [];
   const fixBtns = keys => keys.map(k => `<button type="button" class="btn" data-wc-fix="${id}" data-wc-doc="${esc(k)}" ${S.gen || S.fixing || !S.sample ? "disabled" : ""}>「${esc(title(k))}」 고치기</button>`).join("");
-  const perDoc = docs.length ? `<details class="wc-docs" style="margin-top:6px"><summary>문서별로 고치기</summary><div class="row" style="margin-top:4px">${fixBtns(docs)}</div></details>` : "";
+  const extra = Array.isArray(x.extra) ? x.extra.filter(e => S.pages[e.k] && !docs.includes(e.k)) : [], fixKeys = [...docs, ...extra.map(e => e.k)];
+  const perDoc = fixKeys.length ? `<details class="wc-docs" style="margin-top:6px"><summary>문서별로 고치기</summary><div class="row" style="margin-top:4px">${fixBtns(fixKeys)}</div></details>` : "";
+  const extraHtml = extra.length ? `<div class="wc-extra" style="margin-top:6px"><p class="note" style="margin:0">추가 후보 ${extra.length}개 <span class="src">· 핵심어로 찾았지만 이 패턴에 속하는지 확실하지 않은 문서입니다. 체크한 문서만 함께 고칩니다</span></p>
+      <ul style="margin:4px 0 0;padding-left:20px">${extra.map(e => `<li><label><input type="checkbox" data-wc-extra="${id}" data-wc-doc="${esc(e.k)}" ${e.on ? "checked" : ""} ${run ? "disabled" : ""}> 「${esc(title(e.k))}」</label>${e.snip ? ` <span class="note">${esc(e.snip)}</span>` : ""}</li>`).join("")}</ul></div>` : "";
   const docList = docs.length ? `<p class="note" style="margin:0">관련 문서 ${docs.length}개: ${docs.map(k => linkHtml(title(k))).join(", ")}</p>` : "";
   let body;
   if (x.status === "open") {
     const lock = !!run || !S.sample;
-    body = `<p style="margin:6px 0">${esc(x.detail)}</p>${docList}
+    body = `<p style="margin:6px 0">${esc(x.detail)}</p>${docList}${extraHtml}
       ${x.link ? `<p style="margin:6px 0 0"><span class="src">연결 설정</span> ${esc(x.link)}</p>` : ""}
       ${x.linkBad ? `<p class="note" style="margin:4px 0 0" role="alert">연결 설정에 정하지 않은 표현이 남아 바로 연결할 수 없습니다. [고쳐서 연결]로 문장을 정해 주세요.</p>` : ""}
       ${x.fix ? `<p class="note" style="margin:4px 0 0">고칠 방향: ${esc(x.fix)}</p>` : ""}
