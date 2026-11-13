@@ -433,7 +433,7 @@ ${crossRefs(w, p) || "(없음)"}
 - 둘 다 참일 수는 있지만 독자가 모순으로 읽기 쉬운 곳은 severity low로 쓰고, conflict에 어떻게 읽으면 둘 다 참이 되는지도 적는다.
 - 지적할 것이 없는 것이 정상이다. 개수를 채우려고 지적하지 않는다.
 
-${(() => { const g = glossaryBlock(w, docForCheck(p)); return g ? g + "\n\n" : ""; })()}## 문서
+${eventBeatsCheckBlock(w, key)}${(() => { const g = glossaryBlock(w, docForCheck(p)); return g ? g + "\n\n" : ""; })()}## 문서
 ${docForCheck(p)}
 
 ${ISSUE_JSON}`;

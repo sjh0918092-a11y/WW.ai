@@ -128,7 +128,10 @@ function timelineIssues(w, k) {
 /* ---------- 사건 장부 ----------
    w.events: [{ k(사건 항목 키, 항목이 없으면 이름의 키), name, kind?(그 세계의 짧은 사건 유형 이름. 옛 기록에는 없다), date, place, nums: [{name, value, unit}], parts(참가 항목 키), result, src, createdAt }]
    문서가 날짜·장소·수치까지 구체적으로 서술한 사건만 생성 응답의 "events"로 받는다.
-   처음 기록된 값이 기준이다(refOK와 같은 원칙). 사용자가 직접 고친 문서의 기록은 언제나 기준이다 */
+   처음 기록된 값이 기준이다(refOK와 같은 원칙). 사용자가 직접 고친 문서의 기록은 언제나 기준이다
+   detail: 이 문서가 이 사건을 한 문단 넘게 자세히 서술했는가(생성 응답). detailIn: 그 사건의 상세 서술을 맡은 문서 키
+   (사건 이름의 문서가 있으면 그 문서, 없으면 detail인 기록 중 기준 순서가 앞선 문서). 다른 문서는 요약하고 그 문서를 참조한다.
+   beats: [{actor, action}] 핵심 경과 3~5줄. 기준 순서가 앞선 기록의 경과가 기준이다. 옛 기록에는 detail·detailIn·beats가 없다 */
 const EVENTS_PER_PAGE = 6;
 const evText = (x, n) => norm(stripMarks(asText(x ?? ""))).slice(0, n);
 function normEvent(w, x) {
@@ -138,8 +141,8 @@ function normEvent(w, x) {
   const nums = (Array.isArray(x.nums) ? x.nums : []).map(n => n && typeof n === "object" ? { name: evText(n.name, 30), value: evText(n.value, 30), unit: evText(n.unit, 20) } : null).filter(n => n && n.name && n.value).slice(0, 10);
   if (!date || (!place && !nums.length)) return null;   // 날짜와, 장소나 수치가 있어야 구체적인 기록이다
   const parts = [...new Set((Array.isArray(x.participants) ? x.participants : []).map(t => kOf(w, evText(t, 80))).filter(k => w.entities[k]))].slice(0, 12);
-  const kind = evKind(w, x.kind);
-  return { k: kOf(w, name), name, ...(kind ? { kind } : {}), date, place, nums, parts, result: evText(x.result, 200) };
+  const kind = evKind(w, x.kind), beats = normBeats(x.beats);
+  return { k: kOf(w, name), name, ...(kind ? { kind } : {}), date, place, nums, parts, result: evText(x.result, 200), ...(x.detail === true || x.detail === "true" ? { detail: true } : {}), ...(beats.length ? { beats } : {}) };
 }
 /* 이 문서(src)의 사건 기록을 새로 받는다. 이 문서가 전에 남긴 기록은 바꿔 끼운다 */
 function ingestEvents(w, src, list) {
@@ -148,12 +151,29 @@ function ingestEvents(w, src, list) {
   for (const x of list) {
     const ev = normEvent(w, x); if (!ev) continue;
     const same = got.find(y => y.k === ev.k);
-    if (same) { for (const n of ev.nums) if (!same.nums.some(m => numKey(m) === numKey(n))) same.nums.push(n); continue; }
+    if (same) { for (const n of ev.nums) if (!same.nums.some(m => numKey(m) === numKey(n))) same.nums.push(n); if (ev.detail) same.detail = true; if (!same.beats && ev.beats) same.beats = ev.beats; continue; }
     if (got.length < EVENTS_PER_PAGE) got.push({ ...ev, src, createdAt: Date.now() });
   }
   w.events = (w.events || []).filter(x => x.src !== src).concat(got);
+  for (const ek of new Set(got.map(x => x.k))) {   // 상세 서술을 맡은 문서를 장부에 남긴다
+    const d = eventDetailIn(w, ek, src);
+    for (const x of w.events) if (x.k === ek) { if (d) x.detailIn = d; else delete x.detailIn; }
+  }
   return got.length;
 }
+const BEATS_MAX = 5;
+function normBeats(list) {
+  return (Array.isArray(list) ? list : []).map(b => b && typeof b === "object" ? { actor: evText(b.actor ?? b.who, 60), action: evText(b.action ?? b.what, 120) } : null).filter(b => b && b.actor && b.action).slice(0, BEATS_MAX);
+}
+/* 상세 서술을 맡은 문서: 사건 이름의 문서 > detail인 기록 중 직접 고친 문서 > 먼저 쓴 문서. cur는 지금 저장 중인(아직 S.pages에 없을 수 있는) 문서 */
+function eventDetailIn(w, ek, cur = null) {
+  if (w.entities[ek] && (cur === ek || (S.world === w && S.pages[ek]))) return ek;
+  const c = (w.events || []).filter(x => x.k === ek && x.detail && (x.src === cur || S.pages[x.src])).sort(eventRank)[0];
+  return c ? c.src : null;
+}
+/* 기준 핵심 경과: beats가 있는 기록 중 기준 순서가 가장 앞선 것 */
+const eventBeats = (w, ek, okSrc = null) => (w.events || []).filter(x => x.k === ek && x.beats?.length && S.pages[x.src] && (!okSrc || okSrc(x.src))).sort(eventRank)[0] || null;
+const beatLine = (w, x) => `- 「${x.name}」 (「${S.pages[x.src]?.title || "?"}」${eventEdited(x) ? " [사용자 확정]" : ""}): ${x.beats.map(b => `${b.actor} — ${b.action}`).join(" → ")}`;
 const numKey = n => norm(n.name).replace(/\s/g, "") + "|" + norm(n.unit).replace(/\s/g, "").toLowerCase();
 const numVal = v => { const t = String(v).replace(/[\s,]/g, ""); return /^-?\d+(?:\.\d+)?$/.test(t) ? String(+t) : t; };
 const eventEdited = x => !!S.pages[x.src]?.editedAt;
@@ -191,9 +211,12 @@ function eventRow(w, x, mark) {
 }
 const EVENT_HEAD = "| 사건 | 날짜 | 장소 | 수치 | 참가 | 결과 | 기록한 문서 |\n|---|---|---|---|---|---|---|";
 /* 이 문서가 다룰 사건: 이 항목 자체, 이 항목이 참가한 사건, 관련 항목의 사건. 그 사건의 기록은 전부 넣는다 */
-function eventLedgerFor(w, key, rel = [], okSrc = null) {
+function eventKeysFor(w, key, rel = [], okSrc = null) {
   const near = new Set([key, ...rel]), all = (w.events || []).filter(x => x.src !== key && (!okSrc || okSrc(x.src)));
-  const ks = new Set(all.filter(x => near.has(x.k) || x.parts.includes(key)).map(x => x.k));
+  return [...new Set(all.filter(x => near.has(x.k) || x.parts.includes(key)).map(x => x.k))];
+}
+function eventLedgerFor(w, key, rel = [], okSrc = null) {
+  const all = (w.events || []).filter(x => x.src !== key && (!okSrc || okSrc(x.src))), ks = eventKeysFor(w, key, rel, okSrc);
   const rows = [];
   for (const ek of ks) {
     const list = all.filter(x => x.k === ek).sort(eventRank);
@@ -203,20 +226,32 @@ function eventLedgerFor(w, key, rel = [], okSrc = null) {
 }
 function eventBlock(w, key, rel) {
   const rows = eventLedgerFor(w, key, rel); if (!rows.length) return "";
+  const ks = eventKeysFor(w, key, rel), beats = ks.map(ek => eventBeats(w, ek)).filter(Boolean);
+  const det = ks.map(ek => [ek, eventDetailIn(w, ek)]).filter(([, d]) => d && d !== key && w.entities[d]);
+  const evName = ek => (w.events || []).filter(x => x.k === ek).sort(eventRank)[0]?.name || w.entities[ek]?.title || "?";
   return `## 사건 장부 (이 문서가 다룰 수 있는 사건의 확정 기록)
 같은 사건을 다룰 때 날짜, 장소, 수치는 '(기준)' 기록을 글자 그대로 따른다. 이 사건의 수치를 새로 적을 때는 장부와 같은 이름과 단위를 쓴다.
 ${EVENT_HEAD}
 ${rows.join("\n")}
-
+${beats.length ? `
+### 핵심 경과 (먼저 기록한 문서 기준. [사용자 확정]은 직접 고친 문서)
+${beats.map(x => beatLine(w, x)).join("\n")}
+이 경과의 주체와 행위는 바꾸지 않는다. 세부 묘사는 덧붙여도 된다.
+` : ""}${det.length ? `
+### 자세한 서술을 맡은 문서
+${det.map(([ek, d]) => { const t = w.entities[d].title; return `- 「${evName(ek)}」: 이 사건은 「${t}」 문서에 자세히 서술되어 있다. 이 문서에서는 이 항목의 관점에서 2~3문장으로 요약하고, '자세한 내용은 [[${t}]] 문서 참조'를 붙인다. 장면을 다시 묘사하지 않는다.`; }).join("\n")}
+이 항목의 역할이 그 사건에서 결정적이고, 상세 서술 문서에 없는 이 항목만의 관점(그 순간 이 항목의 처지, 그 뒤의 영향)이 있으면 그 부분만 덧붙일 수 있다.
+` : ""}
 `;
 }
 /* 검사용: 이 문서의 기준이 되는 사건 기록과, 같은 사건인지 모델이 판단할 후보 */
 function eventCheckBlock(w, key, okSrc) {
   const rows = eventLedgerFor(w, key, (w.events || []).filter(x => x.src === key).map(x => x.k), okSrc);
   const cand = eventCandidates(w, key);
+  const beats = eventKeysFor(w, key, (w.events || []).filter(x => x.src === key).map(x => x.k), okSrc).map(ek => eventBeats(w, ek, x => x !== key && (!okSrc || okSrc(x)))).filter(Boolean);
   if (!rows.length && !cand.length) return "";
   return `## 사건 장부 (먼저 기록된 사건)
-${rows.length ? `${EVENT_HEAD}\n${rows.join("\n")}\n` : "(없음)\n"}${cand.length ? `
+${rows.length ? `${EVENT_HEAD}\n${rows.join("\n")}\n` : "(없음)\n"}${beats.length ? `핵심 경과(누가 무엇을 했는가). 이 문서가 같은 사건의 주체나 행위를 다르게 썼으면 지적한다(evidence에는 경과 줄을 옮긴다). 세부 묘사를 덧붙인 것은 지적하지 않는다.\n${beats.map(x => beatLine(w, x)).join("\n")}\n` : ""}${cand.length ? `
 ## 같은 사건일 수 있는 기록 (이름이 달라 앱이 정하지 못했다. 날짜가 겹치고 참가자가 같다)
 ${cand.map(([m, r]) => `- 이 문서: 「${m.name}」 ${m.date}${m.place ? ", " + m.place : ""}${m.nums.length ? ", " + numText(m) : ""}\n  「${S.pages[r.src]?.title || "?"}」: 「${r.name}」 ${r.date}${r.place ? ", " + r.place : ""}${r.nums.length ? ", " + numText(r) : ""}`).join("\n")}
 두 기록이 같은 사건을 가리키면 날짜, 장소, 수치가 어긋나는 곳을 지적하고(evidence에는 다른 문서의 기록을 옮긴다), 다른 사건이면 지적하지 않는다.
@@ -266,10 +301,23 @@ ${list.map(e => `| ${cell(e.kind)} | ${cell(e.name)} | ${cell(e.date)} | ${cell(
 
 `;
 }
+/* 문서 읽기 검사의 근거: 이 문서가 다룬 사건을 먼저 기록한 다른 문서의 핵심 경과. 뜻 비교는 검사 모델이 한다 */
+function eventBeatsCheckBlock(w, key) {
+  const p = S.pages[key]; if (!p || p.editedAt) return "";   // 직접 고친 문서는 그 자체가 기준이다
+  const mine = (w.events || []).filter(x => x.src === key);
+  const ks = new Set([key, ...mine.map(x => x.k), ...(w.events || []).filter(x => x.parts.includes(key)).map(x => x.k)]);
+  const list = [...ks].map(ek => eventBeats(w, ek, src => src !== key && refOK(src, p))).filter(Boolean);
+  if (!list.length) return "";
+  return `## 다른 문서가 먼저 기록한 사건의 핵심 경과
+이 문서가 같은 사건을 다룰 때 아래 경과의 주체(누가)와 행위(무엇을)를 다르게 썼는지 본다. 다르게 썼으면 claim에 이 문서의 서술을 글자 그대로 옮기고 evidence에 아래 경과 줄을 옮긴다. 세부 묘사를 덧붙인 것은 지적하지 않는다.
+${list.map(x => beatLine(w, x)).join("\n")}
+
+`;
+}
 const eventKindsNote = w => { const ks = eventKinds(w); return ks.length ? ` 이미 쓰는 유형 이름: ${ks.join(", ")}. 같은 종류면 이 이름을 글자 그대로 쓰고, 새 종류일 때만 새 이름을 짓는다.` : ""; };
-const EVENTS_SPEC_BASE = `events에는 이 문서가 날짜와 함께 장소나 수치까지 구체적으로 서술한 사건만 0~4개 넣는다. 막연히 언급만 한 사건, 날짜가 없는 사건은 넣지 않는다. name은 사건 항목을 링크했다면 그 제목을 글자 그대로 쓰고, 장부에 이미 있는 사건이면 장부의 사건 이름, 수치 이름, 단위를 똑같이 쓴다. nums의 value에는 단위 없이 값만 쓴다. participants에는 참가한 항목 제목을 글자 그대로 쓴다. kind에는 이 세계에서 쓰는 짧은 사건 유형 이름(예: 결투, 침투, 사고, 조약, 쿠데타)을 하나 쓴다.`;
+const EVENTS_SPEC_BASE = `events에는 이 문서가 날짜와 함께 장소나 수치까지 구체적으로 서술한 사건만 0~4개 넣는다. 막연히 언급만 한 사건, 날짜가 없는 사건은 넣지 않는다. name은 사건 항목을 링크했다면 그 제목을 글자 그대로 쓰고, 장부에 이미 있는 사건이면 장부의 사건 이름, 수치 이름, 단위를 똑같이 쓴다. nums의 value에는 단위 없이 값만 쓴다. participants에는 참가한 항목 제목을 글자 그대로 쓴다. kind에는 이 세계에서 쓰는 짧은 사건 유형 이름(예: 결투, 침투, 사고, 조약, 쿠데타)을 하나 쓴다. detail은 이 문서가 이 사건을 한 문단 넘게 자세히 서술했으면 true, 짧게 요약하거나 언급만 했으면 false다. beats에는 이 문서가 서술한 사건의 핵심 경과 3~5줄을 순서대로 쓰고, 각 줄은 actor(그 일을 한 주체: 항목 제목이나 이름)와 action(한 일)이다. 장부에 핵심 경과가 이미 있는 사건이면 그 주체와 행위를 그대로 따른다.`;
 const eventsSpec = w => EVENTS_SPEC_BASE + eventKindsNote(w);
-const EVENTS_JSON = `"events":[{"name":"사건 이름","kind":"사건 유형","date":"날짜(문서에 쓴 그대로)","place":"장소","nums":[{"name":"수치 이름(예: 거리, 수심, 병력, 사상자)","value":"값","unit":"단위"}],"participants":["참가 항목 제목"],"result":"결과 한 문장"}]`;
+const EVENTS_JSON = `"events":[{"name":"사건 이름","kind":"사건 유형","date":"날짜(문서에 쓴 그대로)","place":"장소","nums":[{"name":"수치 이름(예: 거리, 수심, 병력, 사상자)","value":"값","unit":"단위"}],"participants":["참가 항목 제목"],"result":"결과 한 문장","detail":"true 또는 false","beats":[{"actor":"주체","action":"한 일"}]}]`;
 
 /* ---------- 용어 정의 ----------
    w.glossary: [{ term, definition, src, confirmed, at, alts?: [{ definition, src, at }] }]
