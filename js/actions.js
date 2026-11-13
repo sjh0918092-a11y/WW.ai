@@ -246,6 +246,7 @@ async function openWorld(wid, goKey, restoring = false) {
   const merged = await autoMerge(w);
   await cleanChapterTitles(w);
   const unbadged = await cleanAiSupersede(w);
+  if (fixOldAngles(w)) { try { await Store.saveWorld(w); } catch {} }   // 이전 버전 각도: 두 번 이상 쓴 것은 은퇴
   if (dedupeRelations(w)) { try { await Store.saveWorld(w); } catch {} }
   if (restoring) { S.view = { name: "article", key: w.mainKey }; }
   else openEntity(goKey && (w.entities[goKey] || w.aliases?.[goKey]) ? goKey : w.mainKey);
@@ -294,7 +295,8 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
   let backup = null, oldPage = null;
   if (rewrite) { oldPage = S.pages[k]; backup = prepareRewrite(w, k); delete S.pages[k]; }
   const ctl = new AbortController();
-  const angle = !rewrite && !novel ? pickAngle(w, k, Math.random, { person: e.type === "인물" }) : null;   // 랜덤 서핑은 선정 단계에서 따로 고른다
+  const angle = !rewrite && !novel ? pickAngle(w, k, Math.random, { person: e.type === "인물" }) : null;
+  const birthday = !rewrite && (!e.type || e.type === "인물") && !hasBirth(e) ? randomBirthday() : null;   // 랜덤 서핑은 선정 단계에서 따로 고른다
   S.gen = { key: k, wid: w.id, title: e.title, raw: "", t0: performance.now(), ctl, rewrite: !!rewrite, direction: direction || "", angle };
   S.genErr = null; S.confirmRewrite = null; S.view = { name: "article", key: k };
   renderAll(); window.scrollTo({ top: 0 });
@@ -304,7 +306,7 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
       try { const t = await detectTone(w); if (t) { w.tone = t; toast(`분위기를 「${t.label}」(으)로 판별했습니다. 설정 노트에서 고칠 수 있습니다.`); } } catch {}
       if (ctl.signal.aborted) throw { code: "cancelled" };
     }
-    const out = await callJson("page", pagePrompt(w, k, rewrite ? (direction || "") : null, rewrite ? "" : (direction || ""), angle || (novel ? novelAngle : null), angle ? "section" : "novel"), { signal: ctl.signal, modelTier: "default", ...PAGE_MODEL, onRetry: r => { if (S.gen) { S.gen.retry = r; updateGenLive(); } }, onText: ({ text }) => { if (S.gen) { S.gen.raw = text; updateGenLive(); } } }, { title: e.title, type: TYPES.includes(e.type) ? e.type : "", ents: Object.keys(w.entities).length });
+    const out = await callJson("page", pagePrompt(w, k, rewrite ? (direction || "") : null, rewrite ? "" : (direction || ""), angle || (novel ? novelAngle : null), angle ? "section" : "novel", birthday), { signal: ctl.signal, modelTier: "default", ...PAGE_MODEL, onRetry: r => { if (S.gen) { S.gen.retry = r; updateGenLive(); } }, onText: ({ text }) => { if (S.gen) { S.gen.raw = text; updateGenLive(); } } }, { title: e.title, type: TYPES.includes(e.type) ? e.type : "", ents: Object.keys(w.entities).length });
     if (out && Object.prototype.hasOwnProperty.call(out, "redirect")) {
       if (novel) throw { code: "discovery_duplicate", existing: out.redirect };
       if (ctl.signal.aborted) throw { code: "cancelled" };
@@ -380,11 +382,20 @@ function afterGen(k, ok) {
   drainSync();
 }
 
+/* 단어 중간에서 끊긴 링크를 푼다: "[[브리]]핑" → "브리핑". 링크 뒤에 붙은 한글이 조사·어미로 시작하면 그대로 둔다.
+   링크를 뽑기 전에 풀기 때문에 그 링크로 빈 항목이 생기지 않는다 */
+const LINK_TAIL_OK = /^(?:으로써|으로서|으로|로써|로서|로|에서|에게|에는|에도|에의|에|께서|께|한테|은|는|이|가|의|을|를|와|과|도|만|까지|부터|처럼|보다|이다|였다|이었|였|이며|며|이나|나|이랑|랑|하고|하|한|했|할|해|함|히|들|뿐|마저|조차|밖에|대로|마다|씩|쯤|이라|라는|라고|란|이란|인|이자|이고|고|과의|와의)/;
+const unglueLinks = t => String(t).replace(/\[\[([^\[\]|]+?)(?:\|([^\[\]]+?))?\]\]([가-힣]+)/g, (m, a, b, tail) => LINK_TAIL_OK.test(tail) ? m : (b || a) + tail);
+/* 새 인물 문서의 생일(월·일)은 코드에서 고르게 정한다(모델이 특정 날짜에 몰아 정하는 버릇을 막는다) */
+const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+function randomBirthday(rand = Math.random) { const m = 1 + Math.min(11, Math.floor(rand() * 12)); return { m, d: 1 + Math.min(MONTH_DAYS[m - 1] - 1, Math.floor(rand() * MONTH_DAYS[m - 1])) }; }
+const BIRTH_RE = /생일|출생|태어|탄생|\d{1,2}\s*월\s*\d{1,2}\s*일\s*생/;
+const hasBirth = e => [...(e?.facts || []).filter(live).map(f => f.t), ...(e?.mentions || []).filter(live).map(m => m.text)].some(t => BIRTH_RE.test(String(t || "")));
 function integrate(w, key, out) {
   const e = w.entities[key];
-  if (Array.isArray(out?.sections)) for (const s of out.sections) if (s && typeof s.body === "string") s.body = cleanLinks(w, s.body);
-  if (Array.isArray(out?.infobox)) for (const r of out.infobox) if (r && typeof r.value === "string") r.value = cleanLinks(w, r.value);
-  if (Array.isArray(out?.notices)) out.notices = out.notices.map(x => typeof x === "string" ? cleanLinks(w, x) : x);
+  if (Array.isArray(out?.sections)) for (const s of out.sections) if (s && typeof s.body === "string") s.body = cleanLinks(w, unglueLinks(s.body));
+  if (Array.isArray(out?.infobox)) for (const r of out.infobox) if (r && typeof r.value === "string") r.value = cleanLinks(w, unglueLinks(r.value));
+  if (Array.isArray(out?.notices)) out.notices = out.notices.map(x => typeof x === "string" ? cleanLinks(w, unglueLinks(x)) : x);
   if (Array.isArray(out?.navboxes)) for (const nb of out.navboxes) for (const r of (Array.isArray(nb?.rows) ? nb.rows : [])) if (Array.isArray(r?.items)) r.items = r.items.map(x => typeof x === "string" ? cleanLinks(w, x) : x);
   const sections = (Array.isArray(out?.sections) ? out.sections : []).filter(s => s && (s.body || s.heading)).map(s => { const x = { heading: String(s.heading || "").replace(/^#+\s*/, "").replace(/^\d+(\.\d+)*\.?\s+/, "").slice(0, 80), level: s.level === 2 ? 2 : 1, body: String(s.body || "") }; if (s.ch > 0) x.ch = +s.ch; return x; });
   if (sections.length && sections[0].level === 2) sections[0].level = 1;

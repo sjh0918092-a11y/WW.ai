@@ -147,7 +147,7 @@ function catGuide(w, key) {
 ${have.length ? `이 세계관에 이미 있는 분류(괄호는 붙은 문서 수, 많이 쓰인 순): ${have.map(([c, k]) => `${c}(${k})`).join(", ")}
 목록 중 좁힌 분류(예: "○○의 △△")보다 넓은 분류를 우선해 고른다.` : "이 세계관에는 아직 분류가 없다. 다른 문서에도 두루 쓰일 넓은 분류로 만든다."}`;
 }
-function pagePrompt(w, key, rewriteDir = null, guide = "", angle = null, angleMode = "section") {   // angleMode: section(대상이 정해진 문서에 얹기) · novel(랜덤 서핑이 방향에 넣어 보낸 각도)
+function pagePrompt(w, key, rewriteDir = null, guide = "", angle = null, angleMode = "section", birthday = null) {   // angleMode: section(대상이 정해진 문서에 얹기) · novel(랜덤 서핑이 방향에 넣어 보낸 각도)
   const e = w.entities[key];
   const ty = TYPES.includes(e.type) ? e.type : "";
   const rel = related(w, key);
@@ -179,7 +179,10 @@ ${target}
 ${rewriteDir === null ? redirectBlock(w, key) : ""}
 ${(() => { const nbs = navboxesFor(w, key).filter(([, nb]) => nb.src !== key); return nbs.length ? `\n이 항목은 아래 틀에 속해 있다. 이름, 번호, 역할, 전·현직 여부와 다른 구성원과의 관계를 틀과 정확히 일치시킨다. 이 틀을 다시 만들지 않는다.\n${nbs.map(([, nb]) => navboxText(nb)).join("\n\n")}` : ""; })()}
 
-${guide ? `## 사용자가 요청한 방향
+${birthday && rewriteDir === null ? `## 생일 (인물 문서일 때만)
+이 문서가 인물 문서이고 위의 확정 내용에 생일·출생일이 없다면, 생일(월·일)은 ${birthday.m}월 ${birthday.d}일로 한다. 출생 연도는 확정 내용과 세계관에 맞게 정한다. 사용자가 요청한 방향이 생일을 정했거나, 인물이 아니면 이 항목은 무시한다.
+
+` : ""}${guide ? `## 사용자가 요청한 방향
 ${guide}
 이 방향을 최우선으로 따르되, 위의 확정 내용(핵심 규칙, 연표, 사용자 확정 설정, 다른 문서의 사실과 언급)과 충돌하는 부분은 따르지 않는다. 방향이 분량이나 구성에 관한 것이면 아래 작성 규칙의 분량·구성보다 우선한다.
 

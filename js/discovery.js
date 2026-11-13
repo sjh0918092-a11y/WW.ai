@@ -87,7 +87,7 @@ function pickAngle(w, k = null, rand = Math.random, opts = {}) {
 }
 /* 빨간 링크처럼 대상이 이미 정해진 새 문서에 얹는 각도. 대상은 바꾸지 않고 섹션 하나(인물이면 태도)만 그 시선으로 쓴다 */
 const pageAngleBlock = (a, guide) => a ? `## 이번 각도: 「${a.label}」 (${a.axis ? "축: " + a.axis + ", " : ""}근거: ${angleBasis(a)})
-${a.scene ? `이 각도의 예시 장면: ${a.scene}\n` : ""}${prevScenes(a)}문서의 대상과 본문 구성은 평소대로 쓴다. 단, 섹션 하나를 「${a.label}」의 시선으로 쓴다. 그 섹션은 이 대상과 직접 이어져야 하며, 어울리지 않으면 쓰지 않는다. 그 섹션에서 아직 없는 관련 대상이 자연스럽게 나오면 [[링크]]로 남긴다.
+${prevScenes(a)}문서의 대상과 본문 구성은 평소대로 쓴다. 단, 섹션 하나를 「${a.label}」의 시선으로 쓴다. 그 섹션은 이 대상과 직접 이어져야 하며, 어울리지 않으면 쓰지 않는다. 그 섹션에서 아직 없는 관련 대상이 자연스럽게 나오면 [[링크]]로 남긴다.
 이 각도는 문서의 대상·이름·정체를 바꾸지 않는다. 어조·문체·세계 규칙도 바꾸지 않는다.
 이 문서가 인물이면 섹션 대신 다음을 따른다. ${a.axis === "감정 반전" ? "" : "이번 각도는 감정 반전 축이 아니므로 인물 문서라면 버린다. "}위의 확정 사실·언급에 이 인물의 성격이나 태도가 정해져 있지 않을 때만 이 각도를 인물의 태도로 반영한다. 확정 사실·언급과 충돌하면 각도를 버린다.
 ${guide ? "사용자가 요청한 방향이 성격·태도·시선을 이미 정했다면 이번 각도는 버린다. 사용자가 정한 대상·이름·역할은 각도보다 항상 우선한다.\n" : ""}각도를 실제로 반영했으면 angleUsed를 true, 버렸거나 어울리지 않아 쓰지 않았으면 false로 쓴다. 반영했으면 실제로 쓴 장면을 sceneUsed에 한 문장으로 쓴다.` : "";
@@ -96,16 +96,32 @@ function noteAngleUse(w, used, scene = "") {
   const a = used && (w.angles || []).find(x => x.id === used.id);
   if (a) {
     a.count = (a.count || 0) + 1;
-    scene = norm(scene || "").slice(0, 200); if (scene) a.scenes = [...(a.scenes || []), scene].slice(-10);
+    scene = norm(scene || "").slice(0, 200); if (scene && !nearSame(scene, a.scene)) a.scenes = [...(a.scenes || []), scene].slice(-10);   // 예시 장면을 그대로 옮긴 것은 기록하지 않는다
     if (a.count >= ANGLE_MAX_USES && !a.retired) { a.retired = true; a.endedAt = Date.now(); }
   }
   w.angleLast = !!a;
   return a;
 }
+/* 두 문장이 같거나 거의 같은가: 공백·문장부호를 지우고 비교, 한쪽이 다른 쪽을 품거나 글자 두 개 묶음이 70% 이상 겹치면 같다고 본다 */
+function nearSame(x, y) {
+  const a = squash(x), b = squash(y); if (!a || !b) return false;
+  if (a === b) return true;
+  const [s, l] = a.length <= b.length ? [a, b] : [b, a]; if (s.length >= 6 && l.includes(s) && s.length >= l.length * 0.6) return true;
+  const grams = t => { const m = new Map(); for (let i = 0; i < t.length - 1; i++) { const g = t.slice(i, i + 2); m.set(g, (m.get(g) || 0) + 1); } return m; };
+  const ga = grams(a), gb = grams(b); let hit = 0; for (const [g, n] of ga) hit += Math.min(n, gb.get(g) || 0);
+  return (2 * hit) / Math.max(1, a.length - 1 + b.length - 1) >= 0.7;
+}
+/* 이전 버전에서 만든 각도 보정: 두 번 이상 쓴 각도를 은퇴시킨다. 바뀐 것이 있으면 true */
+function fixOldAngles(w) {
+  let changed = false;
+  for (const a of Array.isArray(w?.angles) ? w.angles : []) if (a && !a.retired && (a.count || 0) >= ANGLE_MAX_USES) { a.retired = true; a.endedAt = Date.now(); changed = true; }
+  return changed;
+}
 function prevScenes(a) { return a?.scenes?.length ? `이전 장면: ${a.scenes.join(" / ")}. 이와 다른 장면·인물·장소를 쓴다.\n` : ""; }
 const angleName = (w, id) => (w.angles || []).find(a => a.id === id)?.label || `삭제된 각도(${id})`;
-const angleBlock = a => a ? `## 이번 각도: 「${a.label}」 (근거: ${angleBasis(a)})
-${a.scene ? `이 각도의 예시 장면: ${a.scene}\n` : ""}${prevScenes(a)}이 각도에서 새 대상을 고른다. 어조·문체·세계 규칙은 바꾸지 않는다.
+/* selection: 랜덤 서핑의 선정 단계. 예시 장면은 선정에만 참고로 넣고, 문서 작성에는 넣지 않는다(대본처럼 옮겨 쓰지 않게) */
+const angleBlock = (a, selection = false) => a ? `## 이번 각도: 「${a.label}」 (근거: ${angleBasis(a)})
+${selection && a.scene ? `이 각도의 예시 장면(참고용이며 그대로 쓰지 않는다): ${a.scene}\n` : ""}${prevScenes(a)}이 각도에서 새 대상을 고른다. 어조·문체·세계 규칙은 바꾸지 않는다.
 세계의 중심 주제를 다른 자리에서 비추는 것이지, 다른 이야기를 하는 것이 아니다. 장르·분위기·세계 규칙을 바꾸는 대상은 고르지 않는다.` : "";
 /* 기존 각도(활성·은퇴·삭제)를 넘겨 겹치는 후보를 막는다. 은퇴·삭제는 최근 ANGLE_PRIOR_FULL개만 장면까지 */
 function priorAnglesBlock(list) {
@@ -254,7 +270,7 @@ async function editAngle(id, op, value) {
 }
 function anglesHtml(w) {
   const all = Array.isArray(w.angles) ? w.angles : null, list = all ? all.filter(a => !a.removed) : null, removed = all ? all.length - list.length : 0, busy = S.angleGen === w.id;
-  const item = a => `<li class="${a.off || a.retired ? "off" : ""}"><input class="txt" data-angle-label="${esc(a.id)}" maxlength="80" value="${esc(a.label)}" aria-label="각도 문구"><span class="src">${a.retired ? `<b data-angle-retired="${esc(a.id)}">은퇴 · ${ANGLE_MAX_USES}번 사용</b> · ` : ""}${a.axis ? esc(a.axis) + " · " : ""}${a.area ? "영역: " + esc(a.area) + " · " : ""}이 세계에서 생긴 결과: ${esc(angleBasis(a))}${a.surprise ? `<br>의외인 이유: ${esc(a.surprise)}` : ""}${a.scene ? `<br>장면: ${esc(a.scene)}` : ""}${a.contrast ? `<br>기존 결론과 다른 점: ${esc(a.contrast)}` : ""}${a.safe ? `<br>규칙·문체를 지키는 이유: ${esc(a.safe)}` : ""}${a.scenes?.length ? `<br>쓴 장면: ${a.scenes.map(esc).join(" / ")}` : ""} · 문서 ${a.count || 0}개${a.off ? " · 꺼짐" : ""}</span>
+  const item = a => `<li class="${a.off || a.retired ? "off" : ""}"><input class="txt" data-angle-label="${esc(a.id)}" maxlength="80" value="${esc(a.label)}" aria-label="각도 문구"><span class="src">${!a.area ? `<b data-angle-legacy="${esc(a.id)}">이전 버전에서 만든 각도입니다. 다시 만들기를 권장합니다.</b><br>` : ""}${a.retired ? `<b data-angle-retired="${esc(a.id)}">은퇴 · ${ANGLE_MAX_USES}번 사용</b> · ` : ""}${a.axis ? esc(a.axis) + " · " : ""}${a.area ? "영역: " + esc(a.area) + " · " : ""}이 세계에서 생긴 결과: ${esc(angleBasis(a))}${a.surprise ? `<br>의외인 이유: ${esc(a.surprise)}` : ""}${a.scene ? `<br>장면: ${esc(a.scene)}` : ""}${a.contrast ? `<br>기존 결론과 다른 점: ${esc(a.contrast)}` : ""}${a.safe ? `<br>규칙·문체를 지키는 이유: ${esc(a.safe)}` : ""}${a.scenes?.length ? `<br>쓴 장면: ${a.scenes.map(esc).join(" / ")}` : ""} · 문서 ${a.count || 0}개${a.off ? " · 꺼짐" : ""}</span>
       <div class="row" style="margin-top:4px"><button type="button" class="btn" data-angle-save="${esc(a.id)}">문구 저장</button>${a.retired ? `<button type="button" class="btn" data-angle-revive="${esc(a.id)}">다시 켜기</button>` : `<button type="button" class="btn" data-angle-toggle="${esc(a.id)}">${a.off ? "켜기" : "끄기"}</button>`}<button type="button" class="btn" data-angle-del="${esc(a.id)}">삭제</button></div></li>`;
   return `<h2 id="angles">랜덤 서핑 각도</h2>
     <p class="note">새 문서(랜덤 서핑, 빨간 링크, 방향을 정한 작성)의 ${Math.round(ANGLE_RATE * 100)}%에 아래 각도 하나를 얹습니다. 랜덤 서핑은 그 시선에서 새 대상을 고르고, 대상이 정해진 문서는 섹션 하나(인물은 태도)만 그 시선으로 씁니다. 어조·문체·세계 규칙은 그대로이고, 두 문서 연속으로 쓰지 않으며, 다시 쓰기에는 쓰지 않습니다. 튀는 각도는 끄거나 지워 주세요.</p>
@@ -282,7 +298,7 @@ ${anchors || "원안과 규칙에서 세계관의 중심 소재를 읽는다."}
 ${JSON.stringify(index)}
 ## 사용자 설명
 ${direction || "세계관 안에서 새로 발견할 가치가 있는 대상을 무작위로 하나 고른다."}
-${angleBlock(angle)}
+${angleBlock(angle, true)}
 ${angle && direction ? "사용자 설명이 성격·태도·시선을 이미 정했다면 이번 각도는 버리고 angle을 null로 쓴다. 사용자가 정한 대상·이름·역할은 각도보다 항상 우선한다. 설명이 대상(무엇)만 정했다면 이 각도를 얹는다.\n" : ""}## 선정 원칙
 - 원안·작가 지침·대표 문서에서 중심 소재와 장르를 먼저 읽는다. '이 세계관의 특징이 없었어도 똑같이 존재할 문서인가?'를 자문하고, 그렇다면 다시 고른다. 세계관과 관계없는 평범한 시민의 신상이나 무관한 현실 지식 문서를 끼워 넣지 않는다.
 - 중심 소재와 직접 연결되는 역할·경험·관계·사건·생활상을 가진 새 대상을 고른다. 군사 세계관이라고 전투나 무기만 뽑지는 않는다. 정비·검진·산업·생활·문화도 중심 특징에서 자연스럽게 파생될 때 다룬다. 모든 대상을 억지로 세계적 인물이나 대사건으로 만들지 않는다.
