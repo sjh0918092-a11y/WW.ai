@@ -111,7 +111,7 @@ async function mergeEntities(w, pairs) {
     if (o.origin) o.origin = re(o.origin);
   }
   w.relations = (w.relations || []).filter(x => { x.a = re(x.a); x.b = re(x.b); x.src = re(x.src); if (x.sup) x.sup.by = re(x.sup.by); return x.a !== x.b; });
-  for (const t of w.timeline) { t.src = re(t.src); if (t.sup) t.sup.by = re(t.sup.by); }
+  for (const t of w.timeline) { t.src = re(t.src); if (t.k) t.k = re(t.k); if (t.sup) t.sup.by = re(t.sup.by); }
   for (const nb of Object.values(w.navboxes || {})) {
     nb.src = re(nb.src); nb.members = [...new Set((nb.members || []).map(re))];
     for (const r of nb.rows) r.items = r.items.map(x => cleanLinks(w, x));
@@ -421,7 +421,7 @@ function integrate(w, key, out) {
   if (!e.stub) e.stub = { type: e.type || "", summary: e.summary || "" };  // 문서가 생기기 전, 링크로 약속된 정의
   e.type = type; if (summary) e.summary = summary; e.page = true; delete e.src;
   e.box = infobox.map(r => r.label + ": " + stripMarks(r.value)).join(" / ").slice(0, 400);
-  for (const t of (Array.isArray(out.timeline) ? out.timeline : [])) addTimeline(w, t, key);
+  acceptPageTimeline(w, out.timeline, key);   // 주어 없는 항목, 같은 해·같은 대상의 중복은 받지 않는다
   w.navboxes ||= {};
   (Array.isArray(out.navboxes) ? out.navboxes : []).slice(0, 2).forEach((nb, i) => {
     if (!nb || !Array.isArray(nb.rows)) return;

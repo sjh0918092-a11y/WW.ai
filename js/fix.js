@@ -215,7 +215,7 @@ async function bgSync(k) {
     w.timeline = w.timeline.filter(x => x.src !== k);
     w.relations = (w.relations || []).filter(x => x.src !== k);
     for (const f of (Array.isArray(r?.facts) ? r.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = kOf(w, f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), k); }
-    for (const t of (Array.isArray(r?.timeline) ? r.timeline : [])) addTimeline(w, t, k);
+    acceptPageTimeline(w, r?.timeline, k);
     for (const x of (Array.isArray(r?.relations) ? r.relations : []).slice(0, 16)) addRelation(w, k, x);
     for (const n of (Array.isArray(r?.newEntities) ? r.newEntities : [])) {
       if (!n || !n.title) continue; const o = w.entities[kOf(w, n.title)];
