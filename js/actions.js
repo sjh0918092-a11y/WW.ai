@@ -55,6 +55,7 @@ function setupStory(w, b, user = {}) {
       nextChoices: (Array.isArray(c1.nextChoices) ? c1.nextChoices : []).map(x => stripMarks(asText(x)).slice(0, 200)).filter(Boolean).slice(0, 3) }] };
   // 사용자가 정한 주인공 특징과 등장인물은 '사용자 확정' 설정으로 남긴다
   if (user.desc) { w.story.protagonist.desc = user.desc; addFact(e, "주인공의 특징(사용자 지정): " + user.desc, "user"); }
+  if (!e.persona && !e.page) e.persona = rollPersona();   // 사용자가 정한 특징이 있으면 프롬프트에서 그쪽이 우선한다
   const N = w.story.total;
   w.story.secrets = (Array.isArray(b.secrets) ? b.secrets : []).filter(x => x && x.truth).slice(0, 5).map((x, i) => ({ id: "s" + (i + 1),
     truth: stripMarks(asText(x.truth)).slice(0, 300), cover: stripMarks(asText(x.cover || "")).slice(0, 300) || "알려진 것이 없다",
@@ -69,6 +70,7 @@ function setupStory(w, b, user = {}) {
     const k = keyOf(c.name); if (k === w.mainKey) continue;
     if (!w.entities[k]) w.entities[k] = newEntity(c.name, "인물", c.desc.slice(0, 200));
     const o = w.entities[k]; o.type = "인물"; o.origin = w.mainKey;
+    if (!o.persona && !o.page) o.persona = rollPersona();
     if (c.desc) addFact(o, c.desc, "user");
     if (c.rel) { addFact(o, `「${e.title}」과(와)의 관계: ${c.rel}`, "user"); addRelation(w, "user", { a: e.title, b: c.name, rel: c.rel.slice(0, 60), story: c.rel.length > 60 ? c.rel : "" }); }
     w.story.cast.push({ key: k, name: c.name, desc: c.desc, rel: c.rel });
@@ -307,7 +309,9 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
   if (rewrite) { oldPage = S.pages[k]; backup = prepareRewrite(w, k); delete S.pages[k]; }
   const ctl = new AbortController();
   const angle = !rewrite && !novel ? pickAngle(w, k, Math.random, { person: e.type === "인물" }) : null;
-  const birthday = !rewrite && (!e.type || e.type === "인물") && !hasBirth(e) ? randomBirthday() : null;   // 랜덤 서핑은 선정 단계에서 따로 고른다
+  const birthday = !rewrite && (!e.type || e.type === "인물") && !hasBirth(e) ? randomBirthday() : null;   // 랜덤 서핑·스토리 모드 인물도 모두 여기서 고른다
+  if (!rewrite && (!e.type || e.type === "인물") && !e.persona) e.persona = rollPersona();   // 한 번 굴린 성격 경향은 항목에 남겨 다시 쓰거나 고칠 때도 그대로 쓴다
+  const persona = !e.type || e.type === "인물" ? e.persona || null : null;
   S.gen = { key: k, wid: w.id, title: e.title, raw: "", t0: performance.now(), ctl, rewrite: !!rewrite, direction: direction || "", angle };
   S.genErr = null; S.confirmRewrite = null; S.view = { name: "article", key: k };
   renderAll(); window.scrollTo({ top: 0 });
@@ -317,7 +321,7 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
       try { const t = await detectTone(w); if (t) { w.tone = t; toast(`분위기를 「${t.label}」(으)로 판별했습니다. 설정 노트에서 고칠 수 있습니다.`); } } catch {}
       if (ctl.signal.aborted) throw { code: "cancelled" };
     }
-    const out = await callJson("page", pagePrompt(w, k, rewrite ? (direction || "") : null, rewrite ? "" : (direction || ""), angle || (novel ? novelAngle : null), angle ? "section" : "novel", birthday), { signal: ctl.signal, modelTier: "default", ...PAGE_MODEL, onRetry: r => { if (S.gen) { S.gen.retry = r; updateGenLive(); } }, onText: ({ text }) => { if (S.gen) { S.gen.raw = text; updateGenLive(); } } }, { title: e.title, type: TYPES.includes(e.type) ? e.type : "", ents: Object.keys(w.entities).length });
+    const out = await callJson("page", pagePrompt(w, k, rewrite ? (direction || "") : null, rewrite ? "" : (direction || ""), angle || (novel ? novelAngle : null), angle ? "section" : "novel", birthday, persona), { signal: ctl.signal, modelTier: "default", ...PAGE_MODEL, onRetry: r => { if (S.gen) { S.gen.retry = r; updateGenLive(); } }, onText: ({ text }) => { if (S.gen) { S.gen.raw = text; updateGenLive(); } } }, { title: e.title, type: TYPES.includes(e.type) ? e.type : "", ents: Object.keys(w.entities).length });
     if (out && Object.prototype.hasOwnProperty.call(out, "redirect")) {
       if (novel) throw { code: "discovery_duplicate", existing: out.redirect };
       if (ctl.signal.aborted) throw { code: "cancelled" };
@@ -368,6 +372,7 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
     const pre = GS.preCheck !== false && S.world === w ? await preCheck(w, k, page) : null;   // 보여 주기 전에 검사하고 고친다
     const fin = pre?.page || page;
     if (angleUsed) fin.angle = angle.id;
+    if (!rewrite && e.persona && (fin.type || e.type) !== "인물") delete e.persona;   // 인물이 아닌 문서로 정해지면 굴린 값은 버린다
     S.gen = null;
     try { await Store.savePage(w.id, fin); for (const x of cleared) if (S.pages[x] && x !== k) await Store.savePage(w.id, S.pages[x]); if (!novel && !rewrite) noteAngleUse(w, angleUsed ? angle : null, sceneUsed); await Store.saveWorld(w); if (!novel) maybeRefillAngles(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
     afterGen(k, true);
@@ -400,6 +405,16 @@ const unglueLinks = t => String(t).replace(/\[\[([^\[\]|]+?)(?:\|([^\[\]]+?))?\]
 /* 새 인물 문서의 생일(월·일)은 코드에서 고르게 정한다(모델이 특정 날짜에 몰아 정하는 버릇을 막는다) */
 const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 function randomBirthday(rand = Math.random) { const m = 1 + Math.min(11, Math.floor(rand() * 12)); return { m, d: 1 + Math.min(MONTH_DAYS[m - 1] - 1, Math.floor(rand() * MONTH_DAYS[m - 1])) }; }
+/* 새 인물의 성격 경향(축마다 1~5)과 지금 처지도 코드에서 굴린다(같은 세계관 인물들의 성격과 결말이 한쪽으로 쏠리는 것을 막는다).
+   축·가중치·처지는 여기서만 정한다. 1과 5는 각 끝 쪽으로 강하게, 2와 4는 약하게, 3은 중간 */
+const PERSONA_AXES = [["intro", "내향", "외향"], ["mood", "비관", "낙천"], ["play", "진지", "장난기"], ["rule", "원칙", "융통"], ["temper", "온화", "까칠"], ["drive", "근면", "느긋"]];
+const PERSONA_WEIGHTS = [0.1, 0.2, 0.4, 0.2, 0.1];   // 1~5가 나올 확률
+const PERSONA_LIFE = [["편안함", 0.3], ["보통", 0.4], ["고단함", 0.3]];   // 지금 형편
+const weightedIndex = (ws, r) => { let a = 0; for (let i = 0; i < ws.length; i++) { a += ws[i]; if (r < a) return i; } return ws.length - 1; };
+function rollPersona(rand = Math.random) {
+  const axes = {}; for (const [id] of PERSONA_AXES) axes[id] = 1 + weightedIndex(PERSONA_WEIGHTS, rand());
+  return { axes, life: PERSONA_LIFE[weightedIndex(PERSONA_LIFE.map(x => x[1]), rand())][0] };
+}
 const BIRTH_RE = /생일|출생|태어|탄생|\d{1,2}\s*월\s*\d{1,2}\s*일\s*생/;
 const hasBirth = e => [...(e?.facts || []).filter(live).map(f => f.t), ...(e?.mentions || []).filter(live).map(m => m.text)].some(t => BIRTH_RE.test(String(t || "")));
 function integrate(w, key, out) {

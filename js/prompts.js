@@ -108,6 +108,28 @@ function worldGaps(w) {
 }
 /* 항목 유형에 맞는 지시만 보낸다. 유형이 정해지지 않았으면 전부 보낸다. */
 const showFor = (ty, keys) => !ty || keys.includes(ty);
+/* 굴려 둔 성격 경향과 지금 처지를 프롬프트로 옮긴다. 값이 없거나 깨진 옛 항목은 빈 문자열 */
+function personaLines(p) {
+  const ax = p && typeof p === "object" && p.axes && typeof p.axes === "object" ? p.axes : {};
+  return PERSONA_AXES.map(([id, lo, hi]) => { const v = ax[id]; if (!Number.isInteger(v) || v < 1 || v > 5) return "";
+    return v === 3 ? `${lo}·${hi} 중간(3)` : `${v < 3 ? lo : hi} 쪽으로 ${v === 1 || v === 5 ? "강하게" : "약하게"}(${v})`; }).filter(Boolean);
+}
+function personaBlock(p) {
+  const lines = personaLines(p), life = PERSONA_LIFE.some(([x]) => x === p?.life) ? p.life : "";
+  if (!lines.length && !life) return "";
+  return `## 성격 경향과 지금 처지 (인물 문서일 때만)
+이 문서가 인물 문서일 때만 쓴다. 인물이 아니면 이 항목은 무시한다. 아래 값은 무작위로 정한 경향이다(1과 5는 그 끝 쪽으로 강하게, 2와 4는 약하게, 3은 중간).
+${lines.length ? `성격 경향: ${lines.join(", ")}
+` : ""}${life ? `지금 처지: ${life}
+` : ""}- 이 값은 성격의 출발점이다. 인물이 맡은 역할, 살아온 경험, 주변 사람과의 관계에 맞게 자연스럽게 다듬는다.
+- 값을 형용사로 옮겨 적지 않는다("매우 외향적이다", "낙천적인 성격이다"처럼 쓰지 않는다). 일화와 선택, 행동으로 보여 준다.
+- 중간(3)인 축은 굳이 드러내지 않아도 된다.${life ? `
+- 지금 처지는 결말이나 현재 상태(근황, 이후의 삶, 말년 등) 섹션의 방향에만 쓴다. 고단함이 아니면 큰 후유증, 장애, 중병, 몰락 같은 불행을 기본 결말로 쓰지 않는다.` : ""}
+- 사용자가 정한 특징(주인공과 등장인물의 특징 포함)이나 사용자가 요청한 방향, 위의 확정 사실과 다른 문서의 언급에 이미 성격이나 처지가 드러나 있으면 그쪽이 우선한다. 줄거리의 사건이 정한 처지도 그대로 따른다. 이 값은 거기에 어긋나지 않는 범위에서만 쓴다.
+- 실존 인물이거나 실존 인물을 바탕으로 한 인물(대체역사에서 재해석한 인물 포함)이면 이 값을 쓰지 않고 알려진 실제 모습을 따른다.
+
+`;
+}
 const STRUCT_KEYS = { "인물": ["인물"], "조직·국가·도시": ["국가", "조직", "지명"], "사건·전투·전쟁": ["사건"], "병기·기체·함선": ["기술", "물건"], "기술·물건": ["기술", "물건"], "제도·개념·문화": ["제도", "문화", "개념"] };
 function structureFor(text, ty) {
   if (!ty) return text;
@@ -147,7 +169,7 @@ function catGuide(w, key) {
 ${have.length ? `이 세계관에 이미 있는 분류(괄호는 붙은 문서 수, 많이 쓰인 순): ${have.map(([c, k]) => `${c}(${k})`).join(", ")}
 목록 중 좁힌 분류(예: "○○의 △△")보다 넓은 분류를 우선해 고른다.` : "이 세계관에는 아직 분류가 없다. 다른 문서에도 두루 쓰일 넓은 분류로 만든다."}`;
 }
-function pagePrompt(w, key, rewriteDir = null, guide = "", angle = null, angleMode = "section", birthday = null) {   // angleMode: section(대상이 정해진 문서에 얹기) · novel(랜덤 서핑이 방향에 넣어 보낸 각도)
+function pagePrompt(w, key, rewriteDir = null, guide = "", angle = null, angleMode = "section", birthday = null, persona = null) {   // angleMode: section(대상이 정해진 문서에 얹기) · novel(랜덤 서핑이 방향에 넣어 보낸 각도)
   const e = w.entities[key];
   const ty = TYPES.includes(e.type) ? e.type : "";
   const rel = related(w, key);
@@ -260,7 +282,7 @@ ${w.historical ? `## 실존 인물
 - 작중 시점과 맞지 않는 연도를 쓰지 않는다. 학년, 기수, 계급, 직위, 나이, 재학·재직·복무 기간은 작중 기준 시점에서 거꾸로 계산해 모든 연도와 맞춘다. 예를 들어 기준 시점에 1학년(신입생)인 인물은 그 전 해들에는 아직 입학 전이므로 그 학교의 학생으로 활동할 수 없고, 기준 시점에 2학년인 선배는 1년 전에 1학년이다. 과거 사건에 등장시킬 때는 그때의 나이와 신분이 그 사건에 맞는지 확인한다.
 - 나이, 기간, 금액, 인원처럼 계산이 걸린 수치는 문서 안의 다른 날짜와 수치로 다시 계산해 서로 맞춘다(예: 출생일과 사건 날짜로 그때의 나이를 계산한다). 부대나 기체의 수는 동원, 손실, 격파, 항복, 잔존을 합쳐 처음 숫자와 맞춘다. 비율은 10할(100%)을 넘지 않는다. 개요에서 한 단언(예: 한 발도 쏘지 않았다)은 본문의 사건과 어긋나지 않게 범위를 정확히 쓴다.
 
-${showFor(ty, ["인물"]) ? `## 인물의 성격과 특징\n${TRAIT_RULE}\n\n${(() => { const ti = traitIndex(w, key); return ti ? `## 다른 인물의 특징 (표현 반복 참고)\n${ti}\n\n` : ""; })()}## 인물 문서
+${showFor(ty, ["인물"]) ? `## 인물의 성격과 특징\n${TRAIT_RULE}\n\n${personaBlock(persona)}${(() => { const ti = traitIndex(w, key); return ti ? `## 다른 인물의 특징 (표현 반복 참고)\n${ti}\n\n` : ""; })()}## 인물 문서
 이 항목이 인물이면 이력서가 아니라 사람의 이야기로 쓴다. 동물, 기계, 신, 정령처럼 사람이 아닌 존재라면 아래 항목을 그 존재에 맞게 바꿔 적용하고, 맞지 않는 항목(예: 소의 혼인)은 언급하지 않는다.
 - 인물의 성격: 역할, 경험, 관계 속에서 어떤 선택을 하고 어떻게 행동하는지로 보여 준다. 평범하고 선량한 사람도 좋은 인물이다. 강렬한 성격이나 극단적인 결함은 그 인물의 맥락에 맞을 때만 쓰고, 개성을 만들려고 억지로 덧붙이지 않는다.
 - 사적인 면은 인물의 삶과 관계에 자연스럽게 연결될 때 다룬다. 특징 수를 채우려고 취미, 약점, 버릇을 억지로 만들지 않는다.
