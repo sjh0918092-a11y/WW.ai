@@ -40,9 +40,18 @@ function validateDiscoveryNovelty(w, result) {
   if (result.verdict !== "novel") throw new Error("기존 항목과 개념이 충분히 다른지 확인하지 못해 새 문서를 만들지 않았습니다. " + result.reason.slice(0, 400));
 }
 /* ---------- 각도: 세계의 중심 주제를 다른 자리에서 비추는 시선 ----------
-   w.angles = [{ id, label, why, count, off }]. 목록은 AI가 한 번 만들고, 어느 각도를 쓸지는 코드가 고른다. */
+   w.angles = [{ id, label, axis, consequence, surprise, safe, count, off }] (예전 목록은 consequence 대신 why). 목록은 AI가 한 번 만들고, 어느 각도를 쓸지는 코드가 고른다. */
 const ANGLE_RATE = 0.3;   // 사용자 설명 없는 랜덤 서핑 중 각도를 쓰는 비율
-const ANGLE_MAX = 10;
+const ANGLE_CANDIDATES = 15, ANGLE_PICK = 8;
+/* 후보를 낼 축. 축마다 최소 하나씩 후보를 낸다 */
+const ANGLE_AXES = [
+  ["감정 반전", "이 세계에서 당연히 고통인 것을 즐기는 사람, 당연히 영광인 것을 귀찮아하는 사람"],
+  ["일상화", "이 설정이 오래 지속되면서 시시하고 평범해진 것들(상품, 관광, 놀이, 관용구)"],
+  ["의외의 수혜자", "이 체계로 엉뚱하게 돈을 벌거나 이득을 본 사람과 산업"],
+  ["문화적 반응", "종교, 예술, 방송, 유행, 스포츠화"],
+  ["체계의 지지자", "이 체계를 진심으로 옹호하는 사람과 그 논리"],
+  ["개인적 관계", "우정, 가족, 편지 같은 사적인 연결"]];
+const angleBasis = a => a.consequence || a.why || "";
 const liveAngles = w => Array.isArray(w?.angles) ? w.angles.filter(a => a && a.id && a.label && !a.off) : [];
 function pickAngle(w, rand = Math.random, direction = "") {
   if (!w || String(direction || "").trim() || w.angleOff || w.angleLast) return null;   // 사용자 지정 우선, 연속 사용 금지
@@ -51,37 +60,53 @@ function pickAngle(w, rand = Math.random, direction = "") {
   const min = Math.min(...on.map(a => a.count || 0)), pool = on.filter(a => (a.count || 0) === min);
   return pool[Math.min(pool.length - 1, Math.floor(rand() * pool.length))];
 }
-const angleBlock = a => a ? `## 이번 각도: 「${a.label}」 (근거: ${a.why})
+const angleBlock = a => a ? `## 이번 각도: 「${a.label}」 (근거: ${angleBasis(a)})
 이 각도에서 새 대상을 고른다. 어조·문체·세계 규칙은 바꾸지 않는다.
 세계의 중심 주제를 다른 자리에서 비추는 것이지, 다른 이야기를 하는 것이 아니다. 장르·분위기·세계 규칙을 바꾸는 대상은 고르지 않는다.` : "";
 function anglesPrompt(w) {
-  const written = Object.entries(w.entities).filter(([k, e]) => e.page || S.pages[k]).map(([key, e]) => ({ key, title: e.title, summary: (e.summary || firstPara(S.pages[key] || {}) || "").slice(0, 200) }));
+  const index = Object.entries(w.entities).map(([key, e]) => ({ key, title: e.title, status: e.page || S.pages[key] ? "작성됨" : "빨간 링크·미작성", summary: (e.summary || e.stub?.summary || firstPara(S.pages[key] || {}) || "").slice(0, 200) }));
   return `## 각도 목록 만들기
-가상 세계관 위키에서 새 문서의 대상을 고를 때 쓸 '각도' 목록을 만든다. 각도는 세계의 중심 주제를 다른 자리에서 비추는 시선이다. 어조·문체·장르·세계 규칙은 그대로 두고, 대상을 보는 자리만 바꾼다.
+가상 세계관 위키에서 새 문서의 대상을 고를 때 쓸 '각도' 목록을 만든다. 각도는 세계의 중심 주제를 다른 자리에서 비추는 시선이다. 어조·문체·장르·세계 규칙은 그대로 두고, 대상을 보는 자리만 바꾼다. 시선만 바뀌고 문체는 톤 지침 그대로여야 한다.
 ${canonBlock(w)}
 ## 작가 지침
 ${w.guide || "(없음)"}
 ${toneBlock(w)}
-## 할 일 1: 각도 6~10개
-- 원안·핵심 규칙·사용자 확정 설정·분위기·작가 지침에서 파생된 각도만 만든다. 세계의 중심 시선 자체(주인공이나 중심 소재를 정면에서 다루는 시선)는 제외한다.
-- 좋은 예(마법 학교 세계관): '마법을 거의 못 쓰는 학생', '졸업 후 마법과 무관한 직업을 가진 사람', '마법 도구를 파는 상인', '학생의 가족', '마법을 구경거리로 소비하는 대중'.
-- 나쁜 예: '갑자기 코미디', '다른 행성 이야기'처럼 장르·분위기·세계 규칙을 바꾸는 것. 이런 각도는 만들지 않는다.
-- 각 각도의 why에는 근거가 된 세계 규칙·원안 문장을 인용하거나 요약한다. 근거를 댈 수 없는 각도는 버린다.
-- label은 한 줄(40자 이하)로 쓴다. id는 a1, a2, … 순서로 붙인다.
-## 할 일 2: 이미 작성된 문서 분류
-아래 문서가 각각 어느 각도에 해당하는지 고른다. 세계의 중심 시선이거나 어느 각도에도 맞지 않으면 null로 둔다.
-${JSON.stringify(written)}
-JSON 하나만 출력: {"angles":[{"id":"a1","label":"각도 한 줄 설명","why":"근거가 된 세계 규칙(원문 인용 또는 요약)"}],"classify":[{"key":"문서 key","angle":"a1 또는 null"}]}`;
+## 이미 위키에 있는 항목 전체 (작성된 문서와 빨간 링크)
+${JSON.stringify(index)}
+이미 문서나 빨간 링크로 다뤄진 영역은 각도로 내지 않는다. 위 항목의 소재를 이름만 바꿔 다시 꺼내지 않는다.
+## 할 일 1: 후보 ${ANGLE_CANDIDATES}개
+아래 축마다 최소 하나씩, 모두 ${ANGLE_CANDIDATES}개의 후보를 낸다. 축마다 감정의 결이 달라야 한다.
+${ANGLE_AXES.map(([name, desc]) => `- ${name}: ${desc}`).join("\n")}
+각 후보에는 다음을 쓴다.
+- label: 각도 한 줄 설명(40자 이하). 세계 규칙을 직업·기관 이름으로 바꿔 말한 것은 각도가 아니다.
+- consequence: 원안의 규칙이나 설정이 수십 년 지속되었을 때 생기는 2차·3차 결과. 규칙을 다시 말하거나 요약한 것은 근거로 인정하지 않는다.
+- surprise: 원안을 읽은 사람이 바로 떠올리지 못할 이유.
+- safe: 어떤 세계 규칙도 어기지 않고, 톤 지침의 어조로 쓸 수 있는 이유.
+## 할 일 2: ${ANGLE_PICK}개 고르기
+후보 중 ${ANGLE_PICK}개를 고른다. 기준은 "원안을 읽은 사람이 바로 떠올릴 법한가? 그렇다면 버린다"이다. 단 safe를 설명하지 못하는 후보는 의외성이 높아도 버린다. 장르·분위기·세계 규칙을 바꾸는 후보('갑자기 코미디', '다른 행성 이야기' 같은 것)도 버린다. 고른 것이 한 축에 몰리지 않게 한다.
+## 할 일 3: 작성된 문서 분류
+위 항목 중 '작성됨'인 문서가 각각 고른 각도 중 어디에 해당하는지 고른다. 세계의 중심 시선이거나 어느 각도에도 맞지 않으면 null로 둔다.
+JSON 하나만 출력: {"candidates":[{"id":"c1","axis":"${ANGLE_AXES.map(x => x[0]).join(" 또는 ")}","label":"각도 한 줄 설명","consequence":"규칙이 오래 지속되어 생긴 2차·3차 결과","surprise":"바로 떠올리지 못할 이유","safe":"규칙을 어기지 않고 톤 지침의 어조로 쓸 수 있는 이유"}],"picked":["고른 후보 id ${ANGLE_PICK}개"],"classify":[{"key":"문서 key","angle":"고른 후보 id 또는 null"}]}`;
+}
+const squash = t => String(t || "").replace(/[\s.,·'"「」()\-]/g, "");
+/* 규칙을 다시 말한 것뿐인 결과는 근거로 인정하지 않는다 */
+function restatesRule(w, text) {
+  const c = squash(text); if (!c) return true;
+  return [w.seed, ...(w.rules || [])].map(squash).filter(r => r.length >= 4).some(r => r.includes(c) || (c.includes(r) && c.length <= r.length * 1.3));
 }
 function parseAngles(w, r) {
+  const field = (a, k, n) => typeof a?.[k] === "string" ? norm(a[k]).slice(0, n) : "";
+  const cands = (Array.isArray(r?.candidates) ? r.candidates : []).filter(a => a && typeof a === "object");
+  const picked = Array.isArray(r?.picked) ? r.picked.map(String) : null;
+  const order = picked ? picked.map(id => cands.find(a => String(a.id) === id)).filter(Boolean) : cands;
   const map = new Map(), out = [];
-  for (const a of Array.isArray(r?.angles) ? r.angles : []) {
-    if (!a || typeof a.label !== "string" || typeof a.why !== "string") continue;
-    const label = norm(a.label).slice(0, 80), why = norm(a.why).slice(0, 300);
-    if (!label || !why || out.some(x => x.label === label)) continue;   // 근거 없는 각도는 버린다
-    const angle = { id: "a" + (out.length + 1), label, why, count: 0, off: false };
+  for (const a of order) {
+    const label = field(a, "label", 80), consequence = field(a, "consequence", 300), surprise = field(a, "surprise", 300), safe = field(a, "safe", 300);
+    if (!label || !consequence || !safe || restatesRule(w, consequence) || out.some(x => x.label === label)) continue;   // 결과·안전 근거가 없으면 버린다
+    const axis = ANGLE_AXES.some(x => x[0] === a.axis) ? a.axis : "";
+    const angle = { id: "a" + (out.length + 1), label, axis, consequence, surprise, safe, count: 0, off: false };
     if (a.id != null) map.set(String(a.id), angle);
-    out.push(angle); if (out.length >= ANGLE_MAX) break;
+    out.push(angle); if (out.length >= ANGLE_PICK) break;
   }
   if (!out.length) return null;
   for (const c of Array.isArray(r?.classify) ? r.classify : []) {
@@ -140,10 +165,10 @@ function anglesHtml(w) {
   return `<h2 id="angles">랜덤 서핑 각도</h2>
     <p class="note">랜덤 서핑은 ${Math.round(ANGLE_RATE * 100)}% 확률로 아래 각도 중 하나에서 새 대상을 고릅니다. 어조·문체·세계 규칙은 그대로 두고 대상을 보는 자리만 바꿉니다. 직접 설명을 적은 랜덤 서핑에는 쓰지 않습니다. 튀는 각도는 끄거나 지워 주세요.</p>
     <label class="lb" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" data-angle-off ${w.angleOff ? "checked" : ""}>각도 쓰지 않기</label>
-    ${list ? (list.length ? `<ul class="angles">${list.map(a => `<li${a.off ? ' class="off"' : ""}><input class="txt" data-angle-label="${esc(a.id)}" maxlength="80" value="${esc(a.label)}" aria-label="각도 문구"><span class="src">근거: ${esc(a.why)} · 문서 ${a.count || 0}개${a.off ? " · 꺼짐" : ""}</span>
+    ${list ? (list.length ? `<ul class="angles">${list.map(a => `<li${a.off ? ' class="off"' : ""}><input class="txt" data-angle-label="${esc(a.id)}" maxlength="80" value="${esc(a.label)}" aria-label="각도 문구"><span class="src">${a.axis ? esc(a.axis) + " · " : ""}이 세계에서 생긴 결과: ${esc(angleBasis(a))}${a.surprise ? `<br>의외인 이유: ${esc(a.surprise)}` : ""}${a.safe ? `<br>규칙·어조를 지키는 이유: ${esc(a.safe)}` : ""} · 문서 ${a.count || 0}개${a.off ? " · 꺼짐" : ""}</span>
       <div class="row" style="margin-top:4px"><button type="button" class="btn" data-angle-save="${esc(a.id)}">문구 저장</button><button type="button" class="btn" data-angle-toggle="${esc(a.id)}">${a.off ? "켜기" : "끄기"}</button><button type="button" class="btn" data-angle-del="${esc(a.id)}">삭제</button></div></li>`).join("")}</ul>` : `<p class="note">각도가 없습니다.</p>`)
       : `<p class="note">아직 만들지 않았습니다. 랜덤 서핑을 처음 쓸 때 자동으로 만듭니다.</p>`}
-    <div class="row"><button type="button" class="btn" data-act="angles-regen" ${!S.sample || busy || S.discovery?.busy ? "disabled" : ""}>${busy ? "만드는 중…" : list ? "각도 목록 다시 만들기" : "각도 목록 만들기"}</button><span class="note">원안·규칙·분위기·작가 지침에서 다시 뽑고, 작성된 문서 수를 다시 셉니다.</span></div>`;
+    <div class="row"><button type="button" class="btn" data-act="angles-regen" ${!S.sample || busy || S.discovery?.busy ? "disabled" : ""}>${busy ? "만드는 중…" : list ? "각도 목록 다시 만들기" : "각도 목록 만들기"}</button><span class="note">원안·규칙·분위기·작가 지침과 기존 항목을 보고 새로 뽑고, 작성된 문서 수를 다시 셉니다. 이미 있는 목록은 이 버튼을 눌러야만 바뀝니다.</span></div>`;
 }
 function discoveryPrompt(w, direction, rejected, angle = null) {
   const index = discoveryIndex(w);
