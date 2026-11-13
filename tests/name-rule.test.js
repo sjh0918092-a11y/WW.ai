@@ -67,9 +67,9 @@ const NAME_PROMPTS = {
     }, NAME_PROMPTS);
     assert.deepStrictEqual(missing, []);
     pass(`새 제목이나 링크를 만들 수 있는 프롬프트 ${Object.keys(NAME_PROMPTS).length}개 모두에 같은 이름 지침(linkNameRule)이 들어간다`);
-    const actor = await page.evaluate(() => linkNameRule());
-    for (const t of ["기수·번호·호칭·직함만으로 부르지 않는다", "처음 나올 때 이름을 밝히고 [[이름]]으로 링크", "'[[이름]](3번기)'", "무리 전체(병사들, 군중, 승무원들)와 한 번 스쳐 가는 단역뿐"]) assert(actor.includes(t), t);
-    pass('행동하는 특정 인물은 기수·번호·직함만으로 부르지 말고 처음 나올 때 이름과 링크를 붙이라는 지침이 이름 지침에 들어 있다');
+    const counted = await page.evaluate(() => linkNameRule());
+    for (const t of ["수로만 세고 넘어가지 않는다", "'○○ 2기가 출격했다'", "하나하나 이름을 밝히고 [[링크]]한다", "'○○ 2기([[이름A]], [[이름B]])가 출격했다'", "큰 무리(병사 수백 명, 군중)뿐"]) assert(counted.includes(t), t);
+    pass('사건에서 행동한 개체를 수로만 세지 말고 몇 안 되면 하나하나 이름과 링크를 붙이라는 지침이 이름 지침에 들어 있다');
     const disc = await page.evaluate(() => discoveryPrompt(S.world, '', [], null));
     assert(disc.includes('대상이 인물이면 title은 본명 풀 네임으로 쓴다') && disc.includes('summary와 aliases에 쓴다'));
     pass('랜덤 서핑은 인물이면 title을 본명 풀 네임으로, 코드명은 summary에 쓰게 한다');

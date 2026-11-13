@@ -1,7 +1,7 @@
 "use strict";
 /* 기본 도구: 버전, 이스케이프, 키 생성, 원안 주사위, 예시·문서 종류·오류 문구 */
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜). index.html의 ?v= 값도 같은 번호로 함께 올린다 (tests/assets.test.js가 확인) */
-const APP_VERSION = "v6.77 · 2026-11-13";
+const APP_VERSION = "v6.78 · 2026-11-13";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
