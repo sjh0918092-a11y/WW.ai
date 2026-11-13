@@ -683,13 +683,14 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     ok("숫자 대조: 다른 항목의 사망 연도를 인포박스와 다르게 적으면 잡아서 띄우기 전에 고친다. 먼저 쓴 문서가 기준이다");
 
     /* 28. 인물 관계 중복: 같은 관계는 한 번만, 카드는 상대 인물당 한 장 */
-    ctl.pageOverride["무 인물"] = { type: "인물", sections: [{ heading: "개요", level: 1, body: "무 인물은 [[기 인물]]의 스승이다." }], relations: [{ a: "무 인물", b: "기 인물", rel: "스승과 제자", story: "어릴 때 검술을 가르쳤다." }] };
-    ctl.pageOverride["기 인물"] = { type: "인물", sections: [{ heading: "개요", level: 1, body: "기 인물은 [[무 인물]]에게 배웠다." }], relations: [{ a: "기 인물", b: "무 인물", rel: "스승과 제자" }, { a: "무 인물", b: "기 인물", rel: "스승과 제자", story: "" }, { a: "기 인물", b: "무 인물", rel: "맞수", story: "나중에 맞수가 되었다." }] };
+    ctl.pageOverride["무 인물"] = { type: "인물", sections: [{ heading: "개요", level: 1, body: "무 인물은 [[기 인물]]의 스승이다." }], relations: [{ a: "무 인물", b: "기 인물", type: "사제", since: "1950", rel: "스승과 제자", story: "어릴 때 검술을 가르쳤다." }] };
+    ctl.pageOverride["기 인물"] = { type: "인물", sections: [{ heading: "개요", level: 1, body: "기 인물은 [[무 인물]]에게 배웠다." }], relations: [{ a: "기 인물", b: "무 인물", type: "사제", rel: "사제지간" }, { a: "무 인물", b: "기 인물", rel: "스승과 제자", story: "" }, { a: "기 인물", b: "무 인물", type: "맞수", since: "1960", rel: "맞수", story: "나중에 맞수가 되었다." }] };
     await page.fill("#q", "무 인물"); await page.press("#q", "Enter"); await waitArticle(page, "무 인물");
     await clickLink(page, "기 인물"); await waitArticle(page, "기 인물");
     ctl.pageOverride = {};
     { const cards = page.locator(".rels li"); assert.strictEqual(await cards.count(), 1, "상대 인물당 카드 한 장");
-      const t = await cards.first().innerText(); assert(t.includes("스승과 제자") && t.includes("→") && t.includes("맞수") && t.includes("나중에 맞수가 되었다."), "관계 변화를 한 카드에 순서대로");
+      const t = await cards.first().innerText(); assert(t.includes("사제 1950") && t.includes("스승과 제자") && !t.includes("사제지간") && t.includes("맞수 1960") && t.includes("나중에 맞수가 되었다."), "같은 type은 한 번, 관계는 한 카드에 순서대로");
+      assert(!t.includes("→"), "next로 이어지지 않은 관계 사이에는 →를 그리지 않는다");
       const w28 = await worldOf(page, "기본 세계"), mk = Object.keys(w28.entities).find(k => w28.entities[k].title === "무 인물");
       assert.strictEqual(w28.relations.filter(x => x.a === mk || x.b === mk).length, 2, "같은 관계는 출처가 달라도 한 번만 저장");
       assert.strictEqual(w28.relations.find(x => x.rel === "스승과 제자").story, "어릴 때 검술을 가르쳤다."); }

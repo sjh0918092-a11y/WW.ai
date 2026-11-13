@@ -292,7 +292,7 @@ function parseWorldCheck(w, r) {
   return (Array.isArray(r?.findings) ? r.findings : []).filter(x => x && typeof x === "object").slice(0, 8).map((x, i) => {
     const docs = [...new Set((Array.isArray(x.docs) ? x.docs : []).map(t => kOf(w, evText(t, 80))).filter(k => S.pages[k] && w.entities[k]))].slice(0, 12);
     const link = evText(x.link, 400);
-    return { id: at.toString(36) + i, kind: WC_KINDS[x.kind] ? x.kind : "repeat", severity: x.severity === "low" ? "low" : "high", title: evText(x.title, 80), docs,
+    return { id: at.toString(36) + Math.random().toString(36).slice(2, 6) + i, kind: WC_KINDS[x.kind] ? x.kind : "repeat", severity: x.severity === "low" ? "low" : "high", title: evText(x.title, 80), docs,
       keywords: wcList(x.keywords, 30, 3).filter(t => t.length >= 2), detail: evText(x.detail, 500), link, undecided: link ? wcList(x.undecided, 120, 6) : [], alts: wcAlts(x.alts, link), fix: evText(x.fix, 300), status: "open" };
   }).filter(x => x.title && x.detail && (x.docs.length || x.link));
 }

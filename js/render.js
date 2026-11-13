@@ -345,23 +345,43 @@ function articleHtml(k) {
     ${rwBox}${syncHtml}${p.autoFixed && Date.now() - p.autoFixed.at < 864e5 ? `<p class="memo-line">작성 직후 설정과 어긋난 ${p.autoFixed.n}곳을 자동으로 고쳤습니다 <span class="src">${fmtDate(p.autoFixed.at)}</span></p>` : ""}${chkHtml}
     ${p.rewrittenAt ? `<p class="src" style="margin:8px 0 0">${fmtDate(p.rewrittenAt)} 다시 씀</p>` : ""}
     <div class="article">${stNotice}${p.notices?.length ? `<div class="notice">${p.notices.map(n => `<div>${blocks(n, fns).replace(/^<p>|<\/p>$/g, "")}</div>`).join("")}</div>` : ""}${box}${toc}${secs}${fnHtml}</div>
-    ${(() => {
-      const rs = relationsOf(w, k);
-      if (!rs.length) return "";
-      const groups = new Map();   // 상대 인물 한 명당 카드 한 장. 관계가 여러 번 바뀌었으면 순서대로 보여 준다
-      for (const x of rs) { const o = x.a === k ? x.b : x.a; (groups.get(o) || groups.set(o, []).get(o)).push(x); }
-      return `<section class="rels"><h3>인물 관계</h3><ul>${[...groups].map(([o, xs]) => {
-        const liveXs = xs.filter(x => !x.sup), show = liveXs.length ? liveXs : xs, last = show[show.length - 1];
-        const rels = [...new Map(show.map(x => [relKey(x.rel), x.rel])).values()];
-        const srcs = [...new Set(show.map(x => srcTitle(w, x.src, "?") + (S.pages[x.src]?.editedAt ? " (직접 수정)" : "")))];
-        const story = [...show].reverse().find(x => x.story)?.story || "";
-        return `<li class="${liveXs.length ? "" : "sup"}"><div class="rel-h">${linkHtml(w.entities[o].title)}${rels.map((r, i) => `${i ? `<span class="src">→</span>` : ""}<span class="rel-k">${esc(r)}</span>`).join("")}</div>${story ? `<p>${esc(story)}</p>` : ""}<span class="src">출처 ${esc(srcs.join(" · "))}${!liveXs.length && last.sup ? ` · 「${esc(w.entities[last.sup.by]?.title || "?")}」 수정으로 대체됨` : ""}</span></li>`;
-      }).join("")}</ul></section>`;
-    })()}
+    ${relCardsHtml(w, k)}
     <div class="meta-foot">
       <div class="box"><b>이 문서를 언급한 문서</b>${back.length ? back.map(x => linkHtml(w.entities[x].title)).join(" · ") : `<span class="src">없음 (첫 문서)</span>`}</div>
       <div class="box"><b>이 문서의 링크</b><span class="src">${out.length}개 중 미작성 ${newOut}개</span></div>
     </div></article>`;
+}
+/* 인물 관계 카드에 그릴 칩. 상대 한 명(xs: 그 쌍의 기록, 생긴 순서)마다 카드 한 장.
+   type이 같은 기록은 가장 최근 rel 하나만 보이고, →는 next로 이어진 국면에서 type이 실제로 바뀐 곳에만 그린다(그 밖은 ·).
+   type이 없는 옛 기록은 최신 rel 하나로 줄여 맨 앞에 둔다 */
+function relChips(xs) {
+  const typed = xs.filter(x => x.type), plain = xs.filter(x => !x.type), at = new Map(xs.map((x, i) => [x, i]));
+  const chips = [];
+  if (plain.length) chips.push({ type: "", since: "", rel: plain[plain.length - 1].rel, arrow: false });
+  const ids = new Set(typed.map(x => x.id)), seen = new Set(), seq = [];
+  const walk = (x, link) => { if (seen.has(x)) return; seen.add(x); seq.push([x, link]); for (const y of typed) if (y.prev === x.id && y !== x) walk(y, true); };
+  for (const x of typed) if (!x.prev || !ids.has(x.prev)) walk(x, false);
+  for (const x of typed) walk(x, false);   // 고리처럼 이어진 잘못된 기록도 빠뜨리지 않는다
+  for (const [x, link] of seq) {
+    const last = chips[chips.length - 1];
+    const c = link ? (last && last.type === x.type ? last : null) : chips.find(y => y.type === x.type);
+    if (c) { if (at.get(x) > c.at) { c.rel = x.rel; c.at = at.get(x); } if (!c.since && x.since) c.since = x.since; continue; }
+    chips.push({ type: x.type, since: x.since || "", rel: x.rel, at: at.get(x), arrow: link && !!last && last.type !== x.type });
+  }
+  return chips;
+}
+function relCardsHtml(w, k) {
+  const rs = relationsOf(w, k);
+  if (!rs.length) return "";
+  const groups = new Map();   // 상대 인물 한 명당 카드 한 장
+  for (const x of rs) { const o = x.a === k ? x.b : x.a; (groups.get(o) || groups.set(o, []).get(o)).push(x); }
+  return `<section class="rels"><h3>인물 관계</h3><ul>${[...groups].map(([o, xs]) => {
+    const liveXs = xs.filter(x => !x.sup), show = liveXs.length ? liveXs : xs, last = show[show.length - 1];
+    const srcs = [...new Set(show.map(x => srcTitle(w, x.src, "?") + (S.pages[x.src]?.editedAt ? " (직접 수정)" : "")))];
+    const story = [...show].reverse().find(x => x.story)?.story || "";
+    const chips = relChips(show).map((c, i) => `${i ? `<span class="src">${c.arrow ? "→" : "·"}</span>` : ""}${c.type ? `<span class="rel-t src">${esc(c.type)}${c.since ? " " + esc(c.since) : ""}</span>` : ""}<span class="rel-k">${esc(c.rel)}</span>`).join("");
+    return `<li class="${liveXs.length ? "" : "sup"}"><div class="rel-h">${linkHtml(w.entities[o].title)}${chips}</div>${story ? `<p>${esc(story)}</p>` : ""}<span class="src">출처 ${esc(srcs.join(" · "))}${!liveXs.length && last.sup ? ` · 「${esc(w.entities[last.sup.by]?.title || "?")}」 수정으로 대체됨` : ""}</span></li>`;
+  }).join("")}</ul></section>`;
 }
 function editHtml(k) {
   if (S.edit.section) return sectionEditHtml(k);

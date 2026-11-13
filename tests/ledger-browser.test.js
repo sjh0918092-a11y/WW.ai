@@ -19,7 +19,8 @@ const read = (p, k) => p.evaluate(k => new Promise(resolve => { const r = indexe
     entities: { [duel]: ent("해저 결투", true, "사건"), [hero]: ent("한서진", true), [rival]: ent("카이 마루", false), [stub]: { ...ent("북해 기지", false, "지명"), mentions: [{ from: duel, text: "한서진과 카이 마루가 180해리 떨어진 북해 기지 앞바다에서 맞붙었다." }] } },
     events: [{ k: duel, name: "해저 결투", date: "2015년 11월 4일", place: "북해", nums: [{ name: "거리", value: "180", unit: "해리" }, { name: "수심", value: "70", unit: "m" }], parts: [hero, rival], result: "한서진의 승리", src: duel, createdAt: 1 }],
     glossary: [{ term: "Type-05", definition: "대대로 물려받는 칭호", src: duel, confirmed: false, at: 1, alts: [{ definition: "소녀 한 명의 개인 이름", src: hero, at: 2 }] }, { term: "잠항 병기", definition: "물속을 다니는 생체병기", src: hero, confirmed: false, at: 3 }] };
-  const old = { kind: "world", id: "old", title: "옛 세계", seed: "옛 원안", era: "1990년", guide: "", rules: [], userCanon: "", toneTried: true, timeline: [], relations: [], navboxes: {}, aliases: {}, mainKey: key("옛 문서"), createdAt: 1, entities: { [key("옛 문서")]: ent("옛 문서", true, "지명") } };
+  const old = { kind: "world", id: "old", title: "옛 세계", seed: "옛 원안", era: "1990년", guide: "", rules: [], userCanon: "", toneTried: true, timeline: [], navboxes: {}, aliases: {}, mainKey: key("옛 문서"), createdAt: 1, entities: { [key("옛 문서")]: ent("옛 문서", true, "지명"), [key("옛 사람")]: ent("옛 사람", false) },
+    relations: [{ a: key("옛 문서"), b: key("옛 사람"), rel: "선대 및 후대 전략체", story: "", src: key("옛 문서") }, { a: key("옛 사람"), b: key("옛 문서"), rel: "전략체 선후배", story: "오래된 인연", src: key("옛 문서") }] };
   const fixture = { app: "worldwiki", version: 1, worlds: [world, old], pages: {
     sea: { [duel]: pg(duel, "해저 결투", "사건", 1, "[[한서진]]과 [[카이 마루]]가 180해리 떨어진 [[북해 기지]] 앞바다에서 맞붙었다."), [hero]: { ...pg(hero, "한서진", "인물", 2, "[[한서진]]은 [[해저 결투]]의 승자다."), editedAt: 3 } },
     old: { [key("옛 문서")]: pg(key("옛 문서"), "옛 문서", "지명", 1, "옛 문서의 본문이다.") } } };
@@ -56,10 +57,13 @@ const read = (p, k) => p.evaluate(k => new Promise(resolve => { const r = indexe
 
     /* 옛 세계관: 새 필드가 없어도 문서와 설정 노트가 열린다 */
     await page.click('#side [data-act="home"]'); await page.locator('[data-world="old"]').click(); await page.waitForSelector(".article h2");
+    assert.equal(await page.locator(".rels li").count(), 1); const relText = await page.locator(".rels .rel-h").textContent();
+    assert(relText.includes("전략체 선후배") && !relText.includes("선대 및 후대 전략체") && !relText.includes("→"), "type 없는 옛 관계는 최신 rel 하나로 줄여 보인다");
     await page.click('#side [data-act="canon"]'); await page.waitForSelector("#glossary");
     assert.equal(await page.locator("#eventLedger").count(), 0); assert(await page.locator("#glossary ~ p.note").first().isVisible());
     await page.click('[data-act="save-canon"]'); await page.waitForFunction(() => document.querySelector("#toast")?.textContent.includes("저장했습니다"));
     const oldSaved = await read(page, "w:old"); assert.deepEqual(oldSaved.glossary || [], []); assert.equal(oldSaved.events, undefined);
+    assert.equal(oldSaved.relations.length, 2); assert(oldSaved.relations.every(x => !x.type)); assert.equal(oldSaved.relMigrated, undefined, "관계 정리에 실패하면 데이터를 그대로 둔다");
     pass("새 필드가 없는 옛 세계관도 문서와 설정 노트가 열리고 저장된다");
 
     /* 용어 정의와 사건 장부 화면 */

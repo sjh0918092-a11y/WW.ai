@@ -251,6 +251,11 @@ async function openWorld(wid, goKey, restoring = false) {
   const unbadged = await cleanAiSupersede(w);
   if (fixOldAngles(w, S.pages)) { try { await Store.saveWorld(w); } catch {} }   // 이전 형식 각도: count를 기존 문서 수와 사용 횟수로 나눈다
   if (dedupeRelations(w)) { try { await Store.saveWorld(w); } catch {} }
+  if (!w.relMigrated && S.sample) migrateRelations(w).then(async ok => {   // 옛 관계(type 없음)가 같은 쌍에 여럿이면 한 번만 정리한다. 실패하면 그대로 둔다
+    if (!ok) return;
+    try { await Store.saveWorld(w); } catch {}
+    if (S.world === w && S.view.name === "article") renderMain();
+  }).catch(() => {});
   if (restoring) { S.view = { name: "article", key: w.mainKey }; }
   else openEntity(goKey && (w.entities[goKey] || w.aliases?.[goKey]) ? goKey : w.mainKey);
   if (unbadged) setTimeout(() => toast(`AI 수정 때문에 잘못 붙어 있던 '설정과 맞지 않음' 경고 ${unbadged}건을 지웠습니다.`), merged ? 3800 : 0);

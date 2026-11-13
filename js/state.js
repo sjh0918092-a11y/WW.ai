@@ -212,37 +212,155 @@ function addTimeline(w, t, src, ch) {
 /* 사실과 언급의 상태: sup = 다른 문서의 직접 수정으로 대체됨 (생성에서 제외) */
 const live = x => !x.sup;
 const factLine = f => f.t + (f.src === "user" || S.pages[f.src]?.editedAt ? " [사용자 확정]" : "");
-/* 인물 관계: {a, b, rel, story, src, sup?} — a, b는 항목 키 */
+/* 인물 관계: {id, a, b, type?, since?, rel, story, src, prev?, sup?} — a, b는 항목 키.
+   type은 관계의 성격(REL_TYPES), since는 시작 연도(모르면 빈 값), rel은 짧은 표시용 이름, story는 세부 뉘앙스.
+   prev는 이 관계가 이어받은 이전 국면(관계 id). 생성 응답은 기존 관계를 번호(id)로 가리킨다:
+   {"same": n} 기존과 같은 관계 · {"next": n, ...} 기존 관계의 새 국면 · {"a", "b", ...} 새 관계 */
+const REL_TYPES = ["적대", "맞수", "동료", "상하", "사제", "가족", "연인", "기타"];
+const relType = t => { t = norm(stripMarks(asText(t ?? ""))); return REL_TYPES.includes(t) ? t : ""; };
+const relSince = y => { const t = norm(stripMarks(asText(y ?? ""))).slice(0, 16); return /\d/.test(t) ? t : ""; };
+const relFixed = x => x.src === "user" || !!S.pages[x.src]?.editedAt;   // 사용자가 정했거나 직접 고친 문서에서 온 관계
+const relRank = x => x.src === "user" ? 0 : S.pages[x.src]?.editedAt ? 1 : 2;
+/* 번호가 없는 옛 관계에 번호를 붙인다. 번호는 한 번 붙으면 바뀌지 않는다 */
+function ensureRelIds(w) {
+  const list = w.relations || []; let n = w.relSeq || 0, changed = false;
+  for (const x of list) if (Number.isInteger(x.id) && x.id > n) n = x.id;
+  const seen = new Set();
+  for (const x of list) { if (!Number.isInteger(x.id) || x.id < 1 || seen.has(x.id)) { x.id = ++n; changed = true; } seen.add(x.id); }   // 없거나 겹친 번호는 새로 붙인다
+  if (w.relSeq !== n) w.relSeq = n;
+  return changed;
+}
+const relById = (w, id) => (w.relations || []).find(x => x.id === +id) || null;
+const fillRel = (x, story, since) => { if (!x.story && story) x.story = story; if (!x.since && since) x.since = since; };
+/* 같은 쌍에서 x와 같은 관계로 볼 기록. type이 같으면 같은 관계다. 다만 next로 이어진 국면끼리는 이어받은 국면까지 같아야 같다 */
+function sameRelation(list, x) {
+  const pair = list.filter(y => y !== x && !y.sup && samePair(y, x.a, x.b));
+  const byKey = pair.find(y => relKey(y.rel) === relKey(x.rel) && (!x.type || !y.type || y.type === x.type));
+  if (!x.type) return byKey || null;
+  if (x.prev) {
+    const prev = pair.find(y => y.id === x.prev);
+    return pair.find(y => y.type === x.type && y.prev === x.prev) || (prev && prev.type === x.type ? prev : null) || (byKey && byKey.prev === x.prev ? byKey : null);
+  }
+  return pair.find(y => y.type === x.type && !y.prev) || pair.find(y => y.type === x.type) || byKey || null;
+}
 function addRelation(w, key, r) {
-  if (!r || !r.a || !r.b || !r.rel) return;
-  const a = kOf(w, r.a), b = kOf(w, r.b);
-  if (a === b || !w.entities[a] || !w.entities[b]) return;
-  const rel = stripMarks(r.rel).slice(0, 60), story = stripMarks(r.story || "").slice(0, 260);
-  w.relations ||= [];
-  // 같은 두 사람 사이의 같은 관계는 출처가 달라도 한 번만 둔다. 앞선 기록에 설명이 없으면 채운다
-  const same = w.relations.find(x => !x.sup && samePair(x, a, b) && relKey(x.rel) === relKey(rel));
-  if (same) { if (!same.story && story) same.story = story; return; }
-  w.relations.push({ a, b, rel, story, src: key });
-  if (w.relations.length > 500) w.relations.splice(w.relations.findIndex(x => !S.pages[x.src]?.editedAt), 1);
+  if (!r || typeof r !== "object") return;
+  w.relations ||= []; ensureRelIds(w);
+  const story = stripMarks(asText(r.story || "")).slice(0, 260), since = relSince(r.since);
+  if (r.same != null) { const x = relById(w, r.same); if (x && !x.sup) fillRel(x, story, ""); return; }   // 기존과 같은 관계: 새로 두지 않고 비어 있는 설명만 채운다
+  let a, b, prev = 0;
+  if (r.next != null) {
+    const p = relById(w, r.next); if (!p || p.sup) return;
+    a = p.a; b = p.b; prev = p.id;
+  } else {
+    if (!r.a || !r.b) return;
+    a = kOf(w, r.a); b = kOf(w, r.b);
+  }
+  const type = relType(r.type), rel = stripMarks(asText(r.rel || "")).slice(0, 60) || type;
+  if (a === b || !w.entities[a] || !w.entities[b] || !rel) return;
+  const x = { id: 0, a, b, rel, story, src: key };
+  if (type) x.type = type; if (since) x.since = since; if (prev) x.prev = prev;
+  const same = sameRelation(w.relations, x);
+  if (same) { fillRel(same, story, since); return; }   // 같은 두 사람 사이의 같은 관계는 출처가 달라도 한 번만 둔다
+  x.id = ++w.relSeq;
+  w.relations.push(x);
+  if (w.relations.length > 500) w.relations.splice(w.relations.findIndex(y => !relFixed(y)), 1);
 }
 const samePair = (x, a, b) => (x.a === a && x.b === b) || (x.a === b && x.b === a);
 const relKey = r => String(r || "").replace(/[\s·,()（）]/g, "");
-/* 이미 쌓인 중복 관계를 하나로 합친다. 사용자가 정한 것, 직접 수정한 문서의 것, 먼저 생긴 것 순으로 남긴다 */
+/* 이미 쌓인 중복 관계를 하나로 합친다. 생긴 순서대로 보며 addRelation과 같은 기준으로 같은 관계를 찾고,
+   사용자가 정한 것, 직접 수정한 문서의 것, 먼저 생긴 것 순으로 남긴다. 비어 있는 story와 since는 합쳐지는 기록에서 채우고,
+   합쳐진 기록을 이어받던 국면은 남은 기록을 잇는다 */
 function dedupeRelations(w) {
-  const rank = x => x.src === "user" ? 0 : S.pages[x.src]?.editedAt ? 1 : 2;
-  const list = (w.relations || []).map((x, i) => [x, i]).sort((p, q) => rank(p[0]) - rank(q[0]) || p[1] - q[1]);
-  const keep = new Map();
-  for (const [x] of list) {
-    const id = [x.a, x.b].sort().join("|") + "|" + relKey(x.rel) + "|" + (x.sup ? "sup" : "");
-    const k = keep.get(id); if (k) { if (!k.story && x.story) k.story = x.story; continue; }
-    keep.set(id, x);
+  const rels = w.relations || []; if (!rels.length) return 0;
+  ensureRelIds(w);
+  const kept = [], into = new Map(), res = id => { while (into.has(id)) id = into.get(id); return id; };
+  for (const x of rels) {
+    if (x.prev) x.prev = res(x.prev);
+    const same = x.sup ? kept.find(y => y.sup && samePair(y, x.a, x.b) && relKey(y.rel) === relKey(x.rel)) : sameRelation(kept, x);
+    if (!same) { kept.push(x); continue; }
+    let keep = same, drop = x;
+    if (relRank(x) < relRank(same)) { keep = x; drop = same; kept[kept.indexOf(same)] = x; if (!x.prev && same.prev) x.prev = same.prev; }
+    fillRel(keep, drop.story, drop.since);
+    if (drop.id !== keep.id) into.set(drop.id, keep.id);
   }
-  const kept = new Set(keep.values()), before = (w.relations || []).length;
-  w.relations = (w.relations || []).filter(x => kept.has(x));
-  return before - w.relations.length;
+  for (const x of kept) { if (x.prev) x.prev = res(x.prev); if (x.prev === x.id) delete x.prev; }
+  const before = rels.length;
+  w.relations = kept;
+  return before - kept.length;
 }
 const relationsOf = (w, k) => (w.relations || []).filter(x => (x.a === k || x.b === k) && w.entities[x.a] && w.entities[x.b]);
-const relLine = (w, x) => `「${w.entities[x.a].title}」–「${w.entities[x.b].title}」: ${x.rel}${x.story ? ". " + x.story : ""}${x.src === "user" || S.pages[x.src]?.editedAt ? " [사용자 확정]" : ""}`;
+const relLine = (w, x) => `「${w.entities[x.a].title}」–「${w.entities[x.b].title}」: ${x.type ? x.type + (x.since ? `(${x.since}부터)` : "") + " · " : ""}${x.rel}${x.story ? ". " + x.story : ""}${relFixed(x) ? " [사용자 확정]" : ""}`;
+/* 생성 프롬프트에 넣는 기존 관계(번호와 함께). keys 안의 두 사람 사이 관계 중 skip 문서가 낸 것은 빼고, focus가 낀 관계를 먼저 */
+function relRefLines(w, keys, skip = "", focus = "", max = 24) {
+  ensureRelIds(w);
+  const ks = new Set(keys);
+  const list = (w.relations || []).filter(x => live(x) && x.src !== skip && ks.has(x.a) && ks.has(x.b) && w.entities[x.a] && w.entities[x.b]);
+  const pick = [...list.filter(x => x.a === focus || x.b === focus), ...list.filter(x => x.a !== focus && x.b !== focus)].slice(0, max);
+  return list.filter(x => pick.includes(x)).map(x => `#${x.id} ${relLine(w, x)}${x.prev ? ` (#${x.prev}에서 바뀐 국면)` : ""}`);
+}
+function relRefBlock(w, keys, skip, focus, max) {
+  const L = relRefLines(w, keys, skip, focus, max);
+  return L.length ? `## 기존 인물 관계 (번호는 relations의 same, next에 쓴다. 모순 금지)\n${L.join("\n")}\n\n` : "";
+}
+const REL_SPEC = `relations의 각 항목은 다음 셋 중 하나다. (1) {"same": n}: '기존 인물 관계'의 n번과 같은 관계를 이 글이 다시 다뤘다. 새로 저장하지 않는다. (2) {"next": n, "type", "since", "rel", "story"}: n번 관계의 성격이 실제로 바뀐 새 국면이다(예: 적대하던 두 사람이 동료가 됨). type이 n번과 같으면 next가 아니라 same이다. (3) {"a", "b", "type", "since", "rel", "story"}: 목록에 없는 새 관계다. 같은 관계를 다른 말로 바꿔 새 관계로 넣지 않는다. type은 ${REL_TYPES.join(", ")} 중 하나, since는 그 관계가 시작된 연도(모르면 빈 문자열), rel은 짧은 표시용 이름(예: 스승과 제자, 의절한 형제)이고 세부 뉘앙스와 경과는 story에 쓴다.`;
+const REL_JSON = `"relations":[{"same":3},{"next":5,"type":"동료","since":"연도","rel":"짧은 관계 이름","story":"..."},{"a":"인물 제목","b":"인물 제목","type":"${REL_TYPES.join("|")} 중 하나","since":"관계가 시작된 연도(모르면 빈 문자열)","rel":"짧은 관계 이름","story":"관계가 어떻게 시작해 어떻게 변했는지 한두 문장, 시점 포함"}]`;
+
+/* 옛 관계 옮기기: type이 없는 관계가 같은 쌍에 둘 이상 있으면 quick 모델로 한 번에 type과 since를 매기고 국면 순서를 정해 합친다.
+   사용자가 정했거나 직접 고친 문서의 관계는 바꾸지 않는다. 처리한 세계관에는 w.relMigrated를 남겨 다시 돌지 않는다.
+   AI 연결이 없거나 실패하면 데이터를 그대로 둔다(화면은 relChips가 같은 쌍의 옛 기록을 최신 하나로 줄여 보여 준다) */
+const REL_MIGRATE_PAIRS = 60;
+function relMigrateGroups(w) {
+  const groups = new Map();
+  for (const x of w.relations || []) {
+    if (x.sup || !w.entities[x.a] || !w.entities[x.b]) continue;
+    const id = [x.a, x.b].sort().join("|"); (groups.get(id) || groups.set(id, []).get(id)).push(x);
+  }
+  return [...groups.values()].filter(xs => xs.length >= 2 && xs.some(x => !x.type && !relFixed(x)));
+}
+function relMigratePrompt(w, groups) {
+  return `## 인물 관계 정리
+가상 세계관 위키 「${w.title}」의 인물 관계 기록이다. 문서마다 같은 관계를 다른 말로 다시 적어 한 쌍에 기록이 여럿 쌓였다. 기록마다 type과 since를 매기고, 쌍 안에서 관계가 이어진 순서 order를 매긴다.
+- type은 ${REL_TYPES.join(", ")} 중 하나다. 같은 관계를 다른 말로 쓴 기록에는 같은 type을 매긴다. 관계의 성격이 실제로 바뀐 경우에만 다른 type을 매긴다.
+- since는 그 관계가 시작된 연도다. 기록에 나오지 않으면 빈 문자열.
+- order는 쌍 안에서 그 관계(국면)가 시작된 순서로 1부터 매긴다. 같은 type의 기록은 같은 order를 매긴다.
+- 기록에 적힌 내용만 근거로 삼고 새 내용을 지어내지 않는다.
+
+${groups.map((xs, i) => `P${i + 1} 「${w.entities[xs[0].a].title}」–「${w.entities[xs[0].b].title}」\n${xs.map(x => `  #${x.id} ${x.type ? `[${x.type}] ` : ""}${x.rel}${x.story ? ". " + x.story : ""}`).join("\n")}`).join("\n")}
+
+JSON 객체 하나만 출력: {"relations":[{"id":번호,"type":"${REL_TYPES.join("|")} 중 하나","since":"연도 또는 빈 문자열","order":1}]}`;
+}
+async function migrateRelations(w) {
+  if (w.relMigrated || !S.sample) return false;
+  ensureRelIds(w);
+  const all = relMigrateGroups(w);
+  for (let i = 0; i < all.length; i += REL_MIGRATE_PAIRS) {
+    const groups = all.slice(i, i + REL_MIGRATE_PAIRS);
+    let r;
+    try { r = await callJson("relMigrate", relMigratePrompt(w, groups), { modelTier: "quick" }, { title: w.title + " · 인물 관계 정리" }); } catch { return false; }
+    const got = new Map((Array.isArray(r?.relations) ? r.relations : []).filter(x => x && relType(x.type)).map(x => [+x.id, x]));
+    if (!got.size) return false;
+    for (const xs of groups) {
+      const mine = new Set();
+      for (const x of xs) {
+        const g = got.get(x.id); if (!g || x.type || relFixed(x) || !w.relations.includes(x)) continue;
+        x.type = relType(g.type); const since = relSince(g.since); if (since) x.since = since;
+        mine.add(x);
+      }
+      // 국면 순서: order가 같거나 type이 이어지면 같은 국면, type이 바뀐 곳에서 앞 국면을 잇는다
+      const ord = xs.filter(x => x.type && got.has(x.id)).map((x, i) => [x, +got.get(x.id).order || 0, i]).sort((p, q) => p[1] - q[1] || p[2] - q[2]).map(p => p[0]);
+      let type = null, head = 0, prev = 0;
+      for (const x of ord) {
+        if (type !== null && x.type !== type) { prev = head; head = 0; }
+        if (!head) { type = x.type; head = x.id; if (mine.has(x) && prev && !x.prev) x.prev = prev; continue; }
+        if (mine.has(x) && prev && !x.prev) x.prev = prev;
+      }
+    }
+  }
+  dedupeRelations(w);
+  w.relMigrated = 1;
+  return true;
+}
 function purge(w, key) {
   for (const e of Object.values(w.entities)) {
     e.facts = e.facts.filter(f => f.src !== key); e.mentions = e.mentions.filter(m => m.from !== key);

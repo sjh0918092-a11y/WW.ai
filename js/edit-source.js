@@ -100,10 +100,11 @@ function factSyncPrompt(w, temp, linkKeys) {
 ${docText(temp, w, temp.navboxes)}
 
 링크한 항목: ${linked}
-JSON 객체 하나만 출력:
-{"facts":[{"about":"항목 제목","fact":"사실 한 문장"}],"timeline":[{"year":"연도","about":"사건의 주체 항목 제목","event":"사건"}],"newEntities":[{"title":"항목 제목","type":"${TYPES.join("|")} 중 하나","summary":"본문에 근거한 한 문장 정의"}],"relations":[{"a":"인물 제목","b":"인물 제목","rel":"관계 이름","story":"관계의 시작과 변화 한 문장"}],${EVENTS_JSON}}
+
+${relRefBlock(w, [temp.key, ...linkKeys], temp.key, temp.key, 24)}JSON 객체 하나만 출력:
+{"facts":[{"about":"항목 제목","fact":"사실 한 문장"}],"timeline":[{"year":"연도","about":"사건의 주체 항목 제목","event":"사건"}],"newEntities":[{"title":"항목 제목","type":"${TYPES.join("|")} 중 하나","summary":"본문에 근거한 한 문장 정의"}],${REL_JSON},${EVENTS_JSON}}
 ${EVENTS_SPEC}
-facts에는 「${temp.title}」 자체의 핵심 사실 3~6개와 주요 링크 항목의 사실을 넣는다. about, a, b는 문서 제목이나 링크한 항목 제목 그대로 쓴다. timeline에는 연도가 적힌 사건 중 세계에 영향을 준 것만 0~2개 넣고, 현재 상태·근황·거주는 넣지 않는다. about에는 사건의 주체가 되는 항목 제목을 글자 그대로 쓴다. newEntities에는 아직 정의가 없는 링크 항목만 넣는다. relations는 문서에 적힌 주요 인물 관계를 6개까지 넣는다.`;
+facts에는 「${temp.title}」 자체의 핵심 사실 3~6개와 주요 링크 항목의 사실을 넣는다. about, a, b는 문서 제목이나 링크한 항목 제목 그대로 쓴다. timeline에는 연도가 적힌 사건 중 세계에 영향을 준 것만 0~2개 넣고, 현재 상태·근황·거주는 넣지 않는다. about에는 사건의 주체가 되는 항목 제목을 글자 그대로 쓴다. newEntities에는 아직 정의가 없는 링크 항목만 넣는다. relations는 문서에 적힌 주요 인물 관계를 6개까지 넣는다. ${REL_SPEC}`;
 }
 function analyzePrompt(w, temp, linkKeys, ctx) {
   const linked = linkKeys.filter(x => w.entities[x]).map(x => `- ${w.entities[x].title}${w.entities[x].page || w.entities[x].summary ? "" : " (정의 없음)"}`).join("\n") || "(없음)";
@@ -123,10 +124,10 @@ ${linked}
 ## 기존 설정
 ${ctx.text}
 
-JSON 객체 하나만 출력:
-{"facts":[{"about":"항목 제목","fact":"사실 한 문장"}],"timeline":[{"year":"연도","event":"사건"}],"newEntities":[{"title":"항목 제목","type":"${TYPES.join("|")} 중 하나","summary":"이 문서에 근거한 한 문장 정의"}],"relations":[{"a":"인물 제목","b":"인물 제목","rel":"관계 이름","story":"관계의 시작과 변화 한 문장"}],"conflicts":[{"ref":"R1, U, T3, F7, M2, L4 같은 기존 설정 번호 하나","claim":"수정본의 해당 서술","old":"충돌하는 기존 설정 내용","suggest":"ref가 R일 때만: 수정본에 맞게 고친 규칙 한 문장"}],${EVENTS_JSON}}
+${relRefBlock(w, [temp.key, ...linkKeys], temp.key, temp.key, 24)}JSON 객체 하나만 출력:
+{"facts":[{"about":"항목 제목","fact":"사실 한 문장"}],"timeline":[{"year":"연도","event":"사건"}],"newEntities":[{"title":"항목 제목","type":"${TYPES.join("|")} 중 하나","summary":"이 문서에 근거한 한 문장 정의"}],${REL_JSON},"conflicts":[{"ref":"R1, U, T3, F7, M2, L4 같은 기존 설정 번호 하나","claim":"수정본의 해당 서술","old":"충돌하는 기존 설정 내용","suggest":"ref가 R일 때만: 수정본에 맞게 고친 규칙 한 문장"}],${EVENTS_JSON}}
 ${EVENTS_SPEC}
-facts에는 링크한 항목 중 중요한 것(인물, 조직, 사건, 장소 위주) 6~10개에 대해 1개씩 넣되, 절정이나 큰 사건에 등장한 항목은 빠짐없이 포함한다. 그리고 「${temp.title}」 자체에 대한 핵심 사실 3~6개를 넣는다. 사실은 모두 한 문장으로 짧게 쓴다. about은 목록의 제목이나 「${temp.title}」를 글자 그대로 쓴다. timeline에는 문서에 연도가 적힌 주요 사건만 넣는다. newEntities에는 '정의 없음'으로 표시된 항목만 넣는다. relations에는 이 문서에 적힌 인물 사이의 주요 관계를 6개까지 넣는다(a, b는 이 문서 제목이나 링크한 항목 제목 그대로). 모순이 없으면 conflicts는 빈 배열.`;
+facts에는 링크한 항목 중 중요한 것(인물, 조직, 사건, 장소 위주) 6~10개에 대해 1개씩 넣되, 절정이나 큰 사건에 등장한 항목은 빠짐없이 포함한다. 그리고 「${temp.title}」 자체에 대한 핵심 사실 3~6개를 넣는다. 사실은 모두 한 문장으로 짧게 쓴다. about은 목록의 제목이나 「${temp.title}」를 글자 그대로 쓴다. timeline에는 문서에 연도가 적힌 주요 사건만 넣는다. newEntities에는 '정의 없음'으로 표시된 항목만 넣는다. relations에는 이 문서에 적힌 인물 사이의 주요 관계를 6개까지 넣는다(a, b는 이 문서 제목이나 링크한 항목 제목 그대로). ${REL_SPEC} 모순이 없으면 conflicts는 빈 배열.`;
 }
 function readConflicts(w, raw, refs) {
   const out = [], seen = new Set();
