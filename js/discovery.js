@@ -40,7 +40,7 @@ function validateDiscoveryNovelty(w, result) {
   if (result.verdict !== "novel") throw new Error("기존 항목과 개념이 충분히 다른지 확인하지 못해 새 문서를 만들지 않았습니다. " + result.reason.slice(0, 400));
 }
 /* ---------- 각도: 세계의 중심 주제를 다른 자리에서 비추는 시선 ----------
-   w.angles = [{ id, label, axis, consequence, surprise, safe, count, off }] (예전 목록은 consequence 대신 why). 목록은 AI가 한 번 만들고, 어느 각도를 쓸지는 코드가 고른다. */
+   w.angles = [{ id, label, area, axis, consequence, surprise, contrast, scene, safe, existing, uses, scenes, off, retired, removed }]. existing: 만들 때 분류된 기존 관련 문서 수(혼잡 판정·표시용), uses: 각도로 실제 쓴 횟수(은퇴 판정용) (예전 목록은 consequence 대신 why). 목록은 AI가 한 번 만들고, 어느 각도를 쓸지는 코드가 고른다. */
 const ANGLE_RATE = 0.3;   // 사용자 설명 없는 랜덤 서핑 중 각도를 쓰는 비율
 const ANGLE_CANDIDATES = 15, ANGLE_PICK = 8;
 const ANGLE_MAX_USES = 2, ANGLE_MIN_ACTIVE = 4, ANGLE_REFILL = 6;   // 두 번 쓴 각도는 은퇴, 활성 각도가 4개 미만이면 6개 보충
@@ -82,7 +82,8 @@ function pickAngle(w, k = null, rand = Math.random, opts = {}) {
   const near = neighborAngles(w, k);
   const on = liveAngles(w).filter(a => (!opts.person || a.axis === "감정 반전") && !near.has(a.id)); if (!on.length) return null;
   if (!(rand() < ANGLE_RATE)) return null;
-  const min = Math.min(...on.map(a => a.count || 0)), pool = on.filter(a => (a.count || 0) === min);
+  const rank = a => [a.uses || 0, a.existing || 0];   // 덜 쓴 각도 우선, 같으면 기존 문서가 적은 쪽
+  const [mu, me] = on.map(rank).sort((x, y) => x[0] - y[0] || x[1] - y[1])[0], pool = on.filter(a => (a.uses || 0) === mu && (a.existing || 0) === me);
   return pool[Math.min(pool.length - 1, Math.floor(rand() * pool.length))];
 }
 /* 빨간 링크처럼 대상이 이미 정해진 새 문서에 얹는 각도. 대상은 바꾸지 않고 섹션 하나(인물이면 태도)만 그 시선으로 쓴다 */
@@ -95,9 +96,9 @@ ${guide ? "사용자가 요청한 방향이 성격·태도·시선을 이미 정
 function noteAngleUse(w, used, scene = "") {
   const a = used && (w.angles || []).find(x => x.id === used.id);
   if (a) {
-    a.count = (a.count || 0) + 1;
+    a.uses = (a.uses || 0) + 1;
     scene = norm(scene || "").slice(0, 200); if (scene && !nearSame(scene, a.scene)) a.scenes = [...(a.scenes || []), scene].slice(-10);   // 예시 장면을 그대로 옮긴 것은 기록하지 않는다
-    if (a.count >= ANGLE_MAX_USES && !a.retired) { a.retired = true; a.endedAt = Date.now(); }
+    if (a.uses >= ANGLE_MAX_USES && !a.retired) { a.retired = true; a.endedAt = Date.now(); }
   }
   w.angleLast = !!a;
   return a;
@@ -111,10 +112,18 @@ function nearSame(x, y) {
   const ga = grams(a), gb = grams(b); let hit = 0; for (const [g, n] of ga) hit += Math.min(n, gb.get(g) || 0);
   return (2 * hit) / Math.max(1, a.length - 1 + b.length - 1) >= 0.7;
 }
-/* 이전 버전에서 만든 각도 보정: 두 번 이상 쓴 각도를 은퇴시킨다. 바뀐 것이 있으면 true */
-function fixOldAngles(w) {
+/* 이전 형식(count 하나에 기존 문서 수와 사용 횟수가 섞임) 변환. 세계를 열 때 count가 남은 각도만 한 번 바꾼다. 바뀐 것이 있으면 true
+   uses = 이 각도로 쓴 문서 수, existing = 나머지. 생성 즉시 잘못 은퇴한 각도(uses가 한도 미만)는 되살린다. off·removed는 건드리지 않는다 */
+function fixOldAngles(w, pages = S.pages) {
   let changed = false;
-  for (const a of Array.isArray(w?.angles) ? w.angles : []) if (a && !a.retired && (a.count || 0) >= ANGLE_MAX_USES) { a.retired = true; a.endedAt = Date.now(); changed = true; }
+  for (const a of Array.isArray(w?.angles) ? w.angles : []) {
+    if (!a || !Object.prototype.hasOwnProperty.call(a, "count")) continue;
+    const uses = Object.values(pages || {}).filter(p => p?.angle === a.id).length;
+    a.uses = uses; a.existing = Math.max(0, (Number(a.count) || 0) - uses); delete a.count;
+    if (a.retired && uses < ANGLE_MAX_USES) { delete a.retired; delete a.endedAt; }
+    else if (!a.retired && uses >= ANGLE_MAX_USES) { a.retired = true; a.endedAt = Date.now(); }
+    changed = true;
+  }
   return changed;
 }
 function prevScenes(a) { return a?.scenes?.length ? `이전 장면: ${a.scenes.join(" / ")}. 이와 다른 장면·인물·장소를 쓴다.\n` : ""; }
@@ -192,12 +201,10 @@ function parseAngles(w, r, prior = [], pick = ANGLE_PICK) {
     const area = field(a, "area", 60), areaKey = squash(area);
     if (!areaKey || areas.has(areaKey)) continue;
     const label = field(a, "label", 80), consequence = field(a, "consequence", 300), surprise = field(a, "surprise", 300), safe = field(a, "safe", 300), scene = field(a, "scene", 200), contrast = field(a, "contrast", 300);
-    const axis = ANGLE_AXES.some(x => x[0] === a.axis) ? a.axis : "", count = counts.get(String(a.id)) || 0;
-    if (!label || !consequence || !safe || !scene || restatesRule(w, consequence) || (ANGLE_FLIP.includes(axis) && !contrast) || count >= ANGLE_CROWDED || out.some(x => x.label === label)) continue;
+    const axis = ANGLE_AXES.some(x => x[0] === a.axis) ? a.axis : "", existing = counts.get(String(a.id)) || 0;
+    if (!label || !consequence || !safe || !scene || restatesRule(w, consequence) || (ANGLE_FLIP.includes(axis) && !contrast) || existing >= ANGLE_CROWDED || out.some(x => x.label === label)) continue;
     areas.add(areaKey);
-    const angle = { id: "a" + next++, label, area, axis, consequence, surprise, contrast, scene, safe, count, scenes: [], off: false };
-    if (count >= ANGLE_MAX_USES) { angle.retired = true; angle.endedAt = Date.now(); }
-    out.push(angle);
+    out.push({ id: "a" + next++, label, area, axis, consequence, surprise, contrast, scene, safe, existing, uses: 0, scenes: [], off: false });   // 새 각도는 언제나 쓰지 않은 상태로 시작
     if (out.length >= pick) break;
   }
   return out.length ? { angles: out, dominant: field(r, "dominant", 300) } : null;
@@ -270,7 +277,7 @@ async function editAngle(id, op, value) {
 }
 function anglesHtml(w) {
   const all = Array.isArray(w.angles) ? w.angles : null, list = all ? all.filter(a => !a.removed) : null, removed = all ? all.length - list.length : 0, busy = S.angleGen === w.id;
-  const item = a => `<li class="${a.off || a.retired ? "off" : ""}"><input class="txt" data-angle-label="${esc(a.id)}" maxlength="80" value="${esc(a.label)}" aria-label="각도 문구"><span class="src">${!a.area ? `<b data-angle-legacy="${esc(a.id)}">이전 버전에서 만든 각도입니다. 다시 만들기를 권장합니다.</b><br>` : ""}${a.retired ? `<b data-angle-retired="${esc(a.id)}">은퇴 · ${ANGLE_MAX_USES}번 사용</b> · ` : ""}${a.axis ? esc(a.axis) + " · " : ""}${a.area ? "영역: " + esc(a.area) + " · " : ""}이 세계에서 생긴 결과: ${esc(angleBasis(a))}${a.surprise ? `<br>의외인 이유: ${esc(a.surprise)}` : ""}${a.scene ? `<br>장면: ${esc(a.scene)}` : ""}${a.contrast ? `<br>기존 결론과 다른 점: ${esc(a.contrast)}` : ""}${a.safe ? `<br>규칙·문체를 지키는 이유: ${esc(a.safe)}` : ""}${a.scenes?.length ? `<br>쓴 장면: ${a.scenes.map(esc).join(" / ")}` : ""} · 문서 ${a.count || 0}개${a.off ? " · 꺼짐" : ""}</span>
+  const item = a => `<li class="${a.off || a.retired ? "off" : ""}"><input class="txt" data-angle-label="${esc(a.id)}" maxlength="80" value="${esc(a.label)}" aria-label="각도 문구"><span class="src">${!a.area ? `<b data-angle-legacy="${esc(a.id)}">이전 버전에서 만든 각도입니다. 다시 만들기를 권장합니다.</b><br>` : ""}${a.retired ? `<b data-angle-retired="${esc(a.id)}">은퇴 · ${ANGLE_MAX_USES}번 사용</b> · ` : ""}${a.axis ? esc(a.axis) + " · " : ""}${a.area ? "영역: " + esc(a.area) + " · " : ""}이 세계에서 생긴 결과: ${esc(angleBasis(a))}${a.surprise ? `<br>의외인 이유: ${esc(a.surprise)}` : ""}${a.scene ? `<br>장면: ${esc(a.scene)}` : ""}${a.contrast ? `<br>기존 결론과 다른 점: ${esc(a.contrast)}` : ""}${a.safe ? `<br>규칙·문체를 지키는 이유: ${esc(a.safe)}` : ""}${a.scenes?.length ? `<br>쓴 장면: ${a.scenes.map(esc).join(" / ")}` : ""} · <span data-angle-stat="${esc(a.id)}">기존 문서 ${a.existing || 0}개 · 사용 ${a.uses || 0}번</span>${a.off ? " · 꺼짐" : ""}</span>
       <div class="row" style="margin-top:4px"><button type="button" class="btn" data-angle-save="${esc(a.id)}">문구 저장</button>${a.retired ? `<button type="button" class="btn" data-angle-revive="${esc(a.id)}">다시 켜기</button>` : `<button type="button" class="btn" data-angle-toggle="${esc(a.id)}">${a.off ? "켜기" : "끄기"}</button>`}<button type="button" class="btn" data-angle-del="${esc(a.id)}">삭제</button></div></li>`;
   return `<h2 id="angles">랜덤 서핑 각도</h2>
     <p class="note">새 문서(랜덤 서핑, 빨간 링크, 방향을 정한 작성)의 ${Math.round(ANGLE_RATE * 100)}%에 아래 각도 하나를 얹습니다. 랜덤 서핑은 그 시선에서 새 대상을 고르고, 대상이 정해진 문서는 섹션 하나(인물은 태도)만 그 시선으로 씁니다. 어조·문체·세계 규칙은 그대로이고, 두 문서 연속으로 쓰지 않으며, 다시 쓰기에는 쓰지 않습니다. 튀는 각도는 끄거나 지워 주세요.</p>

@@ -246,7 +246,7 @@ async function openWorld(wid, goKey, restoring = false) {
   const merged = await autoMerge(w);
   await cleanChapterTitles(w);
   const unbadged = await cleanAiSupersede(w);
-  if (fixOldAngles(w)) { try { await Store.saveWorld(w); } catch {} }   // 이전 버전 각도: 두 번 이상 쓴 것은 은퇴
+  if (fixOldAngles(w, S.pages)) { try { await Store.saveWorld(w); } catch {} }   // 이전 형식 각도: count를 기존 문서 수와 사용 횟수로 나눈다
   if (dedupeRelations(w)) { try { await Store.saveWorld(w); } catch {} }
   if (restoring) { S.view = { name: "article", key: w.mainKey }; }
   else openEntity(goKey && (w.entities[goKey] || w.aliases?.[goKey]) ? goKey : w.mainKey);
