@@ -11,9 +11,11 @@ vm.runInContext([
   cut("const FACT_CAP =", "/* 링크가 걸린 문장부터"),
   cut("const yearNum =", "/* 사실과 언급의 상태"), "const live = x => !x.sup;",
   cut("let focusMemo = null;", "function entityBrief"), "const yearHits = () => [];",
+  cut("const refOK =", "/* 검사할 문서(focus)"), "const chOf = () => 0;",
+  cut("const sentencesOf =", "/* 인포박스에서"), cut("function pageTexts(p)", "/* 이름이 목적어"),
   cut("const namesOf =", "function checkBrief"),
   require("fs").readFileSync(require("path").join(__dirname, "..", "js", "ledger.js"), "utf8").replace('"use strict";', ""),
-  "Object.assign(globalThis,{addFact,addMention,compactFacts,promptFacts,promptMentions,FACT_CAP,MENTION_CAP,addTimeline,acceptTimeline,acceptPageTimeline,timelineSubject,keyOf,norm,stripMarks});"
+  "Object.assign(globalThis,{normEvent,ingestEvents,eventIssues,eventCandidates,eventBlock,eventCheckBlock,addFact,addMention,compactFacts,promptFacts,promptMentions,FACT_CAP,MENTION_CAP,addTimeline,acceptTimeline,acceptPageTimeline,timelineSubject,keyOf,norm,stripMarks});"
 ].join("\n"), c);
 let n = 0; const test = (name, fn) => { fn(); console.log(`  ✓ ${++n}. ${name}`); };
 const ent = title => ({ title, type: "", summary: "", facts: [], mentions: [], page: false, box: "" });
@@ -115,6 +117,74 @@ test("프롬프트에는 pickRelevant가 고른 것만, 사용자 사실은 언�
 test("항목을 합칠 때도 사실을 잘라 내지 않는다", () => {
   assert(!html.includes("b.facts.splice(0, b.facts.length - 24)"));
   assert(!/mentions\.length > 6\) e\.mentions\.shift/.test(html));
+});
+
+/* ---------- 3단계: 사건 장부 ---------- */
+const doc = (title, createdAt, body = "", extra = {}) => ({ title, type: "사건", summary: "", infobox: [], sections: [{ heading: "개요", level: 1, body }], links: [], createdAt, ...extra });
+const duelWorld = () => {
+  const w = world("해저 결투", "한서진", "카이 마루", "북해 함대", "남부 해전");
+  const K = t => c.keyOf(t);
+  c.S.pages = { [K("해저 결투")]: doc("해저 결투", 1, "두 병기는 180해리 떨어진 해역, 수심 70m에서 맞붙었다."), [K("한서진")]: doc("한서진", 2, "한서진은 40해리 앞바다의 수심 120m 해저에서 카이 마루와 싸웠다."), [K("남부 해전")]: doc("남부 해전", 3, "") };
+  const duel = (dist, depth, extra = {}) => ({ name: "해저 결투", date: "2015년 11월 4일", place: "북해", nums: [{ name: "거리", value: dist, unit: "해리" }, { name: "수심", value: depth, unit: "m" }], participants: ["한서진", "카이 마루"], result: "한서진의 승리", ...extra });
+  c.ingestEvents(w, K("해저 결투"), [duel("180", "70")]);
+  c.ingestEvents(w, K("한서진"), [duel("40", "120")]);
+  return { w, K, duel };
+};
+test("구체적이지 않은 사건(날짜가 없거나 장소·수치가 없는)은 장부에 넣지 않는다", () => {
+  const w = world("한서진");
+  assert.equal(c.normEvent(w, { name: "어떤 전투", place: "북해" }), null);
+  assert.equal(c.normEvent(w, { name: "어떤 전투", date: "2015년" }), null);
+  assert(c.normEvent(w, { name: "어떤 전투", date: "2015년", nums: [{ name: "병력", value: "300", unit: "명" }] }));
+  assert.equal(c.ingestEvents(w, "p", "잘못된 값"), 0);
+});
+test("같은 문서의 기록은 다시 받을 때 바꿔 끼운다", () => {
+  const { w, K, duel } = duelWorld();
+  c.ingestEvents(w, K("한서진"), [duel("180", "70")]);
+  assert.equal(w.events.length, 2); assert.equal(w.events.filter(x => x.src === K("한서진"))[0].nums[0].value, "180");
+});
+test("같은 사건, 같은 이름·단위의 수치가 먼저 기록된 값과 다르면 이슈로 만든다", () => {
+  const { w, K } = duelWorld();
+  const is = c.eventIssues(w, K("한서진"));
+  assert.equal(is.length, 2); assert(is.every(i => i.severity === "high"));
+  assert(is[0].conflict.includes("· 사건 장부:")); assert(is[0].conflict.includes("180해리"));
+  assert(is[0].claim.includes("40해리"), "문서에서 그 값이 나온 문장을 claim으로 쓴다");
+  assert.equal(c.eventIssues(w, K("해저 결투")).length, 0, "먼저 쓴 문서는 기준이다");
+});
+test("값이 같거나, 수치 이름이나 단위가 다르면 지적하지 않는다", () => {
+  const { w, K, duel } = duelWorld();
+  c.ingestEvents(w, K("한서진"), [{ ...duel("180", "70"), nums: [{ name: "거리", value: "180.0", unit: "해리" }, { name: "수심", value: "120", unit: "피트" }, { name: "교전 거리", value: "40", unit: "해리" }] }]);
+  assert.equal(c.eventIssues(w, K("한서진")).length, 0);
+});
+test("사용자가 직접 고친 문서의 기록은 언제나 기준이다", () => {
+  const { w, K } = duelWorld();
+  c.S.pages[K("한서진")].editedAt = 9;
+  assert.equal(c.eventIssues(w, K("한서진")).length, 0, "직접 고친 문서는 지적받지 않는다");
+  const is = c.eventIssues(w, K("해저 결투"));
+  assert.equal(is.length, 2, "먼저 쓴 문서라도 직접 고친 문서와 다르면 맞춘다"); assert(is[0].conflict.includes("사용자가 직접 고친"));
+});
+test("문서를 쓸 때 다룰 사건이 장부에 있으면 그 사건의 기록을 전부 표로 넣는다", () => {
+  const { w, K } = duelWorld();
+  const b = c.eventBlock(w, K("카이 마루"), []);
+  assert(b.includes("## 사건 장부")); assert(b.includes("| 해저 결투 | 2015년 11월 4일 |")); assert.equal((b.match(/\| 해저 결투 \|/g) || []).length, 2);
+  assert(b.includes("「해저 결투」 (기준)"));
+  assert.equal(c.eventBlock(w, K("북해 함대"), []), "", "관계없는 항목에는 넣지 않는다");
+  assert(c.eventBlock(w, K("북해 함대"), [K("해저 결투")]).includes("해저 결투"), "관련 항목의 사건은 넣는다");
+});
+test("키가 다르면 날짜와 참가자가 겹치는 후보만 검사 프롬프트에 함께 보낸다", () => {
+  const { w, K } = duelWorld();
+  c.ingestEvents(w, K("남부 해전"), [{ name: "11월 4일 교전", date: "11월 4일", place: "북해", nums: [{ name: "거리", value: "90", unit: "해리" }], participants: ["카이 마루"] }, { name: "다른 교전", date: "1999년 1월 1일", place: "남해", participants: ["카이 마루"] }]);
+  const cand = c.eventCandidates(w, K("남부 해전"));
+  assert.equal(cand.length, 2, "같은 날짜·같은 참가자의 기록 두 개(해저 결투 문서, 한서진 문서)");
+  const blk = c.eventCheckBlock(w, K("남부 해전"), () => true);
+  assert(blk.includes("## 같은 사건일 수 있는 기록")); assert(blk.includes("「11월 4일 교전」")); assert(!blk.includes("다른 교전"));
+  assert.equal(c.eventIssues(w, K("남부 해전")).length, 0, "키가 다르면 코드가 지적하지 않는다");
+});
+test("사건 장부가 생성·검사·수정 흐름에 연결되어 있다", () => {
+  assert(html.includes('["사건 장부", (w, k) => eventIssues(w, k)]'));
+  assert(html.includes("나이 규칙|사건 장부"));
+  assert((html.match(/\$\{EVENTS_JSON\}/g) || []).length >= 3, "문서 작성, 확정 사실 정리, 수정본 분석");
+  assert(html.includes("ingestEvents(w, key, out.events)")); assert(html.includes("${eventBlock(w, key, rel)}")); assert(html.includes("${eventCheckBlock(w, key, ok)}"));
+  assert(html.includes("if (w.events) w.events = w.events.filter(x => x.src !== key);"), "문서를 지우거나 다시 쓰면 그 문서의 기록을 걷어 낸다");
 });
 
 console.log(`\n모두 통과 (${n}개). AI 호출 0회.`);

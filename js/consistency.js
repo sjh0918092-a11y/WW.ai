@@ -226,7 +226,7 @@ function numericIssues(w, k) {
 /* ---------- 나이 규칙: 핵심 규칙의 나이 제한으로 출생·기간 연도를 맞춰 본다 ---------- */
 /* 숫자 대조 로직(numericIssues, quoteIssues, ageRuleIssues, 성별 규칙)을 바꿀 때마다 올린다.
    문서를 열 때 p.check.numV가 이 값과 다르면 결정론 지적만 다시 계산해 바꿔 끼운다 */
-const NUMERIC_VERSION = 6;
+const NUMERIC_VERSION = 7;
 /* 규칙 문장은 세계관마다 표현이 달라 코드로 읽지 않는다. 핵심 규칙이 바뀌었을 때만 AI가 한 번 구조로 뽑고(w.ageRules),
    판정은 그 구조로 코드가 한다. 그래서 검사할 때마다 결과가 같다 */
 const rulesText = w => (w.rules || []).join("\n");
@@ -395,13 +395,13 @@ function genderIssues(w, k) {
 /* 결정론 지적 전부 (숫자 대조 → 나이 규칙 → 인용 대조 → 성별 규칙). 하나가 실패해도 나머지는 쓴다 */
 function detIssues(w, k) {
   let num = [];
-  for (const [name, fn] of [["숫자 대조", numericIssues], ["나이 규칙", ageRuleIssues], ["인용 대조", quoteIssues], ["성별 규칙", genderIssues]]) {
+  for (const [name, fn] of [["숫자 대조", numericIssues], ["나이 규칙", ageRuleIssues], ["인용 대조", quoteIssues], ["성별 규칙", genderIssues], ["사건 장부", (w, k) => eventIssues(w, k)]]) {
     try { num = num.concat(fn(w, k)); } catch (e) { console.warn(`[${name}]`, e); }
   }
   return num.map(i => ({ ...i, by: "num" }));
 }
 /* 결정론 지적인가. 옛 저장 데이터에는 by 표시가 없으므로 conflict 문구로 알아본다 */
-const isNumIssue = i => i.by === "num" || /· (?:숫자 대조|인용 대조|나이 규칙):/.test(i.conflict || "") || /^근거: 인물 문서 규칙 ·/.test(i.conflict || "");
+const isNumIssue = i => i.by === "num" || /· (?:숫자 대조|인용 대조|나이 규칙|사건 장부):/.test(i.conflict || "") || /^근거: 인물 문서 규칙 ·/.test(i.conflict || "");
 /* 같은 서술에 대한 지적은 하나로 합치고, 다듬을 곳을 앞에 둔다 */
 function mergeIssues(list) {
   const all = [], seen = new Map(), keyOfClaim = c => stripMarks(c).replace(/\s+/g, "").slice(0, 40);
@@ -499,7 +499,7 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
     }
     if (!applied) return res;
     const out = sourceToOut(nf); if (!out.sections.some(x => x.body.trim())) return res;
-    const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [] });
+    const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], events: w.events || [] });
     let np;
     try {
       for (const o of Object.values(w.entities)) o.mentions = o.mentions.filter(m => m.from !== k);   // 링크와 언급은 고친 본문 기준으로 다시 계산

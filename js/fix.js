@@ -181,7 +181,7 @@ async function applyFix() {
   if (!applied) { toast("적용할 수정이 없습니다."); return; }
   const out = sourceToOut(nf);
   if (!out.sections.some(x => x.body.trim())) { toast("본문이 비게 되어 저장하지 않았습니다."); return; }
-  const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [] });
+  const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], events: w.events || [] });
   let page;
   try {
     for (const o of Object.values(w.entities)) o.mentions = o.mentions.filter(m => m.from !== k);   // 링크와 언급은 고친 본문 기준으로 다시 계산
@@ -216,6 +216,7 @@ async function bgSync(k) {
     w.relations = (w.relations || []).filter(x => x.src !== k);
     for (const f of (Array.isArray(r?.facts) ? r.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = kOf(w, f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), k); }
     acceptPageTimeline(w, r?.timeline, k);
+    if (Array.isArray(r?.events)) ingestEvents(w, k, r.events);
     for (const x of (Array.isArray(r?.relations) ? r.relations : []).slice(0, 16)) addRelation(w, k, x);
     for (const n of (Array.isArray(r?.newEntities) ? r.newEntities : [])) {
       if (!n || !n.title) continue; const o = w.entities[kOf(w, n.title)];

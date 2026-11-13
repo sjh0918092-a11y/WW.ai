@@ -84,6 +84,13 @@ function epilogueHtml() {
     ${st.status === "ended" ? `<p class="note" style="margin-top:10px">이야기는 끝났지만 세계관은 계속 탐험할 수 있습니다. 새 문서는 결말 직후 시점으로 쓰입니다.</p>` : ""}</div>`;
 }
 
+/* 사건 장부: 같은 사건의 기록을 모아 기준(맨 위)부터 보여 준다 */
+function eventsHtml(w) {
+  const evs = (w.events || []).filter(x => S.pages[x.src]); if (!evs.length) return "";
+  const groups = new Map(); for (const x of [...evs].sort(eventRank)) (groups.get(x.k) || groups.set(x.k, []).get(x.k)).push(x);
+  return `<h2>사건 장부</h2><p class="note">문서가 날짜와 장소·수치까지 적은 사건입니다. 같은 사건은 먼저 기록된 값이 기준이고, 직접 수정한 문서의 기록은 언제나 기준입니다. 새 문서가 기준과 다른 수치를 쓰면 설정 검사에서 지적합니다.</p>
+    <div style="overflow-x:auto"><table class="tl" id="eventLedger">${[...groups.values()].map(list => list.map((x, i) => `<tr><td>${i ? "" : esc(x.date)}</td><td>${i ? "" : `<b>${w.entities[x.k] ? linkHtml(w.entities[x.k].title, x.name) : esc(x.name)}</b> `}${esc([x.place, numText(x)].filter(Boolean).join(" · "))}${x.result ? ` <span class="note">${esc(x.result)}</span>` : ""} <span class="src">· ${linkHtml(S.pages[x.src].title)}${i ? "" : " · 기준"}${eventEdited(x) ? " · 직접 수정" : ""}</span></td></tr>`).join("")).join("")}</table></div>`;
+}
 function canonHtml() {
   const ex = S.worldExports[S.world.id] || { images: true, stories: true };
   const w = S.world; const ents = Object.entries(w.entities);
@@ -128,6 +135,7 @@ function canonHtml() {
     ${(w.relations || []).length ? `<h2>인물 관계</h2><div style="overflow-x:auto"><table class="tl">${w.relations.filter(x => w.entities[x.a] && w.entities[x.b]).map(x => `<tr><td>${esc(x.rel)}</td><td>${linkHtml(w.entities[x.a].title)} – ${linkHtml(w.entities[x.b].title)}${x.story ? ` <span class="${x.sup ? "" : "note"}">${x.sup ? `<del>${esc(x.story)}</del>` : esc(x.story)}</span>` : ""} <span class="src">· ${esc(srcTitle(w, x.src, "?"))}${x.sup ? " · 대체됨" : ""}</span></td></tr>`).join("")}</table></div>` : ""}
     <h2>연표</h2>
     <div style="overflow-x:auto"><table class="tl">${w.timeline.map(t => `<tr><td>${esc(t.year)}</td><td>${t.sup ? `<del>${esc(t.event)}</del> <span class="src">· 「${esc(w.entities[t.sup.by]?.title || "?")}」 수정으로 대체됨</span>` : esc(t.event)}${t.src && t.src !== "seed" && w.entities[t.src] ? `<span class="src">· ${linkHtml(w.entities[t.src].title)}</span>` : t.ch ? `<span class="src">· ${t.ch}장</span>` : ""}</td></tr>`).join("") || `<tr><td></td><td class="note">없음</td></tr>`}</table></div>
+    ${eventsHtml(w)}
     <h2>항목별 확정 사실</h2>
     <div class="tabs">${tab("all", "전체", ents.length)}${tab("done", "작성됨", ents.filter(x => x[1].page).length)}${tab("stub", "미작성", ents.filter(x => !x[1].page).length)}</div>
     ${shown.map(([k, o]) => `<details class="ent" id="ent-${k}"><summary><span class="et">${esc(o.title)}</span><span class="st ${o.page ? "on" : "off"}">${o.page ? "작성됨" : "미작성"}</span><span class="em">${esc(o.type || "유형 미정")} · 사실 ${o.facts.length} · 언급 ${o.mentions.length}</span></summary>

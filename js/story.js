@@ -84,7 +84,7 @@ async function advanceChapter(skip) {
   const picked = !skip && a.pick >= 0 ? (cur.nextChoices || []).filter(x => typeof x === "string" && x.trim() && !isBroken(x))[a.pick] || "" : "", custom = skip ? "" : norm(a.custom || "").slice(0, 300);
   const choice = picked || custom ? { picked, custom } : null;
   const n = st.chapter + 1;
-  const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], story: st, era: w.era });
+  const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], events: w.events || [], story: st, era: w.era });
   const ctl = new AbortController();
   S.storyGen = { phase: "plan", ctl, t0: performance.now(), raw: "", n }; a.err = "";
   S.view = { name: "advance" }; renderAll(); window.scrollTo({ top: 0 });
@@ -99,7 +99,7 @@ async function advanceChapter(skip) {
     np = applyChapter(w, n, out, choice);
   } catch (err) {
     const b = JSON.parse(backup);
-    w.entities = b.entities; w.timeline = b.timeline; w.navboxes = b.navboxes; w.relations = b.relations; w.story = b.story; w.era = b.era;
+    w.entities = b.entities; w.timeline = b.timeline; w.navboxes = b.navboxes; w.relations = b.relations; if (b.events) w.events = b.events; w.story = b.story; w.era = b.era;
     S.pages[pk] = oldP; S.storyGen = null;
     a.err = err?.code === "cancelled" ? "" : errMsg(err);
     toast(err?.code === "cancelled" ? "장 전환을 취소했습니다. 이전 상태 그대로입니다." : "다음 장을 쓰지 못했습니다. 이전 상태 그대로입니다.");

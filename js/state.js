@@ -253,10 +253,11 @@ function purge(w, key) {
   w.relations = (w.relations || []).filter(x => x.src !== key);
   w.relations.forEach(x => { if (x.sup?.by === key) delete x.sup; });
   w.timeline = w.timeline.filter(x => x.src !== key);
+  if (w.events) w.events = w.events.filter(x => x.src !== key);
 }
 /* 다시 쓰기 준비: 이전 버전이 남긴 흔적을 모두 걷어낸다. 실패하면 restoreRewrite로 되돌린다. */
 function prepareRewrite(w, key) {
-  const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [] });
+  const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], events: w.events || [] });
   purge(w, key);                                   // 이전 버전이 확정한 사실·언급·연표
   for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === key) delete w.navboxes[id];  // 이전 버전이 만든 틀
   const e = w.entities[key];
@@ -267,7 +268,7 @@ function prepareRewrite(w, key) {
     if (k !== key && o.origin === key && !o.page && !o.facts.length && !o.mentions.length) delete w.entities[k];
   return backup;
 }
-function restoreRewrite(w, backup) { const b = JSON.parse(backup); w.entities = b.entities; w.timeline = b.timeline; w.navboxes = b.navboxes; if (b.relations) w.relations = b.relations; }
+function restoreRewrite(w, backup) { const b = JSON.parse(backup); w.entities = b.entities; w.timeline = b.timeline; w.navboxes = b.navboxes; if (b.relations) w.relations = b.relations; if (b.events) w.events = b.events; }
 const navboxesFor = (w, key) => Object.entries(w.navboxes || {}).filter(([, nb]) => nb.src === key || (nb.members || []).includes(key));
 function navboxText(nb) {
   return `### 틀: ${nb.title} (총 ${nb.members.length}개 항목, 「${nb.srcTitle}」 문서에서 확정)\n` + nb.rows.map(r => `- ${r.label}: ${r.items.map(stripMarks).join(" / ")}`).join("\n");
