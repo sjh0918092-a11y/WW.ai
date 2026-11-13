@@ -252,7 +252,7 @@ async function openWorld(wid, goKey, restoring = false) {
   const merged = await autoMerge(w);
   await cleanChapterTitles(w);
   const unbadged = await cleanAiSupersede(w);
-  if (fixOldAngles(w, S.pages)) { try { await Store.saveWorld(w); } catch {} }   // 이전 형식 각도: count를 기존 문서 수와 사용 횟수로 나눈다
+  if (fixOldAngles(w, S.pages)) { try { await Store.saveWorld(w); } catch {} maybeRefillAngles(w); }   // 이전 형식 각도 변환, 한도까지 쓴 각도 은퇴. 활성 각도가 모자라면 보충
   if (dedupeRelations(w)) { try { await Store.saveWorld(w); } catch {} }
   if (sortTimeline(w)) { try { await Store.saveWorld(w); } catch {} }   // 연표를 연도 → 월 → 일 기준으로 다시 정렬한다(항목은 그대로)
   afterTimeline(w);
