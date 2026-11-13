@@ -123,6 +123,7 @@ function canonHtml() {
     <label class="lb" for="userTa">사용자 확정 설정</label>
     <textarea id="userTa" rows="4" placeholder="예: 태조의 전용기 이름은 '위화'다. 조선 콜로니의 수도는 한양 궤도 거주구다.">${esc(w.userCanon || "")}</textarea>
     <div class="row"><button type="button" class="btn pri" data-act="save-canon">설정 저장</button><span class="note">저장 후 새로 작성하는 문서부터 반영됩니다.</span></div>
+    ${anglesHtml(w)}
     ${Object.keys(w.navboxes || {}).length ? `<h2>틀</h2><ul style="margin:0;padding-left:20px">${Object.values(w.navboxes).map(nb => `<li>${esc(nb.title)} <span class="src">· ${nb.members.length}개 항목 · ${linkHtml(nb.srcTitle)}</span></li>`).join("")}</ul>` : ""}
     ${(w.relations || []).length ? `<h2>인물 관계</h2><div style="overflow-x:auto"><table class="tl">${w.relations.filter(x => w.entities[x.a] && w.entities[x.b]).map(x => `<tr><td>${esc(x.rel)}</td><td>${linkHtml(w.entities[x.a].title)} – ${linkHtml(w.entities[x.b].title)}${x.story ? ` <span class="${x.sup ? "" : "note"}">${x.sup ? `<del>${esc(x.story)}</del>` : esc(x.story)}</span>` : ""} <span class="src">· ${esc(srcTitle(w, x.src, "?"))}${x.sup ? " · 대체됨" : ""}</span></td></tr>`).join("")}</table></div>` : ""}
     <h2>연표</h2>

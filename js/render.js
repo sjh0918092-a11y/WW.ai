@@ -265,6 +265,7 @@ function articleHtml(k) {
   if (S.gen && S.gen.key === k) {
     return `<div class="sheet">${crumb}<h1 class="t">${esc(e.title)}</h1>
       <div class="gen-live"><span class="dot"></span><span id="genCount">${S.gen.phase === "check" ? "설정과 맞춰 보는 중" : S.gen.phase === "fix" ? `설정과 어긋난 ${S.gen.nFix}곳을 고치는 중` : "문서를 작성하는 중"}</span><button type="button" class="btn" data-act="stop">${S.gen.phase ? "검사 건너뛰고 보기" : "작성 중단"}</button></div>
+      ${S.discovery?.busy && S.discovery.target === k && S.discovery.angle ? `<p class="note" id="genAngle">랜덤 서핑 · 이번 각도: ${esc(S.discovery.angle.label)}</p>` : ""}
       ${promiseHtml(w, e, "이 문서가 지켜야 할 확정 내용")}
       <ul class="heads" id="genHeads"></ul>
       <div style="margin-top:14px"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div></div>`;

@@ -39,7 +39,113 @@ function validateDiscoveryNovelty(w, result) {
   }
   if (result.verdict !== "novel") throw new Error("기존 항목과 개념이 충분히 다른지 확인하지 못해 새 문서를 만들지 않았습니다. " + result.reason.slice(0, 400));
 }
-function discoveryPrompt(w, direction, rejected) {
+/* ---------- 각도: 세계의 중심 주제를 다른 자리에서 비추는 시선 ----------
+   w.angles = [{ id, label, why, count, off }]. 목록은 AI가 한 번 만들고, 어느 각도를 쓸지는 코드가 고른다. */
+const ANGLE_RATE = 0.3;   // 사용자 설명 없는 랜덤 서핑 중 각도를 쓰는 비율
+const ANGLE_MAX = 10;
+const liveAngles = w => Array.isArray(w?.angles) ? w.angles.filter(a => a && a.id && a.label && !a.off) : [];
+function pickAngle(w, rand = Math.random, direction = "") {
+  if (!w || String(direction || "").trim() || w.angleOff || w.angleLast) return null;   // 사용자 지정 우선, 연속 사용 금지
+  const on = liveAngles(w); if (!on.length) return null;
+  if (!(rand() < ANGLE_RATE)) return null;
+  const min = Math.min(...on.map(a => a.count || 0)), pool = on.filter(a => (a.count || 0) === min);
+  return pool[Math.min(pool.length - 1, Math.floor(rand() * pool.length))];
+}
+const angleBlock = a => a ? `## 이번 각도: 「${a.label}」 (근거: ${a.why})
+이 각도에서 새 대상을 고른다. 어조·문체·세계 규칙은 바꾸지 않는다.
+세계의 중심 주제를 다른 자리에서 비추는 것이지, 다른 이야기를 하는 것이 아니다. 장르·분위기·세계 규칙을 바꾸는 대상은 고르지 않는다.` : "";
+function anglesPrompt(w) {
+  const written = Object.entries(w.entities).filter(([k, e]) => e.page || S.pages[k]).map(([key, e]) => ({ key, title: e.title, summary: (e.summary || firstPara(S.pages[key] || {}) || "").slice(0, 200) }));
+  return `## 각도 목록 만들기
+가상 세계관 위키에서 새 문서의 대상을 고를 때 쓸 '각도' 목록을 만든다. 각도는 세계의 중심 주제를 다른 자리에서 비추는 시선이다. 어조·문체·장르·세계 규칙은 그대로 두고, 대상을 보는 자리만 바꾼다.
+${canonBlock(w)}
+## 작가 지침
+${w.guide || "(없음)"}
+${toneBlock(w)}
+## 할 일 1: 각도 6~10개
+- 원안·핵심 규칙·사용자 확정 설정·분위기·작가 지침에서 파생된 각도만 만든다. 세계의 중심 시선 자체(주인공이나 중심 소재를 정면에서 다루는 시선)는 제외한다.
+- 좋은 예(마법 학교 세계관): '마법을 거의 못 쓰는 학생', '졸업 후 마법과 무관한 직업을 가진 사람', '마법 도구를 파는 상인', '학생의 가족', '마법을 구경거리로 소비하는 대중'.
+- 나쁜 예: '갑자기 코미디', '다른 행성 이야기'처럼 장르·분위기·세계 규칙을 바꾸는 것. 이런 각도는 만들지 않는다.
+- 각 각도의 why에는 근거가 된 세계 규칙·원안 문장을 인용하거나 요약한다. 근거를 댈 수 없는 각도는 버린다.
+- label은 한 줄(40자 이하)로 쓴다. id는 a1, a2, … 순서로 붙인다.
+## 할 일 2: 이미 작성된 문서 분류
+아래 문서가 각각 어느 각도에 해당하는지 고른다. 세계의 중심 시선이거나 어느 각도에도 맞지 않으면 null로 둔다.
+${JSON.stringify(written)}
+JSON 하나만 출력: {"angles":[{"id":"a1","label":"각도 한 줄 설명","why":"근거가 된 세계 규칙(원문 인용 또는 요약)"}],"classify":[{"key":"문서 key","angle":"a1 또는 null"}]}`;
+}
+function parseAngles(w, r) {
+  const map = new Map(), out = [];
+  for (const a of Array.isArray(r?.angles) ? r.angles : []) {
+    if (!a || typeof a.label !== "string" || typeof a.why !== "string") continue;
+    const label = norm(a.label).slice(0, 80), why = norm(a.why).slice(0, 300);
+    if (!label || !why || out.some(x => x.label === label)) continue;   // 근거 없는 각도는 버린다
+    const angle = { id: "a" + (out.length + 1), label, why, count: 0, off: false };
+    if (a.id != null) map.set(String(a.id), angle);
+    out.push(angle); if (out.length >= ANGLE_MAX) break;
+  }
+  if (!out.length) return null;
+  for (const c of Array.isArray(r?.classify) ? r.classify : []) {
+    const a = c && c.angle != null ? map.get(String(c.angle)) : null, e = c && w.entities[c.key];
+    if (a && e && (e.page || S.pages[c.key])) a.count++;
+  }
+  return out;
+}
+/* 각도 목록을 AI 호출 한 번으로 만든다. 실패하면 null(랜덤 서핑은 각도 없이 계속한다) */
+async function buildAngles(w, signal) {
+  try {
+    const r = await callJson("angles", anglesPrompt(w), { modelTier: "default", ...(signal ? { signal } : {}) }, { title: w.title });
+    if (signal?.aborted) throw { code: "cancelled" };
+    return parseAngles(w, r);
+  } catch (e) { if (e?.code === "cancelled" || signal?.aborted) throw { code: "cancelled" }; return null; }
+}
+const anglesTried = new Set();   // 이번 접속에서 목록 만들기를 이미 시도한 세계관(실패해도 랜덤 서핑마다 다시 부르지 않는다)
+async function ensureAngles(w, signal) {
+  if (Array.isArray(w.angles) || w.angleOff || anglesTried.has(w.id)) return;
+  anglesTried.add(w.id);
+  const list = await buildAngles(w, signal);
+  if (!list || Array.isArray(w.angles) || S.world !== w) return;
+  w.angles = list;
+  try { await Store.saveWorld(w); } catch {}
+}
+/* 문서가 실제로 저장된 뒤에만 각도 사용을 기록한다 */
+async function recordAngle(w, key, used) {
+  try {
+    const page = S.pages[key]; if (!page || !(await Store.getPage(w.id, key))) return;
+    const a = used && (w.angles || []).find(x => x.id === used.id);
+    if (a) { a.count = (a.count || 0) + 1; page.angle = a.id; await Store.savePage(w.id, page); }
+    if (a || w.angleLast) { w.angleLast = !!a; await Store.saveWorld(w); }
+  } catch {}
+}
+async function regenAngles() {
+  const w = S.world; if (!w || !S.sample || S.angleGen || S.discovery?.busy) return;
+  S.angleGen = w.id; renderMain();
+  let list = null; try { list = await buildAngles(w); } catch {}
+  S.angleGen = null;
+  if (list && S.world === w) { w.angles = list; w.angleLast = false; try { await Store.saveWorld(w); toast(`각도 ${list.length}개를 새로 만들었습니다.`); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); } }
+  else toast("각도 목록을 만들지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
+  if (S.world === w && S.view.name === "canon") renderMain();
+}
+async function editAngle(id, op, value) {
+  const w = S.world; if (!w || !Array.isArray(w.angles)) return;
+  const i = w.angles.findIndex(a => a.id === id); if (i < 0) return;
+  if (op === "toggle") w.angles[i].off = !w.angles[i].off;
+  else if (op === "delete") w.angles.splice(i, 1);
+  else if (op === "label") { const label = norm(value || "").slice(0, 80); if (!label) { toast("각도 문구를 비울 수 없습니다."); return; } w.angles[i].label = label; }
+  try { await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
+  if (op === "label") toast("각도 문구를 고쳤습니다.");
+  if (S.view.name === "canon") renderMain();
+}
+function anglesHtml(w) {
+  const list = Array.isArray(w.angles) ? w.angles : null, busy = S.angleGen === w.id;
+  return `<h2 id="angles">랜덤 서핑 각도</h2>
+    <p class="note">랜덤 서핑은 ${Math.round(ANGLE_RATE * 100)}% 확률로 아래 각도 중 하나에서 새 대상을 고릅니다. 어조·문체·세계 규칙은 그대로 두고 대상을 보는 자리만 바꿉니다. 직접 설명을 적은 랜덤 서핑에는 쓰지 않습니다. 튀는 각도는 끄거나 지워 주세요.</p>
+    <label class="lb" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" data-angle-off ${w.angleOff ? "checked" : ""}>각도 쓰지 않기</label>
+    ${list ? (list.length ? `<ul class="angles">${list.map(a => `<li${a.off ? ' class="off"' : ""}><input class="txt" data-angle-label="${esc(a.id)}" maxlength="80" value="${esc(a.label)}" aria-label="각도 문구"><span class="src">근거: ${esc(a.why)} · 문서 ${a.count || 0}개${a.off ? " · 꺼짐" : ""}</span>
+      <div class="row" style="margin-top:4px"><button type="button" class="btn" data-angle-save="${esc(a.id)}">문구 저장</button><button type="button" class="btn" data-angle-toggle="${esc(a.id)}">${a.off ? "켜기" : "끄기"}</button><button type="button" class="btn" data-angle-del="${esc(a.id)}">삭제</button></div></li>`).join("")}</ul>` : `<p class="note">각도가 없습니다.</p>`)
+      : `<p class="note">아직 만들지 않았습니다. 랜덤 서핑을 처음 쓸 때 자동으로 만듭니다.</p>`}
+    <div class="row"><button type="button" class="btn" data-act="angles-regen" ${!S.sample || busy || S.discovery?.busy ? "disabled" : ""}>${busy ? "만드는 중…" : list ? "각도 목록 다시 만들기" : "각도 목록 만들기"}</button><span class="note">원안·규칙·분위기·작가 지침에서 다시 뽑고, 작성된 문서 수를 다시 셉니다.</span></div>`;
+}
+function discoveryPrompt(w, direction, rejected, angle = null) {
   const index = discoveryIndex(w);
   const anchors = [...new Set([w.mainKey, ...S.recent.slice(0, 5)])].filter(k => S.pages[k]).map(k => `「${w.entities[k]?.title || S.pages[k].title}」: ${firstPara(S.pages[k]).slice(0, 600)}`).join("\n");
   return `## 랜덤 서핑의 새 대상 선정
@@ -55,6 +161,7 @@ ${anchors || "원안과 규칙에서 세계관의 중심 소재를 읽는다."}
 ${JSON.stringify(index)}
 ## 사용자 설명
 ${direction || "세계관 안에서 새로 발견할 가치가 있는 대상을 무작위로 하나 고른다."}
+${angleBlock(angle)}
 ## 선정 원칙
 - 원안·작가 지침·대표 문서에서 중심 소재와 장르를 먼저 읽는다. '이 세계관의 특징이 없었어도 똑같이 존재할 문서인가?'를 자문하고, 그렇다면 다시 고른다. 세계관과 관계없는 평범한 시민의 신상이나 무관한 현실 지식 문서를 끼워 넣지 않는다.
 - 중심 소재와 직접 연결되는 역할·경험·관계·사건·생활상을 가진 새 대상을 고른다. 군사 세계관이라고 전투나 무기만 뽑지는 않는다. 정비·검진·산업·생활·문화도 중심 특징에서 자연스럽게 파생될 때 다룬다. 모든 대상을 억지로 세계적 인물이나 대사건으로 만들지 않는다.
@@ -68,7 +175,7 @@ ${direction || "세계관 안에서 새로 발견할 가치가 있는 대상을 
 - 사용자 설명이 이미 있는 대상을 뜻하면 {"existing":"기존 항목의 정확한 제목"}만 출력한다. 중복 없이 만들 수 없다면 기존 대상을 새것이라고 우기지 않는다.
 ${rejected.length ? "## 이미 거절된 후보 — 다시 선택하지 않는다\n" + rejected.join("\n") : ""}
 연결 근거를 점검해 원안·규칙·작가 지침의 구체적인 특징에 직접 이어지면 fit을 strong, 연결이 막연하거나 부자연스러우면 weak로 쓴다. 근거가 약한데 strong이라고 우기지 않는다.
-새 후보는 JSON 하나: {"fit":"strong 또는 weak","title":"새 문서 제목(60자 이하)","type":"${TYPES.join(" 또는 ")}","summary":"대상이 무엇인지 한두 문장","connection":"이 세계관의 중심 특징과 어떻게 직접 이어지는지 구체적인 이유","direction":"문서 작성 시 지킬 대상의 정체성과 작성 방향","aliases":["같은 대상의 다른 이름이 있으면"],"novelty":{"verdict":"novel 또는 overlap 또는 uncertain","reason":"개념 중복 판정 근거","comparisons":[{"key":"가장 가까운 기존 항목의 정확한 key","reason":"기존 개념과의 독립적인 차이 또는 겹치는 범위"}]}}
+새 후보는 JSON 하나: {"fit":"strong 또는 weak","title":"새 문서 제목(60자 이하)","type":"${TYPES.join(" 또는 ")}","summary":"대상이 무엇인지 한두 문장","connection":"이 세계관의 중심 특징과 어떻게 직접 이어지는지 구체적인 이유","direction":"문서 작성 시 지킬 대상의 정체성과 작성 방향","aliases":["같은 대상의 다른 이름이 있으면"],"angle":${angle ? `"${angle.id}" 또는 null(이번 각도를 따르지 못했을 때)` : "null"},"novelty":{"verdict":"novel 또는 overlap 또는 uncertain","reason":"개념 중복 판정 근거","comparisons":[{"key":"가장 가까운 기존 항목의 정확한 key","reason":"기존 개념과의 독립적인 차이 또는 겹치는 범위"}]}}
 기존 항목이 하나도 없을 때만 comparisons를 빈 배열로 둔다. 부적합하면 {"unsuitable":"이유"}.`;
 }
 function openDiscoveryPrompt() {
@@ -83,13 +190,16 @@ async function discoverWorld(direction = "") {
   S.view = { name: "discovery" };
   if (!S.sample) { v.error = "AI 연결 설정에서 Gemini 문서 모델 연결을 저장해 주세요."; renderAll(); return; }
   v.busy = true; renderAll(); window.scrollTo({ top: 0 });
-  const rejected = []; let candidate = null, target = null;
+  const rejected = []; let candidate = null, target = null, angle = null;
   const discard = () => { if (target && !S.pages[target] && w.entities[target] === candidate) { delete w.entities[target]; S.recent = S.recent.filter(k => k !== target); } target = null; candidate = null; };
   try {
+    if (!v.direction && !w.angleOff && !Array.isArray(w.angles)) { v.phase = "각도"; if (S.view.name === "discovery") renderMain(); await ensureAngles(w, v.ctl.signal); }
+    if (v.ctl.signal.aborted || S.world !== w || S.discovery !== v) throw { code: "cancelled" };
+    angle = v.angle = pickAngle(w, Math.random, v.direction);
     for (let attempt = 0; attempt < (v.direction ? 1 : 3); attempt++) {
       v.phase = "선정"; if (S.view.name === "discovery") renderMain();
       const basis = discoveryBasis(w);
-      const plan = await callJson("discovery", discoveryPrompt(w, v.direction, rejected), { modelTier: "default", signal: v.ctl.signal }, { title: w.title });
+      const plan = await callJson("discovery", discoveryPrompt(w, v.direction, rejected, angle), { modelTier: "default", signal: v.ctl.signal }, { title: w.title });
       await assertDiscoveryCurrent(w, null, basis, v.ctl.signal);
       if (v.ctl.signal.aborted || S.world !== w || S.discovery !== v) throw { code: "cancelled" };
       if (typeof plan?.unsuitable === "string") throw new Error(plan.unsuitable.slice(0, 400));
@@ -112,11 +222,12 @@ async function discoverWorld(direction = "") {
         if (v.direction) throw new Error(`「${title}」은(는) 기존 「${err.existing}」과 개념이 겹칩니다. ` + (err.reason || ""));
         rejected.push(`${title}: 기존 「${err.existing}」과 개념 중복. ${err.reason || ""}`); continue;
       }
+      const used = angle && plan.angle !== null ? angle : null;   // 각도를 따르지 못했다고 답하면 각도 없이 쓴다
       candidate = newEntity(title, plan.type, plan.summary.slice(0, 400)); candidate.src = "discovery";
       w.entities[key] = candidate; target = key; v.target = key; v.phase = "작성"; S.recent = [key, ...S.recent.filter(x => x !== key)].slice(0, 8);
       try {
-        await generatePage(key, false, [v.direction, "대상: " + plan.summary, "세계관과의 연결: " + plan.connection.slice(0, 1000), typeof plan.direction === "string" ? plan.direction.slice(0, 2000) : "", "기존 항목과의 독립적인 차이를 유지한다: " + plan.novelty.reason + "\n" + plan.novelty.comparisons.map(x => `「${w.entities[x.key].title}」: ${x.reason}`).join("\n")].filter(Boolean).join("\n"), true);
-        if (S.pages[key]) { target = null; candidate = null; return; }
+        await generatePage(key, false, [v.direction, angleBlock(used), "대상: " + plan.summary, "세계관과의 연결: " + plan.connection.slice(0, 1000), typeof plan.direction === "string" ? plan.direction.slice(0, 2000) : "", "기존 항목과의 독립적인 차이를 유지한다: " + plan.novelty.reason + "\n" + plan.novelty.comparisons.map(x => `「${w.entities[x.key].title}」: ${x.reason}`).join("\n")].filter(Boolean).join("\n"), true);
+        if (S.pages[key]) { target = null; candidate = null; await recordAngle(w, key, used); return; }
         throw new Error("문서를 완성하지 못했습니다. 다시 시도해 주세요.");
       } catch (e) {
         discard();
@@ -144,7 +255,9 @@ function discoveryHtml() {
     <p class="note">세계관의 중심 소재에서 자연스럽게 뻗어 나온 새 대상을 만듭니다. 작성된 문서·빨간 링크·별칭으로 이미 등록된 대상은 선택하지 않습니다.</p>
     <label class="lb" for="discoveryDirection">어떤 대상을 만들까요? <span class="note">선택</span></label><textarea id="discoveryDirection" rows="5" maxlength="2000" ${v.busy ? "disabled" : ""} placeholder="예: 주인공이 소속된 조직의 전담 의무관. 이름은 제임스 그레이. 현장 경험이 많은 인물.">${esc(v.direction || "")}</textarea>
     <p class="note">이름뿐 아니라 대상의 종류·역할·특징을 적을 수 있습니다. 비워 두면 세계관에 어울리는 새 대상을 고릅니다.</p>
-    ${v.busy ? `<p role="status"><span class="dot"></span>${v.phase === "작성" ? "새 문서를 작성하는 중…" : "세계관에 맞는 새 대상과 기존 항목의 차이를 검토하는 중…"}</p>` : ""}${v.error ? `<div class="banner warn" role="alert">${esc(v.error)}</div>` : ""}
+    <label class="lb" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" data-angle-off ${w.angleOff ? "checked" : ""} ${v.busy ? "disabled" : ""}>각도 쓰지 않기 <span class="note">비워 두고 만들 때 가끔 세계를 다른 자리에서 비추는 대상을 고릅니다.</span></label>
+    <div class="tools" style="margin-top:4px"><button type="button" class="btn" data-act="angles-open" ${v.busy ? "disabled" : ""}>각도 목록 보기</button></div>
+    ${v.busy ? `<p role="status"><span class="dot"></span>${v.phase === "각도" ? "세계관의 각도 목록을 만드는 중…" : v.phase === "작성" ? "새 문서를 작성하는 중…" : "세계관에 맞는 새 대상과 기존 항목의 차이를 검토하는 중…"}${v.angle ? ` <span id="discoveryAngle">이번 각도: ${esc(v.angle.label)}</span>` : ""}</p>` : ""}${v.error ? `<div class="banner warn" role="alert">${esc(v.error)}</div>` : ""}
     ${!S.sample ? `<button type="button" class="btn" data-act="gset">AI 연결 설정</button>` : ""}
     <div class="row"><button type="button" class="btn pri" data-act="discovery-create" ${v.busy || !S.sample ? "disabled" : ""}>${v.direction ? "이 내용으로 새 문서 만들기" : "랜덤으로 새 문서 만들기"}</button>${v.busy ? `<button type="button" class="btn" data-act="discovery-stop">생성 중단</button>` : `<button type="button" class="btn" data-act="discovery-back">문서로 돌아가기</button>`}</div></section>`;
 }

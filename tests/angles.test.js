@@ -1,0 +1,93 @@
+/* 랜덤 서핑 각도: 목록 생성·선택·프롬프트 반영·기록·화면·내보내기. Gemini 응답은 모두 가로챈다(유료 호출 0회) */
+const fs=require('fs'),assert=require('assert'),vm=require('vm');
+const { appServer, appSource } = require("./helpers/app");
+const {chromium}=require('playwright');
+const html=appSource(),keyContext={};vm.createContext(keyContext);vm.runInContext(html.slice(html.indexOf('function cyrb53('),html.indexOf('const LINK_RE ='))+'globalThis.makeKey=keyOf;',keyContext);const key=keyContext.makeKey;
+const server=appServer();
+const read=(p,k)=>p.evaluate(k=>new Promise(resolve=>{const r=indexedDB.open('worldwiki-gemini',1);r.onsuccess=()=>{const d=r.result,t=d.transaction('kv'),q=t.objectStore('kv').get(k);q.onsuccess=()=>resolve(q.result);t.oncomplete=()=>d.close();};}),k);
+let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
+(async()=>{
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch(),ctx=await browser.newContext({acceptDownloads:true});
+ await ctx.addInitScript(()=>{if(!localStorage.getItem('wwiki:gemini'))localStorage.setItem('wwiki:gemini',JSON.stringify({mode:'key',key:'test-key',main:'test-main',quick:'test-quick',preCheck:false}));});
+ await ctx.route('https://fonts.googleapis.com/**',r=>r.abort());await ctx.route('https://fonts.gstatic.com/**',r=>r.abort());
+ const hero=key('마법 학교'),pupil=key('리나 하르트');
+ const ent=(title,page,summary,type='지명')=>({title,type,summary,facts:[],mentions:[],page,box:''});
+ const pg=(k,title,type)=>({key:k,title,type,summary:title+' 요약',infobox:[],sections:[{heading:'개요',level:1,body:title+'은 마법 학교의 일부다.'}],links:[],createdAt:1});
+ const world={kind:'world',id:'mage',title:'마법 학교',seed:'마법을 배우는 기숙 학교 세계관.',era:'1990년',guide:'학교 생활이 중심이다',rules:['마법은 재능이 있는 사람만 쓸 수 있다','졸업생은 마법 길드에 등록한다'],userCanon:'',timeline:[],relations:[],navboxes:{},aliases:{},entities:{[hero]:ent('마법 학교',true,'기숙 학교'),[pupil]:ent('리나 하르트',true,'수석 학생','인물')},mainKey:hero,tone:{label:'학원 판타지',guide:['차분한 기록']},createdAt:1};
+ const fixture={app:'worldwiki',version:1,worlds:[world],pages:{mage:{[hero]:pg(hero,'마법 학교','지명'),[pupil]:pg(pupil,'리나 하르트','인물')}}};
+ const anglesReply={angles:[{id:'a1',label:'마법을 거의 못 쓰는 학생',why:'마법은 재능이 있는 사람만 쓸 수 있다'},{id:'a2',label:'마법 도구를 파는 상인',why:'졸업생은 마법 길드에 등록한다'},{id:'a3',label:'근거 없는 각도',why:''},{id:'a4',label:'학생의 가족',why:'기숙 학교 세계관'}],classify:[{key:pupil,angle:'a4'},{key:hero,angle:null},{key:'없는키',angle:'a1'}]};
+ const make=title=>({fit:'strong',title,type:'인물',summary:title+'은 학교와 이어진 인물이다.',connection:'마법 재능 규칙과 이어진다.',direction:'학교 생활과 연결한다.',aliases:[],novelty:{verdict:'novel',reason:'기존 항목과 역할이 다르다',comparisons:[{key:pupil,reason:'수석 학생과 다른 인물이다'}]}});
+ const page=await ctx.newPage(),calls=[],errors=[];let plans=[],angleMode='fail',pageMode='ok',planAngle,hold=false,release=null;
+ page.on('pageerror',e=>{errors.push(e.message);console.error('Browser:',e.message);});
+ await ctx.route('**/v1beta/models/**',async r=>{const req=JSON.parse(r.request().postData()),prompt=req.contents[0].parts[0].text;const kind=prompt.includes('## 각도 목록 만들기')?'angles':prompt.includes('## 랜덤 서핑의 새 대상 선정')?'plan':prompt.includes('## 작성할 문서:')?'page':'unexpected';calls.push({kind,prompt});let out;
+  const fail=async()=>{try{await r.fulfill({status:404,json:{error:{message:'model missing'}}});}catch{}};
+  if(kind==='angles'){if(angleMode==='fail')return fail();out=anglesReply;}
+  else if(kind==='plan'){if(hold)await new Promise(res=>release=res);out=plans.shift();if(out&&planAngle!==undefined)out={...out,angle:planAngle};}
+  else if(kind==='page'){if(pageMode==='hold')await new Promise(res=>release=res);if(pageMode==='fail')return fail();const title=/## 작성할 문서: 「([^」]+)」/.exec(prompt)[1];out={title,type:'인물',summary:title+'의 정의',infobox:[{label:'성별',value:'여성'}],sections:[{heading:'개요',level:1,body:title+'은 마법 학교와 이어진 인물이다.'}],links:[],facts:[],newEntities:[],relations:[],timeline:[]};}
+  else return fail();
+  try{await r.fulfill({contentType:'text/event-stream',body:'data: '+JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify(out)}]},finishReason:'STOP'}]})+'\n\n'});}catch{}});
+ const port=server.address().port;
+ const waitTitle=t=>page.waitForFunction(t=>document.querySelector('h1.t')?.textContent===t,t);
+ const ready=()=>page.waitForFunction(()=>!document.querySelector('#discoveryBtn').disabled);
+ const surf=async()=>{await page.click('#discoveryBtn');};
+ const rand=v=>page.evaluate(v=>{window.__rand??=Math.random;Math.random=v===null?window.__rand:()=>v;},v);
+ const openWorldFrom=async()=>{await page.click('#side [data-act="home"]');await page.locator('.wcard button.open').click();await page.waitForSelector('.article h2');};
+ const since=i=>calls.slice(i).map(x=>x.kind);
+ try{
+  await page.goto(`http://127.0.0.1:${port}`);await page.click('#side [data-act="gset"]');await page.setInputFiles('#importFile',{name:'f.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(fixture))});await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.includes('가져왔습니다'));await openWorldFrom();
+  await page.click('#side [data-act="canon"]');await page.waitForSelector('#angles');assert((await page.locator('.sheet').innerText()).includes('아직 만들지 않았습니다'));assert.equal((await read(page,'w:mage')).angles,undefined);
+  pass('각도가 없는 기존 세계를 열고 설정 노트를 봐도 오류 없이 빈 상태를 보여 준다');
+
+  const r1=await page.evaluate(()=>{const A=(id,count,off=false)=>({id,label:id,why:'규칙',count,off});const w={angles:[A('a',2),A('b',0),A('c',0),A('d',0,true)]};const seq=xs=>{let i=0;return()=>xs[i++%xs.length];};
+   const picks=new Set();for(const x of [0,0.4,0.99])picks.add(pickAngle(w,seq([0.1,x]))?.id);
+   return{rate:ANGLE_RATE,direction:pickAngle(w,()=>0,'사용자 설명'),miss:pickAngle(w,()=>0.3),last:pickAngle({...w,angleLast:true},()=>0),off:pickAngle({...w,angleOff:true},()=>0),none:pickAngle({angles:[A('x',0,true)]},()=>0),empty:pickAngle({},()=>0),picks:[...picks].sort()};});
+  assert.equal(r1.rate,0.3);assert.equal(r1.direction,null);assert.equal(r1.miss,null);assert.equal(r1.last,null);assert.equal(r1.off,null);assert.equal(r1.none,null);assert.equal(r1.empty,null);assert.deepStrictEqual(r1.picks,['b','c']);
+  pass('pickAngle: 사용자 설명·연속 사용·꺼진 각도·30% 밖이면 null, count가 가장 작은 켜진 각도만 후보');
+
+  angleMode='fail';plans=[make('카르멘 벨')];let i=calls.length;await surf();await waitTitle('카르멘 벨');await ready();assert.deepStrictEqual(since(i),['angles','plan','page']);let w=await read(page,'w:mage');assert.equal(w.angles,undefined);assert(w.entities[key('카르멘 벨')].page);assert(!calls[i+1].prompt.includes('## 이번 각도'));
+  plans=[make('도로시 크레인')];i=calls.length;await surf();await waitTitle('도로시 크레인');await ready();assert.deepStrictEqual(since(i),['plan','page']);
+  pass('각도 목록 생성이 실패해도 랜덤 서핑은 각도 없이 완료되고, 같은 접속에서 다시 부르지 않는다');
+
+  await page.reload();await page.waitForSelector('.article h2, .wcard');if(!(await page.locator('.article h2').count()))await openWorldFrom();
+  angleMode='ok';await rand(0);plans=[make('토마스 그린')];planAngle=undefined;hold=true;release=null;i=calls.length;await surf();
+  for(let k=0;k<400&&!release;k++)await new Promise(r=>setTimeout(r,10));assert(release);assert.equal(await page.locator('#discoveryAngle').innerText(),'이번 각도: 마법을 거의 못 쓰는 학생');hold=false;release();
+  await waitTitle('토마스 그린');await ready();assert.deepStrictEqual(since(i),['angles','plan','page']);
+  w=await read(page,'w:mage');assert.deepStrictEqual(w.angles.map(a=>[a.id,a.label,a.count,a.off]),[['a1','마법을 거의 못 쓰는 학생',1,false],['a2','마법 도구를 파는 상인',0,false],['a3','학생의 가족',1,false]]);assert.equal(w.angleLast,true);
+  const anglePara='## 이번 각도: 「마법을 거의 못 쓰는 학생」 (근거: 마법은 재능이 있는 사람만 쓸 수 있다)';
+  assert(calls[i+1].prompt.includes(anglePara));assert(calls[i+1].prompt.includes('어조·문체·세계 규칙은 바꾸지 않는다'));assert(calls[i+1].prompt.includes('"angle":"a1"'));assert(calls[i+2].prompt.includes(anglePara));
+  for(const t of [world.seed,'근거가 된 세계 규칙','리나 하르트','갑자기 코미디'])assert(calls[i].prompt.includes(t),t);
+  assert.equal((await read(page,'p:mage:'+key('토마스 그린'))).angle,'a1');
+  pass('목록 생성 호출 한 번으로 근거 있는 각도와 기존 문서 분류를 받고, 고른 각도를 선정·작성 프롬프트와 상태 문구에 반영한 뒤 저장 성공 시에만 기록한다');
+
+  plans=[make('에밀 바스')];i=calls.length;await surf();await waitTitle('에밀 바스');await ready();assert.deepStrictEqual(since(i),['plan','page']);assert(!calls[i].prompt.includes('## 이번 각도'));w=await read(page,'w:mage');assert.equal(w.angleLast,false);assert.equal((await read(page,'p:mage:'+key('에밀 바스'))).angle,undefined);
+  pass('직전 랜덤 서핑이 각도를 썼으면 이번에는 중심 소재로 돌아간다');
+
+  pageMode='fail';plans=[make('실패 후보')];i=calls.length;await surf();await page.waitForSelector('[role="alert"]');await ready();assert.deepStrictEqual(since(i),['plan','page']);assert(calls[i].prompt.includes('「마법 도구를 파는 상인」'));w=await read(page,'w:mage');assert.deepStrictEqual(w.angles.map(a=>a.count),[1,0,1]);assert.equal(w.angleLast,false);assert(!w.entities[key('실패 후보')]);
+  pageMode='hold';release=null;plans=[make('중단 후보')];await surf();for(let k=0;k<400&&!release;k++)await new Promise(r=>setTimeout(r,10));assert(release);assert((await page.locator('#genAngle').innerText()).includes('이번 각도: 마법 도구를 파는 상인'));await page.click('[data-act="stop"]');release();await page.waitForFunction(()=>document.querySelector('[role="alert"]')?.textContent.includes('중단'));await ready();pageMode='ok';w=await read(page,'w:mage');assert.deepStrictEqual(w.angles.map(a=>a.count),[1,0,1]);assert(!w.entities[key('중단 후보')]);
+  pass('문서 작성이 실패하거나 중단되면 각도 count와 연속 사용 기록이 바뀌지 않는다');
+
+  planAngle=null;plans=[make('각도 거부 후보')];i=calls.length;await surf();await waitTitle('각도 거부 후보');await ready();planAngle=undefined;assert(!calls[i+1].prompt.includes('## 이번 각도'));w=await read(page,'w:mage');assert.deepStrictEqual(w.angles.map(a=>a.count),[1,0,1]);
+  pass('선정 응답이 angle:null이면 각도 없이 작성하고 count를 올리지 않는다');
+
+  await page.locator('#discoveryBtn').dblclick();await page.waitForSelector('#discoveryDirection');await page.fill('#discoveryDirection','학교 매점 주인');plans=[make('매점 주인 오토')];i=calls.length;await page.click('[data-act="discovery-create"]');await waitTitle('매점 주인 오토');await ready();assert(!calls[i].prompt.includes('## 이번 각도'));assert(!calls[i+1].prompt.includes('## 이번 각도'));
+  pass('사용자가 설명을 적으면 각도를 쓰지 않는다');
+
+  await page.locator('#discoveryBtn').dblclick();await page.waitForSelector('#discoveryDirection');await page.fill('#discoveryDirection','');await page.check('[data-angle-off]');await page.waitForFunction(()=>S.world.angleOff===true);assert.equal((await read(page,'w:mage')).angleOff,true);plans=[make('끔 후보')];i=calls.length;await page.click('[data-act="discovery-create"]');await waitTitle('끔 후보');await ready();assert(!calls[i].prompt.includes('## 이번 각도'));
+  await page.locator('#discoveryBtn').dblclick();await page.waitForSelector('[data-angle-off]');assert(await page.locator('[data-angle-off]').isChecked());await page.uncheck('[data-angle-off]');await page.waitForFunction(()=>S.world.angleOff===false);
+  pass('"각도 쓰지 않기"는 세계별로 저장되고 켜 두면 각도를 쓰지 않는다');
+
+  await page.click('#side [data-act="canon"]');await page.waitForSelector('.angles li');assert.equal(await page.locator('.angles li').count(),3);
+  await page.click('[data-angle-toggle="a1"]');await page.waitForFunction(()=>document.querySelector('[data-angle-toggle="a1"]')?.textContent==='켜기');await page.fill('[data-angle-label="a2"]','마법 도구 노점상');await page.click('[data-angle-save="a2"]');await page.waitForFunction(()=>S.world.angles[1].label==='마법 도구 노점상');
+  await page.click('[data-angle-del="a3"]');assert.equal(await page.locator('.angles li').count(),3);await page.click('[data-angle-del="a3"]');await page.waitForFunction(()=>S.world.angles.length===2);
+  w=await read(page,'w:mage');assert.deepStrictEqual(w.angles.map(a=>[a.id,a.label,a.off]),[['a1','마법을 거의 못 쓰는 학생',true],['a2','마법 도구 노점상',false]]);
+  i=calls.length;await page.click('[data-act="angles-regen"]');await page.waitForFunction(()=>S.world.angles.length===3&&!S.angleGen);assert.deepStrictEqual(since(i),['angles']);w=await read(page,'w:mage');assert.equal(w.angles.length,3);assert(w.angles.every(a=>!a.off));
+  pass('설정 노트에서 각도를 끄고 문구를 고치고 지우고 목록을 다시 만들 수 있다');
+
+  const pending=page.waitForEvent('download');await page.click('[data-act="export-world"]');const dl=await pending;const data=JSON.parse(fs.readFileSync(await dl.path(),'utf8'));assert.deepStrictEqual(data.worlds[0].angles,w.angles);assert.equal(data.pages.mage[key('토마스 그린')].angle,'a1');
+  data.worlds[0].id='mage2';data.pages={mage2:data.pages.mage};await page.click('#side [data-act="gset"]');await page.setInputFiles('#importFile',{name:'e.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(data))});await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.includes('가져왔습니다'));
+  const imported=await read(page,'w:mage2');assert.deepStrictEqual(imported.angles,w.angles);assert.equal((await read(page,'p:mage2:'+key('토마스 그린'))).angle,'a1');
+  pass('세계 내보내기·가져오기에 각도 목록과 문서의 각도 기록이 유지된다');
+
+  await rand(null);assert(calls.every(x=>x.kind!=='unexpected'));assert.deepStrictEqual(errors,[]);console.log(`\n모두 통과 (${n}개). 실제 유료 API 호출 0회.`);
+ }finally{await browser.close();await new Promise(r=>server.close(r));}
+})().catch(e=>{console.error(e);process.exitCode=1;});

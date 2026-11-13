@@ -361,3 +361,8 @@ details.ent li{margin-bottom:3px}
 .spine{margin:6px 0 0;padding-left:18px;font-size:13.5px}
 .spine li{margin-bottom:6px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+.angles{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:12px}
+.angles li{border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;background:var(--paper)}
+.angles li .src{display:block;margin-top:4px}
+.angles li .row{margin-top:6px}
+.angles li.off .txt{opacity:.55}

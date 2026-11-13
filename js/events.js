@@ -102,6 +102,9 @@ document.addEventListener("click", ev => {
   if (d.dismiss) { dismissNotes(d.dismiss, d.field); return; }
   if (d.cat !== undefined) { if (!S.world) return; S.view = { name: "category", cat: d.cat }; renderAll(); window.scrollTo({ top: 0 }); return; }
   if (d.focus) { S.focusEnt = d.focus; S.view = { name: "canon" }; renderAll(); return; }
+  if (d.angleSave) { editAngle(d.angleSave, "label", document.querySelector(`[data-angle-label="${CSS.escape(d.angleSave)}"]`)?.value); return; }
+  if (d.angleToggle) { editAngle(d.angleToggle, "toggle"); return; }
+  if (d.angleDel) { if (el.dataset.confirm === "1") editAngle(d.angleDel, "delete"); else { el.dataset.confirm = "1"; el.textContent = "삭제 확인"; } return; }
   if (d.filter) { S.canonFilter = d.filter; renderMain(); return; }
   if (d.mode) { S.mode = d.mode === "story" ? "story" : "basic"; if (S.seedTab === "dice" && S.dice) S.seed = diceSeed(S.dice); renderMain(); return; }   // 주사위 원안은 모드에 맞게 다시 쓴다
   if (d.chn) { S.storyN = Math.min(STORY_MAX, Math.max(STORY_MIN, +d.chn)); renderMain(); return; }
@@ -172,6 +175,8 @@ document.addEventListener("click", ev => {
     case "canon": S.view = { name: "canon" }; renderAll(); window.scrollTo({ top: 0 }); break;
     case "discovery-create": discoverWorld($("#discoveryDirection")?.value || ""); break;
     case "discovery-stop": S.discovery?.ctl?.abort(); if (S.gen && S.gen.key === S.discovery?.target) S.gen.ctl.abort(); break;
+    case "angles-regen": regenAngles(); break;
+    case "angles-open": if (S.world) { S.view = { name: "canon" }; renderAll(); document.getElementById("angles")?.scrollIntoView({ block: "start" }); } break;
     case "discovery-back": if (S.world) openEntity(S.world.mainKey); break;
     case "create": { const ta = $("#seedTa"); if (ta) S.seed = ta.value; createWorld(); break; }
     case "stop": S.gen?.ctl.abort(); break;
@@ -275,6 +280,7 @@ document.addEventListener("change", ev => {
   if (ev.target.dataset?.portraitFile && ev.target.files?.[0]) { const f = ev.target.files[0]; ev.target.value = ""; setPortrait(ev.target.dataset.portraitFile, f); }
   if (ev.target.id === "cpType" && S.compose) S.compose.type = ev.target.value;
   if (ev.target.id === "gMode") { const r = ev.target.value === "relay"; $("#gKeyBox").hidden = r; $("#gRelayBox").hidden = !r; }
+  if (ev.target.dataset?.angleOff !== undefined && S.world && !S.discovery?.busy) { const w = S.world; w.angleOff = ev.target.checked; Store.saveWorld(w).catch(err => toast("저장하지 못했습니다. " + errMsg(err))); document.querySelectorAll("[data-angle-off]").forEach(x => { x.checked = w.angleOff; }); return; }
   if (ev.target.id === "importFile" && ev.target.files?.[0]) { const f = ev.target.files[0]; ev.target.value = ""; importAll(f); }
 });
 /* 랜덤 서핑 제스처: 단일 누름과 입력창 열기를 구분한다. */
