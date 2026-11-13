@@ -84,6 +84,24 @@ function epilogueHtml() {
     ${st.status === "ended" ? `<p class="note" style="margin-top:10px">이야기는 끝났지만 세계관은 계속 탐험할 수 있습니다. 새 문서는 결말 직후 시점으로 쓰입니다.</p>` : ""}</div>`;
 }
 
+/* 세계 전체 점검: 버튼을 눌렀을 때만 돈다. 결과는 제안이며 자동으로 고치지 않는다 */
+function worldCheckHtml(w) {
+  const wc = w.worldCheck, busy = S.wcBusy === w.id, items = wc?.items || [];
+  const st = { linked: "연결하는 설정을 넣음", kept: "그대로 둠", fix: "문서 고치기를 엶" };
+  const title = k => S.pages[k]?.title || w.entities[k]?.title || "?";
+  return `<h2 id="worldCheck">세계 전체 점검</h2>
+    <p class="note">문서 제목과 한 줄 정의, 사건 장부, 용어 정의, 연표를 모아 한 번에 보내, 문서 하나씩 보면 멀쩡하지만 모아 보면 이상한 곳(서로 모르는 같은 종류의 사건, 더 이른 기록과 부딪히는 '최초' 주장, 영향을 받았어야 할 문서가 모르는 사건)을 찾습니다. AI를 한 번 부르므로 자동으로 돌리지 않습니다. 결과는 제안이며 고르기 전에는 아무것도 바꾸지 않습니다.</p>
+    <div class="row"><button type="button" class="btn" data-act="world-check" ${busy || !S.sample ? "disabled" : ""}>${busy ? "점검하는 중…" : "세계 전체 점검"}</button>${wc ? `<span class="note">마지막 점검 ${esc(fmtDate(wc.at))}</span>` : ""}</div>
+    ${S.wcErr && !busy ? `<p class="note" role="alert">${esc(S.wcErr)}</p>` : ""}
+    ${wc && !items.length ? `<p class="note">찾은 것이 없습니다.</p>` : ""}
+    ${items.map(x => `<div class="wc-item" id="wc-${esc(x.id)}" data-wc="${esc(x.id)}" style="border:1px solid var(--line);padding:8px 10px;margin:8px 0">
+      <p style="margin:0"><span class="src">${esc(WC_KINDS[x.kind] || "")}</span> <b>${esc(x.title)}</b>${x.status !== "open" ? ` <span class="src">· ${st[x.status] || ""}</span>` : ""}</p>
+      ${x.status === "open" ? `<p style="margin:6px 0">${esc(x.detail)}</p>
+      ${x.docs.length ? `<p class="note" style="margin:0">관련 문서: ${x.docs.map(k => linkHtml(title(k))).join(", ")}</p>` : ""}
+      ${x.link ? `<p style="margin:6px 0 0"><span class="src">연결하는 설정</span> ${esc(x.link)}</p>` : ""}${x.fix ? `<p class="note" style="margin:4px 0 0">고칠 방향: ${esc(x.fix)}</p>` : ""}
+      <div class="row" style="margin-top:6px">${x.link ? `<button type="button" class="btn pri" data-wc-link="${esc(x.id)}">하나로 연결하는 설정 만들기</button>` : ""}<button type="button" class="btn" data-wc-keep="${esc(x.id)}">그대로 두기</button>${x.docs.map(k => `<button type="button" class="btn" data-wc-fix="${esc(x.id)}" data-wc-doc="${esc(k)}" ${S.gen || S.fixing || !S.sample ? "disabled" : ""}>「${esc(title(k))}」 고치기</button>`).join("")}</div>`
+      : `<div class="row" style="margin-top:4px"><button type="button" class="btn" data-wc-reopen="${esc(x.id)}">다시 보기</button></div>`}</div>`).join("")}`;
+}
 /* 용어 정의: 보고, 고치고, 확정한다. 정의가 엇갈리는 후보는 사용자가 고른다 */
 function glossaryHtml(w) {
   const list = w.glossary || [], who = src => src === "user" ? "사용자" : esc(srcTitle(w, src, "?"));
@@ -149,6 +167,7 @@ function canonHtml() {
     <textarea id="userTa" rows="4" placeholder="예: 태조의 전용기 이름은 '위화'다. 조선 콜로니의 수도는 한양 궤도 거주구다.">${esc(w.userCanon || "")}</textarea>
     ${glossaryHtml(w)}
     <div class="row"><button type="button" class="btn pri" data-act="save-canon">설정 저장</button><span class="note">저장 후 새로 작성하는 문서부터 반영됩니다.</span></div>
+    ${worldCheckHtml(w)}
     ${anglesHtml(w)}
     ${Object.keys(w.navboxes || {}).length ? `<h2>틀</h2><ul style="margin:0;padding-left:20px">${Object.values(w.navboxes).map(nb => `<li>${esc(nb.title)} <span class="src">· ${nb.members.length}개 항목 · ${linkHtml(nb.srcTitle)}</span></li>`).join("")}</ul>` : ""}
     ${(w.relations || []).length ? `<h2>인물 관계</h2><div style="overflow-x:auto"><table class="tl">${w.relations.filter(x => w.entities[x.a] && w.entities[x.b]).map(x => `<tr><td>${esc(x.rel)}</td><td>${linkHtml(w.entities[x.a].title)} – ${linkHtml(w.entities[x.b].title)}${x.story ? ` <span class="${x.sup ? "" : "note"}">${x.sup ? `<del>${esc(x.story)}</del>` : esc(x.story)}</span>` : ""} <span class="src">· ${esc(srcTitle(w, x.src, "?"))}${x.sup ? " · 대체됨" : ""}</span></td></tr>`).join("")}</table></div>` : ""}

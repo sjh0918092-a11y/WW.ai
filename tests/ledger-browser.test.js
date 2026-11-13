@@ -31,8 +31,12 @@ const read = (p, k) => p.evaluate(k => new Promise(resolve => { const r = indexe
     timeline: [{ year: "2016", about: "한서진", event: "만 32세로 기지 인근에 거주 중임이 확인됨" }, { year: "2016", event: "근황이 확인됨" }, { year: "2014", about: "북해 기지", event: "북해 기지가 준공되었다" }, { year: "2013", about: "카이 마루", event: "카이 마루가 진수되었다" }, { year: "2012", about: "한서진", event: "한서진이 입대했다" }],
     events: [{ name: "해저 결투", date: "2015년 11월 4일", place: "북해", nums: [{ name: "거리", value: "40", unit: "해리" }], participants: ["한서진", "카이 마루"], result: "한서진의 승리" }, { name: "막연한 사건", place: "어딘가" }],
     terms: [{ term: "Type-05", definition: "전 세계 일련번호" }, { term: "잠항 경보", definition: "잠항 병기가 접근할 때 내리는 경보 단계" }] };
+  const wcReply = { findings: [
+    { kind: "repeat", title: "잠항 병기의 반복 침투", docs: ["해저 결투", "북해 기지"], detail: "두 문서가 같은 종류의 침투를 각자 지역 사건으로 다룬다.", link: "북해의 잠항 병기 침투는 모두 한 조직의 작전이다.", fix: "서로의 사건을 언급하게 한다." },
+    { kind: "first", title: "맨손 승리의 '최초' 주장", docs: ["한서진"], detail: "더 이른 기록이 있다.", link: "", fix: "'최초'를 '북해에서 처음'으로 좁힌다." }] };
   await ctx.route("**/v1beta/models/**", async r => {
     const prompt = JSON.parse(r.request().postData()).contents[0].parts[0].text;
+    if (prompt.includes("## 세계 전체 점검")) { prompts.push(prompt); try { await r.fulfill({ contentType: "text/event-stream", body: "data: " + JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(wcReply) }] }, finishReason: "STOP" }] }) + "\n\n" }); } catch {} return; }
     if (!prompt.includes("## 작성할 문서:")) { try { await r.fulfill({ status: 404, json: { error: { message: "model missing" } } }); } catch {} return; }
     prompts.push(prompt);
     try { await r.fulfill({ contentType: "text/event-stream", body: "data: " + JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(reply) }] }, finishReason: "STOP" }] }) + "\n\n" }); } catch {}
@@ -86,6 +90,29 @@ const read = (p, k) => p.evaluate(k => new Promise(resolve => { const r = indexe
     const issues = await page.evaluate(k => eventIssues(S.world, k), stub);
     assert.equal(issues.length, 1); assert(issues[0].claim.includes("40해리")); assert(issues[0].conflict.includes("180해리"));
     pass("문서 작성 프롬프트에 용어 정의와 사건 장부가 들어가고, 응답의 장부 값이 검사를 거쳐 기록된다");
+
+    /* 세계 전체 점검: 버튼을 눌렀을 때만, 결과는 제안으로 */
+    const before = prompts.length;
+    await page.click('#side [data-act="canon"]'); await page.waitForSelector("#worldCheck");
+    assert.equal(prompts.length, before, "설정 노트를 열어도 점검하지 않는다");
+    await page.click('[data-act="world-check"]'); await page.waitForSelector("[data-wc]");
+    assert.equal(prompts.length, before + 1); const wp = prompts[prompts.length - 1];
+    assert(wp.includes("- 북해 기지 (지명): 북해의 해저 기지")); assert(wp.includes("## 사건 장부")); assert(wp.includes("- Type-05: 소녀 한 명의 개인 이름 [사용자 확정]")); assert(wp.includes("- 2015: 한서진이 해저 결투에서 이겼다"));
+    assert.equal(await page.locator("[data-wc]").count(), 2);
+    saved = await read(page, "w:sea"); assert.equal(saved.worldCheck.items.length, 2); assert(saved.worldCheck.items.every(x => x.status === "open")); assert.equal(saved.userCanon, "", "고르기 전에는 아무것도 바꾸지 않는다");
+    pass("세계 전체 점검은 버튼을 눌렀을 때 한 번만 부르고, 결과를 제안 목록으로 보여 준다");
+
+    const [a, b] = saved.worldCheck.items;
+    await page.click(`[data-wc-link="${a.id}"]`); await page.waitForFunction(() => document.querySelector("#toast")?.textContent.includes("사용자 확정 설정에 넣었습니다"));
+    assert.equal(await page.inputValue("#userTa"), "- 북해의 잠항 병기 침투는 모두 한 조직의 작전이다.");
+    saved = await read(page, "w:sea"); assert.equal(saved.worldCheck.items[0].status, "linked"); assert(saved.userCanon.includes("한 조직의 작전"));
+    await page.click(`[data-wc-keep="${b.id}"]`); await page.waitForFunction(id => S.world.worldCheck.items.find(x => x.id === id).status === "kept", b.id);
+    pass("[하나로 연결하는 설정 만들기]는 사용자 확정 설정에 넣고, [그대로 두기]는 표시만 한다");
+
+    await page.click(`[data-wc-reopen="${a.id}"]`); await page.waitForSelector(`[data-wc-fix="${a.id}"][data-wc-doc="${stub}"]`);
+    await page.click(`[data-wc-fix="${a.id}"][data-wc-doc="${stub}"]`); await page.waitForFunction(k => S.view.name === "fix" && S.fixv?.key === k, stub);
+    assert((await page.evaluate(() => S.fixv.items[0].conflict)).includes("서로의 사건을 언급하게 한다"));
+    pass("[해당 문서 고치기]는 그 문서의 고치기 화면을 연다");
 
     assert.deepEqual(errors, []);
     console.log(`\n모두 통과 (${n}개). 유료 AI 호출 0회.`);

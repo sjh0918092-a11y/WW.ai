@@ -114,6 +114,7 @@ async function mergeEntities(w, pairs) {
   for (const t of w.timeline) { t.src = re(t.src); if (t.k) t.k = re(t.k); if (t.sup) t.sup.by = re(t.sup.by); }
   for (const x of w.events || []) { x.k = re(x.k); x.src = re(x.src); x.parts = [...new Set((x.parts || []).map(re))]; }
   for (const g of w.glossary || []) { g.src = re(g.src); for (const a of g.alts || []) a.src = re(a.src); }
+  for (const x of w.worldCheck?.items || []) x.docs = [...new Set((x.docs || []).map(re))];
   for (const nb of Object.values(w.navboxes || {})) {
     nb.src = re(nb.src); nb.members = [...new Set((nb.members || []).map(re))];
     for (const r of nb.rows) r.items = r.items.map(x => cleanLinks(w, x));

@@ -107,6 +107,10 @@ document.addEventListener("click", ev => {
   if (d.angleRevive) { editAngle(d.angleRevive, "revive"); return; }
   if (d.angleDel) { if (el.dataset.confirm === "1") editAngle(d.angleDel, "delete"); else { el.dataset.confirm = "1"; el.textContent = "삭제 확인"; } return; }
   if (d.filter) { S.canonFilter = d.filter; renderMain(); return; }
+  if (d.wcLink) { worldCheckAction(d.wcLink, "link"); return; }
+  if (d.wcKeep) { worldCheckAction(d.wcKeep, "keep"); return; }
+  if (d.wcFix) { worldCheckAction(d.wcFix, "fix", d.wcDoc); return; }
+  if (d.wcReopen) { worldCheckAction(d.wcReopen, "reopen"); return; }
   if (d.termPick !== undefined) { chooseTerm(Number(d.termPick), Number(d.alt)); return; }
   if (d.mode) { S.mode = d.mode === "story" ? "story" : "basic"; if (S.seedTab === "dice" && S.dice) S.seed = diceSeed(S.dice); renderMain(); return; }   // 주사위 원안은 모드에 맞게 다시 쓴다
   if (d.chn) { S.storyN = Math.min(STORY_MAX, Math.max(STORY_MIN, +d.chn)); renderMain(); return; }
@@ -202,6 +206,7 @@ document.addEventListener("click", ev => {
     case "cf-back": if (S.edit) S.edit.pending = null; $("#edConflicts").innerHTML = ""; $("#edBody")?.focus(); break;
     case "ed-cancel": if (S.edit?.saving) break; S.edit?.ctl?.abort(); S.edit = null; renderMain(); window.scrollTo({ top: 0 }); break;
     case "save-canon": saveCanon(); break;
+    case "world-check": runWorldCheck(); break;
     case "prose-image-generate": generateProseImage(); break;
     case "prose-image-apply": saveProseImage(); break;
     case "prose-image-discard": if (S.proseGen?.illustration && !S.proseGen.busy) { S.proseGen.illustration.preview = ""; renderMain(); } break;

@@ -15,9 +15,9 @@ vm.runInContext([
   cut("const sentencesOf =", "/* 인포박스에서"), cut("function pageTexts(p)", "/* 이름이 목적어"),
   cut("const namesOf =", "function checkBrief"),
   require("fs").readFileSync(require("path").join(__dirname, "..", "js", "ledger.js"), "utf8").replace('"use strict";', ""),
-  "Object.assign(globalThis,{ingestTerms,purgeTerms,pickTerm,glossaryBlock,findTerm,normEvent,ingestEvents,eventIssues,eventCandidates,eventBlock,eventCheckBlock,addFact,addMention,compactFacts,promptFacts,promptMentions,FACT_CAP,MENTION_CAP,addTimeline,acceptTimeline,acceptPageTimeline,timelineSubject,keyOf,norm,stripMarks});"
+  "Object.assign(globalThis,{worldCheckPrompt,parseWorldCheck,worldCheckAction,ingestTerms,purgeTerms,pickTerm,glossaryBlock,findTerm,normEvent,ingestEvents,eventIssues,eventCandidates,eventBlock,eventCheckBlock,addFact,addMention,compactFacts,promptFacts,promptMentions,FACT_CAP,MENTION_CAP,addTimeline,acceptTimeline,acceptPageTimeline,timelineSubject,keyOf,norm,stripMarks});"
 ].join("\n"), c);
-let n = 0; const test = (name, fn) => { fn(); console.log(`  ✓ ${++n}. ${name}`); };
+let n = 0; const tests = []; const test = (name, fn) => tests.push([name, fn]);
 const ent = title => ({ title, type: "", summary: "", facts: [], mentions: [], page: false, box: "" });
 const world = (...titles) => { const w = { entities: {}, timeline: [] }; for (const t of titles) w.entities[c.keyOf(t)] = ent(t); return w; };
 
@@ -242,4 +242,45 @@ test("용어 정의가 모든 문서 프롬프트와 문서 읽기 검사에 들
   assert(html.includes("data-term-pick=") && html.includes("어느 쪽으로 할까요?"));
 });
 
-console.log(`\n모두 통과 (${n}개). AI 호출 0회.`);
+/* ---------- 5단계: 세계 전체 점검 ---------- */
+test("점검 프롬프트는 문서 제목·정의, 최초 주장, 사건 장부, 용어 정의, 연표를 압축해 한 번에 보낸다", () => {
+  const { w, K } = duelWorld();
+  c.S.pages[K("한서진")].summary = "북해의 병기 조종사";
+  c.S.pages[K("남부 해전")].sections[0].body = "이 전투는 냉병기 없이 맨손으로 이긴 최초의 실전이었다. 평범한 문장이다.";
+  w.timeline.push({ year: "1990", event: "카이 마루가 맨손으로 적 병기를 쓰러뜨렸다", src: "seed" });
+  c.ingestTerms(w, K("한서진"), [{ term: "Type-05", definition: "칭호" }]);
+  w.rules = ["병기는 최대 두 기"]; w.userCanon = "- 북해는 중립 해역이다";
+  w.worldCheck = { at: 1, items: [{ id: "a", title: "이미 둔 것", status: "kept", docs: [] }] };
+  const pr = c.worldCheckPrompt(w);
+  for (const s of ["- 한서진 (사건): 북해의 병기 조종사", "「남부 해전」: 이 전투는 냉병기 없이 맨손으로 이긴 최초의 실전이었다.", "| 해저 결투 | 2015년 11월 4일 |", "- Type-05: 칭호", "- 1990: 카이 마루가 맨손으로", "- 병기는 최대 두 기", "- 북해는 중립 해역이다", "## 사용자가 그대로 두기로 한 것", "- 이미 둔 것", '"kind":"repeat, first, unaware 중 하나"'])
+    assert(pr.includes(s), "프롬프트에 없음: " + s);
+  assert(!pr.includes("평범한 문장이다"), "최초·처음·유일이 없는 문장은 넣지 않는다");
+  assert(pr.indexOf("- 해저 결투 (") < pr.indexOf("- 한서진 ("), "쓴 순서대로");
+});
+test("점검 결과는 있는 문서만 남기고 제안(open)으로 둔다", () => {
+  const { w, K } = duelWorld();
+  const got = c.parseWorldCheck(w, { findings: [{ kind: "repeat", title: "잠항 병기 반복 침투", docs: ["해저 결투", "없는 문서", "한서진"], detail: "세 나라 앞바다에 같은 병기가 나타났다.", link: "모든 침투는 한 조직의 작전이다.", fix: "서로 언급하게 한다." }, { kind: "이상한", title: "x", docs: [], detail: "y", link: "z" }, { title: "근거 없음", docs: [], detail: "d" }, null] });
+  assert.equal(got.length, 2);
+  assert.deepEqual(got[0].docs, [K("해저 결투"), K("한서진")]); assert.equal(got[0].status, "open"); assert.equal(got[1].kind, "repeat");
+  assert.deepEqual(c.parseWorldCheck(w, {}), []);
+});
+test("[하나로 연결하는 설정 만들기]는 그 설정을 사용자 확정 설정에 넣고, [그대로 두기]는 표시만 한다", async () => {
+  const { w } = duelWorld(); let saved = 0;
+  Object.assign(c, { renderMain() {}, toast() {}, document: { getElementById: () => null }, Store: { saveWorld: async () => { saved++; } }, errMsg: e => String(e) });
+  c.S.world = w; w.userCanon = "기존 설정";
+  w.worldCheck = { at: 1, items: [{ id: "x1", kind: "repeat", title: "t", docs: [], detail: "d", link: "모든 침투는 한 조직의 작전이다.", fix: "", status: "open" }, { id: "x2", kind: "first", title: "t2", docs: [], detail: "d", link: "", fix: "", status: "open" }] };
+  await c.worldCheckAction("x1", "link");
+  assert.equal(w.userCanon, "기존 설정\n- 모든 침투는 한 조직의 작전이다."); assert.equal(w.worldCheck.items[0].status, "linked");
+  await c.worldCheckAction("x1", "link"); assert.equal(w.userCanon.split("한 조직의 작전").length, 2, "두 번 넣지 않는다");
+  await c.worldCheckAction("x2", "keep"); assert.equal(w.worldCheck.items[1].status, "kept"); assert.equal(w.userCanon.includes("t2"), false);
+  assert(saved >= 2);
+});
+test("세계 전체 점검은 버튼으로만 돈다", () => {
+  assert(html.includes('case "world-check": runWorldCheck(); break;'));
+  assert.equal((html.match(/runWorldCheck\(/g) || []).length, 2, "정의 하나와 버튼 처리 하나뿐");
+});
+
+(async () => {
+  for (const [name, fn] of tests) { await fn(); console.log(`  ✓ ${++n}. ${name}`); }
+  console.log(`\n모두 통과 (${n}개). AI 호출 0회.`);
+})().catch(e => { console.error(e); process.exit(1); });
