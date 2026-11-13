@@ -25,33 +25,37 @@ function sectionEditOut(w, p, ed) {
   out.sections = [...p.sections.slice(0, ed.section.index), ...sectionDraft(ed), ...p.sections.slice(ed.section.end)];
   return out;
 }
+/* 선택한 문단 다시 쓰기 프롬프트 */
+function sectionRewritePrompt(w, p, key, root, draft, direction) {
+  return `## 선택한 문단 다시 쓰기
+가상 세계관 위키의 선택된 문단만 수정한다. 나머지 문서·인포박스·분류는 수정하지 않는다.
+${canonBlock(w)}
+${isStory(w) ? storyBlock(w, key, true) : ""}
+${toneBlock(w)}
+## 다른 문서가 확정한 사실
+${entityBrief(w, key, key)}
+${promptFacts(w, key, w.entities[key].facts.filter(f => live(f) && f.src !== key)).map(f => factLine(f)).join("\n")}
+${promptMentions(w, key, w.entities[key].mentions.filter(m => live(m) && m.from !== key)).map(m => m.text).join("\n")}
+${relationsOf(w, key).filter(live).map(r => relLine(w, r)).join("\n")}
+${related(w, key).map(k => entityBrief(w, k, key)).join("\n\n")}
+## 전체 문서 (앞뒤 흐름을 위한 참고)
+${docForCheck(p)}
+## 수정할 문단과 하위 문단 (현재 초안)
+${draft}
+## 사용자가 요청한 수정 방향
+${direction?.trim() || "확정 내용과 결말은 유지하면서 선택한 문단만 처음부터 다시 써라."}
+## 출력 규칙
+선택한 문단만 출력한다. 기존 확정 설정·연표·신원·나이·관계를 지킨다. 링크는 [[제목]] 또는 [[제목|보일 말]]로 건다. ${linkNameRule()} 다른 문단의 내용을 덮어쓰거나 같은 설명을 불필요하게 반복하지 않는다. 요청에 따라 문장 수정·보강·전면 다시 쓰기를 한다. 설명문이나 '작성 방향:'을 붙이지 않는다.
+첫 문단의 level은 ${root.level || 1}이다. ${(root.level || 1) === 2 ? "문단 하나만 출력한다." : "첫 상위 문단 하나와 필요한 하위 문단(level 2)만 출력한다. 다른 상위 문단은 출력하지 않는다."} 이야기 장 번호는 앱이 유지하므로 heading에 붙이지 않는다.
+JSON 객체 하나: {"sections":[{"heading":"제목","level":${root.level || 1},"body":"위키 문법의 본문"}]}`;
+}
 async function rewriteSection() {
   const ed = S.edit, w = S.world, p = ed && S.pages[ed.key];
   if (!ed?.section || ed.aiBusy || ed.saving || !w || !p || !S.sample) return;
   if (portraitBusy(ed.key) || S.portraitJob) { edStatus("문서 작업이 끝난 뒤 문단을 다시 써 주세요."); return; }
   if (sectionBaseStamp(w, p) !== ed.section.stamp) { edStatus("원본 문서가 바뀌었습니다. 초안을 복사한 뒤 문서를 다시 열어 주세요."); return; }
   const draft = ed.f.body; ed.aiBusy = true; ed.ctl = new AbortController(); ed.aiError = ""; renderMain(true);
-  const prompt = `## 선택한 문단 다시 쓰기
-가상 세계관 위키의 선택된 문단만 수정한다. 나머지 문서·인포박스·분류는 수정하지 않는다.
-${canonBlock(w)}
-${isStory(w) ? storyBlock(w, ed.key, true) : ""}
-${toneBlock(w)}
-## 다른 문서가 확정한 사실
-${entityBrief(w, ed.key, ed.key)}
-${promptFacts(w, ed.key, w.entities[ed.key].facts.filter(f => live(f) && f.src !== ed.key)).map(f => factLine(f)).join("\n")}
-${promptMentions(w, ed.key, w.entities[ed.key].mentions.filter(m => live(m) && m.from !== ed.key)).map(m => m.text).join("\n")}
-${relationsOf(w, ed.key).filter(live).map(r => relLine(w, r)).join("\n")}
-${related(w, ed.key).map(k => entityBrief(w, k, ed.key)).join("\n\n")}
-## 전체 문서 (앞뒤 흐름을 위한 참고)
-${docForCheck(p)}
-## 수정할 문단과 하위 문단 (현재 초안)
-${draft}
-## 사용자가 요청한 수정 방향
-${ed.aiDirection?.trim() || "확정 내용과 결말은 유지하면서 선택한 문단만 처음부터 다시 써라."}
-## 출력 규칙
-선택한 문단만 출력한다. 기존 확정 설정·연표·신원·나이·관계를 지킨다. 다른 문단의 내용을 덮어쓰거나 같은 설명을 불필요하게 반복하지 않는다. 요청에 따라 문장 수정·보강·전면 다시 쓰기를 한다. 설명문이나 '작성 방향:'을 붙이지 않는다.
-첫 문단의 level은 ${ed.section.root.level || 1}이다. ${(ed.section.root.level || 1) === 2 ? "문단 하나만 출력한다." : "첫 상위 문단 하나와 필요한 하위 문단(level 2)만 출력한다. 다른 상위 문단은 출력하지 않는다."} 이야기 장 번호는 앱이 유지하므로 heading에 붙이지 않는다.
-JSON 객체 하나: {"sections":[{"heading":"제목","level":${ed.section.root.level || 1},"body":"위키 문법의 본문"}]}`;
+  const prompt = sectionRewritePrompt(w, p, ed.key, ed.section.root, draft, ed.aiDirection);
   try {
     const out = await callJson("section", prompt, { modelTier: "default", signal: ed.ctl.signal }, { title: p.title + " · " + ed.section.root.heading });
     if (S.edit !== ed || S.world !== w || ed.ctl.signal.aborted) return;

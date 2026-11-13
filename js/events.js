@@ -100,6 +100,7 @@ document.addEventListener("click", ev => {
   if (d.notsame) { notSame(d.notsame, d.other); return; }
   if (d.refresh) { openEditor(d.refresh); saveEdit(); return; }
   if (d.dismiss) { dismissNotes(d.dismiss, d.field); return; }
+  if (d.realname) { renameToRealName(d.realname); return; }
   if (d.navDel) { categoryAction("del", d.navDel); return; }
   if (d.catUnmerge) { categoryAction("unmerge", d.catUnmerge); return; }
   if (d.cat !== undefined) { if (!S.world) return; S.view = { name: "category", cat: d.cat }; renderAll(); window.scrollTo({ top: 0 }); return; }

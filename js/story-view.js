@@ -187,6 +187,7 @@ function canonHtml() {
     <div style="overflow-x:auto"><table class="tl">${w.story.chapters.map(c => `<tr><td>${c.n}장</td><td><b>${esc(c.title)}</b> <span class="src">· ${esc(c.era)}</span><br>${c.n < w.story.chapter || w.story.status === "ended" ? esc(c.summary) : `<span class="note">진행 중인 장입니다. 줄거리는 다음 장으로 넘어가면 공개됩니다.</span>`}</td></tr>`).join("")}</table></div>
     ${w.story.protagonist?.desc || w.story.cast?.length ? `<dl class="kv" style="margin-top:12px">${w.story.protagonist?.desc ? `<dt>주인공 특징</dt><dd>${esc(w.story.protagonist.desc)}</dd>` : ""}${(w.story.cast || []).filter(c => w.entities[c.key]).map(c => `<dt>${linkHtml(w.entities[c.key].title)}</dt><dd>${esc([c.rel && "관계: " + c.rel, c.desc].filter(Boolean).join(" · ") || "(설명 없음)")}</dd>`).join("")}</dl><p class="note">처음에 정한 주인공 특징과 등장인물입니다. 사용자 확정 설정으로 모든 장과 문서에 반영됩니다.</p>` : ""}
     ${w.story.status === "ended" ? storyMemoryHtml(w) + spineHtml(w) : ""}` : ""}
+    ${nameTwinsHtml(w)}
     <h2>이미지 지침</h2>
     <label class="lb" for="wImageGuide">세계관 공통 이미지 지침</label><textarea id="wImageGuide" rows="4" maxlength="2000" placeholder="예: 1990년대 셀 애니메이션 화풍, 푸른 회색 팔레트, 시대에 맞는 복장, 글자 없는 그림">${esc(w.imageGuide || "")}</textarea>
     <p class="note">이 세계관의 모든 문서에서 이미지를 생성할 때 공통으로 참고합니다. 지침 저장만으로 기존 이미지를 바꾸지는 않습니다.</p>

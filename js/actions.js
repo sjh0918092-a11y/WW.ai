@@ -376,10 +376,12 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
     if (angleUsed) fin.angle = angle.id;
     if (!rewrite && e.persona && (fin.type || e.type) !== "인물") delete e.persona;   // 인물이 아닌 문서로 정해지면 굴린 값은 버린다
     S.gen = null;
+    const named = S.world === w && S.pages[k] === fin ? await registerPersonNames(w, k).catch(() => null) : null;   // 인포박스의 본명·코드명을 이 문서로 잇는다(어느 경로로 만들어졌든)
     try { await Store.savePage(w.id, fin); for (const x of cleared) if (S.pages[x] && x !== k) await Store.savePage(w.id, S.pages[x]); if (!novel && !rewrite) noteAngleUse(w, angleUsed ? angle : null, sceneUsed); await Store.saveWorld(w); if (!novel) maybeRefillAngles(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
     afterGen(k, true);
     if (S.world === w && S.pages[k] === fin) {
       if (pre?.fixed) { toast(`설정과 어긋난 ${pre.fixed}곳을 고쳐서 보여 드립니다.`); bgSync(k); }   // 확정 사실만 정리하며 검사는 다시 하지 않는다
+      else if (named?.twins.length) toast("인포박스 이름이 다른 인물 문서의 제목과 같습니다. 설정 노트의 '같은 인물일 수 있는 두 문서'에서 확인해 주세요.");
     }
     return { sceneUsed };
   } catch (err) {

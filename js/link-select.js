@@ -50,9 +50,10 @@ async function linkSelection(t) {
   let at = -1;
   for (let i = mask.indexOf(t.text), c = 0; i >= 0; i = mask.indexOf(t.text, i + 1)) if (c++ === t.n) { at = i; break; }
   if (at < 0) { toast("원문에서 이 부분을 찾지 못했습니다. 편집으로 [[ ]]를 넣어 주세요."); return; }
-  const title = norm(t.text), lk = kOf(w, title);
+  const title = norm(t.text), owner = S.pages[keyOf(title)] ? null : personByName(w, title, null);   // 기존 인물의 별칭·인포박스 이름이면 새 항목을 만들지 않고 그 인물로
+  const lk = owner || kOf(w, title);
   if (lk === t.k) { toast("이 문서 자기 자신에는 링크를 걸 수 없습니다."); return; }
-  const tag = `[[${title}]]`;
+  const tag = owner && w.entities[owner].title !== title ? `[[${w.entities[owner].title}|${title}]]` : `[[${title}]]`;
   sec[fld] = body.slice(0, at) + tag + body.slice(at + t.text.length);
   const made = !w.entities[lk];
   if (made) { w.entities[lk] = newEntity(title, "", ""); w.entities[lk].origin = t.k; }
@@ -83,7 +84,7 @@ function showSelPop() {
     selPop.addEventListener("click", () => { const x = selT; hideSelPop(); if (x) linkSelection(x); });
   }
   selT = t;
-  const has = !!S.pages[kOf(S.world, norm(t.text))];
+  const has = !!S.pages[kOf(S.world, norm(t.text))] || !!personByName(S.world, norm(t.text), null);
   selPop.textContent = has ? "문서 링크로 만들기" : "빨간 링크 만들기"; selPop.classList.toggle("blue", has);
   selPop.style.display = "block";
   const rc = t.range.getBoundingClientRect(), bw = selPop.offsetWidth, bh = selPop.offsetHeight;
