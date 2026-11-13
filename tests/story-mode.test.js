@@ -606,7 +606,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
       assert(ck.includes("## 핵심 규칙") && ck.includes("문서 안의 앞뒤 모순은 다른 검사가 따로 보므로") && !ck.includes("## 반드시 맞춰 볼 것"), "설정 대조는 설정과의 충돌만 본다");
       assert(calls.filter(c => c.kind === "fix").pop().prompt.includes("[cats] (분류, | 로 구분)\n테스트"), "고치기에 분류가 들어간다");
       { const pp = calls.filter(c => c.kind === "page" && c.prompt.includes("「검사 분류」")).pop()?.prompt || calls.filter(c => c.kind === "page").pop().prompt;
-        assert(pp.includes("분류는 최소한으로(2~4개)") && /이 세계관에 이미 있는 분류[^\n]*테스트\(\d+\)/.test(pp) && pp.includes('"군인"이 있으면 "프랑스의 군인"'), "문서 작성에 기존 분류 목록과 넓은 분류 우선 지침이 들어간다"); }
+        assert(pp.includes('"categories":{"소속"') && /이 세계관에 이미 있는 분류\(축별[^\n]*\n(?:- [^\n]*\n)*- [^\n]*테스트\(\d+\)/.test(pp) && pp.includes("같은 뜻이면 기존 이름을 글자 그대로 쓴다") && pp.includes("합친 분류"), "문서 작성에 축별 기존 분류 목록과 넓은 분류 우선 지침이 들어간다"); }
       assert.strictEqual((calls.filter(c => c.kind === "fix").pop().prompt.match(/문서의 서술: 분류: 테스트/g) || []).length, 1, "두 검사가 같은 문장을 지적하면 하나로 합친다"); }
     assert.strictEqual((await page.locator(".cats .cat").allInnerTexts()).join(","), "고친 분류", "분류도 자동으로 고친다");
     ctl.readFail = true; ctl.checkIssues = [{ claim: "역사는 1586년에", evidence: "규칙 하나", conflict: "x", severity: "low" }];

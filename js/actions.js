@@ -356,6 +356,8 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
     const angleUsed = !!angle && (out?.angleUsed === true || out?.angleUsed === "true");
     const sceneUsed = (angle || novelAngle) && typeof out?.sceneUsed === "string" ? norm(out.sceneUsed).slice(0, 200) : "";
     if (out && typeof out === "object") { delete out.angleUsed; delete out.sceneUsed; }
+    if (out && typeof out === "object") delete out.navboxes;   // 틀은 분류에서 계산한다. 새 문서가 틀을 만들지 않는다
+    if (out && typeof out === "object") { await ensureAxisCats(w, k, out, { signal: ctl.signal }); if (ctl.signal.aborted) throw { code: "cancelled" }; }   // 소속이나 유형이 비었으면 한 번 다시 받는다
     const page = integrate(w, k, out);
     delete page.angleUsed; delete page.sceneUsed;
     if (oldPage?.shortStories) page.shortStories = oldPage.shortStories;
@@ -426,7 +428,9 @@ function integrate(w, key, out) {
   const sections = (Array.isArray(out?.sections) ? out.sections : []).filter(s => s && (s.body || s.heading)).map(s => { const x = { heading: String(s.heading || "").replace(/^#+\s*/, "").replace(/^\d+(\.\d+)*\.?\s+/, "").slice(0, 80), level: s.level === 2 ? 2 : 1, body: String(s.body || "") }; if (s.ch > 0) x.ch = +s.ch; return x; });
   if (sections.length && sections[0].level === 2) sections[0].level = 1;
   if (!sections.some(s => s.body.trim())) throw { code: "bad_page" };
-  const categories = [...new Set((Array.isArray(out.categories) ? out.categories : []).filter(x => typeof x === "string" && x.trim()).map(x => norm(stripMarks(x)).slice(0, 40)))].filter(x => x && !TYPES.includes(x)).slice(0, 6);   // 유형 이름은 분류로 두지 않는다(유형으로 이미 모아 볼 수 있다)
+  const cats = parseCats(out.categories), categories = cats.map(c => c.name);   // 축별 객체 또는 예전 형식(이름 배열). 유형 이름은 분류로 두지 않는다
+  const prevAx = S.world === w ? S.pages[key]?.catAxes || [] : [];   // 편집·고치기처럼 이름만 돌아오면 이전 축을 이어 쓴다
+  const catAxes = cats.map(c => c.axis ? c : prevAx.find(x => x.name === c.name) ? { name: c.name, axis: prevAx.find(x => x.name === c.name).axis } : null).filter(Boolean);
   const infobox = (Array.isArray(out.infobox) ? out.infobox : []).filter(r => r && r.label && r.value).slice(0, 10).map(r => ({ label: String(r.label).slice(0, 30), value: String(r.value).slice(0, 300) }));
   const type = TYPES.includes(out.type) ? out.type : (String(out.type || "").slice(0, 8) || "개념");
   const summary = stripMarks(out.summary).slice(0, 220);
@@ -441,6 +445,11 @@ function integrate(w, key, out) {
       else if (!w.entities[lk].summary && hints[lk]?.summary) w.entities[lk].summary = stripMarks(hints[lk].summary).slice(0, 200);
       addMention(w.entities[lk], key, sentenceAround(t, m.index, m[0].length));
     }
+  }
+  for (const [hk, h] of Object.entries(hints)) {   // 아직 문서가 없는 항목의 소속·유형: 틀에 빨간 링크로 들어간다
+    const o = w.entities[hk]; if (!o || o.page || hk === key) continue;
+    const hc = parseCats({ 소속: h.소속, 유형: h.유형 }); if (!hc.length) continue;
+    o.cats = [...(o.cats || []), ...hc.filter(x => !(o.cats || []).some(y => y.name === x.name))].slice(0, 4);
   }
   for (const f of (Array.isArray(out.facts) ? out.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = kOf(w, f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), key); }
   for (const r of (Array.isArray(out.relations) ? out.relations : []).slice(0, 12)) addRelation(w, key, r);
@@ -470,7 +479,7 @@ function integrate(w, key, out) {
     }
     w.navboxes[key + "-" + i] = { title, rows, members, src: key, srcTitle: e.title };
   });
-  return { key, title: e.title, type, summary, categories, notices, infobox, sections, links, createdAt: Date.now(), style: w.style, check: null,
+  return { key, title: e.title, type, summary, categories, ...(catAxes.length ? { catAxes } : {}), notices, infobox, sections, links, createdAt: Date.now(), style: w.style, check: null,
     ...(S.world === w && S.pages[key]?.shortStories ? { shortStories: S.pages[key].shortStories } : {}),
     ...(S.world === w && S.pages[key]?.portrait ? { portrait: S.pages[key].portrait } : {}) };
 }

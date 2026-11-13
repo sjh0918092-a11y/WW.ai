@@ -157,6 +157,11 @@ h1.t{font-family:var(--f-display);font-weight:700;font-size:30px;line-height:1.2
 .navbox .nb-n{font-family:var(--f-mono);font-weight:400;font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 7px}
 .navbox .nb-tog::before{content:"[펼치기]";font-weight:400;font-size:12px;color:var(--link)}
 .navbox[open] .nb-tog::before{content:"[접기]"}
+.navbox .nb-old-tag{font-weight:400;font-size:11px;color:var(--muted);border:1px dashed var(--line);border-radius:999px;padding:0 7px}
+.navbox .nb-src .cat{all:unset;color:var(--link);cursor:pointer;font:inherit}
+.catidx .catlist .btn{align-self:flex-start}
+.catidx .row{flex-wrap:wrap;gap:6px;align-items:center}
+.catidx .row .txt{flex:1 1 160px;min-width:0;width:auto}
 .nb-body{display:flex;flex-direction:column}
 .nb-row{display:grid;grid-template-columns:minmax(90px,150px) minmax(0,1fr);border-top:1px solid var(--line)}
 .nb-l{padding:8px 10px;background:var(--paper);font-weight:600;font-size:12.5px;color:var(--muted);border-right:1px solid var(--line)}
@@ -164,11 +169,14 @@ h1.t{font-family:var(--f-display);font-weight:700;font-size:30px;line-height:1.2
 .nb-row li{display:flex;flex-direction:column;line-height:1.35;min-width:0}
 .nb-row li small{color:var(--muted);font-size:11.5px}
 .nb-row li.me b{color:var(--ink)}
+.nb-row.nb-one{grid-template-columns:minmax(0,1fr)}
 .nb-src{border-top:1px solid var(--line);padding:6px 12px;font-size:12px;text-align:right}
 @media (max-width:560px){.nb-row{grid-template-columns:minmax(0,1fr)}.nb-l{border-right:0;border-bottom:1px solid var(--line)}}
 .nf-h{font-family:var(--f-display);font-weight:700;font-size:20px;margin:20px 0 4px}
 .cats{display:flex;flex-wrap:wrap;gap:4px 0;align-items:center;margin:10px 0 0;padding:6px 10px;border:1px solid var(--line);border-radius:var(--r);font-size:13px}
 .cats b{font-weight:600;margin-right:8px}
+.cats .cat-idx{all:unset;cursor:pointer;font:inherit}
+.cats .cat-idx:hover{text-decoration:underline}
 .crumb .cat,.cats .cat{all:unset;color:var(--link);cursor:pointer;font:inherit}
 .crumb .cat:hover,.cats .cat:hover{text-decoration:underline}
 .crumb .cat:focus-visible,.cats .cat:focus-visible{outline:2px solid var(--link);outline-offset:2px;border-radius:2px}

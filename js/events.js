@@ -100,6 +100,8 @@ document.addEventListener("click", ev => {
   if (d.notsame) { notSame(d.notsame, d.other); return; }
   if (d.refresh) { openEditor(d.refresh); saveEdit(); return; }
   if (d.dismiss) { dismissNotes(d.dismiss, d.field); return; }
+  if (d.navDel) { categoryAction("del", d.navDel); return; }
+  if (d.catUnmerge) { categoryAction("unmerge", d.catUnmerge); return; }
   if (d.cat !== undefined) { if (!S.world) return; S.view = { name: "category", cat: d.cat }; renderAll(); window.scrollTo({ top: 0 }); return; }
   if (d.focus) { S.focusEnt = d.focus; S.view = { name: "canon" }; renderAll(); return; }
   if (d.angleSave) { editAngle(d.angleSave, "label", document.querySelector(`[data-angle-label="${CSS.escape(d.angleSave)}"]`)?.value); return; }
@@ -188,6 +190,10 @@ document.addEventListener("click", ev => {
       break;
     }
     case "canon": S.view = { name: "canon" }; renderAll(); window.scrollTo({ top: 0 }); break;
+    case "cats": if (S.world) { S.view = { name: "categories" }; renderAll(); window.scrollTo({ top: 0 }); } break;
+    case "cat-merge": categoryAction("merge", $("#cmFrom")?.value || "", $("#cmTo")?.value || ""); break;
+    case "nav-add": categoryAction("add", $("#ndTitle")?.value || "", $("#ndCats")?.value || ""); break;
+    case "nav-restore": categoryAction("restore"); break;
     case "discovery-create": discoverWorld($("#discoveryDirection")?.value || ""); break;
     case "discovery-stop": S.discovery?.ctl?.abort(); if (S.gen && S.gen.key === S.discovery?.target) S.gen.ctl.abort(); break;
     case "angles-regen": regenAngles(); break;

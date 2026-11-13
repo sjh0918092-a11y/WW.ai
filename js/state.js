@@ -29,7 +29,7 @@ const Nav = {
     const q = new URLSearchParams(location.hash.slice(1));
     if (!q.has("view")) return null;
     const view = q.get("view");
-    if (!["home", "gset", "log", "article", "canon", "notfound", "discovery", "epilogue", "category"].includes(view)) return { view: "home" };
+    if (!["home", "gset", "log", "article", "canon", "notfound", "discovery", "epilogue", "category", "categories"].includes(view)) return { view: "home" };
     return { view, ...(q.get("cat") ? { cat: q.get("cat") } : {}), ...(q.get("world") ? { world: q.get("world") } : {}), ...(q.get("key") ? { key: q.get("key") } : {}), ...(q.get("title") ? { title: q.get("title") } : {}) };
   },
   write(replace = false, y = 0) {
