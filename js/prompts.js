@@ -157,7 +157,7 @@ function pagePrompt(w, key, rewriteDir = null, guide = "", angle = null, angleMo
     .map(([, o]) => `- ${o.title}${o.type ? " — " + o.type : ""}${o.summary ? ". " + o.summary.slice(0, 60) : ""}`).join("\n") || "(아직 없음)";
   const known = e.facts.length || e.mentions.length || e.summary;
   const target = known
-    ? `이미 다른 문서에서 확정된 내용이다. 반드시 일치시켜라.\n${e.type ? "유형: " + e.type + "\n" : ""}${e.summary ? "요약: " + e.summary + "\n" : ""}${e.facts.some(live) ? "확정 사실:\n" + e.facts.filter(live).map(f => "- " + factLine(f)).join("\n") + "\n" : ""}${e.mentions.some(live) ? "다른 문서에서의 언급:\n" + e.mentions.filter(live).map(m => `- 「${w.entities[m.from]?.title || "?"}」: "${m.text}"`).join("\n") : ""}`
+    ? `이미 다른 문서에서 확정된 내용이다. 반드시 일치시켜라.\n${e.type ? "유형: " + e.type + "\n" : ""}${e.summary ? "요약: " + e.summary + "\n" : ""}${e.facts.some(live) ? "확정 사실:\n" + promptFacts(w, key, e.facts.filter(live)).map(f => "- " + factLine(f)).join("\n") + "\n" : ""}${e.mentions.some(live) ? "다른 문서에서의 언급:\n" + promptMentions(w, key, e.mentions.filter(live)).map(m => `- 「${w.entities[m.from]?.title || "?"}」: "${m.text}"`).join("\n") : ""}`
     : e.src === "search" ? `검색창에서 직접 입력된 이름이며, 이 세계관의 어떤 문서에서도 언급된 적이 없다. 먼저 이 이름이 아래 셋 중 무엇인지 판정하고 그에 따라 쓴다.
 (가) 현실에도 있는 일반 명사나 고유명사(예: 참치, 우산, 파리, 커피, 나폴레옹): 현실의 의미를 그대로 문서의 주제로 삼는다. 일반적인 설명에 더해, 이 세계의 역사·산업·제도·문화가 그 대상과 맞닿는 지점을 섹션 일부(전체의 절반 이하)로 구체적으로 쓴다. 현실과 갈라진 시점 이후의 역사는 이 세계에 맞게 바꾼다. 이 단어를 세계관 고유의 은어나 전혀 다른 뜻으로 재해석하지 않는다.
 (나) 현실에는 없지만 이름으로 읽히는 말(인물명, 지명, 조직명, 작전명처럼 그럴듯한 조합): 이 세계 안의 새 항목으로 창작한다.
@@ -362,7 +362,7 @@ function checkPrompt(w, key) {
   const focus = docForCheck(p);   // 검사할 문서와 관련된 사실부터 넣는다. 최신순으로 자르면 기준이 되는 오래된 사실이 먼저 빠진다
   const ctx = keys.map(k => checkBrief(w, k, key, focus)).join("\n\n");
   const ok = src => refOK(src, p);
-  const own = [...w.entities[key].facts.filter(f => f.src !== key && live(f) && ok(f.src)).map(f => "- " + factLine(f)), ...w.entities[key].mentions.filter(m => m.from !== key && live(m) && ok(m.from)).map(m => `- 「${w.entities[m.from]?.title || "?"}」의 서술: ${m.text}`), ...relationsOf(w, key).filter(x => x.src !== key && live(x) && ok(x.src)).map(x => "- 관계: " + relLine(w, x))].join("\n");
+  const own = [...promptFacts(w, key, w.entities[key].facts.filter(f => f.src !== key && live(f) && ok(f.src)), focus).map(f => "- " + factLine(f)), ...promptMentions(w, key, w.entities[key].mentions.filter(m => m.from !== key && live(m) && ok(m.from)), focus).map(m => `- 「${w.entities[m.from]?.title || "?"}」의 서술: ${m.text}`), ...relationsOf(w, key).filter(x => x.src !== key && live(x) && ok(x.src)).map(x => "- 관계: " + relLine(w, x))].join("\n");
   return `다음 위키 문서가 세계관의 확정 설정과 어긋나는지 검사하라. 문서 안의 앞뒤 모순은 다른 검사가 따로 보므로 여기서는 보지 않는다. 단순히 새로 추가된 정보나 해석의 차이는 문제 삼지 마라. 문체, 어투, 표현 방식은 지적하지 않는다.
 
 지적하기 전에 다음을 모두 확인한다. 하나라도 아니면 지적하지 않는다.

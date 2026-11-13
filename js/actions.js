@@ -99,7 +99,7 @@ async function mergeEntities(w, pairs) {
     if (dp) { delete S.pages[dk]; removed.push(dk); }
     for (const f of d.facts) if (!b.facts.some(x => x.t === f.t)) b.facts.push(f);
     for (const x of d.mentions) if (!b.mentions.some(y => y.from === x.from && y.text === x.text)) b.mentions.push(x);
-    if (b.facts.length > 24) b.facts.splice(0, b.facts.length - 24);
+    compactFacts(b); compactMentions(b);   // 합친 뒤에도 지우지 않는다
     delete w.entities[dk];
     w.aliases[dk] = bk;
   }

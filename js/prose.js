@@ -13,8 +13,8 @@ ${isStory(w) ? storyBlock(w, p.key, true) + "\n" + secretsBlock(w, "write") : ""
 ## 기준 문서
 ${docForCheck(p)}
 ## 이 대상에 대해 확정된 사실과 관계
-${(e?.facts || []).filter(live).map(f => factLine(f)).join("\n")}
-${(e?.mentions || []).filter(live).map(m => `「${w.entities[m.from]?.title || "?"}」: ${m.text}`).join("\n")}
+${e ? promptFacts(w, p.key, e.facts.filter(live)).map(f => factLine(f)).join("\n") : ""}
+${e ? promptMentions(w, p.key, e.mentions.filter(live)).map(m => `「${w.entities[m.from]?.title || "?"}」: ${m.text}`).join("\n") : ""}
 ${relationsOf(w, p.key).filter(live).map(r => relLine(w, r)).join("\n")}
 ## 관련 항목 참고
 ${related(w, p.key).map(k => entityBrief(w, k, null)).join("\n\n") || "(없음)"}

@@ -160,14 +160,40 @@ const cleanLinks = (w, text) => String(text ?? "").replace(LINK_RE, (m, a, b) =>
   const label = b || (TYPE_SUFFIX.test(norm(a)) ? "" : norm(a));
   return `[[${c}${label && label !== c ? "|" + label : ""}]]`;
 });
+/* 사실과 언급은 저장할 때 지우지 않는다. 프롬프트에 넣을 것은 pickRelevant가 고른다.
+   저장 상한을 넘으면 가장 오래된 기록을 같은 문서에서 온 다음 기록과 한 줄로 합친다(출처가 하나로 남아 문서별 정리가 그대로 된다).
+   합칠 짝이 없으면 상한을 넘어도 그대로 둔다 */
+const FACT_CAP = 200, MENTION_CAP = 300;
+function compactLedger(list, srcOf, field, cap) {
+  while (list.length > cap) {
+    let merged = false;
+    for (let i = 0; i < list.length && !merged; i++) {
+      const a = list[i]; if (srcOf(a) === "user" || a.sup) continue;   // 사용자가 정한 것, 대체된 것은 합치지 않는다
+      const j = list.findIndex((b, x) => x > i && !b.sup && srcOf(b) === srcOf(a)); if (j < 0) continue;
+      a[field] = a[field] + " / " + list[j][field]; a.merged = (a.merged || 1) + (list[j].merged || 1);
+      list.splice(j, 1); merged = true;
+    }
+    if (!merged) return;
+  }
+}
+const compactFacts = e => compactLedger(e.facts, f => f.src, "t", FACT_CAP);
+const compactMentions = e => compactLedger(e.mentions, m => m.from, "text", MENTION_CAP);
 function addFact(e, t, src) {
   t = stripMarks(t).slice(0, 240); if (!t || e.facts.some(f => f.t === t)) return;
-  e.facts.push({ t, src }); if (e.facts.length > 24) e.facts.splice(e.facts.findIndex(f => f.src !== "user"), 1);
+  e.facts.push({ t, src }); compactFacts(e);
 }
 function addMention(e, from, text) {
   if (!text || e.mentions.some(m => m.from === from && m.text === text)) return;
-  e.mentions.push({ from, text }); if (e.mentions.length > 6) e.mentions.shift();
+  e.mentions.push({ from, text }); compactMentions(e);
 }
+/* 프롬프트에 넣을 사실·언급. 사용자가 정한 사실은 언제나 넣고, 나머지는 pickRelevant로 n개까지 */
+const FACT_PROMPT_N = 40, MENTION_PROMPT_N = 30;
+function promptFacts(w, k, list, focus, n = FACT_PROMPT_N) {
+  const user = list.filter(f => f.src === "user"), rest = list.filter(f => f.src !== "user");
+  const keep = new Set([...user, ...pickRelevant(w, k, rest, f => f.t, n, focus)]);
+  return list.filter(f => keep.has(f));
+}
+const promptMentions = (w, k, list, focus, n = MENTION_PROMPT_N) => pickRelevant(w, k, list, m => m.text, n, focus);
 /* 링크가 걸린 문장부터 같은 문단의 뒤 문장 두 개까지 (다음 문서가 맥락을 잃지 않게) */
 function sentenceAround(t, idx, len) {
   const stop = /[.!?。\n]/, end = /[.!?。]/; let a = idx, b = idx + len, n = 0;

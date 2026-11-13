@@ -76,7 +76,7 @@ function conflictContext(w, k, linkKeys) {
   }
   n = 0;
   for (const m of w.entities[k].mentions) {
-    if (m.from === k || !active(m)) continue;
+    if (m.from === k || !active(m) || n >= 40) continue;
     n++; refs["M" + n] = { kind: "mention", m };
     M.push(`M${n}. 「${w.entities[m.from]?.title || "?"}」 본문: "${m.text}"${S.pages[m.from]?.editedAt ? " (사용자가 직접 수정한 문서)" : ""}`);
   }

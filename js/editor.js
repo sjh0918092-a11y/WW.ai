@@ -38,8 +38,8 @@ ${isStory(w) ? storyBlock(w, ed.key, true) : ""}
 ${toneBlock(w)}
 ## 다른 문서가 확정한 사실
 ${entityBrief(w, ed.key, ed.key)}
-${w.entities[ed.key].facts.filter(f => live(f) && f.src !== ed.key).map(f => factLine(f)).join("\n")}
-${w.entities[ed.key].mentions.filter(m => live(m) && m.from !== ed.key).map(m => m.text).join("\n")}
+${promptFacts(w, ed.key, w.entities[ed.key].facts.filter(f => live(f) && f.src !== ed.key)).map(f => factLine(f)).join("\n")}
+${promptMentions(w, ed.key, w.entities[ed.key].mentions.filter(m => live(m) && m.from !== ed.key)).map(m => m.text).join("\n")}
 ${relationsOf(w, ed.key).filter(live).map(r => relLine(w, r)).join("\n")}
 ${related(w, ed.key).map(k => entityBrief(w, k, ed.key)).join("\n\n")}
 ## 전체 문서 (앞뒤 흐름을 위한 참고)
