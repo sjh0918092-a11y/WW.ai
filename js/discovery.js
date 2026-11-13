@@ -132,7 +132,9 @@ async function discoverWorld(direction = "") {
     discard(); v.error = e.code === "cancelled" ? "새 문서 생성을 중단했습니다." : (e.message || errMsg(e));
     if (S.world === w && S.discovery === v) { S.genErr = null; S.view = { name: "discovery" }; renderAll(); }
   } finally {
-    v.busy = false; if (S.discovery === v) { renderTop(); if (S.view.name === "discovery" && S.world === w) renderMain(); }
+    v.busy = false;
+    // 완성된 문서는 discovery가 끝나기 전에 그려지므로(이미지·편집 버튼이 잠긴 채) 끝난 뒤 다시 그린다
+    if (S.discovery === v) { renderTop(); if (S.world === w && (S.view.name === "discovery" || (S.view.name === "article" && S.view.key === v.target))) renderMain(); }
   }
 }
 function discoveryHtml() {
