@@ -26,6 +26,24 @@ function parseCats(raw) {
   }
   return out.slice(0, 8);
 }
+/* 소속·유형을 고르는 기준. 문서 작성(catGuide)과 다시 받기(catRetryPrompt)가 함께 쓴다 */
+const CAT_AXIS_RULES = `- 소속: 이 항목이 속한 가장 넓은 곳(국가나 그에 맞먹는 세력)을 첫째로 붙인다. 국가 안의 군·부대·기관·회사·학교에 속하면 그 국가를 먼저 붙이고, 그 조직은 둘째로만 붙인다(예: 'A국 해군' 소속이면 ["A국", "A국 해군"]). 해당하면 1개는 반드시 붙인다(최대 2개).
+- 유형: 이 항목이 무엇인지 나타내는 넓은 말. 원안과 핵심 규칙이 만든 이 세계 고유의 존재·신분·계층(이 세계관의 중심 소재)에 해당하는 항목이면 그 이름을 유형의 첫째로 쓴다. 현실에도 있는 직업이나 범주는 그다음이다. 해당하면 1개는 반드시 붙인다(최대 2개).`;
+/* 소속이 "X 육군"처럼 이 세계의 국가나 기존 소속 분류 X로 시작하면 X를 첫째 소속으로 보탠다(넓은 소속이 빠지지 않게). 생성 응답에만 쓴다 */
+function widenAffil(w, raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const names = parseCats({ 소속: Array.isArray(raw.소속) ? raw.소속 : typeof raw.소속 === "string" ? [raw.소속] : [] }).map(x => x.name);
+  if (!names.length) return raw;
+  const st = catStats(w), wide = new Set([...Object.values(w.entities).filter(o => o.type === "국가").map(o => norm(o.title)), ...[...st].filter(([, s]) => s.axis === "소속").map(([c]) => c)]);
+  const out = [];
+  for (const c of names) {
+    const parent = [...wide].filter(x => x.length >= 2 && c !== x && c.startsWith(x + " ")).sort((a, b) => b.length - a.length)[0];
+    if (parent && !out.includes(parent) && !names.includes(parent)) out.push(parent);
+    if (!out.includes(c)) out.push(c);
+  }
+  raw.소속 = out.slice(0, CAT_AXIS_MAX.소속);
+  return raw;
+}
 /* 축별 응답인데 소속이나 유형이 비었는가 */
 const axisCatsMissing = raw => !!raw && typeof raw === "object" && !Array.isArray(raw) && (!parseCats({ 소속: raw.소속 }).length || !parseCats({ 유형: raw.유형 }).length);
 function catRetryPrompt(w, key, out) {
@@ -33,9 +51,11 @@ function catRetryPrompt(w, key, out) {
   const box = (Array.isArray(out?.infobox) ? out.infobox : []).filter(r => r && r.label).slice(0, 10).map(r => `${r.label}: ${stripMarks(String(r.value || ""))}`).join("\n");
   return `가상 세계관 위키 「${w.title}」의 문서 「${e.title}」에 붙일 분류 중 소속과 유형을 정한다.
 정의: ${stripMarks(String(out?.summary || e.summary || ""))}
-${box ? "인포박스:\n" + box + "\n" : ""}지금 붙은 분류: ${JSON.stringify(out?.categories || {})}
-- 소속: 이 항목이 속한 곳(국가, 조직 등). 해당하면 1개는 반드시 붙인다(최대 2개).
-- 유형: 이 항목이 무엇인지 나타내는 넓은 말. 해당하면 1개는 반드시 붙인다(최대 2개). 유형 이름(${TYPES.join(", ")})은 쓰지 않는다.
+${box ? "인포박스:\n" + box + "\n" : ""}원안: ${String(w.seed || "").slice(0, 600)}
+핵심 규칙: ${(w.rules || []).slice(0, 8).join(" / ") || "(없음)"}
+지금 붙은 분류: ${JSON.stringify(out?.categories || {})}
+${CAT_AXIS_RULES}
+- 유형 이름(${TYPES.join(", ")})은 쓰지 않는다.
 - 같은 뜻이면 아래 기존 이름을 글자 그대로 쓴다. 같은 뜻의 분류가 이미 둘 이상 있으면 문서 수가 많은 쪽 하나만 쓴다. 합친 분류("○○의 △△")는 만들지 않는다.
 - 정말 해당하는 것이 없으면 빈 배열로 둔다.
 기존 소속 분류(괄호는 문서 수): ${list("소속")}

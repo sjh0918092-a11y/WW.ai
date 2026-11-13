@@ -86,6 +86,12 @@ const ax = (o) => Object.entries(o).flatMap(([axis, xs]) => xs.map(name => ({ na
     assert.deepStrictEqual(many.rows, [['1950년대', 4], ['1960년대', 3], ['1970년대', 3], ['1980년대', 2], ['연도 미상', 1]]);
     pass('구성원이 12개를 넘으면 연대별로 줄을 나누고, 연도를 모르는 항목은 맨 끝 줄에 둔다');
 
+    const wide = await page.evaluate(() => ({ a: widenAffil(S.world, { 소속: ['알파국 육군'], 유형: ['기사'] }).소속, b: widenAffil(S.world, { 소속: ['베타국 기사단', '다른 곳'] }).소속, c: widenAffil(S.world, { 소속: ['알파국', '알파국 육군'] }).소속, d: widenAffil(S.world, { 소속: ['감마 상회'] }).소속, e: widenAffil(S.world, { 소속: ['알파국군'] }).소속, g: catGuide(S.world, null), r: catRetryPrompt(S.world, keyOf('사랑'), { categories: {} }) }));
+    assert.deepStrictEqual([wide.a, wide.b, wide.c, wide.d, wide.e], [['알파국', '알파국 육군'], ['베타국', '베타국 기사단'], ['알파국', '알파국 육군'], ['감마 상회'], ['알파국군']]);
+    for (const t of [wide.g, wide.r]) assert(t.includes('가장 넓은 곳(국가나 그에 맞먹는 세력)을 첫째로') && t.includes('이 세계 고유의 존재·신분·계층') && !t.includes('예: 군인'));
+    assert(wide.r.includes('원안: ') && wide.r.includes('핵심 규칙: '));
+    pass('소속이 "국가 + 조직" 이름으로만 오면 그 국가(세계의 국가 항목이나 기존 소속 분류)를 첫째 소속으로 보태고, 분류 지침은 넓은 소속과 세계 고유의 유형을 먼저 고르게 한다');
+
     // 분류 합치기: 병사 → 군인
     await page.click('#side [data-act="cats"]'); await page.waitForSelector('#cmFrom');
     assert(await page.locator('.catidx h2', { hasText: '소속' }).count() && await page.locator('.catidx h2', { hasText: '축 미정' }).count());

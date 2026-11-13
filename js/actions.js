@@ -357,7 +357,8 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
     const sceneUsed = (angle || novelAngle) && typeof out?.sceneUsed === "string" ? norm(out.sceneUsed).slice(0, 200) : "";
     if (out && typeof out === "object") { delete out.angleUsed; delete out.sceneUsed; }
     if (out && typeof out === "object") delete out.navboxes;   // 틀은 분류에서 계산한다. 새 문서가 틀을 만들지 않는다
-    if (out && typeof out === "object") { await ensureAxisCats(w, k, out, { signal: ctl.signal }); if (ctl.signal.aborted) throw { code: "cancelled" }; }   // 소속이나 유형이 비었으면 한 번 다시 받는다
+    if (out && typeof out === "object") widenAffil(w, out.categories);   // "X 육군"만 왔으면 국가 X를 첫째 소속으로 보탠다
+    if (out && typeof out === "object") { await ensureAxisCats(w, k, out, { signal: ctl.signal }); widenAffil(w, out.categories); if (ctl.signal.aborted) throw { code: "cancelled" }; }   // 소속이나 유형이 비었으면 한 번 다시 받는다
     const page = integrate(w, k, out);
     delete page.angleUsed; delete page.sceneUsed;
     if (oldPage?.shortStories) page.shortStories = oldPage.shortStories;
@@ -450,7 +451,7 @@ function integrate(w, key, out) {
   }
   for (const [hk, h] of Object.entries(hints)) {   // 아직 문서가 없는 항목의 소속·유형: 틀에 빨간 링크로 들어간다
     const o = w.entities[hk]; if (!o || o.page || hk === key) continue;
-    const hc = parseCats({ 소속: h.소속, 유형: h.유형 }); if (!hc.length) continue;
+    const hc = parseCats({ 소속: widenAffil(w, { 소속: h.소속 }).소속, 유형: h.유형 }); if (!hc.length) continue;
     o.cats = [...(o.cats || []), ...hc.filter(x => !(o.cats || []).some(y => y.name === x.name))].slice(0, 4);
   }
   for (const f of (Array.isArray(out.facts) ? out.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = kOf(w, f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), key); }
