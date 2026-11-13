@@ -363,6 +363,7 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
     delete page.angleUsed; delete page.sceneUsed;
     if (oldPage?.shortStories) page.shortStories = oldPage.shortStories;
     if (oldPage?.portrait) page.portrait = oldPage.portrait;   // 사용자가 올린 이미지는 AI 다시 쓰기와 별개로 유지
+    if (page.type === "인물" && !page.motifs && cleanMotifs(oldPage?.motifs)) page.motifs = cleanMotifs(oldPage.motifs);   // 소재를 빼먹은 다시 쓰기는 이전 기록을 둔다
     if (isStory(w)) {   // 새로 쓰는 문서는 장 섹션 없이 현재 장 시점으로 처음부터 쓴다
       const st = w.story; page.baseAsOf = page.syncedTo = st.chapter;
       page.storyNotice = storyOn(w) && (k === st.protagonistKey || (curCh(w).affected || []).some(a => a.key === k));
@@ -422,6 +423,12 @@ function rollPersona(rand = Math.random) {
 }
 const BIRTH_RE = /생일|출생|태어|탄생|\d{1,2}\s*월\s*\d{1,2}\s*일\s*생/;
 const hasBirth = e => [...(e?.facts || []).filter(live).map(f => f.t), ...(e?.mentions || []).filter(live).map(m => m.text)].some(t => BIRTH_RE.test(String(t || "")));
+/* 인물 문서가 성격을 보여 준 일화의 중심 소재(짧은 명사 1~3개). 없거나 깨졌으면 null */
+function cleanMotifs(v) {
+  if (!Array.isArray(v)) return null;
+  const r = []; for (const x of v) { if (typeof x !== "string") continue; const t = norm(stripMarks(x)).slice(0, 20); if (t && !r.includes(t)) r.push(t); if (r.length >= 3) break; }
+  return r.length ? r : null;
+}
 function integrate(w, key, out) {
   const e = w.entities[key];
   if (Array.isArray(out?.sections)) for (const s of out.sections) if (s && typeof s.body === "string") s.body = cleanLinks(w, unglueLinks(s.body));
@@ -482,7 +489,8 @@ function integrate(w, key, out) {
     }
     w.navboxes[key + "-" + i] = { title, rows, members, src: key, srcTitle: e.title };
   });
-  return { key, title: e.title, type, summary, categories, ...(catAxes.length ? { catAxes } : {}), notices, infobox, sections, links, createdAt: Date.now(), style: w.style, check: null,
+  const motifs = type === "인물" ? (cleanMotifs(out.motifs) || (S.world === w ? cleanMotifs(S.pages[key]?.motifs) : null)) : null;   // 응답에 없으면(직접 수정, 고침) 이전 기록을 둔다
+  return { key, title: e.title, type, summary, categories, ...(catAxes.length ? { catAxes } : {}), notices, infobox, sections, links, createdAt: Date.now(), style: w.style, check: null, ...(motifs ? { motifs } : {}),
     ...(S.world === w && S.pages[key]?.shortStories ? { shortStories: S.pages[key].shortStories } : {}),
     ...(S.world === w && S.pages[key]?.portrait ? { portrait: S.pages[key].portrait } : {}) };
 }
