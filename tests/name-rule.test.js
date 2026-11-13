@@ -70,6 +70,14 @@ const NAME_PROMPTS = {
     const few = await page.evaluate(() => linkNameRule());
     for (const t of ["몇 안 되는 인물이나 개체를 수로만 말하지 않는다", "'A국은 ○○ 2기를 운용 중이다'", "다섯 이하면 처음 말할 때 하나하나 이름을 밝히고 [[링크]]한다", "'A국은 ○○ 2기([[이름A]], [[이름B]])를 운용 중이다'"]) assert(few.includes(t), t);
     pass('몇 안 되는 인물·개체를 수로만 말하지 말고 하나하나 이름과 링크를 붙이라는 지침이 이름 지침에 들어 있다');
+    const al = await page.evaluate(() => {
+      const out = { sections: [{ heading: '개요', level: 1, body: '이 기지에는 하야시 미오와 사카모토 렌이 배치되어 있다. 하야시 미오는 1번기를 맡았다. 오하야시 미오카는 다른 사람이다.' }, { heading: '경과', level: 1, body: '[[기지]]에서 나카무라 지로가 지휘했다.' }],
+        infobox: [], relations: [{ a: '하야시 미오', b: '사카모토 렌', type: '동료', rel: '동료' }], facts: [{ about: '나카무라 지로', fact: '지휘관' }], events: [{ name: '요격', participants: ['하야시 미오', '없는 이름'] }], newEntities: [{ title: '기지', type: '지명' }] };
+      const n = autoLink(S.world, keyOf('기지'), out); return { n, b0: out.sections[0].body, b1: out.sections[1].body };
+    });
+    assert.equal(al.b0, '이 기지에는 [[하야시 미오]]와 [[사카모토 렌]]이 배치되어 있다. 하야시 미오는 1번기를 맡았다. 오하야시 미오카는 다른 사람이다.');
+    assert.equal(al.b1, '[[기지]]에서 [[나카무라 지로]]가 지휘했다.'); assert.equal(al.n, 3);
+    pass('관계·사실·사건 참가자로 이름을 댄 새 인물이 본문에 링크 없이 처음 나오면 그 자리에 링크한다(자기 자신, 본문에 없는 이름, 다른 낱말 속 글자는 건드리지 않음)');
     const disc = await page.evaluate(() => discoveryPrompt(S.world, '', [], null));
     assert(disc.includes('대상이 인물이면 title은 본명 풀 네임으로 쓴다') && disc.includes('summary와 aliases에 쓴다'));
     pass('랜덤 서핑은 인물이면 title을 본명 풀 네임으로, 코드명은 summary에 쓰게 한다');

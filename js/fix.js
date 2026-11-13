@@ -12,11 +12,19 @@ function autoLink(w, key, out) {
     if (k === key || linked.has(k)) continue;
     for (const n of namesOf(o.title)) if (!/^[㐀-鿿]+$/.test(n)) cands.push({ k, n, title: o.title });
   }
+  /* 이 문서가 관계·사실·사건 참가자·새 항목으로 이름을 댄 새 대상(아직 항목이 없는 것)도, 본문에 링크 없이 나오면 처음 나온 곳에 링크한다 */
+  const self = w.entities[key]?.title, named = new Set();
+  const nameOf = t => { t = norm(stripMarks(String(t ?? ""))); if (t.length >= 2 && t.length <= 40 && t !== self && !/[\[\]|]/.test(t)) named.add(t); };
+  for (const r of Array.isArray(out.relations) ? out.relations : []) { nameOf(r?.a); nameOf(r?.b); }
+  for (const f of Array.isArray(out.facts) ? out.facts : []) nameOf(f?.about);
+  for (const e of Array.isArray(out.events) ? out.events : []) for (const x of Array.isArray(e?.participants) ? e.participants : []) nameOf(x);
+  for (const x of Array.isArray(out.newEntities) ? out.newEntities : []) nameOf(x?.title);
+  for (const t of named) { const k = kOf(w, t); if (k === key || linked.has(k) || w.entities[k] || cands.some(c => c.k === k)) continue; cands.push({ k, n: t, title: t }); }
   cands.sort((a, b) => b.n.length - a.n.length || (b.n === b.title) - (a.n === a.title));
   const inLink = (t, i) => t.lastIndexOf("[[", i) > t.lastIndexOf("]]", i);
   let added = 0;
   for (const c of cands) {
-    if (linked.has(c.k) || added >= 12) continue;
+    if (linked.has(c.k) || added >= 20) continue;
     for (const sec of out.sections) {
       if (!sec || typeof sec.body !== "string") continue;
       let i = sec.body.indexOf(c.n);
