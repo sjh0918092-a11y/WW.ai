@@ -131,7 +131,7 @@ function canonHtml() {
     <h2>항목별 확정 사실</h2>
     <div class="tabs">${tab("all", "전체", ents.length)}${tab("done", "작성됨", ents.filter(x => x[1].page).length)}${tab("stub", "미작성", ents.filter(x => !x[1].page).length)}</div>
     ${shown.map(([k, o]) => `<details class="ent" id="ent-${k}"><summary><span class="et">${esc(o.title)}</span><span class="st ${o.page ? "on" : "off"}">${o.page ? "작성됨" : "미작성"}</span><span class="em">${esc(o.type || "유형 미정")} · 사실 ${o.facts.length} · 언급 ${o.mentions.length}</span></summary>
-      ${o.summary ? `<p style="margin:6px 0 0 22px">${esc(o.summary)}</p>` : ""}
+      ${o.summary ? `<p style="margin:6px 0 0 22px">${esc(o.summary)}</p>` : ""}${S.pages[k]?.angle ? `<p class="src" style="margin:4px 0 0 22px" data-angle-of="${k}">작성 각도: ${esc(angleName(w, S.pages[k].angle))}</p>` : ""}
       <ul>${o.facts.map(x => `<li>${x.sup ? `<del>${esc(x.t)}</del>` : esc(x.t)} <span class="src">· ${esc(srcTitle(w, x.src, "사용자"))}${S.pages[x.src]?.editedAt ? " (직접 수정)" : ""}${x.sup ? ` · 「${esc(w.entities[x.sup.by]?.title || "?")}」 수정으로 대체됨` : ""}</span></li>`).join("")}${o.mentions.map(x => `<li>${x.sup ? `<del>“${esc(x.text)}”</del>` : `“${esc(x.text)}”`} <span class="src">· 「${esc(w.entities[x.from]?.title || "?")}」${x.sup ? ` · 「${esc(w.entities[x.sup.by]?.title || "?")}」 수정으로 대체됨` : ""}</span></li>`).join("")}</ul>
       <div style="margin:4px 0 6px 22px">${linkHtml(o.title, o.page ? "문서 열기" : "문서 작성하기")}</div></details>`).join("")}
     <section id="worldExport" aria-labelledby="worldExportTitle" style="margin-top:28px;border-top:1px solid var(--line);padding-top:8px">

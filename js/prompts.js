@@ -147,7 +147,7 @@ function catGuide(w, key) {
 ${have.length ? `이 세계관에 이미 있는 분류(괄호는 붙은 문서 수, 많이 쓰인 순): ${have.map(([c, k]) => `${c}(${k})`).join(", ")}
 목록 중 좁힌 분류(예: "○○의 △△")보다 넓은 분류를 우선해 고른다.` : "이 세계관에는 아직 분류가 없다. 다른 문서에도 두루 쓰일 넓은 분류로 만든다."}`;
 }
-function pagePrompt(w, key, rewriteDir = null, guide = "") {
+function pagePrompt(w, key, rewriteDir = null, guide = "", angle = null) {
   const e = w.entities[key];
   const ty = TYPES.includes(e.type) ? e.type : "";
   const rel = related(w, key);
@@ -183,7 +183,7 @@ ${guide ? `## 사용자가 요청한 방향
 ${guide}
 이 방향을 최우선으로 따르되, 위의 확정 내용(핵심 규칙, 연표, 사용자 확정 설정, 다른 문서의 사실과 언급)과 충돌하는 부분은 따르지 않는다. 방향이 분량이나 구성에 관한 것이면 아래 작성 규칙의 분량·구성보다 우선한다.
 
-` : ""}${rewriteDir !== null ? `## 다시 쓰기
+` : ""}${angle && rewriteDir === null ? pageAngleBlock(angle, guide) + "\n\n" : ""}${rewriteDir !== null ? `## 다시 쓰기
 이 문서는 이전 버전을 폐기하고 처음부터 새로 쓰는 것이다. 위에 적힌 확정 내용은 모두 다른 문서나 사용자가 정한 것이므로 반드시 지키고, 그 밖의 부분은 이전과 달라도 된다.
 ${rewriteDir ? `사용자가 요청한 방향: ${rewriteDir}\n이 방향을 최우선으로 따르되, 확정 내용(핵심 규칙, 연표, 사용자 확정 설정, 다른 문서의 사실과 언급)과 충돌하는 부분은 따르지 않는다. 방향이 분량이나 구성에 관한 것이면 아래 작성 규칙의 분량·구성보다 우선한다.` : ""}
 
@@ -302,7 +302,7 @@ ${showFor(ty, ["인물"]) ? `## 인물의 성격과 특징\n${TRAIT_RULE}\n\n${(
 
 ## 출력
 JSON 객체 하나만 출력:
-{"title":"${e.title}","type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의(링크 없이)","categories":["분류 2~4개"],"notices":["..."],"infobox":[{"label":"...","value":"..."}],"sections":[{"heading":"개요","level":1,"body":"..."},{"heading":"생애","level":1,"body":""},{"heading":"1959년 데뷔","level":2,"body":"..."}],"facts":[{"about":"항목 제목","fact":"이 문서에서 확정한, 그 항목에 관한 사실 한 문장"}],"relations":[{"a":"인물 제목","b":"인물 제목","rel":"관계 이름(예: 스승과 제자, 맞수, 의절한 부자)","story":"관계가 어떻게 시작해 어떻게 변했는지 한두 문장, 시점 포함"}],"navboxes":[{"title":"틀 제목(예: ○○ 구성원)","rows":[{"label":"행 이름(예: 창설 대원)","items":["[[이름]] — 1번, 역할"]}]}],"newEntities":[{"title":"새로 링크한 항목 제목","type":"유형","summary":"한 문장 정의"}],"timeline":[{"year":"연도","event":"이 문서에서 새로 확정한 주요 사건"}]}
+{"title":"${e.title}",${angle && rewriteDir === null ? '"angleUsed":"true 또는 false(이번 각도를 반영했는가)",' : ""}"type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의(링크 없이)","categories":["분류 2~4개"],"notices":["..."],"infobox":[{"label":"...","value":"..."}],"sections":[{"heading":"개요","level":1,"body":"..."},{"heading":"생애","level":1,"body":""},{"heading":"1959년 데뷔","level":2,"body":"..."}],"facts":[{"about":"항목 제목","fact":"이 문서에서 확정한, 그 항목에 관한 사실 한 문장"}],"relations":[{"a":"인물 제목","b":"인물 제목","rel":"관계 이름(예: 스승과 제자, 맞수, 의절한 부자)","story":"관계가 어떻게 시작해 어떻게 변했는지 한두 문장, 시점 포함"}],"navboxes":[{"title":"틀 제목(예: ○○ 구성원)","rows":[{"label":"행 이름(예: 창설 대원)","items":["[[이름]] — 1번, 역할"]}]}],"newEntities":[{"title":"새로 링크한 항목 제목","type":"유형","summary":"한 문장 정의"}],"timeline":[{"year":"연도","event":"이 문서에서 새로 확정한 주요 사건"}]}
 relations에는 이 문서가 새로 확정한 인물 사이의 관계를 넣는다. 이 항목이 인물이면 이 문서에 실제로 나온 인물과의 주요 관계를 넣는다(rel 예: 동료, 스승과 제자, 부부, 부녀, 의절한 형제). 관계를 채우려고 새 인물이나 연인을 지어내지 않는다. 이미 확정된 관계를 그대로 반복하지 말고, 새로 정한 관계나 관계의 새로운 국면만 넣는다. a와 b는 이 문서의 제목이거나 이 문서가 링크한 항목의 제목을 글자 그대로 쓴다. 인물이 아닌 항목만 다룬 문서라면 빈 배열.
 ${catGuide(w, key)} sections의 level은 1(큰 섹션) 또는 2(바로 앞 큰 섹션의 하위 섹션)이며, 섹션 번호는 쓰지 않는다.
 facts에는 이 문서가 링크한 항목 중 중요한 것(인물, 조직, 사건, 장소 위주) 6~10개에 대해 1개씩 넣되, 이 문서의 절정이나 큰 사건에 등장한 항목은 빠짐없이 포함해 그 사건에서 무엇을 했고 어떻게 되었는지(쓴 무기나 수단, 생사, 결과)를 사실로 남긴다. 그리고 「${e.title}」 자체에 대한 핵심 사실 3~6개를 넣는다. newEntities에는 위 '이미 존재하는 항목' 목록에 없던 링크 대상을 모두 넣되, summary는 40자 안팎의 한 문장으로 짧게 쓴다. timeline에는 이 문서에서 새로 확정한 사건을 1~3개 넣는다. 시간과 무관해 보이는 항목이라도 도입, 발견, 변화, 사고의 시점을 정한다. 이미 연표에 있는 사건은 다시 넣지 않는다.`;

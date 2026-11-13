@@ -294,7 +294,8 @@ async function generatePage(k, rewrite, direction, novel = false) {
   let backup = null, oldPage = null;
   if (rewrite) { oldPage = S.pages[k]; backup = prepareRewrite(w, k); delete S.pages[k]; }
   const ctl = new AbortController();
-  S.gen = { key: k, wid: w.id, title: e.title, raw: "", t0: performance.now(), ctl, rewrite: !!rewrite, direction: direction || "" };
+  const angle = !rewrite && !novel ? pickAngle(w, Math.random, { person: e.type === "인물" }) : null;   // 랜덤 서핑은 선정 단계에서 따로 고른다
+  S.gen = { key: k, wid: w.id, title: e.title, raw: "", t0: performance.now(), ctl, rewrite: !!rewrite, direction: direction || "", angle };
   S.genErr = null; S.confirmRewrite = null; S.view = { name: "article", key: k };
   renderAll(); window.scrollTo({ top: 0 });
   try {
@@ -303,7 +304,7 @@ async function generatePage(k, rewrite, direction, novel = false) {
       try { const t = await detectTone(w); if (t) { w.tone = t; toast(`분위기를 「${t.label}」(으)로 판별했습니다. 설정 노트에서 고칠 수 있습니다.`); } } catch {}
       if (ctl.signal.aborted) throw { code: "cancelled" };
     }
-    const out = await callJson("page", pagePrompt(w, k, rewrite ? (direction || "") : null, rewrite ? "" : (direction || "")), { signal: ctl.signal, modelTier: "default", ...PAGE_MODEL, onRetry: r => { if (S.gen) { S.gen.retry = r; updateGenLive(); } }, onText: ({ text }) => { if (S.gen) { S.gen.raw = text; updateGenLive(); } } }, { title: e.title, type: TYPES.includes(e.type) ? e.type : "", ents: Object.keys(w.entities).length });
+    const out = await callJson("page", pagePrompt(w, k, rewrite ? (direction || "") : null, rewrite ? "" : (direction || ""), angle), { signal: ctl.signal, modelTier: "default", ...PAGE_MODEL, onRetry: r => { if (S.gen) { S.gen.retry = r; updateGenLive(); } }, onText: ({ text }) => { if (S.gen) { S.gen.raw = text; updateGenLive(); } } }, { title: e.title, type: TYPES.includes(e.type) ? e.type : "", ents: Object.keys(w.entities).length });
     if (out && Object.prototype.hasOwnProperty.call(out, "redirect")) {
       if (novel) throw { code: "discovery_duplicate", existing: out.redirect };
       if (ctl.signal.aborted) throw { code: "cancelled" };
@@ -335,7 +336,10 @@ async function generatePage(k, rewrite, direction, novel = false) {
     autoLink(w, k, out);   // 링크가 빠진 기존 항목 이름은 조용히 링크한다
     const searched = !!e.searched; delete e.searched;
     if (Array.isArray(out?.sections)) for (const s of out.sections) if (s) delete s.ch;   // 장 표시는 앱이 붙인다
+    const angleUsed = !!angle && (out?.angleUsed === true || out?.angleUsed === "true");
+    if (out && typeof out === "object") delete out.angleUsed;
     const page = integrate(w, k, out);
+    delete page.angleUsed;
     if (oldPage?.shortStories) page.shortStories = oldPage.shortStories;
     if (oldPage?.portrait) page.portrait = oldPage.portrait;   // 사용자가 올린 이미지는 AI 다시 쓰기와 별개로 유지
     if (isStory(w)) {   // 새로 쓰는 문서는 장 섹션 없이 현재 장 시점으로 처음부터 쓴다
@@ -349,8 +353,9 @@ async function generatePage(k, rewrite, direction, novel = false) {
     if (S.world === w) S.pages[k] = page;
     const pre = GS.preCheck !== false && S.world === w ? await preCheck(w, k, page) : null;   // 보여 주기 전에 검사하고 고친다
     const fin = pre?.page || page;
+    if (angleUsed) fin.angle = angle.id;
     S.gen = null;
-    try { await Store.savePage(w.id, fin); for (const x of cleared) if (S.pages[x] && x !== k) await Store.savePage(w.id, S.pages[x]); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
+    try { await Store.savePage(w.id, fin); for (const x of cleared) if (S.pages[x] && x !== k) await Store.savePage(w.id, S.pages[x]); if (!novel && !rewrite) noteAngleUse(w, angleUsed ? angle : null); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
     afterGen(k, true);
     if (S.world === w && S.pages[k] === fin) {
       if (pre?.fixed) { toast(`설정과 어긋난 ${pre.fixed}곳을 고쳐서 보여 드립니다.`); bgSync(k); }   // 확정 사실만 정리하며 검사는 다시 하지 않는다

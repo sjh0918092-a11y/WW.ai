@@ -18,13 +18,13 @@ let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
  const C=(id,axis,label,consequence,extra={})=>({id,axis,label,consequence,surprise:'원안은 재능 있는 학생만 비춘다',contrast:'기존 문서는 재능을 영광으로만 본다',scene:label+'이 등장하는 교정 게시판의 손글씨 공지',safe:'규칙을 어기지 않고 차분한 기록체로 쓸 수 있다',...extra});
  const anglesReply={dominant:'기존 문서들은 마법 재능을 영광으로 본다',candidates:[C('c1','감정 반전','마법을 거의 못 쓰는 학생','재능 선별이 오래 이어지며 낙제생끼리 즐기는 비공식 축제가 생겼다'),C('c2','의외의 수혜자','마법 도구를 파는 상인','길드 등록 의무 때문에 졸업 앨범 대필업이 번성했다'),C('c3','감정 반전','규칙 되풀이','마법은 재능이 있는 사람만 쓸 수 있다'),C('c4','문화적 반응','안전 근거 없음','마법 결투가 방송 스포츠가 되었다',{safe:''}),C('c5','개인적 관계','학생의 가족','기숙 생활이 길어져 집으로 보내는 편지 양식이 정형화되었다'),C('c7','체계의 지지자','결론 비교 없음','선별 제도를 옹호하는 교사회가 생겼다',{contrast:''}),C('c8','일상화','장면 없음','마법 관용구가 생겼다',{scene:''}),C('c9','일상화','이미 많이 다룬 영역','시험 문화가 학교 전체를 지배하게 되었다'),C('c6','일상화','고르지 않은 후보','낙제 마법사의 우스개가 관용구로 굳었다')],picked:['c1','c2','c3','c4','c5','c7','c8','c9','없는id'],classify:[{key:pupil,angle:'c5'},{key:hero,angle:null},{key:'없는키',angle:'c1'},{key:guild,angle:'c1'},...exams.map(k=>({key:k,angle:'c9'})),{key:exams[0],angle:'c9'}]};
  const make=title=>({fit:'strong',title,type:'인물',summary:title+'은 학교와 이어진 인물이다.',connection:'마법 재능 규칙과 이어진다.',direction:'학교 생활과 연결한다.',aliases:[],novelty:{verdict:'novel',reason:'기존 항목과 역할이 다르다',comparisons:[{key:pupil,reason:'수석 학생과 다른 인물이다'}]}});
- const page=await ctx.newPage(),calls=[],errors=[];let plans=[],angleMode='fail',pageMode='ok',planAngle,hold=false,release=null;
+ const page=await ctx.newPage(),calls=[],errors=[];let plans=[],angleMode='fail',pageMode='ok',planAngle,pageAngleUsed,hold=false,release=null;
  page.on('pageerror',e=>{errors.push(e.message);console.error('Browser:',e.message);});
  await ctx.route('**/v1beta/models/**',async r=>{const req=JSON.parse(r.request().postData()),prompt=req.contents[0].parts[0].text;const kind=prompt.includes('## 각도 목록 만들기')?'angles':prompt.includes('## 랜덤 서핑의 새 대상 선정')?'plan':prompt.includes('## 작성할 문서:')?'page':'unexpected';calls.push({kind,prompt});let out;
   const fail=async()=>{try{await r.fulfill({status:404,json:{error:{message:'model missing'}}});}catch{}};
   if(kind==='angles'){if(angleMode==='fail')return fail();out=anglesReply;}
   else if(kind==='plan'){if(hold)await new Promise(res=>release=res);out=plans.shift();if(out&&planAngle!==undefined)out={...out,angle:planAngle};}
-  else if(kind==='page'){if(pageMode==='hold')await new Promise(res=>release=res);if(pageMode==='fail')return fail();const title=/## 작성할 문서: 「([^」]+)」/.exec(prompt)[1];out={title,type:'인물',summary:title+'의 정의',infobox:[{label:'성별',value:'여성'}],sections:[{heading:'개요',level:1,body:title+'은 마법 학교와 이어진 인물이다.'}],links:[],facts:[],newEntities:[],relations:[],timeline:[]};}
+  else if(kind==='page'){if(pageMode==='hold')await new Promise(res=>release=res);if(pageMode==='fail')return fail();const title=/## 작성할 문서: 「([^」]+)」/.exec(prompt)[1];out={title,type:'인물',summary:title+'의 정의',infobox:[{label:'성별',value:'여성'}],sections:[{heading:'개요',level:1,body:title+'은 마법 학교와 이어진 인물이다.'}],links:[],facts:[],newEntities:[],relations:[],timeline:[]};if(pageAngleUsed!==undefined)out.angleUsed=pageAngleUsed;}
   else return fail();
   try{await r.fulfill({contentType:'text/event-stream',body:'data: '+JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify(out)}]},finishReason:'STOP'}]})+'\n\n'});}catch{}});
  const port=server.address().port;
@@ -41,15 +41,15 @@ let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
 
   const r1=await page.evaluate(()=>{const A=(id,count,off=false)=>({id,label:id,why:'규칙',count,off});const w={angles:[A('a',2),A('b',0),A('c',0),A('d',0,true)]};const seq=xs=>{let i=0;return()=>xs[i++%xs.length];};
    const picks=new Set();for(const x of [0,0.4,0.99])picks.add(pickAngle(w,seq([0.1,x]))?.id);
-   return{old:angleBlock({id:'o',label:'옛 각도',why:'옛 근거'}),rate:ANGLE_RATE,direction:pickAngle(w,()=>0,'사용자 설명'),miss:pickAngle(w,()=>0.3),last:pickAngle({...w,angleLast:true},()=>0),off:pickAngle({...w,angleOff:true},()=>0),none:pickAngle({angles:[A('x',0,true)]},()=>0),empty:pickAngle({},()=>0),picks:[...picks].sort()};});
-  assert(r1.old.includes('「옛 각도」 (근거: 옛 근거)'));assert.equal(r1.rate,0.3);assert.equal(r1.direction,null);assert.equal(r1.miss,null);assert.equal(r1.last,null);assert.equal(r1.off,null);assert.equal(r1.none,null);assert.equal(r1.empty,null);assert.deepStrictEqual(r1.picks,['b','c']);
+   return{old:angleBlock({id:'o',label:'옛 각도',why:'옛 근거'}),rate:ANGLE_RATE,person:pickAngle(w,()=>0,{person:true}),personFlip:pickAngle({angles:[...w.angles,{id:'f',label:'f',axis:'감정 반전',count:9}]},()=>0,{person:true})?.id,miss:pickAngle(w,()=>0.3),last:pickAngle({...w,angleLast:true},()=>0),off:pickAngle({...w,angleOff:true},()=>0),none:pickAngle({angles:[A('x',0,true)]},()=>0),empty:pickAngle({},()=>0),picks:[...picks].sort()};});
+  assert(r1.old.includes('「옛 각도」 (근거: 옛 근거)'));assert.equal(r1.rate,0.3);assert.equal(r1.person,null);assert.equal(r1.personFlip,'f');assert.equal(r1.miss,null);assert.equal(r1.last,null);assert.equal(r1.off,null);assert.equal(r1.none,null);assert.equal(r1.empty,null);assert.deepStrictEqual(r1.picks,['b','c']);
   const oldList=[{id:'a1',label:'옛 각도',why:'옛 근거',count:2,off:false}],c0=calls.length;const kept=await page.evaluate(async list=>{const w={id:'old',title:'옛',entities:{},angles:JSON.parse(JSON.stringify(list))};await ensureAngles(w,new AbortController().signal);return w.angles;},oldList);assert.deepStrictEqual(kept,oldList);assert.equal(calls.length,c0);
   const span=await page.evaluate(()=>{const W=(era,timeline,extra={})=>({era,timeline,entities:{},...extra});const T=(...ys)=>ys.map(year=>({year,event:'사건'}));const run=w=>{try{return{n:worldSpan(w),line:spanLine(worldSpan(w))};}catch(e){return{err:e.message};}};
    return{empty:run(W('1990년',[])),noTl:run(W('1990년',undefined)),badEra:run(W('먼 옛날',T('1945년'))),badTl:run(W('1990년',T('태초','언젠가'))),west:run(W('1989년',T('1950년','1945','1970년'))),sup:run(W('1989년',[{year:'1900년',event:'x',sup:{by:'a'}},{year:'1980',event:'y'}])),fict:run(W('성력 312년',T('성력 300년','성력 305'))),mixed:run(W('성력 312년',T('1945년'))),era2:run(W('건안 13년',T('건안 원년','건안 5'),{calendars:['건안']})),bc:run(W('서기 5년',T('기원전 3년'))),future:run(W('1980년',T('1990년'))),same:run(W('2024년 3월',T('2024년 1월'))),nul:run(null)};});
   assert.deepStrictEqual(Object.fromEntries(Object.entries(span).map(([k,v])=>[k,v.err?'ERR '+v.err:v.n])),{empty:null,noTl:null,badEra:null,badTl:null,west:44,sup:9,fict:12,mixed:null,era2:12,bc:7,future:null,same:0,nul:null});
   assert.equal(span.empty.line,'경과 시간 알 수 없음. 원안과 연표를 보고 판단할 것');assert.equal(span.west.line,'세계의 핵심 설정이 성립한 뒤 작중 시점까지 약 44년');assert(span.same.line.includes('1년이 채 되지 않음'));
   pass('경과 시간: 연표가 비었거나 연도를 못 읽거나 기년법이 다르면 알 수 없음, 서기·가상 기년법·연호·기원전은 올바른 햇수');
-  pass('pickAngle: 사용자 설명·연속 사용·꺼진 각도·30% 밖이면 null, count가 가장 작은 켜진 각도만 후보, 기존 목록(옛 형식 포함)은 자동으로 다시 만들지 않는다');
+  pass('pickAngle: 연속 사용·꺼진 각도·30% 밖이면 null, count가 가장 작은 켜진 각도만 후보, 인물은 감정 반전 축만, 기존 목록(옛 형식 포함)은 자동으로 다시 만들지 않는다');
 
   angleMode='fail';plans=[make('카르멘 벨')];let i=calls.length;await surf();await waitTitle('카르멘 벨');await ready();assert.deepStrictEqual(since(i),['angles','plan','page']);let w=await read(page,'w:mage');assert.equal(w.angles,undefined);assert(w.entities[key('카르멘 벨')].page);assert(!calls[i+1].prompt.includes('## 이번 각도'));
   plans=[make('도로시 크레인')];i=calls.length;await surf();await waitTitle('도로시 크레인');await ready();assert.deepStrictEqual(since(i),['plan','page']);
@@ -76,14 +76,39 @@ let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
   planAngle=null;plans=[make('각도 거부 후보')];i=calls.length;await surf();await waitTitle('각도 거부 후보');await ready();planAngle=undefined;assert(!calls[i+1].prompt.includes('## 이번 각도'));w=await read(page,'w:mage');assert.deepStrictEqual(w.angles.map(a=>a.count),[1,0,1,0]);
   pass('선정 응답이 angle:null이면 각도 없이 작성하고 count를 올리지 않는다');
 
-  await page.locator('#discoveryBtn').dblclick();await page.waitForSelector('#discoveryDirection');await page.fill('#discoveryDirection','학교 매점 주인');plans=[make('매점 주인 오토')];i=calls.length;await page.click('[data-act="discovery-create"]');await waitTitle('매점 주인 오토');await ready();assert(!calls[i].prompt.includes('## 이번 각도'));assert(!calls[i+1].prompt.includes('## 이번 각도'));
-  pass('사용자가 설명을 적으면 각도를 쓰지 않는다');
+  const guided=async(text,title)=>{await page.locator('#discoveryBtn').dblclick();await page.waitForSelector('#discoveryDirection');await page.fill('#discoveryDirection',text);plans=[make(title)];const at=calls.length;await page.click('[data-act="discovery-create"]');await waitTitle(title);await ready();return at;};
+  i=await guided('학교 매점 주인','매점 주인 오토');assert(calls[i].prompt.includes('## 이번 각도: 「마법 도구를 파는 상인」'));assert(calls[i].prompt.includes('사용자 설명이 성격·태도·시선을 이미 정했다면 이번 각도는 버리고'));assert(calls[i].prompt.includes('사용자가 정한 대상·이름·역할은 각도보다 항상 우선한다'));assert(!calls[i+1].prompt.includes('## 이번 각도'));w=await read(page,'w:mage');assert.deepStrictEqual(w.angles.map(a=>a.count),[1,0,1,0]);assert.equal((await read(page,'p:mage:'+key('매점 주인 오토'))).angle,undefined);
+  planAngle='a2';i=await guided('학교 매점 주인의 동생','매점 동생 우타');planAngle=undefined;assert(calls[i+1].prompt.includes('## 이번 각도: 「마법 도구를 파는 상인」'));w=await read(page,'w:mage');assert.deepStrictEqual(w.angles.map(a=>a.count),[1,1,1,0]);assert.equal(w.angleLast,true);assert.equal((await read(page,'p:mage:'+key('매점 동생 우타'))).angle,'a2');
+  pass('설명을 적은 랜덤 서핑에도 각도를 제안하되, 선정 응답이 그 각도를 명시해 받아들였을 때만 쓰고 기록한다');
 
   await page.locator('#discoveryBtn').dblclick();await page.waitForSelector('#discoveryDirection');await page.fill('#discoveryDirection','');await page.check('[data-angle-off]');await page.waitForFunction(()=>S.world.angleOff===true);assert.equal((await read(page,'w:mage')).angleOff,true);plans=[make('끔 후보')];i=calls.length;await page.click('[data-act="discovery-create"]');await waitTitle('끔 후보');await ready();assert(!calls[i].prompt.includes('## 이번 각도'));
   await page.locator('#discoveryBtn').dblclick();await page.waitForSelector('[data-angle-off]');assert(await page.locator('[data-angle-off]').isChecked());await page.uncheck('[data-angle-off]');await page.waitForFunction(()=>S.world.angleOff===false);
+  assert.equal((await read(page,'w:mage')).angleLast,false);
   pass('"각도 쓰지 않기"는 세계별로 저장되고 켜 두면 각도를 쓰지 않는다');
 
-  await page.click('#side [data-act="canon"]');await page.waitForSelector('.angles li');assert.equal(await page.locator('.angles li').count(),4);assert((await page.locator('.sheet').innerText()).includes('기존 문서들의 공통 결론: 기존 문서들은 마법 재능을 영광으로 본다'));assert((await page.locator('.angles').innerText()).includes('장면: 마법 도구를 파는 상인이 등장하는'));
+  const red=async(title,type='',facts=[],{holdPage=false}={})=>{const k=key(title);if(holdPage){pageMode='hold';release=null;}const at=calls.length;await page.evaluate(({k,title,type,facts})=>{if(!S.world.entities[k]){S.world.entities[k]=newEntity(title,type,'');S.world.entities[k].facts=facts;}openEntity(k);},{k,title,type,facts});
+   if(holdPage){for(let x=0;x<400&&!release;x++)await new Promise(r=>setTimeout(r,10));assert(release);const shown=await page.locator('#genAngle').count()?await page.locator('#genAngle').innerText():'';pageMode='ok';release();await page.waitForFunction(k=>S.pages[k]&&!S.gen,k);await page.evaluate(()=>Store.q);return{at,shown};}
+   await page.waitForFunction(k=>S.pages[k]&&!S.gen,k);await page.evaluate(()=>Store.q);return{at};};
+  pageAngleUsed=true;let g=await red('마법 길드 본부','지명',[],{holdPage:true});assert.equal(g.shown,'이번 각도: 고르지 않은 후보');let pp=calls[g.at].prompt;assert.equal(calls[g.at].kind,'page');
+  for(const t of ['## 이번 각도: 「고르지 않은 후보」','섹션 하나를 「고르지 않은 후보」의 시선으로 쓴다','어울리지 않으면 쓰지 않는다','[[링크]]로 남긴다','문서의 대상·이름·정체를 바꾸지 않는다','이번 각도는 감정 반전 축이 아니므로 인물 문서라면 버린다','"angleUsed"'])assert(pp.includes(t),t);
+  w=await read(page,'w:mage');assert.deepStrictEqual(w.angles.map(a=>a.count),[1,1,1,1]);assert.equal(w.angleLast,true);assert.equal((await read(page,'p:mage:'+guild)).angle,'a4');assert.equal((await read(page,'p:mage:'+guild)).angleUsed,undefined);
+  g=await red('길드 서기관');assert(!calls[g.at].prompt.includes('## 이번 각도'));assert(!calls[g.at].prompt.includes('"angleUsed"'));w=await read(page,'w:mage');assert.equal(w.angleLast,false);assert.equal((await read(page,'p:mage:'+key('길드 서기관'))).angle,undefined);
+  pass('빨간 링크 문서: 각도를 섹션 하나로 얹어 angleUsed가 true일 때만 기록하고, 다음 빨간 링크에는 연속으로 쓰지 않는다');
+
+  pageAngleUsed=false;g=await red('패배주의 연구회 회장','인물',[{t:'늘 침울하고 비관적인 성격이다',src:pupil}]);pp=calls[g.at].prompt;assert(pp.includes('## 이번 각도: 「마법을 거의 못 쓰는 학생」'));assert(pp.includes('늘 침울하고 비관적인 성격이다'));assert(pp.includes('확정 사실·언급과 충돌하면 각도를 버린다'));assert(pp.includes('성격이나 태도가 정해져 있지 않을 때만'));assert(!pp.includes('감정 반전 축이 아니므로'));
+  w=await read(page,'w:mage');assert.deepStrictEqual(w.angles.map(a=>a.count),[1,1,1,1]);assert.equal(w.angleLast,false);assert.equal((await read(page,'p:mage:'+key('패배주의 연구회 회장'))).angle,undefined);
+  pass('인물 문서는 감정 반전 축만 쓰고, 확정 사실과 충돌해 angleUsed가 false면 count와 p.angle을 남기지 않는다');
+
+  pageAngleUsed=true;i=calls.length;await page.evaluate(k=>generatePage(k,true,''),key('에밀 바스'));await page.waitForFunction(()=>!S.gen);await page.evaluate(()=>Store.q);assert.deepStrictEqual(since(i),['page']);assert(!calls[i].prompt.includes('## 이번 각도'));assert(!calls[i].prompt.includes('"angleUsed"'));assert(calls[i].prompt.includes('## 다시 쓰기'));w=await read(page,'w:mage');assert.deepStrictEqual(w.angles.map(a=>a.count),[1,1,1,1]);assert.equal(w.angleLast,false);assert.equal((await read(page,'p:mage:'+key('에밀 바스'))).angle,undefined);
+  pass('다시 쓰기에는 각도를 넣지 않고 기록도 바꾸지 않는다');
+
+  plans=[make('혼합 서핑 하나')];i=calls.length;await surf();await waitTitle('혼합 서핑 하나');await ready();assert(calls[i].prompt.includes('## 이번 각도'));assert.equal((await read(page,'w:mage')).angleLast,true);
+  g=await red('혼합 링크 하나');assert(!calls[g.at].prompt.includes('## 이번 각도'));assert.equal((await read(page,'w:mage')).angleLast,false);
+  g=await red('혼합 링크 둘');assert(calls[g.at].prompt.includes('## 이번 각도'));assert.equal((await read(page,'w:mage')).angleLast,true);
+  plans=[make('혼합 서핑 둘')];i=calls.length;await surf();await waitTitle('혼합 서핑 둘');await ready();assert(!calls[i].prompt.includes('## 이번 각도'));assert(!calls[i+1].prompt.includes('## 이번 각도'));assert.equal((await read(page,'w:mage')).angleLast,false);pageAngleUsed=undefined;
+  pass('랜덤 서핑과 빨간 링크를 섞어도 각도는 두 문서 연속으로 쓰이지 않는다');
+
+  await page.click('#side [data-act="canon"]');await page.waitForSelector('.angles li');assert.equal(await page.locator(`[data-angle-of="${guild}"]`).textContent(),'작성 각도: 고르지 않은 후보');assert.equal(await page.locator('.angles li').count(),4);assert((await page.locator('.sheet').innerText()).includes('기존 문서들의 공통 결론: 기존 문서들은 마법 재능을 영광으로 본다'));assert((await page.locator('.angles').innerText()).includes('장면: 마법 도구를 파는 상인이 등장하는'));
   await page.click('[data-angle-toggle="a1"]');await page.waitForFunction(()=>document.querySelector('[data-angle-toggle="a1"]')?.textContent==='켜기');await page.fill('[data-angle-label="a2"]','마법 도구 노점상');await page.click('[data-angle-save="a2"]');await page.waitForFunction(()=>S.world.angles[1].label==='마법 도구 노점상');
   await page.click('[data-angle-del="a3"]');assert.equal(await page.locator('.angles li').count(),4);await page.click('[data-angle-del="a3"]');await page.waitForFunction(()=>S.world.angles.length===3);
   w=await read(page,'w:mage');assert.deepStrictEqual(w.angles.map(a=>[a.id,a.label,a.off]),[['a1','마법을 거의 못 쓰는 학생',true],['a2','마법 도구 노점상',false],['a4','고르지 않은 후보',false]]);
