@@ -213,14 +213,32 @@ const TERMS_SPEC = `terms에는 이 문서가 처음 정한 명명 체계, 번�
 const TERMS_JSON = `"terms":[{"term":"용어","definition":"뜻과 붙는 방식"}]`;
 
 /* ---------- 세계 전체 점검 (사용자가 버튼을 눌렀을 때만) ----------
-   문서 제목과 한 줄 정의, 사건 장부, 용어 정의, 연표를 압축해 한 번 보내고, 문서끼리 서로 모르는 곳을 찾게 한다.
-   결과는 고치지 않고 제안으로만 둔다: w.worldCheck = { at, items: [{ id, kind, title, docs, detail, link, fix, status }] }
-   status: open(아직) · linked(연결하는 설정을 사용자 확정 설정으로 넣음) · kept(그대로 둠) · fix(문서 고치기를 엶) */
+   문서 제목과 한 줄 정의, 문서별 확정 사실, 사건 장부, 용어 정의, 연표를 압축해 한 번 보내고, 문서끼리 서로 모르는 곳을 찾게 한다.
+   w.worldCheck = { at, items: [{ id, kind, severity, title, docs, keywords, detail, link, alts, linkBad, fix, status, linked?, batch? }] }
+   link: 바로 확정할 기본안(결정된 문장). alts: 성격이 다른 대안 0~2개. linkBad: 다시 받아도 정하지 않은 표현이 남아 바로 연결할 수 없음.
+   status: open(아직) · linked(연결 설정을 사용자 확정 설정으로 넣음) · kept(그대로 둠) · fix(문서 고치기를 엶)
+   batch: 연결을 확정한 뒤 관련 문서에 일괄로 반영한 결과 { done(고침), none(고칠 곳 없음), failed(실패), manual(사용자가 직접 고친 문서라 직접 확인 필요) } */
 const WC_KINDS = { repeat: "서로 모르는 반복", first: "'최초' 주장 충돌", unaware: "영향을 모르는 문서" };
 const FIRST_WORDS = ["최초", "처음", "유일"];
+const WC_DOCS_MAX = 40, WC_FACTS_PER_DOC = 4, WC_BATCH = ["done", "none", "failed", "manual"];
+const wcSure = f => f.src === "user" || !!S.pages[f.src]?.editedAt;
+/* 문서 하나(항목 k)의 확정 사실. 사용자가 정한 것과 직접 고친 문서에서 온 것을 먼저 */
+function wcFacts(w, k, n) {
+  const fs = (w.entities[k]?.facts || []).filter(live);
+  return [...fs.filter(wcSure), ...fs.filter(f => !wcSure(f))].slice(0, n).map(f => f.t + (wcSure(f) ? " [사용자 확정]" : ""));
+}
+const wcPages = w => Object.entries(S.pages).filter(([k]) => w.entities[k]).sort((a, b) => (a[1].createdAt || 0) - (b[1].createdAt || 0));
+function wcFactBlock(w, keys, n) {
+  return keys.map(k => { const fs = wcFacts(w, k, n); return fs.length ? `「${S.pages[k]?.title || w.entities[k].title}」\n${fs.map(t => "  - " + t).join("\n")}` : ""; }).filter(Boolean).join("\n");
+}
+const WC_LINK_RULES = `- link에는 흩어진 기록을 하나로 잇는 설정을 결정된 한두 문장으로 쓴다. 사용자가 [연결하기]를 누르면 이 문장이 그대로 모든 문서가 지키는 확정 설정이 된다. 'A 또는 B', 'A나 B 중 하나', '~일 수도 있다', '어떤 세력'처럼 정하지 않은 채 남기지 않는다. 가능성이 여럿이면 가장 자연스러운 하나를 link로 정하고 나머지는 alts로 보낸다. first는 주장이 맞도록 범위를 좁히는 설정이어도 된다.
+- link와 alts는 관련 문서들이 이미 확정한 출처, 소속, 원인('문서별 확정 사실', '사건 장부', '용어 정의', '사용자 확정 설정')과 충돌하면 안 된다. 문서마다 출처나 소속을 이미 다르게 정해 두었다면 그 기록들이 모두 참으로 남도록 잇는다.
+- undecided에는 link에 정하지 않은 표현이 남았다면 그 부분을 글자 그대로 옮긴다. 다 정했으면 빈 배열.
+- alts에는 link와 성격이 다른 대안을 0~2개 넣는다. 각각 결정된 한두 문장이다. 마땅한 대안이 없으면 빈 배열.`;
 function worldCheckPrompt(w) {
-  const pages = Object.entries(S.pages).filter(([k]) => w.entities[k]).sort((a, b) => (a[1].createdAt || 0) - (b[1].createdAt || 0));
+  const pages = wcPages(w);
   const docs = pages.map(([, p]) => `- ${p.title} (${p.type || "?"}): ${(p.summary || "").slice(0, 90)}`).join("\n");
+  const facts = wcFactBlock(w, pages.map(([k]) => k), WC_FACTS_PER_DOC).split("\n").slice(0, 400).join("\n");
   const claims = pages.flatMap(([, p]) => pageTexts(p).flatMap(sentencesOf).filter(s => FIRST_WORDS.some(x => s.includes(x))).slice(0, 3).map(s => `- 「${p.title}」: ${s.slice(0, 160)}`)).slice(0, 120).join("\n");
   const evs = [...(w.events || [])].filter(x => S.pages[x.src]).sort(eventRank).map(x => eventRow(w, x, "")).slice(0, 150);
   const tl = (w.timeline || []).filter(live).map(t => `- ${t.year}: ${t.event}`).join("\n");
@@ -234,9 +252,11 @@ function worldCheckPrompt(w) {
 3. unaware: 다른 문서에 영향을 남겼어야 할 사건(예: 어느 나라에서 출격했다는 공격)을, 영향을 받았어야 할 문서(그 나라의 문서)가 모르는 것.
 
 지적 기준:
-- 아래 자료에 실제로 있는 문서와 기록만 근거로 삼는다. docs에는 관련 문서 제목을 글자 그대로 쓴다.
-- 우연히 겹칠 수 있는 평범한 일, 서로 무관해도 자연스러운 일은 지적하지 않는다. 지적할 것이 없는 것이 정상이다. 많아야 8개.
-- link에는 흩어진 기록을 하나로 잇는 설정 한두 문장을 쓴다(이 문장은 사용자가 고르면 모든 문서가 지키는 확정 설정이 된다). first는 주장이 맞도록 범위를 좁히는 설정이어도 된다.
+- 아래 자료에 실제로 있는 문서와 기록만 근거로 삼는다. 우연히 겹칠 수 있는 평범한 일, 서로 무관해도 자연스러운 일은 지적하지 않는다. 지적할 것이 없는 것이 정상이다. 많아야 8개.
+- docs에는 그 패턴을 다룬 문서 제목을 글자 그대로, 빠짐없이 쓴다(많아야 12개).
+- keywords에는 이 패턴을 다룬 문서를 본문 검색으로 더 찾을 핵심어 1~3개를 쓴다. 문서 본문에 글자 그대로 나올 짧은 말(사건, 사물, 조직의 이름)이어야 하고, 아무 문서에나 나오는 흔한 말은 쓰지 않는다.
+- severity: 세계관의 흐름이나 여러 문서에 영향을 주는 것은 high, 둘 다 참일 수 있는 표현 차이(예: '최초'와 '유일')나 문서 한두 개의 사소한 충돌은 low.
+${WC_LINK_RULES}
 - fix에는 해당 문서들을 어떻게 고치면 되는지 한 문장으로 쓴다.
 
 ## 핵심 규칙
@@ -247,6 +267,9 @@ ${(w.userCanon || "").trim() || "(없음)"}
 ${kept ? `\n## 사용자가 그대로 두기로 한 것 (다시 지적하지 않는다)\n${kept}\n` : ""}
 ## 문서 (쓴 순서, 제목 (유형): 한 줄 정의)
 ${docs || "(없음)"}
+
+## 문서별 확정 사실 (출처, 소속, 원인을 이미 정한 기록. link와 alts는 이것과 충돌하면 안 된다)
+${facts || "(없음)"}
 
 ## 문서 속 '최초·처음·유일' 서술
 ${claims || "(없음)"}
@@ -259,15 +282,69 @@ ${glossaryBlock(w) || "## 용어 정의\n(없음)"}
 ## 연표
 ${tl || "(없음)"}
 
-JSON 객체 하나만 출력: {"findings":[{"kind":"repeat, first, unaware 중 하나","title":"짧은 제목","docs":["관련 문서 제목"],"detail":"무엇이 왜 이상한지 두세 문장","link":"하나로 잇는 설정 한두 문장","fix":"문서를 고칠 방향 한 문장"}]}
+JSON 객체 하나만 출력: {"findings":[{"kind":"repeat, first, unaware 중 하나","severity":"high 또는 low","title":"짧은 제목","docs":["관련 문서 제목"],"keywords":["핵심어"],"detail":"무엇이 왜 이상한지 두세 문장","link":"하나로 잇는 결정된 설정 한두 문장","undecided":[],"alts":["성격이 다른 대안 설정 한두 문장"],"fix":"문서를 고칠 방향 한 문장"}]}
 없으면 findings는 빈 배열.`;
 }
+const wcList = (a, n, max) => [...new Set((Array.isArray(a) ? a : []).map(t => evText(t, n)).filter(Boolean))].slice(0, max);
+const wcAlts = (a, link) => wcList(a, 400, 4).filter(t => t !== link).slice(0, 2);
 function parseWorldCheck(w, r) {
   const at = Date.now();
   return (Array.isArray(r?.findings) ? r.findings : []).filter(x => x && typeof x === "object").slice(0, 8).map((x, i) => {
-    const docs = [...new Set((Array.isArray(x.docs) ? x.docs : []).map(t => kOf(w, evText(t, 80))).filter(k => S.pages[k] && w.entities[k]))].slice(0, 8);
-    return { id: at.toString(36) + i, kind: WC_KINDS[x.kind] ? x.kind : "repeat", title: evText(x.title, 80), docs, detail: evText(x.detail, 500), link: evText(x.link, 400), fix: evText(x.fix, 300), status: "open" };
+    const docs = [...new Set((Array.isArray(x.docs) ? x.docs : []).map(t => kOf(w, evText(t, 80))).filter(k => S.pages[k] && w.entities[k]))].slice(0, 12);
+    const link = evText(x.link, 400);
+    return { id: at.toString(36) + i, kind: WC_KINDS[x.kind] ? x.kind : "repeat", severity: x.severity === "low" ? "low" : "high", title: evText(x.title, 80), docs,
+      keywords: wcList(x.keywords, 30, 3).filter(t => t.length >= 2), detail: evText(x.detail, 500), link, undecided: link ? wcList(x.undecided, 120, 6) : [], alts: wcAlts(x.alts, link), fix: evText(x.fix, 300), status: "open" };
   }).filter(x => x.title && x.detail && (x.docs.length || x.link));
+}
+/* 핵심어가 본문에 글자 그대로 들어 있는 문서를 관련 문서에 더한다. 뜻은 판단하지 않는다 */
+function wcExpandDocs(w, x) {
+  if (!x.keywords?.length) return 0;
+  let n = 0;
+  for (const [k, p] of wcPages(w)) {
+    if (x.docs.length >= WC_DOCS_MAX) break;
+    if (x.docs.includes(k)) continue;
+    const text = [p.title, ...pageTexts(p)].join("\n");
+    if (x.keywords.some(kw => text.includes(kw))) { x.docs.push(k); n++; }
+  }
+  return n;
+}
+/* link에 정하지 않은 표현이 남은 결과 하나만 다시 받는 프롬프트 */
+function worldCheckRetryPrompt(w, x) {
+  const evs = (w.events || []).filter(e => S.pages[e.src] && (x.docs.includes(e.src) || x.docs.includes(e.k) || e.parts.some(p => x.docs.includes(p)))).sort(eventRank).map(e => eventRow(w, e, "")).slice(0, 40);
+  return `## 연결 설정 다시 쓰기
+너는 가상 세계관 위키 「${w.title}」(작중 기준 시점 ${w.era})의 편집장이다. 세계 전체 점검에서 찾은 아래 결과의 연결 설정(link)에 정하지 않은 표현이 남아 있다. 결정된 설정으로 다시 쓴다.
+
+## 점검 결과
+- 제목: ${x.title}
+- 내용: ${x.detail}
+- 지금 link: ${x.link}
+- 정하지 않은 표현: ${x.undecided.join(" / ")}
+
+## 규칙
+${WC_LINK_RULES}
+
+## 사용자 확정 설정
+${(w.userCanon || "").trim() || "(없음)"}
+
+## 관련 문서의 확정 사실
+${wcFactBlock(w, x.docs, 10) || "(없음)"}
+
+## 관련 사건 기록
+${evs.length ? EVENT_HEAD + "\n" + evs.join("\n") : "(없음)"}
+
+${glossaryBlock(w) || "## 용어 정의\n(없음)"}
+
+JSON 객체 하나만 출력: {"link":"결정된 설정 한두 문장","undecided":[],"alts":["성격이 다른 대안 설정 한두 문장"]}`;
+}
+async function wcRetryLink(w, x) {
+  try {
+    const r = await callJson("worldCheck", worldCheckRetryPrompt(w, x), { modelTier: "check" }, { title: w.title + " · 연결 설정 다시 쓰기" });
+    const link = evText(r?.link, 400), und = wcList(r?.undecided, 120, 6);
+    if (!link || und.length) return false;
+    x.link = link; x.undecided = [];
+    const alts = wcAlts(r?.alts, link); x.alts = alts.length ? alts : x.alts.filter(t => t !== link);
+    return true;
+  } catch { return false; }
 }
 async function runWorldCheck() {
   const w = S.world; if (!w) return;
@@ -278,33 +355,77 @@ async function runWorldCheck() {
   try {
     const r = await callJson("worldCheck", worldCheckPrompt(w), { modelTier: "check" }, { title: w.title + " · 세계 전체 점검" });
     if (S.world !== w) return;
+    const found = parseWorldCheck(w, r);
+    for (const x of found) wcExpandDocs(w, x);
+    await Promise.all(found.filter(x => x.undecided.length).map(x => wcRetryLink(w, x)));   // 정하지 않은 link는 그 결과만 한 번 다시 받는다
+    for (const x of found) { x.linkBad = !!x.undecided.length; delete x.undecided; }
+    if (S.world !== w) return;
     const kept = (w.worldCheck?.items || []).filter(x => x.status !== "open");   // 이미 정한 것은 남긴다
-    w.worldCheck = { at: Date.now(), items: [...parseWorldCheck(w, r), ...kept].slice(0, 30) };
+    w.worldCheck = { at: Date.now(), items: [...found, ...kept].slice(0, 30) };
+    S.wcAlts = null; S.wcEdit = null;
     await Store.saveWorld(w);
   } catch (err) { S.wcErr = errMsg(err); }
   finally { if (S.wcBusy === w.id) S.wcBusy = null; if (S.world === w && S.view.name === "canon") { renderMain(); document.getElementById("worldCheck")?.scrollIntoView({ block: "start" }); } }
 }
-/* 제안 하나에 대한 사용자의 선택 */
-async function worldCheckAction(id, what, docKey) {
+/* 연결을 확정한 뒤 관련 문서마다 확정 설정을 반영한다(wcFixDoc: 기존 고치기 흐름).
+   사용자가 직접 고친 문서는 고치지 않고 '직접 확인 필요'로 남긴다. keys를 주면 그 문서만 다시 시도한다 */
+async function worldCheckBatch(w, x, keys = x.docs) {
+  if (S.wcRun || !x.linked) return;
+  const b = x.batch ||= { done: [], none: [], failed: [], manual: [] };
+  for (const f of WC_BATCH) b[f] ||= [];
+  const todo = keys.filter(k => S.pages[k]);
+  for (const f of WC_BATCH) b[f] = b[f].filter(k => !todo.includes(k));
+  const run = S.wcRun = { id: x.id, n: 0, total: todo.length, cur: "" };
+  const show = () => { const el = document.getElementById("wcRun-" + x.id); if (el) el.textContent = `관련 문서에 반영하는 중 ${run.n}/${run.total}${run.cur ? ` · 「${run.cur}」` : ""}`; };
+  if (S.world === w && S.view.name === "canon") renderMain();
+  try {
+    for (const k of todo) {
+      const p = S.pages[k];
+      if (S.world !== w || !p) { b.failed.push(k); continue; }
+      if (p.editedAt) { b.manual.push(k); run.n++; continue; }
+      run.cur = p.title; show();
+      let res = "failed";
+      try { res = await wcFixDoc(w, k, x); } catch { res = "failed"; }
+      b[WC_BATCH.includes(res) ? res : "failed"].push(k);
+      run.n++; show();
+    }
+  } finally { if (S.wcRun === run) S.wcRun = null; }
+  if (S.world !== w) return;
+  try { await Store.saveWorld(w); } catch {}
+  if (S.view.name === "canon") { renderMain(); document.getElementById("wc-" + x.id)?.scrollIntoView({ block: "center" }); }
+  toast(`관련 문서 ${todo.length}개 중 ${b.done.length}개를 고쳤습니다.${b.failed.length ? ` 실패 ${b.failed.length}개는 다시 시도할 수 있습니다.` : ""}${b.manual.length ? ` 직접 고친 문서 ${b.manual.length}개는 직접 확인해 주세요.` : ""}`);
+}
+/* 제안 하나에 대한 사용자의 선택. arg: fix면 문서 키, alt면 대안 번호, edit면 사용자가 고친 문장 */
+async function worldCheckAction(id, what, arg) {
   const w = S.world, x = w?.worldCheck?.items?.find(y => y.id === id); if (!x) return;
-  if (what === "link") {
-    if (!x.link) return;
+  S.wcFocus = id;   // 다시 그려도 이 제안이 접힌 목록 안에 숨지 않게
+  if (what === "link" || what === "alt" || what === "edit") {
+    if (S.wcRun) { toast("다른 연결을 관련 문서에 반영하는 중입니다. 끝난 뒤 다시 눌러 주세요."); return; }
+    const text = evText(what === "link" ? (x.linkBad ? "" : x.link) : what === "alt" ? x.alts?.[arg] : arg, 400);
+    if (!text) { if (what === "edit") toast("연결할 설정 문장을 적어 주세요."); return; }
     const uc = (w.userCanon || "").trim();
-    if (!uc.includes(x.link)) w.userCanon = (uc ? uc + "\n" : "") + "- " + x.link;
-    x.status = "linked";
-  } else if (what === "keep") x.status = "kept";
+    if (!uc.includes(text)) w.userCanon = (uc ? uc + "\n" : "") + "- " + text;
+    x.status = "linked"; x.linked = text; S.wcAlts = null; S.wcEdit = null;
+    renderMain(); document.getElementById("wc-" + id)?.scrollIntoView({ block: "center" });
+    try { await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); return; }
+    toast("연결 설정을 사용자 확정 설정에 넣었습니다. 관련 문서에 반영합니다.");
+    await worldCheckBatch(w, x);
+    return;
+  }
+  if (what === "retry") { if (x.status === "linked" && x.batch?.failed?.length) await worldCheckBatch(w, x, x.batch.failed.slice()); return; }
+  if (what === "keep") x.status = "kept";
   else if (what === "fix") {
-    const p = S.pages[docKey]; if (!p || !x.docs.includes(docKey)) return;
-    if (S.gen && S.gen.key === docKey) { toast("이 문서를 작성하는 중입니다."); return; }
-    x.status = "fix";
+    const p = S.pages[arg]; if (!p || !x.docs.includes(arg)) return;
+    if (S.gen && S.gen.key === arg) { toast("이 문서를 작성하는 중입니다."); return; }
+    if (x.status === "open") x.status = "fix";
     try { await Store.saveWorld(w); } catch {}
-    const others = x.docs.filter(k => k !== docKey).map(k => `「${S.pages[k]?.title || w.entities[k]?.title}」`).join(", ");
-    const items = [{ claim: `세계 전체 점검: ${x.title}`, conflict: `${x.detail}${others ? ` 함께 볼 문서: ${others}.` : ""} 고칠 방향: ${x.fix || x.link}`, severity: "high" }];
-    S.fixv = { key: docKey, items, sel: new Set([0]), phase: "pick", edits: [], note: "", err: "", skipped: 0 };
-    S.view = { name: "fix", key: docKey }; renderAll(); window.scrollTo({ top: 0 });
+    const others = x.docs.filter(k => k !== arg).slice(0, 12).map(k => `「${S.pages[k]?.title || w.entities[k]?.title}」`).join(", ");
+    const items = [{ claim: `세계 전체 점검: ${x.title}`, conflict: `${x.detail}${others ? ` 함께 볼 문서: ${others}.` : ""}${x.linked ? ` 확정한 설정: ${x.linked}` : ""} 고칠 방향: ${x.fix || x.link}`, severity: "high" }];
+    S.fixv = { key: arg, items, sel: new Set([0]), phase: "pick", edits: [], note: "", err: "", skipped: 0 };
+    S.view = { name: "fix", key: arg }; renderAll(); window.scrollTo({ top: 0 });
     runFixBatch();
     return;
   } else if (what === "reopen") x.status = "open";
   renderMain(); document.getElementById("wc-" + id)?.scrollIntoView({ block: "center" });
-  try { await Store.saveWorld(w); toast(what === "link" ? "연결하는 설정을 사용자 확정 설정에 넣었습니다. 이후 작성하는 문서부터 반영됩니다." : "저장했습니다."); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
+  try { await Store.saveWorld(w); toast("저장했습니다."); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
 }

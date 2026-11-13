@@ -293,16 +293,123 @@ test("점검 결과는 있는 문서만 남기고 제안(open)으로 둔다", ()
   assert.deepEqual(got[0].docs, [K("해저 결투"), K("한서진")]); assert.equal(got[0].status, "open"); assert.equal(got[1].kind, "repeat");
   assert.deepEqual(c.parseWorldCheck(w, {}), []);
 });
-test("[하나로 연결하는 설정 만들기]는 그 설정을 사용자 확정 설정에 넣고, [그대로 두기]는 표시만 한다", async () => {
-  const { w } = duelWorld(); let saved = 0;
-  Object.assign(c, { renderMain() {}, toast() {}, document: { getElementById: () => null }, Store: { saveWorld: async () => { saved++; } }, errMsg: e => String(e) });
-  c.S.world = w; w.userCanon = "기존 설정";
-  w.worldCheck = { at: 1, items: [{ id: "x1", kind: "repeat", title: "t", docs: [], detail: "d", link: "모든 침투는 한 조직의 작전이다.", fix: "", status: "open" }, { id: "x2", kind: "first", title: "t2", docs: [], detail: "d", link: "", fix: "", status: "open" }] };
-  await c.worldCheckAction("x1", "link");
-  assert.equal(w.userCanon, "기존 설정\n- 모든 침투는 한 조직의 작전이다."); assert.equal(w.worldCheck.items[0].status, "linked");
-  await c.worldCheckAction("x1", "link"); assert.equal(w.userCanon.split("한 조직의 작전").length, 2, "두 번 넣지 않는다");
-  await c.worldCheckAction("x2", "keep"); assert.equal(w.worldCheck.items[1].status, "kept"); assert.equal(w.userCanon.includes("t2"), false);
-  assert(saved >= 2);
+/* 화면과 흐름에 필요한 것만 가짜로 둔다. AI 호출은 callJson과 wcFixDoc을 가로챈다 */
+vm.runInContext([cut("const esc =", "function cyrb53("), cut("const fmtDate =", "/* ---------- 원안 주사위"), "function linkHtml(t) { return `<a>${esc(t)}</a>`; }",
+  cut("/* 세계 전체 점검: 버튼을 눌렀을 때만", "/* 용어 정의: 보고"), "Object.assign(globalThis,{worldCheckHtml,wcExpandDocs,runWorldCheck,worldCheckBatch,worldCheckRetryPrompt});"].join("\n"), c);
+const wcEnv = (w, calls = []) => {
+  const fixed = [], toasts = [];
+  Object.assign(c, { renderMain() {}, renderAll() {}, toast: t => toasts.push(t), document: { getElementById: () => null }, Store: { saveWorld: async () => {}, savePage: async () => {} }, errMsg: e => String(e), ERR: { no_sample: "연결 없음" },
+    callJson: async (kind, prompt) => { const r = calls.shift(); if (typeof r === "function") return r(prompt); if (r instanceof Error) throw r; return r; },
+    wcFixDoc: async (ww, k) => { fixed.push(k); return c.wcFixResult?.[k] || "done"; } });
+  c.S.world = w; c.S.sample = true; c.S.view = { name: "canon" }; c.S.wcBusy = null; c.S.wcRun = null; c.S.wcAlts = null; c.S.wcEdit = null; c.wcFixResult = null;
+  return { fixed, toasts };
+};
+const finding = (o = {}) => ({ kind: "repeat", severity: "high", title: "잠항 병기 반복 침투", docs: ["해저 결투"], keywords: [], detail: "여러 해역에 같은 병기가 나타났다.", link: "모든 침투는 한 조직의 작전이다.", undecided: [], alts: [], fix: "서로 언급하게 한다.", ...o });
+test("점검 프롬프트에 문서별 확정 사실을 넣고, link는 결정된 문장으로, alts·keywords·severity를 함께 받는다", () => {
+  const { w, K } = duelWorld();
+  w.entities[K("해저 결투")].facts = [{ t: "두 병기는 북해 기지에서 출격했다", src: K("해저 결투") }, { t: "대체된 사실", src: K("한서진"), sup: { by: "x" } }];
+  w.entities[K("한서진")].facts = [{ t: "한서진은 북해 함대 소속이다", src: "user" }];
+  const pr = c.worldCheckPrompt(w);
+  for (const s of ["## 문서별 확정 사실", "「해저 결투」\n  - 두 병기는 북해 기지에서 출격했다", "  - 한서진은 북해 함대 소속이다 [사용자 확정]", "'A 또는 B'", "충돌하면 안 된다", '"severity":"high 또는 low"', '"keywords":["핵심어"]', '"undecided":[]', '"alts":["'])
+    assert(pr.includes(s), "프롬프트에 없음: " + s);
+  assert(!pr.includes("대체된 사실"));
+  const [x] = c.parseWorldCheck(w, { findings: [finding({ severity: "low", keywords: ["잠항", "잠항", "", "x", "넷째", "다섯째"], alts: ["모든 침투는 한 조직의 작전이다.", "각국 해군의 실험이 새어 나왔다.", "", "셋째", "넷째"] })] });
+  assert.equal(x.severity, "low"); assert.deepEqual(x.keywords, ["잠항", "넷째"], "중복·한 글자는 빼고 셋까지 받아 두 글자 이상만");
+  assert.deepEqual(x.alts, ["각국 해군의 실험이 새어 나왔다.", "셋째"], "link와 같은 안은 빼고 둘까지");
+  assert.equal(c.parseWorldCheck(w, { findings: [finding({ severity: "?" })] })[0].severity, "high");
+});
+test("핵심어가 본문에 글자 그대로 들어 있는 문서를 관련 문서에 더한다", () => {
+  const { w, K } = duelWorld();
+  c.S.pages[K("남부 해전")].sections[0].body = "남부에서도 잠항 병기가 목격되었다.";
+  const x = c.parseWorldCheck(w, { findings: [finding({ docs: ["해저 결투"], keywords: ["잠항 병기", "목격담"] })] })[0];
+  assert.equal(c.wcExpandDocs(w, x), 1);
+  assert.deepEqual(x.docs, [K("해저 결투"), K("남부 해전")]);
+  assert.equal(c.wcExpandDocs(w, { docs: [], keywords: [] }), 0);
+});
+test("link에 정하지 않은 표현이 오면 그 결과만 다시 받고, 성공하면 정상 결과로 바꾼다", async () => {
+  const { w, K } = duelWorld(); const prompts = [];
+  c.S.pages[K("남부 해전")].sections[0].body = "남부에서도 잠항 병기가 목격되었다.";
+  wcEnv(w, [{ findings: [finding({ link: "국제 테러 세력 또는 군벌 연합의 작전이다.", undecided: ["국제 테러 세력 또는 군벌 연합"], keywords: ["잠항 병기"] }), finding({ title: "멀쩡한 것", link: "정해진 설정이다." })] },
+    p => { prompts.push(p); return { link: "북해 연합 함대의 비밀 작전이다.", undecided: [], alts: ["각국의 실험이 새어 나왔다."] }; }]);
+  await c.runWorldCheck();
+  assert.equal(prompts.length, 1, "정하지 않은 결과 하나만 다시 받는다");
+  assert(prompts[0].includes("## 연결 설정 다시 쓰기") && prompts[0].includes("국제 테러 세력 또는 군벌 연합"));
+  const [x, y] = w.worldCheck.items;
+  assert.equal(x.link, "북해 연합 함대의 비밀 작전이다."); assert.equal(x.linkBad, false); assert.deepEqual(x.alts, ["각국의 실험이 새어 나왔다."]);
+  assert.equal(x.undecided, undefined); assert(x.docs.includes(K("남부 해전")), "다시 받기 전에 핵심어로 문서를 보강한다");
+  assert.equal(y.link, "정해진 설정이다."); assert.equal(y.linkBad, false);
+  const html = c.worldCheckHtml(w);
+  assert(/data-wc-link="[^"]+" >연결하기/.test(html), "[연결하기]가 살아 있다");
+});
+test("다시 받아도 정하지 않으면 [연결하기]를 막고 [고쳐서 연결]만 열어 둔다", async () => {
+  const { w } = duelWorld();
+  wcEnv(w, [{ findings: [finding({ link: "A 또는 B의 작전이다.", undecided: ["A 또는 B"] })] }, { link: "C 혹은 D다.", undecided: ["C 혹은 D"] }]);
+  await c.runWorldCheck();
+  const x = w.worldCheck.items[0];
+  assert.equal(x.linkBad, true); assert.equal(x.link, "A 또는 B의 작전이다.");
+  let html = c.worldCheckHtml(w);
+  assert(new RegExp(`data-wc-link="${x.id}" disabled>연결하기`).test(html)); assert(html.includes(`data-wc-edit="${x.id}"`)); assert(html.includes("정하지 않은 표현이 남아"));
+  await c.worldCheckAction(x.id, "link"); assert.equal(x.status, "open", "막힌 [연결하기]는 아무것도 하지 않는다"); assert.equal(w.userCanon, undefined);
+  c.S.wcEdit = x.id; html = c.worldCheckHtml(w);
+  assert(html.includes(`<textarea id="wcEd-${x.id}"`) && html.includes(">A 또는 B의 작전이다.</textarea>"), "수정 칸에 link를 띄운다");
+  const env = wcEnv(w); c.S.world = w;
+  await c.worldCheckAction(x.id, "edit", "  A의 작전이다.  ");
+  assert.equal(w.userCanon, "- A의 작전이다."); assert.equal(x.status, "linked"); assert.equal(x.linked, "A의 작전이다.");
+  assert.equal(env.fixed.length, 1);
+  wcEnv(w, [new Error("연결 끊김")]); x.status = "open";
+  await c.runWorldCheck(); assert.equal(w.worldCheck.items.length, 1, "점검이 실패하면 기존 결과를 그대로 둔다");
+});
+test("alts가 비어 있어도 화면이 깨지지 않고, 대안을 고르면 그 안으로 연결한다", async () => {
+  const { w } = duelWorld();
+  wcEnv(w, [{ findings: [finding({ alts: [] }), finding({ title: "둘째", alts: ["다른 조직의 짓이다.", "자연 현상이다."] })] }]);
+  await c.runWorldCheck();
+  const [a, b] = w.worldCheck.items;
+  delete a.alts; c.S.wcAlts = a.id;   // 옛 결과처럼 alts가 아예 없어도
+  let html = c.worldCheckHtml(w);
+  assert(!html.includes(`data-wc-alts="${a.id}"`), "대안이 없으면 [다른 안 보기]를 그리지 않는다"); assert(html.includes(`data-wc-alts="${b.id}"`) && html.includes("다른 안 보기 (2)"));
+  c.S.wcAlts = b.id; html = c.worldCheckHtml(w);
+  assert(html.includes(`data-wc-alt="${b.id}" data-wc-i="1"`) && html.includes("자연 현상이다."));
+  await c.worldCheckAction(b.id, "alt", 1);
+  assert.equal(b.status, "linked"); assert.equal(b.linked, "자연 현상이다."); assert(w.userCanon.includes("- 자연 현상이다."));
+  await c.worldCheckAction(a.id, "link"); assert.equal(a.linked, "모든 침투는 한 조직의 작전이다."); assert.equal(w.userCanon.split("\n").length, 2);
+  await c.worldCheckAction(a.id, "link"); assert.equal(w.userCanon.split("한 조직의 작전").length, 2, "두 번 넣지 않는다");
+});
+test("중요도 low인 결과는 '사소한 제안 N개'로 접어서 high 아래에 보여 준다", async () => {
+  const { w } = duelWorld();
+  wcEnv(w, [{ findings: [finding({ severity: "low", title: "표현 차이" }), finding({ title: "큰 흐름" }), finding({ severity: "low", title: "작은 충돌" })] }]);
+  await c.runWorldCheck();
+  const html = c.worldCheckHtml(w), at = html.indexOf('<details class="wc-low"');
+  assert(at > 0 && html.includes("사소한 제안 2개</summary>"));
+  assert(html.indexOf("큰 흐름") < at && html.indexOf("표현 차이") > at && html.indexOf("작은 충돌") > at);
+  assert(!/<details class="wc-low"[^>]*open/.test(html), "처음에는 접혀 있다");
+  delete w.worldCheck.items[0].severity;   // 옛 결과(중요도 없음)는 high로 본다
+  assert(c.worldCheckHtml(w).includes("사소한 제안 1개"));
+});
+test("연결을 확정하면 관련 문서마다 일괄로 고치고, 사용자가 직접 고친 문서는 건너뛰어 '직접 확인 필요'로 둔다", async () => {
+  const { w, K } = duelWorld();
+  c.S.pages[K("한서진")].editedAt = 5;
+  const env = wcEnv(w, [{ findings: [finding({ docs: ["해저 결투", "한서진", "남부 해전"] }), finding({ title: "[그대로 두기]용" })] }]);
+  await c.runWorldCheck();
+  const [x, y] = w.worldCheck.items;
+  c.wcFixResult = { [K("남부 해전")]: "failed" };
+  await c.worldCheckAction(x.id, "link");
+  assert.deepEqual(env.fixed, [K("해저 결투"), K("남부 해전")], "직접 고친 문서는 고치기를 부르지 않는다");
+  assert.deepEqual(x.batch, { done: [K("해저 결투")], none: [], failed: [K("남부 해전")], manual: [K("한서진")] });
+  let html = c.worldCheckHtml(w);
+  assert(html.includes("직접 확인 필요: 「한서진」") && html.includes("실패한 문서: 「남부 해전」") && html.includes(`data-wc-retry="${x.id}"`));
+  assert(html.includes("문서별로 고치기"), "문서별 [고치기]는 펼치기 안에 남긴다");
+  c.wcFixResult = null; env.fixed.length = 0;
+  await c.worldCheckAction(x.id, "retry");
+  assert.deepEqual(env.fixed, [K("남부 해전")], "실패한 문서만 다시 시도한다");
+  assert.deepEqual(x.batch.done, [K("해저 결투"), K("남부 해전")]); assert.deepEqual(x.batch.failed, []);
+  await c.worldCheckAction(y.id, "keep"); assert.equal(y.status, "kept"); assert.equal(w.userCanon.includes("[그대로 두기]용"), false);
+  html = c.worldCheckHtml(w); assert(!html.includes("실패한 문서"));
+});
+test("일괄 반영은 기존 고치기 흐름을 쓰고, 고치기 흐름은 직접 고친 문서를 거절한다", () => {
+  const fix = require("fs").readFileSync(require("path").join(__dirname, "..", "js", "fix.js"), "utf8");
+  const body = fix.slice(fix.indexOf("async function wcFixDoc("), fix.indexOf("async function applyFix("));
+  for (const s of ["p.editedAt) return \"failed\"", "fixBatchPrompt(w, p, f, [issue])", "parseFixEdits(r, f, 1).slice(0, WC_FIX_EDITS)", "commitFix(w, k, edits)", "await bgSync(k)"]) assert(body.includes(s), "없음: " + s);
+  assert(fix.includes("res = commitFix(w, k, v.edits,"), "교정 페이지도 같은 적용 함수를 쓴다");
 });
 test("세계 전체 점검은 버튼으로만 돈다", () => {
   assert(html.includes('case "world-check": runWorldCheck(); break;'));

@@ -108,6 +108,11 @@ document.addEventListener("click", ev => {
   if (d.angleDel) { if (el.dataset.confirm === "1") editAngle(d.angleDel, "delete"); else { el.dataset.confirm = "1"; el.textContent = "삭제 확인"; } return; }
   if (d.filter) { S.canonFilter = d.filter; renderMain(); return; }
   if (d.wcLink) { worldCheckAction(d.wcLink, "link"); return; }
+  if (d.wcAlts) { S.wcFocus = d.wcAlts; S.wcAlts = S.wcAlts === d.wcAlts ? null : d.wcAlts; renderMain(); document.getElementById("wc-" + d.wcAlts)?.scrollIntoView({ block: "nearest" }); return; }
+  if (d.wcAlt) { worldCheckAction(d.wcAlt, "alt", Number(d.wcI)); return; }
+  if (d.wcEdit) { S.wcFocus = d.wcEdit; S.wcEdit = S.wcEdit === d.wcEdit ? null : d.wcEdit; renderMain(); document.getElementById("wcEd-" + d.wcEdit)?.focus(); return; }
+  if (d.wcEditGo) { worldCheckAction(d.wcEditGo, "edit", document.getElementById("wcEd-" + d.wcEditGo)?.value || ""); return; }
+  if (d.wcRetry) { worldCheckAction(d.wcRetry, "retry"); return; }
   if (d.wcKeep) { worldCheckAction(d.wcKeep, "keep"); return; }
   if (d.wcFix) { worldCheckAction(d.wcFix, "fix", d.wcDoc); return; }
   if (d.wcReopen) { worldCheckAction(d.wcReopen, "reopen"); return; }

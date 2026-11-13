@@ -21,7 +21,7 @@ const read = (p, k) => p.evaluate(k => new Promise(resolve => { const r = indexe
     glossary: [{ term: "Type-05", definition: "대대로 물려받는 칭호", src: duel, confirmed: false, at: 1, alts: [{ definition: "소녀 한 명의 개인 이름", src: hero, at: 2 }] }, { term: "잠항 병기", definition: "물속을 다니는 생체병기", src: hero, confirmed: false, at: 3 }] };
   const old = { kind: "world", id: "old", title: "옛 세계", seed: "옛 원안", era: "1990년", guide: "", rules: [], userCanon: "", toneTried: true, timeline: [], relations: [], navboxes: {}, aliases: {}, mainKey: key("옛 문서"), createdAt: 1, entities: { [key("옛 문서")]: ent("옛 문서", true, "지명") } };
   const fixture = { app: "worldwiki", version: 1, worlds: [world, old], pages: {
-    sea: { [duel]: pg(duel, "해저 결투", "사건", 1, "[[한서진]]과 [[카이 마루]]가 180해리 떨어진 [[북해 기지]] 앞바다에서 맞붙었다."), [hero]: pg(hero, "한서진", "인물", 2, "[[한서진]]은 [[해저 결투]]의 승자다.") },
+    sea: { [duel]: pg(duel, "해저 결투", "사건", 1, "[[한서진]]과 [[카이 마루]]가 180해리 떨어진 [[북해 기지]] 앞바다에서 맞붙었다."), [hero]: { ...pg(hero, "한서진", "인물", 2, "[[한서진]]은 [[해저 결투]]의 승자다."), editedAt: 3 } },
     old: { [key("옛 문서")]: pg(key("옛 문서"), "옛 문서", "지명", 1, "옛 문서의 본문이다.") } } };
   const page = await ctx.newPage(), prompts = [], errors = [];
   page.on("pageerror", e => { errors.push(e.message); console.error("Browser:", e.message); });
@@ -32,11 +32,18 @@ const read = (p, k) => p.evaluate(k => new Promise(resolve => { const r = indexe
     events: [{ name: "해저 결투", date: "2015년 11월 4일", place: "북해", nums: [{ name: "거리", value: "40", unit: "해리" }], participants: ["한서진", "카이 마루"], result: "한서진의 승리" }, { name: "막연한 사건", place: "어딘가" }],
     terms: [{ term: "Type-05", definition: "전 세계 일련번호" }, { term: "잠항 경보", definition: "잠항 병기가 접근할 때 내리는 경보 단계" }] };
   const wcReply = { findings: [
-    { kind: "repeat", title: "잠항 병기의 반복 침투", docs: ["해저 결투", "북해 기지"], detail: "두 문서가 같은 종류의 침투를 각자 지역 사건으로 다룬다.", link: "북해의 잠항 병기 침투는 모두 한 조직의 작전이다.", fix: "서로의 사건을 언급하게 한다." },
+    { kind: "repeat", severity: "high", title: "잠항 병기의 반복 침투", docs: ["해저 결투"], keywords: ["한서진"], detail: "두 문서가 같은 종류의 침투를 각자 지역 사건으로 다룬다.", link: "북해의 잠항 병기 침투는 모두 한 조직의 작전이다.", undecided: [], alts: ["각국 해군의 실험이 새어 나왔다."], fix: "서로의 사건을 언급하게 한다." },
     { kind: "first", title: "맨손 승리의 '최초' 주장", docs: ["한서진"], detail: "더 이른 기록이 있다.", link: "", fix: "'최초'를 '북해에서 처음'으로 좁힌다." }] };
   await ctx.route("**/v1beta/models/**", async r => {
     const prompt = JSON.parse(r.request().postData()).contents[0].parts[0].text;
     if (prompt.includes("## 세계 전체 점검")) { prompts.push(prompt); try { await r.fulfill({ contentType: "text/event-stream", body: "data: " + JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(wcReply) }] }, finishReason: "STOP" }] }) + "\n\n" }); } catch {} return; }
+    if (prompt.includes("편집자가 남긴 메모")) {   // 세계 점검 반영: 고치기 흐름
+      prompts.push(prompt);
+      const old = ["앞바다에서 맞붙었다.", "출격한 기지다."].find(t => prompt.includes(t));
+      const edits = old ? [{ memo: 1, field: "body", old, new: old.replace(/다\.$/, "다. 이 일은 한 조직의 작전과 이어진다.") }] : [];
+      try { await r.fulfill({ contentType: "text/event-stream", body: "data: " + JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ edits, note: "연결 설정 반영" }) }] }, finishReason: "STOP" }] }) + "\n\n" }); } catch {}
+      return;
+    }
     if (!prompt.includes("## 작성할 문서:")) { try { await r.fulfill({ status: 404, json: { error: { message: "model missing" } } }); } catch {} return; }
     prompts.push(prompt);
     try { await r.fulfill({ contentType: "text/event-stream", body: "data: " + JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(reply) }] }, finishReason: "STOP" }] }) + "\n\n" }); } catch {}
@@ -103,16 +110,30 @@ const read = (p, k) => p.evaluate(k => new Promise(resolve => { const r = indexe
     pass("세계 전체 점검은 버튼을 눌렀을 때 한 번만 부르고, 결과를 제안 목록으로 보여 준다");
 
     const [a, b] = saved.worldCheck.items;
-    await page.click(`[data-wc-link="${a.id}"]`); await page.waitForFunction(() => document.querySelector("#toast")?.textContent.includes("사용자 확정 설정에 넣었습니다"));
+    assert.deepEqual(a.docs, [duel, hero, stub], "핵심어 본문 검색으로 관련 문서를 보강한다");
+    assert(await page.locator(`[data-wc-alts="${a.id}"]`).isVisible()); assert.equal(await page.locator(`[data-wc-alts="${b.id}"]`).count(), 0, "대안이 없으면 [다른 안 보기]가 없다");
+    assert.equal(await page.locator(`#wc-${a.id} [data-wc-fix]`).first().isVisible(), false, "문서별 [고치기]는 펼치기 안에 있다");
+    const nFix = prompts.length;
+    await page.click(`[data-wc-link="${a.id}"]`);
+    await page.waitForFunction(id => { const x = S.world.worldCheck.items.find(y => y.id === id); return x.batch && !S.wcRun; }, a.id);
     assert.equal(await page.inputValue("#userTa"), "- 북해의 잠항 병기 침투는 모두 한 조직의 작전이다.");
-    saved = await read(page, "w:sea"); assert.equal(saved.worldCheck.items[0].status, "linked"); assert(saved.userCanon.includes("한 조직의 작전"));
-    await page.click(`[data-wc-keep="${b.id}"]`); await page.waitForFunction(id => S.world.worldCheck.items.find(x => x.id === id).status === "kept", b.id);
-    pass("[하나로 연결하는 설정 만들기]는 사용자 확정 설정에 넣고, [그대로 두기]는 표시만 한다");
+    saved = await read(page, "w:sea"); const la = saved.worldCheck.items.find(x => x.id === a.id);
+    assert.equal(la.status, "linked"); assert(saved.userCanon.includes("한 조직의 작전"));
+    assert.deepEqual(la.batch.done.sort(), [duel, stub].sort()); assert.deepEqual(la.batch.manual, [hero]); assert.deepEqual(la.batch.failed, []);
+    assert.equal(prompts.length - nFix, 2, "직접 고친 문서는 고치기를 부르지 않는다");
+    assert(prompts.slice(nFix).every(p => p.includes("세계 전체 점검으로 확정한 설정: 북해의 잠항 병기 침투는 모두 한 조직의 작전이다.")));
+    assert((await page.evaluate(k => S.pages[k].sections[0].body, duel)).includes("이 일은 한 조직의 작전과 이어진다."));
+    assert((await page.locator(`#wc-${a.id}`).textContent()).includes("직접 확인 필요: 「한서진」"));
+    pass("[연결하기]는 연결 설정을 사용자 확정 설정에 넣고 관련 문서마다 고치며, 직접 고친 문서는 '직접 확인 필요'로 둔다");
 
-    await page.click(`[data-wc-reopen="${a.id}"]`); await page.waitForSelector(`[data-wc-fix="${a.id}"][data-wc-doc="${stub}"]`);
+    await page.click(`[data-wc-keep="${b.id}"]`); await page.waitForFunction(id => S.world.worldCheck.items.find(x => x.id === id).status === "kept", b.id);
+    pass("[그대로 두기]는 표시만 한다");
+
+    await page.click(`[data-wc-reopen="${a.id}"]`); await page.waitForSelector(`[data-wc-link="${a.id}"]`);
+    await page.click(`#wc-${a.id} .wc-docs summary`);
     await page.click(`[data-wc-fix="${a.id}"][data-wc-doc="${stub}"]`); await page.waitForFunction(k => S.view.name === "fix" && S.fixv?.key === k, stub);
     assert((await page.evaluate(() => S.fixv.items[0].conflict)).includes("서로의 사건을 언급하게 한다"));
-    pass("[해당 문서 고치기]는 그 문서의 고치기 화면을 연다");
+    pass("펼치기 안의 [해당 문서 고치기]는 그 문서의 고치기 화면을 연다");
 
     assert.deepEqual(errors, []);
     console.log(`\n모두 통과 (${n}개). 유료 AI 호출 0회.`);

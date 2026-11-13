@@ -84,23 +84,50 @@ function epilogueHtml() {
     ${st.status === "ended" ? `<p class="note" style="margin-top:10px">이야기는 끝났지만 세계관은 계속 탐험할 수 있습니다. 새 문서는 결말 직후 시점으로 쓰입니다.</p>` : ""}</div>`;
 }
 
-/* 세계 전체 점검: 버튼을 눌렀을 때만 돈다. 결과는 제안이며 자동으로 고치지 않는다 */
+/* 세계 전체 점검: 버튼을 눌렀을 때만 돈다. [연결하기]를 누르기 전에는 아무것도 바꾸지 않는다.
+   중요한 것(high)을 위에, 사소한 것(low)은 접어서 보여 준다 */
 function worldCheckHtml(w) {
   const wc = w.worldCheck, busy = S.wcBusy === w.id, items = wc?.items || [];
-  const st = { linked: "연결하는 설정을 넣음", kept: "그대로 둠", fix: "문서 고치기를 엶" };
-  const title = k => S.pages[k]?.title || w.entities[k]?.title || "?";
+  const high = items.filter(x => x.severity !== "low"), low = items.filter(x => x.severity === "low");
   return `<h2 id="worldCheck">세계 전체 점검</h2>
-    <p class="note">문서 제목과 한 줄 정의, 사건 장부, 용어 정의, 연표를 모아 한 번에 보내, 문서 하나씩 보면 멀쩡하지만 모아 보면 이상한 곳(서로 모르는 같은 종류의 사건, 더 이른 기록과 부딪히는 '최초' 주장, 영향을 받았어야 할 문서가 모르는 사건)을 찾습니다. AI를 한 번 부르므로 자동으로 돌리지 않습니다. 결과는 제안이며 고르기 전에는 아무것도 바꾸지 않습니다.</p>
+    <p class="note">문서 제목과 한 줄 정의, 문서별 확정 사실, 사건 장부, 용어 정의, 연표를 모아 한 번에 보내, 문서 하나씩 보면 멀쩡하지만 모아 보면 이상한 곳(서로 모르는 같은 종류의 사건, 더 이른 기록과 부딪히는 '최초' 주장, 영향을 받았어야 할 문서가 모르는 사건)을 찾습니다. AI를 부르므로 자동으로 돌리지 않습니다. [연결하기]를 누르면 연결 설정을 사용자 확정 설정에 넣고 관련 문서마다 한두 문장씩 고칩니다.</p>
     <div class="row"><button type="button" class="btn" data-act="world-check" ${busy || !S.sample ? "disabled" : ""}>${busy ? "점검하는 중…" : "세계 전체 점검"}</button>${wc ? `<span class="note">마지막 점검 ${esc(fmtDate(wc.at))}</span>` : ""}</div>
     ${S.wcErr && !busy ? `<p class="note" role="alert">${esc(S.wcErr)}</p>` : ""}
     ${wc && !items.length ? `<p class="note">찾은 것이 없습니다.</p>` : ""}
-    ${items.map(x => `<div class="wc-item" id="wc-${esc(x.id)}" data-wc="${esc(x.id)}" style="border:1px solid var(--line);padding:8px 10px;margin:8px 0">
-      <p style="margin:0"><span class="src">${esc(WC_KINDS[x.kind] || "")}</span> <b>${esc(x.title)}</b>${x.status !== "open" ? ` <span class="src">· ${st[x.status] || ""}</span>` : ""}</p>
-      ${x.status === "open" ? `<p style="margin:6px 0">${esc(x.detail)}</p>
-      ${x.docs.length ? `<p class="note" style="margin:0">관련 문서: ${x.docs.map(k => linkHtml(title(k))).join(", ")}</p>` : ""}
-      ${x.link ? `<p style="margin:6px 0 0"><span class="src">연결하는 설정</span> ${esc(x.link)}</p>` : ""}${x.fix ? `<p class="note" style="margin:4px 0 0">고칠 방향: ${esc(x.fix)}</p>` : ""}
-      <div class="row" style="margin-top:6px">${x.link ? `<button type="button" class="btn pri" data-wc-link="${esc(x.id)}">하나로 연결하는 설정 만들기</button>` : ""}<button type="button" class="btn" data-wc-keep="${esc(x.id)}">그대로 두기</button>${x.docs.map(k => `<button type="button" class="btn" data-wc-fix="${esc(x.id)}" data-wc-doc="${esc(k)}" ${S.gen || S.fixing || !S.sample ? "disabled" : ""}>「${esc(title(k))}」 고치기</button>`).join("")}</div>`
-      : `<div class="row" style="margin-top:4px"><button type="button" class="btn" data-wc-reopen="${esc(x.id)}">다시 보기</button></div>`}</div>`).join("")}`;
+    ${high.map(x => wcItemHtml(w, x)).join("")}
+    ${low.length ? `<details class="wc-low" id="wcLow" ${low.some(x => x.id === S.wcFocus) ? "open" : ""}><summary>사소한 제안 ${low.length}개</summary>${low.map(x => wcItemHtml(w, x)).join("")}</details>` : ""}`;
+}
+function wcItemHtml(w, x) {
+  const st = { linked: "연결함", kept: "그대로 둠", fix: "문서 고치기를 엶" };
+  const title = k => S.pages[k]?.title || w.entities[k]?.title || "?";
+  const id = esc(x.id), run = S.wcRun, alts = Array.isArray(x.alts) ? x.alts : [], docs = x.docs || [];
+  const fixBtns = keys => keys.map(k => `<button type="button" class="btn" data-wc-fix="${id}" data-wc-doc="${esc(k)}" ${S.gen || S.fixing || !S.sample ? "disabled" : ""}>「${esc(title(k))}」 고치기</button>`).join("");
+  const perDoc = docs.length ? `<details class="wc-docs" style="margin-top:6px"><summary>문서별로 고치기</summary><div class="row" style="margin-top:4px">${fixBtns(docs)}</div></details>` : "";
+  const docList = docs.length ? `<p class="note" style="margin:0">관련 문서 ${docs.length}개: ${docs.map(k => linkHtml(title(k))).join(", ")}</p>` : "";
+  let body;
+  if (x.status === "open") {
+    const lock = !!run || !S.sample;
+    body = `<p style="margin:6px 0">${esc(x.detail)}</p>${docList}
+      ${x.link ? `<p style="margin:6px 0 0"><span class="src">연결 설정</span> ${esc(x.link)}</p>` : ""}
+      ${x.linkBad ? `<p class="note" style="margin:4px 0 0" role="alert">연결 설정에 정하지 않은 표현이 남아 바로 연결할 수 없습니다. [고쳐서 연결]로 문장을 정해 주세요.</p>` : ""}
+      ${x.fix ? `<p class="note" style="margin:4px 0 0">고칠 방향: ${esc(x.fix)}</p>` : ""}
+      <div class="row" style="margin-top:6px">${x.link ? `<button type="button" class="btn pri" data-wc-link="${id}" ${x.linkBad || lock ? "disabled" : ""}>연결하기</button>` : ""}${alts.length ? `<button type="button" class="btn" data-wc-alts="${id}" aria-expanded="${S.wcAlts === x.id}">다른 안 보기 (${alts.length})</button>` : ""}<button type="button" class="btn" data-wc-edit="${id}" aria-expanded="${S.wcEdit === x.id}">고쳐서 연결</button><button type="button" class="btn" data-wc-keep="${id}">그대로 두기</button></div>
+      ${S.wcAlts === x.id && alts.length ? `<ul class="wc-alts" style="margin:6px 0 0;padding-left:20px">${alts.map((t, j) => `<li>${esc(t)} <button type="button" class="btn" data-wc-alt="${id}" data-wc-i="${j}" ${lock ? "disabled" : ""}>이 안으로 연결</button></li>`).join("")}</ul>` : ""}
+      ${S.wcEdit === x.id ? `<div class="wc-edit" style="margin-top:6px"><label class="lb" for="wcEd-${id}">연결할 설정 <span class="note" style="font-weight:400">고친 문장이 그대로 사용자 확정 설정이 됩니다</span></label><textarea id="wcEd-${id}" rows="3" maxlength="400">${esc(x.link || "")}</textarea><div class="row" style="margin-top:4px"><button type="button" class="btn pri" data-wc-edit-go="${id}" ${lock ? "disabled" : ""}>이 문장으로 연결</button></div></div>` : ""}
+      ${perDoc}`;
+  } else {
+    const b = x.batch, running = run?.id === x.id;
+    const list = ks => ks.map(k => `「${esc(title(k))}」`).join(", ");
+    body = `${x.status === "linked" && x.linked ? `<p style="margin:6px 0 0"><span class="src">연결 설정</span> ${esc(x.linked)}</p>` : ""}
+      ${running ? `<p class="note" id="wcRun-${id}" role="status" style="margin:4px 0 0">관련 문서에 반영하는 중 ${run.n}/${run.total}${run.cur ? ` · 「${esc(run.cur)}」` : ""}</p>` : ""}
+      ${b && !running ? `<p class="note" style="margin:4px 0 0">관련 문서 반영: 고침 ${b.done.length}개${b.none.length ? ` · 고칠 곳 없음 ${b.none.length}개` : ""}${b.failed.length ? ` · 실패 ${b.failed.length}개` : ""}</p>
+        ${b.failed.length ? `<p class="note wc-failed" style="margin:4px 0 0">실패한 문서: ${list(b.failed)} <button type="button" class="btn" data-wc-retry="${id}" ${run || !S.sample ? "disabled" : ""}>실패한 문서 다시 시도</button></p>` : ""}
+        ${b.manual.length ? `<p class="note wc-manual" style="margin:4px 0 0">직접 확인 필요: ${list(b.manual)} <span class="src">· 사용자가 직접 고친 문서라 자동으로 고치지 않았습니다</span></p>` : ""}` : ""}
+      ${x.status === "linked" ? perDoc : ""}
+      <div class="row" style="margin-top:4px"><button type="button" class="btn" data-wc-reopen="${id}" ${running ? "disabled" : ""}>다시 보기</button></div>`;
+  }
+  return `<div class="wc-item" id="wc-${id}" data-wc="${id}" data-sev="${x.severity === "low" ? "low" : "high"}" style="border:1px solid var(--line);padding:8px 10px;margin:8px 0">
+      <p style="margin:0"><span class="src">${esc(WC_KINDS[x.kind] || "")}</span> <b>${esc(x.title)}</b>${x.status !== "open" ? ` <span class="src">· ${st[x.status] || ""}</span>` : ""}</p>${body}</div>`;
 }
 /* 용어 정의: 보고, 고치고, 확정한다. 정의가 엇갈리는 후보는 사용자가 고른다 */
 function glossaryHtml(w) {
