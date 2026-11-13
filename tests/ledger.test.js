@@ -16,7 +16,7 @@ vm.runInContext([
   cut("const sentencesOf =", "/* 인포박스에서"), cut("function pageTexts(p)", "/* 이름이 목적어"),
   cut("const namesOf =", "function checkBrief"),
   require("fs").readFileSync(require("path").join(__dirname, "..", "js", "ledger.js"), "utf8").replace('"use strict";', ""),
-  "Object.assign(globalThis,{promptTimeline,TIMELINE_PROMPT_N,worldCheckPrompt,parseWorldCheck,worldCheckAction,ingestTerms,purgeTerms,pickTerm,glossaryBlock,findTerm,normEvent,ingestEvents,eventIssues,eventCandidates,eventBlock,eventCheckBlock,addFact,addMention,compactFacts,promptFacts,promptMentions,FACT_CAP,MENTION_CAP,addTimeline,acceptTimeline,acceptPageTimeline,timelineSubject,keyOf,norm,stripMarks});"
+  "Object.assign(globalThis,{WC_LIMIT,WC_ITEMS_MAX,promptTimeline,TIMELINE_PROMPT_N,worldCheckPrompt,parseWorldCheck,worldCheckAction,ingestTerms,purgeTerms,pickTerm,glossaryBlock,findTerm,normEvent,ingestEvents,eventIssues,eventCandidates,eventBlock,eventCheckBlock,addFact,addMention,compactFacts,promptFacts,promptMentions,FACT_CAP,MENTION_CAP,addTimeline,acceptTimeline,acceptPageTimeline,timelineSubject,keyOf,norm,stripMarks});"
 ].join("\n"), c);
 let n = 0; const tests = []; const test = (name, fn) => tests.push([name, fn]);
 const ent = title => ({ title, type: "", summary: "", facts: [], mentions: [], page: false, box: "" });
@@ -338,7 +338,7 @@ test("핵심어로 걸린 문서는 앞뒤 문장과 함께 판단을 받아, ye
   const html = c.worldCheckHtml(w);
   assert(html.includes("추가 후보 1개") && new RegExp(`data-wc-extra="${x.id}" data-wc-doc="${K("북해 함대")}"  >`).test(html), "체크가 꺼진 채 보인다");
   assert(!html.includes(`data-wc-doc="${K("한서진")}"`), "no로 버린 문서는 어디에도 없다");
-  wcEnv(w, [{ findings: [finding({ docs: ["해저 결투"], keywords: ["잠항체"] })] }]); c.wcJudge = new Error("끊김");
+  w.worldCheck = null; wcEnv(w, [{ findings: [finding({ docs: ["해저 결투"], keywords: ["잠항체"] })] }]); c.wcJudge = new Error("끊김");
   await c.runWorldCheck();
   assert.deepEqual(w.worldCheck.items[0].docs, [K("해저 결투")]); assert.equal(w.worldCheck.items[0].extra.length, 3, "판단을 받지 못하면 모두 체크를 끈 추가 후보로 둔다");
 });
@@ -346,7 +346,7 @@ test("체크를 끈 추가 후보는 일괄 고치기에서 빠지고, 체크하
   const { w, K } = duelWorld();
   c.S.pages[K("남부 해전")].sections[0].body = "잠항체가 나타났다.";
   c.S.pages[K("북해 함대")] = doc("북해 함대", 4, "잠항체를 보았다.");
-  const env = wcEnv(w, [{ findings: [finding({ docs: ["해저 결투"], keywords: ["잠항체"] }), finding({ title: "둘째", docs: ["해저 결투"], keywords: ["잠항체"] })] }]);
+  const env = wcEnv(w, [{ findings: [finding({ docs: ["해저 결투"], keywords: ["잠항체"] }), finding({ title: "둘째", docs: ["한서진"], keywords: ["잠항체"] })] }]);
   c.wcJudge = { judgments: [{ id: "1-1", verdict: "unsure" }, { id: "1-2", verdict: "unsure" }, { id: "2-1", verdict: "unsure" }, { id: "2-2", verdict: "unsure" }] };
   await c.runWorldCheck();
   const [x, y] = w.worldCheck.items;
@@ -356,7 +356,7 @@ test("체크를 끈 추가 후보는 일괄 고치기에서 빠지고, 체크하
   assert.equal(y.extra.find(e => e.k === K("북해 함대")).on, true);
   env.fixed.length = 0;
   await c.worldCheckAction(y.id, "link");
-  assert.deepEqual(env.fixed, [K("해저 결투"), K("북해 함대")], "체크한 추가 후보는 함께 고친다");
+  assert.deepEqual(env.fixed, [K("한서진"), K("북해 함대")], "체크한 추가 후보는 함께 고친다");
 });
 test("두 번째 호출은 관련 문서의 본문 서술을 보내 link와 alts를 다시 받고, 실패하면 1차 결과를 그대로 쓴다", async () => {
   const { w, K } = duelWorld(); const asked = [];
@@ -371,19 +371,19 @@ test("두 번째 호출은 관련 문서의 본문 서술을 보내 link와 alts
   assert(p.includes("출처, 소속, 원인과 충돌하지 않게 하라") && p.includes("기존 서술을 살리는 방향") && p.includes("지금 link: 국제 암시장 무장 조직의 작전이다."));
   let [x] = w.worldCheck.items;
   assert(x.link.includes("국가 소속으로 오인됐다")); assert.deepEqual(x.alts, ["2차 대안"]); assert.equal(x.linkBad, false);
-  wcEnv(w, [{ findings: [finding({ docs: ["해저 결투", "한서진"], keywords: ["잠항체"], link: "국제 암시장 무장 조직의 작전이다.", alts: ["1차 대안"] })] }]);
+  w.worldCheck = null; wcEnv(w, [{ findings: [finding({ docs: ["해저 결투", "한서진"], keywords: ["잠항체"], link: "국제 암시장 무장 조직의 작전이다.", alts: ["1차 대안"] })] }]);
   c.wcRefine = new Error("연결 끊김");
   await c.runWorldCheck();
   [x] = w.worldCheck.items;
   assert.equal(x.link, "국제 암시장 무장 조직의 작전이다."); assert.deepEqual(x.alts, ["1차 대안"]); assert.equal(x.linkBad, false);
   c.wcRefine = { findings: [{ n: 1, link: "", alts: [] }] };
-  wcEnv(w, [{ findings: [finding({ docs: ["해저 결투"], keywords: ["잠항체"] })] }]); c.wcRefine = { findings: [{ n: 1, link: "" }] };
+  w.worldCheck = null; wcEnv(w, [{ findings: [finding({ docs: ["해저 결투"], keywords: ["잠항체"] })] }]); c.wcRefine = { findings: [{ n: 1, link: "" }] };
   await c.runWorldCheck(); assert.equal(w.worldCheck.items[0].link, "모든 침투는 한 조직의 작전이다.", "빈 link는 받지 않는다");
 });
 test("link에 정하지 않은 표현이 오면 그 결과만 다시 받고, 성공하면 정상 결과로 바꾼다", async () => {
   const { w, K } = duelWorld(); const prompts = [];
   c.S.pages[K("남부 해전")].sections[0].body = "남부에서도 잠항 병기가 목격되었다.";
-  wcEnv(w, [{ findings: [finding({ link: "국제 테러 세력 또는 군벌 연합의 작전이다.", undecided: ["국제 테러 세력 또는 군벌 연합"], keywords: ["잠항 병기"] }), finding({ title: "멀쩡한 것", link: "정해진 설정이다." })] },
+  wcEnv(w, [{ findings: [finding({ link: "국제 테러 세력 또는 군벌 연합의 작전이다.", undecided: ["국제 테러 세력 또는 군벌 연합"], keywords: ["잠항 병기"] }), finding({ title: "멀쩡한 것", docs: ["한서진"], link: "정해진 설정이다." })] },
     p => { prompts.push(p); return { link: "북해 연합 함대의 비밀 작전이다.", undecided: [], alts: ["각국의 실험이 새어 나왔다."] }; }]);
   c.wcJudge = { judgments: [{ id: "1-1", verdict: "yes" }] };
   await c.runWorldCheck();
@@ -416,7 +416,7 @@ test("다시 받아도 정하지 않으면 [연결하기]를 막고 [고쳐서 �
 });
 test("alts가 비어 있어도 화면이 깨지지 않고, 대안을 고르면 그 안으로 연결한다", async () => {
   const { w } = duelWorld();
-  wcEnv(w, [{ findings: [finding({ alts: [] }), finding({ title: "둘째", alts: ["다른 조직의 짓이다.", "자연 현상이다."] })] }]);
+  wcEnv(w, [{ findings: [finding({ alts: [] }), finding({ title: "둘째", docs: ["한서진"], alts: ["다른 조직의 짓이다.", "자연 현상이다."] })] }]);
   await c.runWorldCheck();
   const [a, b] = w.worldCheck.items;
   delete a.alts; c.S.wcAlts = a.id;   // 옛 결과처럼 alts가 아예 없어도
@@ -431,7 +431,7 @@ test("alts가 비어 있어도 화면이 깨지지 않고, 대안을 고르면 �
 });
 test("중요도 low인 결과는 '사소한 제안 N개'로 접어서 high 아래에 보여 준다", async () => {
   const { w } = duelWorld();
-  wcEnv(w, [{ findings: [finding({ severity: "low", title: "표현 차이" }), finding({ title: "큰 흐름" }), finding({ severity: "low", title: "작은 충돌" })] }]);
+  wcEnv(w, [{ findings: [finding({ severity: "low", title: "표현 차이" }), finding({ title: "큰 흐름", docs: ["한서진"] }), finding({ severity: "low", title: "작은 충돌", docs: ["남부 해전"] })] }]);
   await c.runWorldCheck();
   const html = c.worldCheckHtml(w), at = html.indexOf('<details class="wc-low"');
   assert(at > 0 && html.includes("사소한 제안 2개</summary>"));
@@ -443,7 +443,7 @@ test("중요도 low인 결과는 '사소한 제안 N개'로 접어서 high 아�
 test("연결을 확정하면 관련 문서마다 일괄로 고치고, 사용자가 직접 고친 문서는 건너뛰어 '직접 확인 필요'로 둔다", async () => {
   const { w, K } = duelWorld();
   c.S.pages[K("한서진")].editedAt = 5;
-  const env = wcEnv(w, [{ findings: [finding({ docs: ["해저 결투", "한서진", "남부 해전"] }), finding({ title: "[그대로 두기]용" })] }]);
+  const env = wcEnv(w, [{ findings: [finding({ docs: ["해저 결투", "한서진", "남부 해전"] }), finding({ title: "[그대로 두기]용", docs: ["카이 마루"], link: "따로 둔 설정이다." })] }]);
   await c.runWorldCheck();
   const [x, y] = w.worldCheck.items;
   c.wcFixResult = { [K("남부 해전")]: "failed" };
@@ -465,6 +465,112 @@ test("일괄 반영은 기존 고치기 흐름을 쓰고, 고치기 흐름은 �
   const body = fix.slice(fix.indexOf("async function wcFixDoc("), fix.indexOf("async function applyFix("));
   for (const s of ["p.editedAt) return \"failed\"", "fixBatchPrompt(w, p, f, [issue])", "parseFixEdits(r, f, 1).slice(0, WC_FIX_EDITS)", "commitFix(w, k, edits)", "await bgSync(k)"]) assert(body.includes(s), "없음: " + s);
   assert(fix.includes("res = commitFix(w, k, v.edits,"), "교정 페이지도 같은 적용 함수를 쓴다");
+});
+test("다시 점검해도 open 제안은 남고, 같은 문제(kind 같고 관련 문서 절반 이상 겹침)는 하나로 합쳐 '다시 발견됨'으로, 다시 안 나온 것은 '이전 점검'으로 둔다", async () => {
+  const { w, K } = duelWorld();
+  wcEnv(w, [{ findings: [finding({ title: "여러 해역의 연쇄 침투", docs: ["해저 결투", "한서진"] }), finding({ title: "남부만의 일", docs: ["남부 해전"], link: "남부의 일이다." })] }]);
+  await c.runWorldCheck();
+  const [a, b] = w.worldCheck.items, firstAt = a.at;
+  wcEnv(w, [{ findings: [finding({ title: "다르게 붙인 제목", docs: ["한서진", "남부 해전"], keywords: ["새 핵심어"] }), finding({ kind: "unaware", title: "종류가 다름", docs: ["해저 결투", "한서진"], link: "영향을 받았다." })] }]);
+  await c.runWorldCheck();
+  const items = w.worldCheck.items;
+  assert.equal(items.length, 3, "버리지 않고, 같은 문제는 합쳐 셋");
+  assert(items.includes(a) && items.includes(b), "처음 찾은 제안이 그대로 남는다");
+  assert.equal(a.seen, "again"); assert.equal(a.title, "여러 해역의 연쇄 침투", "먼저 본 글을 살린다"); assert.equal(a.at, firstAt);
+  assert.deepEqual(a.docs, [K("해저 결투"), K("한서진"), K("남부 해전")], "관련 문서는 합집합"); assert(a.keywords.includes("새 핵심어"));
+  assert.equal(b.seen, "prev", "이번에 다시 나오지 않은 open은 '이전 점검'");
+  const u = items.find(x => x.kind === "unaware"); assert(u && !u.seen, "kind가 다르면 합치지 않는다");
+  const html = c.worldCheckHtml(w);
+  assert(html.includes("여러 해역의 연쇄 침투</b> <span class=\"src wc-seen\">· 다시 발견됨") && html.includes("남부만의 일</b> <span class=\"src wc-seen\">· 이전 점검"));
+  assert(html.includes(`data-wc-close="${b.id}"`) && html.includes(`data-wc-keep="${b.id}"`));
+  await c.worldCheckAction(b.id, "close"); assert(!w.worldCheck.items.includes(b), "[닫기]를 눌러야 지운다");
+  await c.worldCheckAction(a.id, "keep");
+  wcEnv(w, [{ findings: [finding({ title: "또 찾음", docs: ["해저 결투"] })] }]);
+  await c.runWorldCheck();
+  assert.equal(w.worldCheck.items.filter(x => x.kind === "repeat").length, 1, "그대로 두기로 한 것과 같은 문제는 다시 올리지 않는다");
+  assert.equal(c.wcSame({ kind: "repeat", docs: ["a", "b", "c", "d"] }, { kind: "repeat", docs: ["a", "x", "y"] }), false, "절반이 안 겹치면 다른 문제");
+  assert.equal(c.wcSame({ kind: "repeat", docs: ["a", "b", "c", "d"] }, { kind: "repeat", docs: ["a", "b", "y"] }), true);
+});
+test("30개 상한을 넘으면 오래된 low부터 접고, 지우지 않는다", () => {
+  const old = Array.from({ length: 30 }, (_, i) => ({ id: "o" + i, kind: "repeat", severity: i < 3 ? "low" : "high", docs: ["d" + i], status: "open", at: 100 + i, title: "t" + i, detail: "x" }));
+  old[5].severity = "low"; old[5].at = 1;   // 가장 오래된 low
+  const items = c.wcAccumulate(old, [{ id: "n1", kind: "repeat", severity: "high", docs: ["새"], status: "open", at: 999, title: "새것", detail: "x" }, { id: "n2", kind: "repeat", severity: "high", docs: ["새2"], status: "open", at: 999, title: "새것2", detail: "x" }]);
+  assert.equal(items.length, 32, "지우지 않는다");
+  assert.deepEqual(items.filter(x => x.folded).map(x => x.id).sort(), ["o0", "o5"], "오래된 low 둘을 접는다");
+  const w = { title: "t", entities: {}, worldCheck: { at: 1, items } };
+  c.S.pages = {}; c.S.wcFocus = null;
+  const html = c.worldCheckHtml(w);
+  assert(html.includes("접어 둔 오래된 제안 2개</summary>") && html.includes('id="wc-o5"'));
+});
+test("점검 색인에 문서마다 날짜가 든 본문 문장을 둘까지 넣고, 사건 장부·연표에 이미 있는 것은 뺀다", () => {
+  const { w, K } = duelWorld();
+  c.S.pages[K("남부 해전")].sections[0].body = "2016년 3월 2일 남부 기지가 경보를 울렸다. 2015년 11월 4일 해저 결투가 멀리서 들렸다. 2017년 1월 9일 잠항체가 남부 해역에 나타났다. 2018년 5월 5일 잠항체가 다시 왔다. 2019년 6월 6일 셋째 침투가 있었다. 날짜 없는 문장이다.";
+  w.timeline.push({ year: "2016", month: 3, day: 2, event: "남부 기지 경보", src: K("남부 해전") });
+  const pr = c.worldCheckPrompt(w);
+  assert(pr.includes("## 문서 속 날짜가 적힌 서술"));
+  assert(pr.includes("- 「남부 해전」: 2017년 1월 9일 잠항체가 남부 해역에 나타났다.") && pr.includes("- 「남부 해전」: 2018년 5월 5일 잠항체가 다시 왔다."));
+  assert(!pr.includes("2019년 6월 6일"), "문서마다 둘까지");
+  assert(!pr.includes("2016년 3월 2일 남부 기지"), "연표에 같은 날짜로 있는 것은 뺀다");
+  assert(!pr.includes("2015년 11월 4일 해저 결투가 멀리서"), "사건 장부에 있는 것은 뺀다");
+});
+test("색인이 너무 크면 문서를 유형별로 나눠 여러 번 부르고, 결과는 같은 규칙으로 합친다", async () => {
+  const { w, K } = duelWorld(); const prompts = [];
+  c.S.pages[K("한서진")].type = "인물"; c.S.pages[K("해저 결투")].type = "사건"; c.S.pages[K("남부 해전")].type = "사건";
+  const size = k => { const ix = c.wcDocIndex(w, k, c.S.pages[k]); return ix.doc.length + ix.facts.length + ix.claims.join("\n").length + ix.dated.join("\n").length + 4; };
+  const save = c.WC_LIMIT.index; c.WC_LIMIT.index = size(K("해저 결투")) + size(K("남부 해전"));   // 사건 둘은 한 번에, 인물은 따로
+  try {
+    const chunks = c.wcChunks(w);
+    assert.deepEqual(chunks, [[K("해저 결투"), K("남부 해전")], [K("한서진")]], "유형별로 나눈다");
+    assert.deepEqual(c.wcChunks(w, 1e6), [[K("해저 결투"), K("한서진"), K("남부 해전")]], "작으면 한 번에");
+    const call = p => { prompts.push(p); return { findings: [finding({ docs: ["해저 결투", "한서진"] })] }; };
+    wcEnv(w, chunks.map(() => call));
+    await c.runWorldCheck();
+  } finally { c.WC_LIMIT.index = save; }
+  assert(prompts.length >= 2 && prompts.every(p => p.includes("일부(아래 '문서')만 보낸다")));
+  assert(prompts.some(p => p.includes("- 한서진 (인물)") && !p.includes("- 해저 결투 (사건)")), "부를 때마다 그 유형의 문서만");
+  assert.equal(w.worldCheck.items.length, 1, "같은 문제는 하나로 합친다");
+});
+test("kind가 first면 연결 버튼 없이 [그 주장 고치기]만 두고, 주장한 문서 하나만 고치며, 같은 주장은 하나로 합친다", async () => {
+  const { w, K } = duelWorld();
+  c.S.pages[K("남부 해전")].sections[0].body = "이 전투는 맨손으로 이긴 최초의 실전이었다. 다른 문장이다.";
+  const first = (o = {}) => finding({ kind: "first", title: "맨손 최초 주장", docs: ["남부 해전", "해저 결투", "한서진"], link: "법조문처럼 한정된 설정이다.", alts: ["대안"], detail: "1990년에 이미 맨손 승리가 있었다.", fix: "'최초'를 뺀다.", ...o });
+  wcEnv(w, [{ findings: [first({ claimDoc: "남부 해전", claim: "이 전투는 맨손으로 이긴 최초의 실전이었다." }), first({ title: "같은 주장 다른 제목" }), first({ title: "다른 문서 주장", claimDoc: "한서진", claim: "한서진이 처음이었다." })] }]);
+  await c.runWorldCheck();
+  const firsts = w.worldCheck.items;
+  assert.equal(firsts.length, 2, "같은 문서의 같은 주장은 하나로");
+  const [x] = firsts;
+  assert.equal(x.claimDoc, K("남부 해전")); assert.equal(x.link, "", "연결 설정을 만들지 않는다"); assert.deepEqual(x.alts, []);
+  assert.equal(c.wcClaimDoc(w, { kind: "first", docs: [K("해저 결투"), K("남부 해전")] }), K("남부 해전"), "응답에 없으면 '최초' 문장이 든 문서를 찾는다");
+  const html = c.worldCheckHtml(w), part = html.slice(html.indexOf(`id="wc-${x.id}"`), html.indexOf(`id="wc-${firsts[1].id}"`));
+  for (const s of ["data-wc-link=", "data-wc-alts=", "data-wc-edit=", "문서별로 고치기"]) assert(!part.includes(s), "first에 있으면 안 됨: " + s);
+  assert(part.includes(`data-wc-claim="${x.id}"`) && part.includes("그 주장 고치기") && part.includes("주장한 문서"));
+  const env = wcEnv(w); let ran = 0;
+  Object.assign(c, { runFixBatch: () => { ran++; }, window: { scrollTo() {} } });
+  await c.worldCheckAction(x.id, "link"); await c.worldCheckAction(x.id, "edit", "아무 문장");
+  assert.equal(w.userCanon, undefined, "연결하기는 막힌다"); assert.equal(x.status, "open");
+  x.linked = "억지"; x.status = "linked"; await c.worldCheckBatch(w, x); assert.deepEqual(env.fixed, [], "일괄 반영하지 않는다");
+  delete x.linked; x.status = "open";
+  await c.worldCheckAction(x.id, "claim");
+  assert.equal(ran, 1); assert.equal(c.S.fixv.key, K("남부 해전"), "주장한 문서 하나만 고친다"); assert.equal(c.S.fixv.items.length, 1);
+  assert(c.S.fixv.items[0].claim.includes("맨손으로 이긴 최초의 실전") && c.S.fixv.items[0].conflict.includes("범위를 좁히거나"));
+  assert.deepEqual(env.fixed, []); assert.equal(w.userCanon, undefined, "사용자 확정 설정에 넣지 않는다"); assert.equal(x.status, "fix");
+  c.S.fixv = null; c.S.view = { name: "canon" };
+});
+test("일괄 반영 중 [멈추기]를 누르면 남은 문서는 고치지 않고, 이미 고친 문서 목록을 보여 준다", async () => {
+  const { w, K } = duelWorld();
+  const env = wcEnv(w, [{ findings: [finding({ docs: ["해저 결투", "한서진", "남부 해전"] })] }]);
+  await c.runWorldCheck();
+  const [x] = w.worldCheck.items;
+  c.wcFixDoc = async (ww, k) => { env.fixed.push(k); if (env.fixed.length === 1) { assert(c.worldCheckHtml(w).includes(`data-wc-stop="${x.id}"`), "반영 중에는 [멈추기]가 보인다"); c.wcStopBatch(x.id); } return "done"; };
+  await c.worldCheckAction(x.id, "link");
+  assert.deepEqual(env.fixed, [K("해저 결투")], "멈춘 뒤 남은 문서는 건드리지 않는다");
+  assert.deepEqual(x.batch.done, [K("해저 결투")]); assert.deepEqual(x.batch.left, [K("한서진"), K("남부 해전")]); assert.equal(x.batch.stopped, true);
+  assert(env.toasts.at(-1).includes("고친 문서: 「해저 결투」"));
+  const html = c.worldCheckHtml(w);
+  assert(html.includes("반영을 멈췄습니다. 고친 문서: 「해저 결투」") && html.includes(`data-wc-resume="${x.id}"`) && !html.includes("data-wc-stop="));
+  env.fixed.length = 0; c.wcFixDoc = async (ww, k) => { env.fixed.push(k); return "done"; };
+  await c.worldCheckAction(x.id, "resume");
+  assert.deepEqual(env.fixed, [K("한서진"), K("남부 해전")]); assert.equal(x.batch.stopped, undefined); assert.equal(x.batch.done.length, 3);
 });
 test("세계 전체 점검은 버튼으로만 돈다", () => {
   assert(html.includes('case "world-check": runWorldCheck(); break;'));

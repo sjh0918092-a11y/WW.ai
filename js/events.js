@@ -114,6 +114,10 @@ document.addEventListener("click", ev => {
   if (d.wcEditGo) { worldCheckAction(d.wcEditGo, "edit", document.getElementById("wcEd-" + d.wcEditGo)?.value || ""); return; }
   if (d.wcRetry) { worldCheckAction(d.wcRetry, "retry"); return; }
   if (d.wcKeep) { worldCheckAction(d.wcKeep, "keep"); return; }
+  if (d.wcClose) { worldCheckAction(d.wcClose, "close"); return; }
+  if (d.wcClaim) { worldCheckAction(d.wcClaim, "claim"); return; }
+  if (d.wcStop) { wcStopBatch(d.wcStop); return; }
+  if (d.wcResume) { worldCheckAction(d.wcResume, "resume"); return; }
   if (d.wcFix) { worldCheckAction(d.wcFix, "fix", d.wcDoc); return; }
   if (d.wcReopen) { worldCheckAction(d.wcReopen, "reopen"); return; }
   if (d.termPick !== undefined) { chooseTerm(Number(d.termPick), Number(d.alt)); return; }

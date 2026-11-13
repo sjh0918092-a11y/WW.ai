@@ -284,10 +284,14 @@ const TERMS_JSON = `"terms":[{"term":"용어","definition":"뜻과 붙는 방식
    w.worldCheck = { at, items: [{ id, kind, severity, title, docs, keywords, detail, link, alts, linkBad, fix, status, linked?, batch? }] }
    link: 바로 확정할 기본안(결정된 문장). alts: 성격이 다른 대안 0~2개. linkBad: 다시 받아도 정하지 않은 표현이 남아 바로 연결할 수 없음.
    status: open(아직) · linked(연결 설정을 사용자 확정 설정으로 넣음) · kept(그대로 둠) · fix(문서 고치기를 엶)
-   batch: 연결을 확정한 뒤 관련 문서에 일괄로 반영한 결과 { done(고침), none(고칠 곳 없음), failed(실패), manual(사용자가 직접 고친 문서라 직접 확인 필요) } */
+   batch: 연결을 확정한 뒤 관련 문서에 일괄로 반영한 결과 { done(고침), none(고칠 곳 없음), failed(실패), manual(사용자가 직접 고친 문서라 직접 확인 필요), left?(멈춰서 손대지 않은 문서) }
+   점검 결과는 누적한다. at: 처음 찾은 때. seen: again(다시 발견됨) · prev(이번 점검에서 다시 나오지 않음). folded: 상한(WC_ITEMS_MAX)을 넘어 접어 둠.
+   kind가 first인 결과는 연결 설정을 만들지 않고, 주장한 문서(claimDoc)의 그 주장(claim)만 고친다 */
 const WC_KINDS = { repeat: "서로 모르는 반복", first: "'최초' 주장 충돌", unaware: "영향을 모르는 문서" };
 const FIRST_WORDS = ["최초", "처음", "유일"];
-const WC_DOCS_MAX = 40, WC_FACTS_PER_DOC = 4, WC_BATCH = ["done", "none", "failed", "manual"];
+const WC_DOCS_MAX = 40, WC_FACTS_PER_DOC = 4, WC_BATCH = ["done", "none", "failed", "manual"], WC_ITEMS_MAX = 30, WC_DATED_PER_DOC = 2;
+const WC_LIMIT = { index: 40000 };   // 점검 프롬프트의 문서 색인이 이보다 크면 유형별로 나눠 부른다
+const WC_DATE_RE = /(\d+)\s*년\s*(\d+)\s*월\s*(\d+)\s*일/;
 const wcSure = f => f.src === "user" || !!S.pages[f.src]?.editedAt;
 /* 문서 하나(항목 k)의 확정 사실. 사용자가 정한 것과 직접 고친 문서에서 온 것을 먼저 */
 function wcFacts(w, k, n) {
@@ -298,20 +302,59 @@ const wcPages = w => Object.entries(S.pages).filter(([k]) => w.entities[k]).sort
 function wcFactBlock(w, keys, n) {
   return keys.map(k => { const fs = wcFacts(w, k, n); return fs.length ? `「${S.pages[k]?.title || w.entities[k].title}」\n${fs.map(t => "  - " + t).join("\n")}` : ""; }).filter(Boolean).join("\n");
 }
-const WC_LINK_RULES = `- link에는 흩어진 기록을 하나로 잇는 설정을 결정된 한두 문장으로 쓴다. 사용자가 [연결하기]를 누르면 이 문장이 그대로 모든 문서가 지키는 확정 설정이 된다. 'A 또는 B', 'A나 B 중 하나', '~일 수도 있다', '어떤 세력'처럼 정하지 않은 채 남기지 않는다. 가능성이 여럿이면 가장 자연스러운 하나를 link로 정하고 나머지는 alts로 보낸다. first는 주장이 맞도록 범위를 좁히는 설정이어도 된다.
+const WC_LINK_RULES = `- link에는 흩어진 기록을 하나로 잇는 설정을 결정된 한두 문장으로 쓴다. 사용자가 [연결하기]를 누르면 이 문장이 그대로 모든 문서가 지키는 확정 설정이 된다. 'A 또는 B', 'A나 B 중 하나', '~일 수도 있다', '어떤 세력'처럼 정하지 않은 채 남기지 않는다. 가능성이 여럿이면 가장 자연스러운 하나를 link로 정하고 나머지는 alts로 보낸다.
 - link와 alts는 관련 문서들이 이미 확정한 출처, 소속, 원인('문서별 확정 사실', '사건 장부', '용어 정의', '사용자 확정 설정')과 충돌하면 안 된다. 문서마다 출처나 소속을 이미 다르게 정해 두었다면 그 기록들이 모두 참으로 남도록 잇는다.
 - undecided에는 link에 정하지 않은 표현이 남았다면 그 부분을 글자 그대로 옮긴다. 다 정했으면 빈 배열.
 - alts에는 link와 성격이 다른 대안을 0~2개 넣는다. 각각 결정된 한두 문장이다. 마땅한 대안이 없으면 빈 배열.`;
-function worldCheckPrompt(w) {
-  const pages = wcPages(w);
-  const docs = pages.map(([, p]) => `- ${p.title} (${p.type || "?"}): ${(p.summary || "").slice(0, 90)}`).join("\n");
-  const facts = wcFactBlock(w, pages.map(([k]) => k), WC_FACTS_PER_DOC).split("\n").slice(0, 400).join("\n");
-  const claims = pages.flatMap(([, p]) => pageTexts(p).flatMap(sentencesOf).filter(s => FIRST_WORDS.some(x => s.includes(x))).slice(0, 3).map(s => `- 「${p.title}」: ${s.slice(0, 160)}`)).slice(0, 120).join("\n");
+const wcDateKey = m => m ? `${+m[1]}-${+m[2]}-${+m[3]}` : "";
+/* 본문에서 "N년 N월 N일"이 든 문장을 기계적으로 고른다. 사건 장부와 연표에 같은 날짜로 이미 있는 것은 뺀다 */
+function wcDated(w, k, p, n = WC_DATED_PER_DOC) {
+  const evs = (w.events || []).map(e => [wcDateKey(String(e.date || "").match(WC_DATE_RE)), e]).filter(([d]) => d);
+  const tls = (w.timeline || []).filter(live).filter(t => t.month && t.day).map(t => [`${yearNum(t.year)}-${+t.month}-${+t.day}`, t]);
+  const known = (s, d) => evs.some(([ed, e]) => ed === d && (e.src === k || (e.name && s.includes(e.name)))) || tls.some(([td, t]) => td === d && (t.src === k || (t.event && (s.includes(t.event) || t.event.includes(s)))));
+  const out = [];
+  for (const s of pageTexts(p).flatMap(sentencesOf)) {
+    if (out.length >= n) break;
+    const d = wcDateKey(s.match(WC_DATE_RE));
+    if (d && !known(s, d) && !out.includes(s)) out.push(s);
+  }
+  return out.map(s => s.slice(0, 160));
+}
+/* 문서 하나의 색인 조각: 한 줄 정의, 확정 사실, 최초 주장, 날짜가 든 서술 */
+function wcDocIndex(w, k, p) {
+  return { doc: `- ${p.title} (${p.type || "?"}): ${(p.summary || "").slice(0, 90)}`, facts: wcFactBlock(w, [k], WC_FACTS_PER_DOC),
+    claims: pageTexts(p).flatMap(sentencesOf).filter(s => FIRST_WORDS.some(x => s.includes(x))).slice(0, 3).map(s => `- 「${p.title}」: ${s.slice(0, 160)}`),
+    dated: wcDated(w, k, p).map(s => `- 「${p.title}」: ${s}`) };
+}
+const wcIndexSize = ix => ix.doc.length + ix.facts.length + ix.claims.join("\n").length + ix.dated.join("\n").length + 4;
+/* 색인이 크면 문서를 유형별로 묶어 여러 번 부른다. 한 유형이 혼자 넘치면 쓴 순서대로 자른다 */
+function wcChunks(w, max = WC_LIMIT.index) {
+  const pages = wcPages(w), size = new Map(pages.map(([k, p]) => [k, wcIndexSize(wcDocIndex(w, k, p))]));
+  if ([...size.values()].reduce((a, b) => a + b, 0) <= max) return [pages.map(([k]) => k)];
+  const byType = new Map();
+  for (const [k, p] of pages) { const t = p.type || "?"; if (!byType.has(t)) byType.set(t, []); byType.get(t).push(k); }
+  const out = []; let cur = [], n = 0;
+  const flush = () => { if (cur.length) out.push(cur); cur = []; n = 0; };
+  for (const keys of byType.values()) {
+    const total = keys.reduce((a, k) => a + size.get(k), 0);
+    if (n + total > max) flush();
+    for (const k of keys) { if (n && n + size.get(k) > max) flush(); cur.push(k); n += size.get(k); }
+  }
+  flush();
+  return out;
+}
+function worldCheckPrompt(w, keys = null) {
+  const pages = wcPages(w).filter(([k]) => !keys || keys.includes(k)), ix = pages.map(([k, p]) => wcDocIndex(w, k, p));
+  const docs = ix.map(x => x.doc).join("\n");
+  const facts = ix.map(x => x.facts).filter(Boolean).join("\n").split("\n").slice(0, 400).join("\n");
+  const claims = ix.flatMap(x => x.claims).slice(0, 120).join("\n");
+  const dated = ix.flatMap(x => x.dated).slice(0, 200).join("\n");
   const evs = [...(w.events || [])].filter(x => S.pages[x.src]).sort(eventRank).map(x => eventRow(w, x, "")).slice(0, 150);
   const tl = timelineOrder((w.timeline || []).filter(live), w).map(t => `- ${tlWhen(t)}: ${t.event}`).join("\n");
   const kept = (w.worldCheck?.items || []).filter(x => x.status === "kept").map(x => `- ${x.title}`).join("\n");
+  const part = keys ? `\n이번에는 문서가 많아 일부(아래 '문서')만 보낸다. 사건 장부와 연표는 세계 전체의 것이다.\n` : "";
   return `## 세계 전체 점검
-너는 가상 세계관 위키 「${w.title}」(작중 기준 시점 ${w.era})의 편집장이다. 문서 하나씩 보면 멀쩡하지만 모아 보면 이상한 곳을 찾는다. 문체나 한 문서 안의 모순은 보지 않는다.
+너는 가상 세계관 위키 「${w.title}」(작중 기준 시점 ${w.era})의 편집장이다. 문서 하나씩 보면 멀쩡하지만 모아 보면 이상한 곳을 찾는다. 문체나 한 문서 안의 모순은 보지 않는다.${part}
 
 찾을 것:
 1. repeat: 같은 종류의 사건(침투, 실험, 사고, 습격, 발견 등)이 여러 곳에서 일어났는데 문서끼리 서로를 모르는 것. 세계 차원에서 한 흐름으로 이어져야 자연스러운데 각자 지역 사건으로만 처리된 경우다.
@@ -325,6 +368,7 @@ function worldCheckPrompt(w) {
 - severity: 세계관의 흐름이나 여러 문서에 영향을 주는 것은 high, 둘 다 참일 수 있는 표현 차이(예: '최초'와 '유일')나 문서 한두 개의 사소한 충돌은 low.
 ${WC_LINK_RULES}
 - fix에는 해당 문서들을 어떻게 고치면 되는지 한 문장으로 쓴다.
+- first는 연결 설정을 만들지 않는다. link와 alts는 비우고, claimDoc에 '최초·처음·유일'을 주장한 문서 제목 하나를, claim에 그 주장 문장을 글자 그대로 쓴다. fix에는 그 문서 하나에서 표현의 범위를 좁히거나 그 말을 빼는 방향을 쓴다.
 
 ## 핵심 규칙
 ${(w.rules || []).map(r => "- " + r).join("\n") || "(없음)"}
@@ -341,6 +385,9 @@ ${facts || "(없음)"}
 ## 문서 속 '최초·처음·유일' 서술
 ${claims || "(없음)"}
 
+## 문서 속 날짜가 적힌 서술 (사건 장부와 연표에 없는 것. 같은 종류의 사건이 여러 곳에서 일어났는지 볼 때 함께 본다)
+${dated || "(없음)"}
+
 ## 사건 장부
 ${evs.length ? EVENT_HEAD + "\n" + evs.join("\n") : "(없음)"}
 
@@ -349,7 +396,7 @@ ${glossaryBlock(w) || "## 용어 정의\n(없음)"}
 ## 연표
 ${tl || "(없음)"}
 
-JSON 객체 하나만 출력: {"findings":[{"kind":"repeat, first, unaware 중 하나","severity":"high 또는 low","title":"짧은 제목","docs":["관련 문서 제목"],"keywords":["핵심어"],"detail":"무엇이 왜 이상한지 두세 문장","link":"하나로 잇는 결정된 설정 한두 문장","undecided":[],"alts":["성격이 다른 대안 설정 한두 문장"],"fix":"문서를 고칠 방향 한 문장"}]}
+JSON 객체 하나만 출력: {"findings":[{"kind":"repeat, first, unaware 중 하나","severity":"high 또는 low","title":"짧은 제목","docs":["관련 문서 제목"],"keywords":["핵심어"],"detail":"무엇이 왜 이상한지 두세 문장","link":"하나로 잇는 결정된 설정 한두 문장","undecided":[],"alts":["성격이 다른 대안 설정 한두 문장"],"fix":"문서를 고칠 방향 한 문장","claimDoc":"first일 때만: 주장한 문서 제목","claim":"first일 때만: 주장 문장"}]}
 없으면 findings는 빈 배열.`;
 }
 const wcList = (a, n, max) => [...new Set((Array.isArray(a) ? a : []).map(t => evText(t, n)).filter(Boolean))].slice(0, max);
@@ -358,10 +405,82 @@ function parseWorldCheck(w, r) {
   const at = Date.now();
   return (Array.isArray(r?.findings) ? r.findings : []).filter(x => x && typeof x === "object").slice(0, 8).map((x, i) => {
     const docs = [...new Set((Array.isArray(x.docs) ? x.docs : []).map(t => kOf(w, evText(t, 80))).filter(k => S.pages[k] && w.entities[k]))].slice(0, 12);
-    const link = evText(x.link, 400);
-    return { id: at.toString(36) + Math.random().toString(36).slice(2, 6) + i, kind: WC_KINDS[x.kind] ? x.kind : "repeat", severity: x.severity === "low" ? "low" : "high", title: evText(x.title, 80), docs,
-      keywords: wcList(x.keywords, 30, 3).filter(t => t.length >= 2), detail: evText(x.detail, 500), link, undecided: link ? wcList(x.undecided, 120, 6) : [], alts: wcAlts(x.alts, link), fix: evText(x.fix, 300), status: "open" };
-  }).filter(x => x.title && x.detail && (x.docs.length || x.link));
+    const kind = WC_KINDS[x.kind] ? x.kind : "repeat", first = kind === "first";
+    const link = first ? "" : evText(x.link, 400);
+    const y = { id: at.toString(36) + Math.random().toString(36).slice(2, 6) + i, at, kind, severity: x.severity === "low" ? "low" : "high", title: evText(x.title, 80), docs,
+      keywords: wcList(x.keywords, 30, 3).filter(t => t.length >= 2), detail: evText(x.detail, 500), link, undecided: link ? wcList(x.undecided, 120, 6) : [], alts: first ? [] : wcAlts(x.alts, link), fix: evText(x.fix, 300), status: "open" };
+    if (first) {
+      const cd = kOf(w, evText(x.claimDoc, 80));
+      if (S.pages[cd] && w.entities[cd]) { y.claimDoc = cd; if (!docs.includes(cd)) docs.unshift(cd); }
+      y.claim = evText(x.claim, 300);
+      y.claimDoc = wcClaimDoc(w, y); y.claim ||= wcClaimText(w, y);
+    }
+    return y;
+  }).filter(x => x.title && x.detail && (x.kind === "first" ? x.claimDoc : (x.docs.length || x.link)));
+}
+/* first: 주장한 문서. 응답에 없으면 관련 문서 가운데 '최초·처음·유일' 문장(주장 문장이나 핵심어가 든 것을 먼저)이 있는 첫 문서 */
+const wcFirstSents = p => pageTexts(p).flatMap(sentencesOf).filter(s => FIRST_WORDS.some(t => s.includes(t)));
+function wcClaimDoc(w, x) {
+  if (x.claimDoc && S.pages[x.claimDoc]) return x.claimDoc;
+  const docs = (x.docs || []).filter(k => S.pages[k]), hit = k => wcFirstSents(S.pages[k]);
+  const claim = norm(x.claim || "");
+  return docs.find(k => claim && hit(k).some(s => s.includes(claim) || claim.includes(norm(s))))
+    || docs.find(k => hit(k).some(s => (x.keywords || []).some(kw => s.includes(kw))))
+    || docs.find(k => hit(k).length) || docs[0] || "";
+}
+function wcClaimText(w, x) {
+  const p = S.pages[x.claimDoc]; if (!p) return "";
+  const ss = wcFirstSents(p);
+  return evText(ss.find(s => (x.keywords || []).some(kw => s.includes(kw))) || ss[0] || "", 300);
+}
+/* 같은 문제인가: kind가 같고 관련 문서가 절반 이상 겹친다(작은 쪽 기준). first는 같은 문서의 같은 주장일 때만 */
+const wcClaimKey = t => norm(stripMarks(t || "")).replace(/[\s.。,·'"‘’“”「」]/g, "");
+function wcSame(a, b) {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "first") {
+    if (!a.claimDoc || a.claimDoc !== b.claimDoc) return false;
+    const A = wcClaimKey(a.claim), B = wcClaimKey(b.claim);
+    return !A || !B || A === B || A.includes(B) || B.includes(A);
+  }
+  const A = a.docs || [], B = b.docs || [];
+  if (!A.length || !B.length) return false;
+  const both = A.filter(k => B.includes(k)).length;
+  return both * 2 >= Math.min(A.length, B.length);
+}
+/* b를 a에 합친다. 관련 문서와 핵심어는 합집합, 중요도는 높은 쪽. 글은 a(먼저 본 쪽)를 살리되 a의 link가 막혔으면 b의 것으로 */
+function wcMergeInto(a, b) {
+  a.docs = [...new Set([...(a.docs || []), ...(b.docs || [])])].slice(0, WC_DOCS_MAX);
+  a.keywords = [...new Set([...(a.keywords || []), ...(b.keywords || [])])].slice(0, 6);
+  for (const e of b.extra || []) if (!a.docs.includes(e.k) && !(a.extra ||= []).some(y => y.k === e.k)) a.extra.push(e);
+  if (a.extra) a.extra = a.extra.filter(e => !a.docs.includes(e.k));
+  if (b.severity !== "low") a.severity = "high";
+  if (a.kind !== "first" && b.link && (!a.link || a.linkBad) && !b.linkBad) { a.link = b.link; a.alts = b.alts || []; a.linkBad = false; }
+  if (!a.claim && b.claim) a.claim = b.claim;
+  a.at = Math.min(a.at || b.at || Date.now(), b.at || Infinity);
+  return a;
+}
+/* 한 번의 점검(여러 번 나눠 부른 것 포함)에서 나온 결과끼리 합친다 */
+function wcDedupe(list) {
+  const out = [];
+  for (const x of list) { const y = out.find(o => wcSame(o, x)); if (y) wcMergeInto(y, x); else out.push(x); }
+  return out;
+}
+/* 새 결과를 기존 결과에 누적한다. 이미 정한 것(open이 아닌 것)과 같은 문제는 버리고, open과 같으면 합쳐 '다시 발견됨',
+   이번에 다시 나오지 않은 open은 '이전 점검'으로 남긴다. 상한을 넘으면 오래된 low부터 접고 지우지 않는다 */
+function wcAccumulate(old, found) {
+  const items = old || [], opens = items.filter(x => x.status === "open"), hit = new Set(), fresh = [];
+  for (const x of found) {
+    if (items.some(y => y.status !== "open" && wcSame(y, x))) continue;
+    const y = opens.find(o => wcSame(o, x));
+    if (y) { wcMergeInto(y, x); y.seen = "again"; hit.add(y); }
+    else fresh.push(x);
+  }
+  for (const y of opens) if (!hit.has(y)) y.seen = "prev";
+  const all = [...fresh, ...opens.filter(y => hit.has(y)), ...opens.filter(y => !hit.has(y)), ...items.filter(y => y.status !== "open")];
+  for (const y of all) delete y.folded;
+  const over = all.length - WC_ITEMS_MAX;
+  if (over > 0) [...all].sort((a, b) => (a.severity === "low" ? 0 : 1) - (b.severity === "low" ? 0 : 1) || (a.at || 0) - (b.at || 0)).slice(0, over).forEach(y => { y.folded = true; });
+  return all;
 }
 /* 문서에서 핵심어가 든 문장을 앞뒤 문장과 묶어 max곳까지(문자열 포함 여부만 본다) */
 function wcSnips(p, keywords, max = 3) {
@@ -407,7 +526,7 @@ JSON 객체 하나만 출력: {"judgments":[{"id":"1-1","verdict":"yes, no, unsu
 /* 핵심어로 걸린 문서를 quick 모델에게 한 번에 묻는다. yes는 관련 문서, unsure는 체크를 끈 추가 후보(extra), no는 버린다.
    판단을 받지 못한 문서는 unsure로 둔다 */
 async function wcJudgeCandidates(w, found) {
-  const groups = found.map(x => [x, wcCandidates(w, x)]).filter(([, c]) => c.length);
+  const groups = found.filter(x => x.kind !== "first").map(x => [x, wcCandidates(w, x)]).filter(([, c]) => c.length);
   if (!groups.length) return false;
   let r = null;
   try { r = await callJson("worldCheck", wcJudgePrompt(w, groups), { modelTier: "quick" }, { title: w.title + " · 관련 문서 판단" }); } catch {}
@@ -440,7 +559,7 @@ ${wcFactBlock(w, x.docs, 6) || "(없음)"}`).join("\n\n")}
 JSON 객체 하나만 출력: {"findings":[{"n":1,"link":"결정된 설정 한두 문장","undecided":[],"alts":["성격이 다른 대안 설정 한두 문장"]}]}`;
 }
 async function wcRefineLinks(w, found) {
-  const list = found.map(x => [x, x.docs.slice(0, 15).map(k => [k, S.pages[k] ? wcSnips(S.pages[k], x.keywords) : []]).filter(([, sn]) => sn.length)]).filter(([x, docs]) => docs.length);
+  const list = found.filter(x => x.kind !== "first").map(x => [x, x.docs.slice(0, 15).map(k => [k, S.pages[k] ? wcSnips(S.pages[k], x.keywords) : []]).filter(([, sn]) => sn.length)]).filter(([x, docs]) => docs.length);
   if (!list.length) return false;
   let r;
   try { r = await callJson("worldCheck", wcLinkPrompt(w, list), { modelTier: "check" }, { title: w.title + " · 연결 설정 다듬기" }); } catch { return false; }   // 실패하면 1차 결과를 그대로 쓴다
@@ -499,17 +618,19 @@ async function runWorldCheck() {
   if (!Object.keys(S.pages).length) { toast("점검할 문서가 없습니다."); return; }
   S.wcBusy = w.id; S.wcErr = ""; renderMain();
   try {
-    const r = await callJson("worldCheck", worldCheckPrompt(w), { modelTier: "check" }, { title: w.title + " · 세계 전체 점검" });
+    const chunks = wcChunks(w), many = chunks.length > 1;   // 색인이 크면 유형별로 나눠 부르고 결과를 합친다
+    const rs = await Promise.all(chunks.map((keys, i) => callJson("worldCheck", worldCheckPrompt(w, many ? keys : null), { modelTier: "check" }, { title: w.title + " · 세계 전체 점검" + (many ? ` ${i + 1}/${chunks.length}` : "") })
+      .catch(err => { if (!many) throw err; return null; })));
     if (S.world !== w) return;
-    const found = parseWorldCheck(w, r);
+    if (rs.every(r => r === null)) throw new Error("세계 전체 점검을 받지 못했습니다.");
+    const found = wcDedupe(rs.flatMap(r => parseWorldCheck(w, r)));
     await wcJudgeCandidates(w, found);   // 핵심어로 걸린 문서는 판단을 받아 yes만 넣는다
     if (S.world !== w) return;
     await wcRefineLinks(w, found);       // 관련 문서의 본문 서술을 보고 link와 alts를 한 번 더 받는다
     await Promise.all(found.filter(x => x.undecided.length).map(x => wcRetryLink(w, x)));   // 정하지 않은 link는 그 결과만 한 번 다시 받는다
     for (const x of found) { x.linkBad = !!x.undecided.length; delete x.undecided; }
     if (S.world !== w) return;
-    const kept = (w.worldCheck?.items || []).filter(x => x.status !== "open");   // 이미 정한 것은 남긴다
-    w.worldCheck = { at: Date.now(), items: [...found, ...kept].slice(0, 30) };
+    w.worldCheck = { at: Date.now(), items: wcAccumulate(w.worldCheck?.items, found) };   // open 제안도 버리지 않고 누적한다
     S.wcAlts = null; S.wcEdit = null;
     await Store.saveWorld(w);
   } catch (err) { S.wcErr = errMsg(err); }
@@ -518,16 +639,18 @@ async function runWorldCheck() {
 /* 연결을 확정한 뒤 관련 문서마다 확정 설정을 반영한다(wcFixDoc: 기존 고치기 흐름).
    사용자가 직접 고친 문서는 고치지 않고 '직접 확인 필요'로 남긴다. keys를 주면 그 문서만 다시 시도한다 */
 async function worldCheckBatch(w, x, keys = wcTargets(x)) {
-  if (S.wcRun || !x.linked) return;
+  if (S.wcRun || !x.linked || x.kind === "first") return;   // first는 일괄 반영하지 않는다
   const b = x.batch ||= { done: [], none: [], failed: [], manual: [] };
   for (const f of WC_BATCH) b[f] ||= [];
   const todo = keys.filter(k => S.pages[k]);
   for (const f of WC_BATCH) b[f] = b[f].filter(k => !todo.includes(k));
-  const run = S.wcRun = { id: x.id, n: 0, total: todo.length, cur: "" };
+  delete b.left; delete b.stopped;
+  const run = S.wcRun = { id: x.id, n: 0, total: todo.length, cur: "", stop: false };
   const show = () => { const el = document.getElementById("wcRun-" + x.id); if (el) el.textContent = `관련 문서에 반영하는 중 ${run.n}/${run.total}${run.cur ? ` · 「${run.cur}」` : ""}`; };
   if (S.world === w && S.view.name === "canon") renderMain();
   try {
-    for (const k of todo) {
+    for (const [i, k] of todo.entries()) {
+      if (run.stop) { b.left = todo.slice(i); b.stopped = true; break; }   // 멈추면 남은 문서는 건드리지 않는다
       const p = S.pages[k];
       if (S.world !== w || !p) { b.failed.push(k); continue; }
       if (p.editedAt) { b.manual.push(k); run.n++; continue; }
@@ -541,7 +664,21 @@ async function worldCheckBatch(w, x, keys = wcTargets(x)) {
   if (S.world !== w) return;
   try { await Store.saveWorld(w); } catch {}
   if (S.view.name === "canon") { renderMain(); document.getElementById("wc-" + x.id)?.scrollIntoView({ block: "center" }); }
+  if (b.stopped) { toast(`반영을 멈췄습니다. 고친 문서: ${b.done.map(k => `「${S.pages[k]?.title || "?"}」`).join(", ") || "없음"}. 남은 ${b.left.length}개는 건드리지 않았습니다.`); return; }
   toast(`관련 문서 ${todo.length}개 중 ${b.done.length}개를 고쳤습니다.${b.failed.length ? ` 실패 ${b.failed.length}개는 다시 시도할 수 있습니다.` : ""}${b.manual.length ? ` 직접 고친 문서 ${b.manual.length}개는 직접 확인해 주세요.` : ""}`);
+}
+/* 일괄 반영 [멈추기]: 지금 고치는 문서까지만 마치고 멈춘다 */
+function wcStopBatch(id) {
+  const run = S.wcRun; if (!run || run.id !== id || run.stop) return false;
+  run.stop = true;
+  const el = document.getElementById("wcStop-" + id); if (el) { el.disabled = true; el.textContent = "멈추는 중…"; }
+  return true;
+}
+/* first: 주장한 문서 하나만, 그 표현의 범위를 좁히거나 '최초'를 빼도록 고치기 화면을 연다. 사용자 확정 설정은 건드리지 않는다 */
+function wcClaimIssue(w, x, k) {
+  const others = (x.docs || []).filter(d => d !== k).slice(0, 8).map(d => `「${S.pages[d]?.title || w.entities[d]?.title || "?"}」`).join(", ");
+  return { claim: `세계 전체 점검('최초' 주장 충돌): ${x.claim || x.title}`, severity: "high",
+    conflict: `${x.detail}${others ? ` 더 이른 기록이 있는 문서: ${others}.` : ""} 이 문서에서 그 주장 표현만 고친다. '최초·처음·유일'의 범위를 좁히거나(예: 지역, 분야, 방식을 한정) 그 말을 뺀다. 다른 서술은 바꾸지 않고, 새 설정을 만들지 않는다.${x.fix ? ` 고칠 방향: ${x.fix}` : ""}` };
 }
 /* 추가 후보의 체크. 일괄 고치기는 체크한 후보에만 적용한다 */
 async function wcToggleExtra(id, k, on) {
@@ -554,6 +691,7 @@ async function worldCheckAction(id, what, arg) {
   const w = S.world, x = w?.worldCheck?.items?.find(y => y.id === id); if (!x) return;
   S.wcFocus = id;   // 다시 그려도 이 제안이 접힌 목록 안에 숨지 않게
   if (what === "link" || what === "alt" || what === "edit") {
+    if (x.kind === "first") { toast("'최초' 주장 충돌은 연결 설정을 만들지 않습니다. [그 주장 고치기]를 눌러 주세요."); return; }
     if (S.wcRun) { toast("다른 연결을 관련 문서에 반영하는 중입니다. 끝난 뒤 다시 눌러 주세요."); return; }
     const text = evText(what === "link" ? (x.linkBad ? "" : x.link) : what === "alt" ? x.alts?.[arg] : arg, 400);
     if (!text) { if (what === "edit") toast("연결할 설정 문장을 적어 주세요."); return; }
@@ -567,7 +705,20 @@ async function worldCheckAction(id, what, arg) {
     return;
   }
   if (what === "retry") { if (x.status === "linked" && x.batch?.failed?.length) await worldCheckBatch(w, x, x.batch.failed.slice()); return; }
-  if (what === "keep") x.status = "kept";
+  if (what === "resume") { if (x.status === "linked" && x.batch?.left?.length) await worldCheckBatch(w, x, x.batch.left.slice()); return; }
+  if (what === "claim") {
+    if (x.kind !== "first") return;
+    const k = wcClaimDoc(w, x), p = S.pages[k]; if (!p) { toast("주장한 문서를 찾지 못했습니다."); return; }
+    if (S.gen && S.gen.key === k) { toast("이 문서를 작성하는 중입니다."); return; }
+    x.claimDoc = k; x.status = "fix";
+    try { await Store.saveWorld(w); } catch {}
+    S.fixv = { key: k, items: [wcClaimIssue(w, x, k)], sel: new Set([0]), phase: "pick", edits: [], note: "", err: "", skipped: 0 };
+    S.view = { name: "fix", key: k }; renderAll(); window.scrollTo({ top: 0 });
+    runFixBatch();
+    return;
+  }
+  if (what === "close") { w.worldCheck.items = w.worldCheck.items.filter(y => y !== x); S.wcFocus = null; }
+  else if (what === "keep") x.status = "kept";
   else if (what === "fix") {
     const p = S.pages[arg]; if (!p || !wcTargets(x).concat((x.extra || []).map(e => e.k)).includes(arg)) return;
     if (S.gen && S.gen.key === arg) { toast("이 문서를 작성하는 중입니다."); return; }
