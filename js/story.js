@@ -36,6 +36,7 @@ function applyChapter(w, n, out, choice) {
   for (const f of (Array.isArray(out.facts) ? out.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = kOf(w, f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), src); }
   for (const r of (Array.isArray(out.relations) ? out.relations : []).slice(0, 12)) addRelation(w, src, r);
   for (const t of (Array.isArray(out.timeline) ? out.timeline : []).slice(0, 4)) addTimeline(w, t, src, n);
+  afterTimeline(w);
   const narrativeBody = storyQuote(pb.sections.map(s => s.body).join("\n")), sources = new Map(storySources(w).map(row => [row.source, storyQuote(row.text)])); sources.set("current", narrativeBody);
   const warn = text => progress.record.warnings.push(text);
   const secretFor = value => {

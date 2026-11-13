@@ -203,6 +203,7 @@ async function commitEdit(ed, out, r, conflicts, ch) {
     w.timeline = w.timeline.filter(x => x.src !== k);
     for (const f of (Array.isArray(r.facts) ? r.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = kOf(w, f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), k); }
     for (const t of (Array.isArray(r.timeline) ? r.timeline : [])) addTimeline(w, t, k);
+    afterTimeline(w);
     if (Array.isArray(r.events)) ingestEvents(w, k, r.events);   // 직접 고친 문서의 사건 기록은 기준이 된다
     w.relations = (w.relations || []).filter(x => x.src !== k);
     for (const x of (Array.isArray(r.relations) ? r.relations : []).slice(0, 16)) addRelation(w, k, x);

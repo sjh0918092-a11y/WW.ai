@@ -202,12 +202,59 @@ function sentenceAround(t, idx, len) {
   return stripMarks(t.slice(a, Math.min(t.length, b))).replace(/^[-\s]+/, "").trim().slice(0, 420);
 }
 const yearNum = y => { const m = String(y).match(/-?\d+/); if (!m) return NaN; let n = +m[0]; if (/기원전|BC|B\.C/i.test(y)) n = -Math.abs(n); return n; };
+/* ---------- 연표 날짜와 정렬 ----------
+   연표 항목 { year, month?, day?, event, src, ch?, dateAsk? }. month·day는 숫자이고, 새 항목은 처음부터 월·일을 확정해 받는다.
+   dateAsk: 날짜가 비어 들어온 새 항목(askTimelineDates가 한 번 다시 묻고 지운다). 옛 항목에는 날짜를 채우지 않는다 */
+const TL_MONTH_DAYS = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+function tlMD(m, d) {
+  m = typeof m === "string" ? m.trim() : m; d = typeof d === "string" ? d.trim() : d;
+  if (m === "" || d === "" || m == null || d == null) return null;
+  m = +m; d = +d;
+  return Number.isInteger(m) && m >= 1 && m <= 12 && Number.isInteger(d) && d >= 1 && d <= TL_MONTH_DAYS[m - 1] ? { month: m, day: d } : null;
+}
+/* 연표 연도 칸("2016", "기원전 202", "건안 13", "제국력 312")을 기년법을 아는 yearHits로 읽는다. { y, cal } 또는 null */
+function tlYear(w, year) {
+  const y = String(year ?? "").trim(); if (!y) return null;
+  const h = yearHits(/년\s*$/.test(y) ? y : y + "년", w)[0];
+  if (h) return { y: h.y, cal: h.cal };
+  const n = yearNum(y); return isNaN(n) ? null : { y: n, cal: "" };
+}
+/* 월·일이 없는 기년법(세계관을 만들 때 undatedCalendars로 받은 것)의 연도면 날짜를 묻지 않는다 */
+const tlNeedsDate = (w, year) => { const h = tlYear(w, year); return !(h && h.cal && (w.undatedCalendars || []).includes(h.cal)); };
+/* 정렬 기준: 기년법 묶음마다 연도 → 월 → 일. 날짜가 없는 항목은 그 해의 끝, 같으면 넣은 순서(안정 정렬).
+   기년법이 다른 연도끼리는 비교하지 않고, 묶음 사이의 순서는 각 묶음의 첫 항목이 들어온 순서를 따른다. 연도를 읽지 못한 항목은 맨 뒤에 넣은 순서대로 */
+function timelineOrder(list, w = S.world) {
+  const groups = new Map(), rest = [];
+  list.forEach((t, i) => {
+    const h = tlYear(w, t?.year); if (!h) { rest.push(t); return; }
+    const md = tlMD(t.month, t.day);
+    (groups.get(h.cal) || groups.set(h.cal, []).get(h.cal)).push({ t, i, y: h.y, m: md ? md.month : 13, d: md ? md.day : 32 });
+  });
+  return [...[...groups.values()].flatMap(g => g.sort((a, b) => a.y - b.y || a.m - b.m || a.d - b.d || a.i - b.i).map(x => x.t)), ...rest];
+}
+/* 연표를 기준대로 다시 정렬한다. 순서가 바뀌었으면 true. 항목은 건드리지 않는다 */
+function sortTimeline(w) {
+  const before = w.timeline || [], after = timelineOrder(before, w);
+  if (after.every((t, i) => t === before[i])) return false;
+  w.timeline = after; return true;
+}
+/* 표시: 날짜가 있으면 "2016년 3월 14일", 없으면 연도 칸 그대로 */
+function tlWhen(t) {
+  const md = tlMD(t.month, t.day), y = String(t.year ?? "");
+  return md ? `${/년\s*$/.test(y) ? y : y + "년"} ${md.month}월 ${md.day}일` : y;
+}
+const TL_DATE_SPEC = `연표(timeline)의 모든 사건은 월과 일까지 정한다. month와 day는 숫자로 쓰고, 계절, 초·중·말, '무렵' 같은 모호한 표현은 쓰지 않는다. 같은 사건이 사건 장부, 확정 사실, 다른 문서의 언급에 날짜와 함께 있으면 그 날짜를 그대로 쓴다. 이 세계의 기년법에 달이 없으면(아래 '월·일이 없는 기년법') month와 day를 빈 문자열로 둔다.`;
+const tlDateNote = w => (w.undatedCalendars || []).length ? `\n월·일이 없는 기년법: ${w.undatedCalendars.join(", ")}` : "";
 function addTimeline(w, t, src, ch) {
-  if (!t || !t.year || !t.event) return;
+  if (!t || !t.year || !t.event) return null;
   const ev = stripMarks(t.event).slice(0, 200), yr = String(t.year).slice(0, 24);
-  if (w.timeline.some(x => x.year === yr && x.event === ev)) return;
-  w.timeline.push(ch ? { year: yr, event: ev, src, ch } : { year: yr, event: ev, src });
-  w.timeline = w.timeline.map((x, i) => [x, i]).sort((a, b) => { const A = yearNum(a[0].year), B = yearNum(b[0].year); if (isNaN(A) && isNaN(B)) return a[1] - b[1]; if (isNaN(A)) return 1; if (isNaN(B)) return -1; return A - B || a[1] - b[1]; }).map(x => x[0]);
+  if (w.timeline.some(x => x.year === yr && x.event === ev)) return null;
+  const x = ch ? { year: yr, event: ev, src, ch } : { year: yr, event: ev, src };
+  const md = tlMD(t.month, t.day);
+  if (md) Object.assign(x, md); else if (tlNeedsDate(w, yr)) x.dateAsk = 1;
+  w.timeline.push(x);
+  w.timeline = timelineOrder(w.timeline, w);
+  return x;
 }
 /* 사실과 언급의 상태: sup = 다른 문서의 직접 수정으로 대체됨 (생성에서 제외) */
 const live = x => !x.sup;
@@ -411,11 +458,11 @@ const TIMELINE_PROMPT_N = 48;
 function promptTimeline(w, focus, list = w.timeline || [], n = TIMELINE_PROMPT_N) {
   const items = list.filter(live), fixed = t => t.src === "seed" || !!S.pages[t.src]?.editedAt;
   const keep = new Set([...items.filter(fixed), ...pickRelevant(w, null, items.filter(t => !fixed(t)), t => `${t.year}년 ${t.event}`, n, focus)]);
-  return items.filter(t => keep.has(t));
+  return timelineOrder(items.filter(t => keep.has(t)), w);
 }
 function canonBlock(w, focus = null) {
   const rules = (w.rules || []).map(r => "- " + r).join("\n") || "- (없음)";
-  const tl = promptTimeline(w, focus).map(t => `- ${t.year}: ${t.event}${S.pages[t.src]?.editedAt ? " [사용자 확정]" : ""}`).join("\n") || "- (없음)";
+  const tl = promptTimeline(w, focus).map(t => `- ${tlWhen(t)}: ${t.event}${S.pages[t.src]?.editedAt ? " [사용자 확정]" : ""}`).join("\n") || "- (없음)";
   return `## 세계관 원안\n${w.seed}\n\n## 핵심 규칙 (절대 위반 금지)\n이 규칙들은 어기면 안 되는 전제일 뿐, 문서마다 언급해야 할 소재가 아니다. 이 항목과 직접 관련된 규칙만 본문에 반영한다.\n${rules}\n\n## 사용자 확정 설정 (최우선. 다른 모든 정보보다 우선한다)\n${(w.userCanon || "").trim() || "(없음)"}\n\n## 연표\n${tl}${(w.glossary || []).length ? "\n\n" + glossaryBlock(w) : ""}`;
 }
 /* 검사의 기준: 검사하는 문서(p)보다 먼저 정해진 설정만. 원안·사용자 지정·이야기 장 줄거리·직접 수정한 문서는 언제나 기준이다.

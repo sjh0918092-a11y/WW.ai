@@ -209,7 +209,7 @@ test("키가 다르면 날짜와 참가자가 겹치는 후보만 검사 프롬�
   assert.equal(c.eventIssues(w, K("남부 해전")).length, 0, "키가 다르면 코드가 지적하지 않는다");
 });
 test("사건 장부가 생성·검사·수정 흐름에 연결되어 있다", () => {
-  assert(html.includes('["사건 장부", (w, k) => eventIssues(w, k)]'));
+  assert(html.includes('["사건 장부", (w, k) => [...eventIssues(w, k), ...timelineIssues(w, k)]]'));
   assert(html.includes("나이 규칙|사건 장부"));
   assert((html.match(/\$\{EVENTS_JSON\}/g) || []).length >= 3, "문서 작성, 확정 사실 정리, 수정본 분석");
   assert(html.includes("ingestEvents(w, key, out.events)")); assert(html.includes("${eventBlock(w, key, rel)}")); assert(html.includes("${eventCheckBlock(w, key, ok)}"));

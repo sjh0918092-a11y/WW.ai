@@ -16,8 +16,9 @@ async function createWorld() {
     const w = { kind: "world", id: "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       title: norm(b.title).slice(0, 40), tagline: String(b.tagline || "").slice(0, 160), seed, style: "encyc",
       era: String(b.era || "미상").slice(0, 40), historical: b.historical === true || b.historical === "true", guide, tone: normTone(b.tone, ""), rules: (Array.isArray(b.rules) ? b.rules : []).map(r => stripMarks(asText(r))).filter(Boolean).slice(0, 10),
-      calendars: cleanCalendars(b.calendars), timeline: [], userCanon: "", entities: {}, mainKey: null, createdAt: Date.now() };
+      calendars: cleanCalendars(b.calendars), ...(cleanCalendars(b.undatedCalendars).length ? { undatedCalendars: cleanCalendars(b.undatedCalendars) } : {}), timeline: [], userCanon: "", entities: {}, mainKey: null, createdAt: Date.now() };
     for (const t of (Array.isArray(b.timeline) ? b.timeline : [])) addTimeline(w, t, "seed");
+    afterTimeline(w);   // 월·일이 빠진 항목만 한 번 다시 묻는다
     const mt = first || norm(b.mainTitle || b.title);
     w.mainKey = keyOf(mt); w.entities[w.mainKey] = newEntity(mt, "", "");
     if (story) setupStory(w, b, user);
@@ -251,6 +252,8 @@ async function openWorld(wid, goKey, restoring = false) {
   const unbadged = await cleanAiSupersede(w);
   if (fixOldAngles(w, S.pages)) { try { await Store.saveWorld(w); } catch {} }   // 이전 형식 각도: count를 기존 문서 수와 사용 횟수로 나눈다
   if (dedupeRelations(w)) { try { await Store.saveWorld(w); } catch {} }
+  if (sortTimeline(w)) { try { await Store.saveWorld(w); } catch {} }   // 연표를 연도 → 월 → 일 기준으로 다시 정렬한다(항목은 그대로)
+  afterTimeline(w);
   if (!w.relMigrated && S.sample) migrateRelations(w).then(async ok => {   // 옛 관계(type 없음)가 같은 쌍에 여럿이면 한 번만 정리한다. 실패하면 그대로 둔다
     if (!ok) return;
     try { await Store.saveWorld(w); } catch {}
@@ -430,6 +433,7 @@ function integrate(w, key, out) {
   e.type = type; if (summary) e.summary = summary; e.page = true; delete e.src;
   e.box = infobox.map(r => r.label + ": " + stripMarks(r.value)).join(" / ").slice(0, 400);
   acceptPageTimeline(w, out.timeline, key);   // 주어 없는 항목, 같은 해·같은 대상의 중복은 받지 않는다
+  afterTimeline(w);
   if (Array.isArray(out.events)) ingestEvents(w, key, out.events);
   if (Array.isArray(out.terms)) ingestTerms(w, key, out.terms);   // 정의가 엇갈리는 후보는 고르지 않고 설정 노트에 띄운다   // 고친 본문처럼 events가 없는 결과는 이전 기록을 둔다
   w.navboxes ||= {};

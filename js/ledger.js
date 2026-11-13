@@ -58,6 +58,73 @@ function acceptPageTimeline(w, list, src) {
   return n;
 }
 
+/* ---------- 연표 날짜 ----------
+   새 연표 항목에 month·day가 비었거나 범위를 벗어나면(dateAsk) 그 항목들만 quick 모델에게 한 번 다시 묻는다.
+   그래도 받지 못하면 날짜 없이 둔다. 옛 항목(dateAsk 없음)은 묻지 않는다 */
+function timelineDatePrompt(w, items) {
+  const rows = items.map((t, i) => {
+    const p = S.pages[t.src], yd = String(t.year).replace(/[^\d]/g, "");
+    const said = p && yd ? pageTexts(p).flatMap(sentencesOf).filter(x => x.includes(yd)).slice(0, 3) : [];
+    const evs = (w.events || []).filter(e => (t.k && e.k === t.k) || (e.name && t.event.includes(e.name))).slice(0, 3);
+    return `${i + 1}. ${t.year}: ${t.event}${p ? ` (「${p.title}」)` : ""}${said.map(x => `\n   문서의 서술: ${x.slice(0, 200)}`).join("")}${evs.map(e => `\n   사건 장부: 「${e.name}」 ${e.date}`).join("")}`;
+  });
+  return `## 연표 날짜 정하기
+가상 세계관 위키 「${w.title}」(작중 기준 시점 ${w.era})의 연표 항목에 월과 일이 빠져 있다. 항목마다 month와 day를 숫자로 정한다.
+- 사건 장부나 문서의 서술에 날짜가 있으면 그 날짜를 그대로 쓴다. 없으면 사건과 그 해의 흐름에 맞게 하나로 정한다.
+- 계절, 초·중·말, '무렵' 같은 모호한 표현은 쓰지 않는다. 이 세계의 기년법에 달이 없는 항목은 month와 day를 빈 문자열로 둔다.${tlDateNote(w)}
+
+${rows.join("\n")}
+
+JSON 객체 하나만 출력: {"dates":[{"i":1,"month":3,"day":14}]}`;
+}
+async function askTimelineDates(w) {
+  const items = (w.timeline || []).filter(t => t.dateAsk && !t.sup).slice(0, 40);
+  if (!items.length || !S.sample) return 0;
+  let r = null;
+  try { r = await callJson("timelineDate", timelineDatePrompt(w, items), { modelTier: "quick" }, { title: w.title + " · 연표 날짜" }); } catch {}
+  let n = 0;
+  for (const d of (Array.isArray(r?.dates) ? r.dates : [])) {
+    const t = items[(parseInt(d?.i, 10) || 0) - 1], md = t && tlMD(d.month, d.day);
+    if (md && !tlMD(t.month, t.day)) { Object.assign(t, md); n++; }
+  }
+  for (const t of items) delete t.dateAsk;   // 한 번만 다시 묻는다. 받지 못한 항목은 날짜 없이 둔다
+  sortTimeline(w);
+  return n || -1;   // 물어봤으면 0이 아니다(표시를 지웠으니 저장해야 한다)
+}
+/* 생성 흐름에서 연표를 받은 뒤 부른다. 뒤에서 돌고, 끝나면 저장한다 */
+function afterTimeline(w) {
+  if (!w || !(w.timeline || []).some(t => t.dateAsk) || !S.sample) return;
+  askTimelineDates(w).then(async n => {
+    if (!n) return;
+    try { await Store.saveWorld(w); } catch {}
+    if (S.world === w && S.view?.name === "canon") renderMain();
+  }).catch(() => {});
+}
+/* 사건 장부의 날짜("2015년 11월 4일")에서 연도와 월·일을 읽는다 */
+function evYMD(w, text) {
+  const t = String(text || ""), h = yearHits(t, w)[0], m = /(\d{1,2})\s*월\s*(\d{1,2})\s*일/.exec(t);
+  return { h: h ? { y: h.y, cal: h.cal } : null, md: m ? tlMD(m[1], m[2]) : null };
+}
+/* 이 문서(k)가 낸 연표 항목의 날짜가 사건 장부의 같은 사건(항목 키가 같거나 사건 이름이 글자 그대로 들어간) 날짜와 다르면 지적한다 */
+function timelineIssues(w, k) {
+  const p = S.pages[k]; if (!p || p.editedAt) return [];
+  const mine = (w.timeline || []).filter(t => t.src === k && !t.sup && tlMD(t.month, t.day)); if (!mine.length) return [];
+  const refs = [...eventRefs(w, k), ...(w.events || []).filter(x => x.src === k)], out = [];
+  for (const t of mine) {
+    const ty = tlYear(w, t.year), md = tlMD(t.month, t.day);
+    for (const e of refs) {
+      if (!((t.k && e.k === t.k) || (e.name && t.event.includes(e.name)))) continue;
+      const d = evYMD(w, e.date); if (!d.md || !d.h || !ty || d.h.cal !== ty.cal || d.h.y !== ty.y) continue;
+      if (d.md.month === md.month && d.md.day === md.day) break;
+      const rt = S.pages[e.src]?.title || "?";
+      out.push({ claim: `연표: ${tlWhen(t)} ${t.event}`.slice(0, 300), severity: "high",
+        conflict: `근거: 「${rt}」의 사건 기록 — 「${e.name}」 ${e.date} · 사건 장부: 같은 사건의 날짜가 이 문서의 연표에는 ${md.month}월 ${md.day}일, 사건 장부에는 ${d.md.month}월 ${d.md.day}일로 적혀 있다. 사건 장부의 날짜에 맞춘다.`.slice(0, 400) });
+      break;
+    }
+  }
+  return out;
+}
+
 /* ---------- 사건 장부 ----------
    w.events: [{ k(사건 항목 키, 항목이 없으면 이름의 키), name, date, place, nums: [{name, value, unit}], parts(참가 항목 키), result, src, createdAt }]
    문서가 날짜·장소·수치까지 구체적으로 서술한 사건만 생성 응답의 "events"로 받는다.
@@ -241,7 +308,7 @@ function worldCheckPrompt(w) {
   const facts = wcFactBlock(w, pages.map(([k]) => k), WC_FACTS_PER_DOC).split("\n").slice(0, 400).join("\n");
   const claims = pages.flatMap(([, p]) => pageTexts(p).flatMap(sentencesOf).filter(s => FIRST_WORDS.some(x => s.includes(x))).slice(0, 3).map(s => `- 「${p.title}」: ${s.slice(0, 160)}`)).slice(0, 120).join("\n");
   const evs = [...(w.events || [])].filter(x => S.pages[x.src]).sort(eventRank).map(x => eventRow(w, x, "")).slice(0, 150);
-  const tl = (w.timeline || []).filter(live).map(t => `- ${t.year}: ${t.event}`).join("\n");
+  const tl = timelineOrder((w.timeline || []).filter(live), w).map(t => `- ${tlWhen(t)}: ${t.event}`).join("\n");
   const kept = (w.worldCheck?.items || []).filter(x => x.status === "kept").map(x => `- ${x.title}`).join("\n");
   return `## 세계 전체 점검
 너는 가상 세계관 위키 「${w.title}」(작중 기준 시점 ${w.era})의 편집장이다. 문서 하나씩 보면 멀쩡하지만 모아 보면 이상한 곳을 찾는다. 문체나 한 문서 안의 모순은 보지 않는다.

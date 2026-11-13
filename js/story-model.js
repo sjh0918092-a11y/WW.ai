@@ -349,17 +349,17 @@ ${STORY_RESPONSIBILITY_RULES}
 - protagonistBlock은 주인공 문서 맨 뒤에 덧붙는 '${nextN}장' 섹션이다. heading은 작중 사건명(장 번호를 넣지 않는다), sections는 하위 섹션 2~4개, 모두 합쳐 1,200~2,500자. 주인공 문서에 이미 있는 내용은 반복하지 않는다. 이 장의 절정 장면을 정면으로 쓴다. 상태나 소속이 바뀌었으면 infoboxPatch로, 한 줄 정의가 바뀌어야 하면 summaryPatch로 고친다(바꿀 것이 없으면 빈 배열과 빈 문자열).
 ${newItemRule(w, nextN)}
 - affected는 이번 장에서 무언가가 바뀐 기존 항목 2~5개와 위의 새 항목들(있다면)이다. 기존 항목은 아래 목록의 제목을 글자 그대로 쓴다(kind "update"). 엮은 탐험 항목도 바뀌었다면 affected에 넣는다. change는 이번 장에서 그 항목에 일어난 일 한 문장이다.
-- facts에는 이번 장에서 확정된 사실을 항목별로 4~10개, timeline에는 이번 장의 주요 사건 1~3개(연도만), relations에는 이번 장에서 새로 생기거나 바뀐 인물 관계를 넣는다. ${REL_SPEC}
+- facts에는 이번 장에서 확정된 사실을 항목별로 4~10개, timeline에는 이번 장의 주요 사건 1~3개(${TL_DATE_SPEC}${tlDateNote(w).replace(/\n/g, " ")}), relations에는 이번 장에서 새로 생기거나 바뀐 인물 관계를 넣는다. ${REL_SPEC}
 ${storyStyleRules()}
 
-${relRefBlock(w, Object.keys(w.entities), "", pk, 30).trimEnd()}
+${relRefBlock(w, Object.keys(w.entities), "", pk, 30)}${eventBlock(w, pk, []).trimEnd()}
 
 ## 이미 존재하는 항목 (제목을 글자 그대로 쓴다. 각 줄의 "—" 앞까지가 제목이고, 뒤의 유형과 정의는 제목이 아니다. 제목에 "(인물)" 같은 유형을 붙이지 않는다)
 ${entityIndex(w, [pk])}
 
 ## 출력
 JSON 객체 하나만 출력:
-{"title":"이 장의 작중 사건명","era":"이 장의 작중 시점","summary":"공개 줄거리 3~5문장","timeline":[{"year":"연도","event":"..."}],"protagonistBlock":{"heading":"작중 사건명","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}],"infoboxPatch":[{"label":"상태","value":"..."}],"summaryPatch":""},"affected":[{"title":"항목 제목","change":"이번 장에서 이 항목에 일어난 일 한 문장","kind":"update 또는 new"}],"newEntities":[{"title":"...","type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의"}],"wove":[{"title":"탐험 항목 제목","how":"이 항목이 이번 장 사건에서 맡은 역할 한 문장"}],"facts":[{"about":"항목 제목","fact":"..."}],${REL_JSON},"spineRevise":[{"n":4,"intent":"..."}],"revealNow":[],"secretRevise":[],${STORY_CONTINUITY_OUTPUT},"nextChoices":["...","...","..."],"ending":${last ? '{"epilogue":"결말 이후 3~5문장"}' : "null"}}`;
+{"title":"이 장의 작중 사건명","era":"이 장의 작중 시점","summary":"공개 줄거리 3~5문장","timeline":[{"year":"연도","month":3,"day":14,"event":"..."}],"protagonistBlock":{"heading":"작중 사건명","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}],"infoboxPatch":[{"label":"상태","value":"..."}],"summaryPatch":""},"affected":[{"title":"항목 제목","change":"이번 장에서 이 항목에 일어난 일 한 문장","kind":"update 또는 new"}],"newEntities":[{"title":"...","type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의"}],"wove":[{"title":"탐험 항목 제목","how":"이 항목이 이번 장 사건에서 맡은 역할 한 문장"}],"facts":[{"about":"항목 제목","fact":"..."}],${REL_JSON},"spineRevise":[{"n":4,"intent":"..."}],"revealNow":[],"secretRevise":[],${STORY_CONTINUITY_OUTPUT},"nextChoices":["...","...","..."],"ending":${last ? '{"epilogue":"결말 이후 3~5문장"}' : "null"}}`;
 }
 function chapterBlockPrompt(w, key, chs) {
   const p = S.pages[key], e = w.entities[key];
@@ -390,12 +390,13 @@ ${rel}
 ${chs.every(n => lateBeat(w, n)) ? "- 이야기가 절정이나 결말에 와 있으니 새 인물을 만들지 않는다. 이미 있는 인물과 항목으로 쓴다.\n" : "- 새 인물은 만들지 않는다. 필요하면 장소나 물건 하나까지 새로 만들어 링크하고 newEntities에 넣는다.\n"}- facts에는 이 장 섹션이 확정한 사실 2~6개, timeline에는 새로 확정한 사건(있을 때만), newEntities에는 새로 링크한 항목을 넣는다.
 ${storyStyleRules()}
 
-${relRefBlock(w, Object.keys(w.entities), "", key, 20).trimEnd()}
+${relRefBlock(w, Object.keys(w.entities), "", key, 20)}${eventBlock(w, key, []).trimEnd()}
+- timeline: ${TL_DATE_SPEC}
 
 ## 이미 존재하는 항목 (제목을 글자 그대로 쓴다. 각 줄의 "—" 앞까지가 제목이고, 뒤의 유형과 정의는 제목이 아니다. 제목에 "(인물)" 같은 유형을 붙이지 않는다)
 ${entityIndex(w, [key], 60)}
 
 ## 출력
 JSON 객체 하나만 출력:
-{"blocks":[{"ch":${chs[0]},"heading":"작중 사건명","sections":[{"heading":"...","level":1,"body":"..."}]}],"infoboxPatch":[{"label":"...","value":"..."}],"summaryPatch":"","facts":[{"about":"항목 제목","fact":"..."}],${REL_JSON},"timeline":[{"year":"연도","event":"..."}],"newEntities":[{"title":"...","type":"...","summary":"..."}]}`;
+{"blocks":[{"ch":${chs[0]},"heading":"작중 사건명","sections":[{"heading":"...","level":1,"body":"..."}]}],"infoboxPatch":[{"label":"...","value":"..."}],"summaryPatch":"","facts":[{"about":"항목 제목","fact":"..."}],${REL_JSON},"timeline":[{"year":"연도","month":3,"day":14,"event":"..."}],"newEntities":[{"title":"...","type":"...","summary":"..."}]}`;
 }
