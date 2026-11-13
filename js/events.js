@@ -104,6 +104,7 @@ document.addEventListener("click", ev => {
   if (d.focus) { S.focusEnt = d.focus; S.view = { name: "canon" }; renderAll(); return; }
   if (d.angleSave) { editAngle(d.angleSave, "label", document.querySelector(`[data-angle-label="${CSS.escape(d.angleSave)}"]`)?.value); return; }
   if (d.angleToggle) { editAngle(d.angleToggle, "toggle"); return; }
+  if (d.angleRevive) { editAngle(d.angleRevive, "revive"); return; }
   if (d.angleDel) { if (el.dataset.confirm === "1") editAngle(d.angleDel, "delete"); else { el.dataset.confirm = "1"; el.textContent = "삭제 확인"; } return; }
   if (d.filter) { S.canonFilter = d.filter; renderMain(); return; }
   if (d.mode) { S.mode = d.mode === "story" ? "story" : "basic"; if (S.seedTab === "dice" && S.dice) S.seed = diceSeed(S.dice); renderMain(); return; }   // 주사위 원안은 모드에 맞게 다시 쓴다
