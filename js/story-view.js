@@ -84,6 +84,24 @@ function epilogueHtml() {
     ${st.status === "ended" ? `<p class="note" style="margin-top:10px">이야기는 끝났지만 세계관은 계속 탐험할 수 있습니다. 새 문서는 결말 직후 시점으로 쓰입니다.</p>` : ""}</div>`;
 }
 
+/* 용어 정의: 보고, 고치고, 확정한다. 정의가 엇갈리는 후보는 사용자가 고른다 */
+function glossaryHtml(w) {
+  const list = w.glossary || [], who = src => src === "user" ? "사용자" : esc(srcTitle(w, src, "?"));
+  const asks = list.map((g, i) => [g, i]).filter(([g]) => g.alts?.length);
+  return `<h2 id="glossary">용어 정의</h2>
+    <p class="note">문서가 처음 정한 명명 체계, 번호 체계, 핵심 개념입니다. 모든 문서를 쓸 때 함께 전달되고, 문서 읽기 검사가 정의와 다르게 쓴 곳을 찾습니다. 고친 뒤 '설정 저장'을 눌러 주세요. 정의를 비우고 저장하면 그 용어를 지웁니다.</p>
+    ${asks.map(([g, i]) => `<div class="gl-ask" data-gl-ask="${i}" style="border:1px solid var(--line);padding:8px 10px;margin:8px 0">
+      <p style="margin:0 0 6px"><b>「${esc(g.term)}」의 뜻이 문서마다 다릅니다. 어느 쪽으로 할까요?</b></p>
+      <ul style="margin:0;padding-left:20px"><li>${esc(g.definition)} <span class="src">· ${who(g.src)} · 지금 정의</span> <button type="button" class="btn" data-term-pick="${i}" data-alt="-1">이쪽으로</button></li>
+      ${g.alts.map((a, j) => `<li>${esc(a.definition)} <span class="src">· ${who(a.src)}</span> <button type="button" class="btn" data-term-pick="${i}" data-alt="${j}">이쪽으로</button></li>`).join("")}</ul>
+      <p class="note" style="margin:6px 0 0">고른 정의는 확정되어 이후 모든 문서에 들어갑니다. 다른 뜻으로 쓴 문서는 문서 읽기 검사에서 지적됩니다.</p></div>`).join("")}
+    ${list.map((g, i) => `<div class="gl-row" data-gl="${i}"><label class="lb" for="gl-${i}">${esc(g.term)} <span class="src" style="font-weight:400">· ${who(g.src)}${g.confirmed ? " · 확정" : ""}</span></label>
+      <textarea id="gl-${i}" data-gl-def="${i}" rows="2" maxlength="300">${esc(g.definition)}</textarea>
+      <label class="lb" style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:2px"><input type="checkbox" data-gl-ok="${i}" ${g.confirmed ? "checked" : ""}>확정</label></div>`).join("") || `<p class="note">아직 없습니다.</p>`}
+    <label class="lb" for="glNewTerm">새 용어 <span class="note" style="font-weight:400">직접 정한 용어는 확정으로 저장합니다</span></label>
+    <input id="glNewTerm" class="txt" maxlength="40" placeholder="예: 제식 번호">
+    <textarea id="glNewDef" rows="2" maxlength="300" placeholder="뜻과 붙는 방식. 예: 나라마다 따로 매기며 대대로 물려받는 칭호다."></textarea>`;
+}
 /* 사건 장부: 같은 사건의 기록을 모아 기준(맨 위)부터 보여 준다 */
 function eventsHtml(w) {
   const evs = (w.events || []).filter(x => S.pages[x.src]); if (!evs.length) return "";
@@ -129,6 +147,7 @@ function canonHtml() {
     <textarea id="rulesTa" rows="${Math.min(12, (w.rules.length || 3) + 2)}">${esc(w.rules.join("\n"))}</textarea>
     <label class="lb" for="userTa">사용자 확정 설정</label>
     <textarea id="userTa" rows="4" placeholder="예: 태조의 전용기 이름은 '위화'다. 조선 콜로니의 수도는 한양 궤도 거주구다.">${esc(w.userCanon || "")}</textarea>
+    ${glossaryHtml(w)}
     <div class="row"><button type="button" class="btn pri" data-act="save-canon">설정 저장</button><span class="note">저장 후 새로 작성하는 문서부터 반영됩니다.</span></div>
     ${anglesHtml(w)}
     ${Object.keys(w.navboxes || {}).length ? `<h2>틀</h2><ul style="margin:0;padding-left:20px">${Object.values(w.navboxes).map(nb => `<li>${esc(nb.title)} <span class="src">· ${nb.members.length}개 항목 · ${linkHtml(nb.srcTitle)}</span></li>`).join("")}</ul>` : ""}

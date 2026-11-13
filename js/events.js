@@ -107,6 +107,7 @@ document.addEventListener("click", ev => {
   if (d.angleRevive) { editAngle(d.angleRevive, "revive"); return; }
   if (d.angleDel) { if (el.dataset.confirm === "1") editAngle(d.angleDel, "delete"); else { el.dataset.confirm = "1"; el.textContent = "삭제 확인"; } return; }
   if (d.filter) { S.canonFilter = d.filter; renderMain(); return; }
+  if (d.termPick !== undefined) { chooseTerm(Number(d.termPick), Number(d.alt)); return; }
   if (d.mode) { S.mode = d.mode === "story" ? "story" : "basic"; if (S.seedTab === "dice" && S.dice) S.seed = diceSeed(S.dice); renderMain(); return; }   // 주사위 원안은 모드에 맞게 다시 쓴다
   if (d.chn) { S.storyN = Math.min(STORY_MAX, Math.max(STORY_MIN, +d.chn)); renderMain(); return; }
   if (d.castDel !== undefined) { S.cast.splice(Number(d.castDel), 1); renderMain(); return; }

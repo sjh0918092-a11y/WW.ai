@@ -113,6 +113,7 @@ async function mergeEntities(w, pairs) {
   w.relations = (w.relations || []).filter(x => { x.a = re(x.a); x.b = re(x.b); x.src = re(x.src); if (x.sup) x.sup.by = re(x.sup.by); return x.a !== x.b; });
   for (const t of w.timeline) { t.src = re(t.src); if (t.k) t.k = re(t.k); if (t.sup) t.sup.by = re(t.sup.by); }
   for (const x of w.events || []) { x.k = re(x.k); x.src = re(x.src); x.parts = [...new Set((x.parts || []).map(re))]; }
+  for (const g of w.glossary || []) { g.src = re(g.src); for (const a of g.alts || []) a.src = re(a.src); }
   for (const nb of Object.values(w.navboxes || {})) {
     nb.src = re(nb.src); nb.members = [...new Set((nb.members || []).map(re))];
     for (const r of nb.rows) r.items = r.items.map(x => cleanLinks(w, x));
@@ -423,7 +424,8 @@ function integrate(w, key, out) {
   e.type = type; if (summary) e.summary = summary; e.page = true; delete e.src;
   e.box = infobox.map(r => r.label + ": " + stripMarks(r.value)).join(" / ").slice(0, 400);
   acceptPageTimeline(w, out.timeline, key);   // 주어 없는 항목, 같은 해·같은 대상의 중복은 받지 않는다
-  if (Array.isArray(out.events)) ingestEvents(w, key, out.events);   // 고친 본문처럼 events가 없는 결과는 이전 기록을 둔다
+  if (Array.isArray(out.events)) ingestEvents(w, key, out.events);
+  if (Array.isArray(out.terms)) ingestTerms(w, key, out.terms);   // 정의가 엇갈리는 후보는 고르지 않고 설정 노트에 띄운다   // 고친 본문처럼 events가 없는 결과는 이전 기록을 둔다
   w.navboxes ||= {};
   (Array.isArray(out.navboxes) ? out.navboxes : []).slice(0, 2).forEach((nb, i) => {
     if (!nb || !Array.isArray(nb.rows)) return;

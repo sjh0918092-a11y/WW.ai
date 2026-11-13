@@ -178,7 +178,7 @@ async function commitEdit(ed, out, r, conflicts, ch) {
   }
   const pagesBackup = ed.section ? Object.fromEntries(Object.entries(S.pages).map(([key, p]) => [key, { ...p, ...(p.conflicts ? { conflicts: p.conflicts.slice() } : {}) }])) : null;
   const ownNavboxes = ed.section ? Object.fromEntries(Object.entries(w.navboxes || {}).filter(([, nb]) => nb.src === k)) : null;
-  const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], events: w.events || [], rules: w.rules });
+  const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], events: w.events || [], glossary: w.glossary || [], rules: w.rules });
   const touched = clearBadges(k);
   let page;
   try {
@@ -305,9 +305,37 @@ async function saveCanon() {
   const tg = ($("#toneGuide")?.value || "").split("\n").map(x => x.replace(/^[-•\s]+/, "").trim()).filter(Boolean).slice(0, 12);
   w.tone = tl && tg.length ? { label: tl, guide: tg } : (tl || tg.length ? { label: tl || "지정한 분위기", guide: tg } : null);
   if (!w.tone) w.toneTried = true;
+  readGlossaryForm(w);
   try { await Store.saveWorld(w); toast("설정 노트를 저장했습니다. 이후 작성되는 문서부터 반영됩니다."); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
 }
 
+/* 설정 노트의 용어 정의 칸을 읽는다. 사용자가 고친 정의는 사용자 정의가 되고, 엇갈리던 후보는 정리된다 */
+function readGlossaryForm(w) {
+  if (document.querySelector("[data-gl-def]")) {
+    const next = [];
+    (w.glossary || []).forEach((g, i) => {
+      const ta = document.querySelector(`[data-gl-def="${i}"]`); if (!ta) { next.push(g); return; }
+      const def = ta.value.replace(/\s+/g, " ").trim().slice(0, 300);
+      if (!def) return;   // 비우고 저장하면 지운다(사용자가 한 일)
+      if (def !== g.definition) { g.definition = def; g.src = "user"; delete g.alts; }
+      g.confirmed = !!document.querySelector(`[data-gl-ok="${i}"]`)?.checked;
+      next.push(g);
+    });
+    w.glossary = next;
+  }
+  const nt = norm($("#glNewTerm")?.value || "").slice(0, 40), nd = ($("#glNewDef")?.value || "").replace(/\s+/g, " ").trim().slice(0, 300);
+  if (nt && nd) {
+    w.glossary ||= [];
+    const g = findTerm(w, nt);
+    if (g) { Object.assign(g, { definition: nd, src: "user", confirmed: true }); delete g.alts; }
+    else w.glossary.push({ term: nt, definition: nd, src: "user", confirmed: true, at: Date.now() });
+  }
+}
+async function chooseTerm(i, alt) {
+  const w = S.world; if (!w || !pickTerm(w, i, alt)) return;
+  renderMain(); document.getElementById("glossary")?.scrollIntoView({ block: "start" });
+  try { await Store.saveWorld(w); toast(`「${w.glossary[i].term}」의 정의를 확정했습니다. 이후 작성하는 문서부터 반영됩니다.`); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
+}
 async function deleteWorld(wid) {
   try { await Store.deleteWorld(wid); S.worlds = S.worlds.filter(w => w.id !== wid); S.confirmDel = null; renderMain(); toast("세계관을 삭제했습니다."); }
   catch (err) { toast("삭제하지 못했습니다. " + errMsg(err)); }

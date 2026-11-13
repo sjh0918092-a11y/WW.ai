@@ -181,7 +181,7 @@ async function applyFix() {
   if (!applied) { toast("적용할 수정이 없습니다."); return; }
   const out = sourceToOut(nf);
   if (!out.sections.some(x => x.body.trim())) { toast("본문이 비게 되어 저장하지 않았습니다."); return; }
-  const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], events: w.events || [] });
+  const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], events: w.events || [], glossary: w.glossary || [] });
   let page;
   try {
     for (const o of Object.values(w.entities)) o.mentions = o.mentions.filter(m => m.from !== k);   // 링크와 언급은 고친 본문 기준으로 다시 계산

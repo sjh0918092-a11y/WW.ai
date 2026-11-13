@@ -156,3 +156,58 @@ ${cand.map(([m, r]) => `- 이 문서: 「${m.name}」 ${m.date}${m.place ? ", " 
 }
 const EVENTS_SPEC = `events에는 이 문서가 날짜와 함께 장소나 수치까지 구체적으로 서술한 사건만 0~4개 넣는다. 막연히 언급만 한 사건, 날짜가 없는 사건은 넣지 않는다. name은 사건 항목을 링크했다면 그 제목을 글자 그대로 쓰고, 장부에 이미 있는 사건이면 장부의 사건 이름, 수치 이름, 단위를 똑같이 쓴다. nums의 value에는 단위 없이 값만 쓴다. participants에는 참가한 항목 제목을 글자 그대로 쓴다.`;
 const EVENTS_JSON = `"events":[{"name":"사건 이름","date":"날짜(문서에 쓴 그대로)","place":"장소","nums":[{"name":"수치 이름(예: 거리, 수심, 병력, 사상자)","value":"값","unit":"단위"}],"participants":["참가 항목 제목"],"result":"결과 한 문장"}]`;
+
+/* ---------- 용어 정의 ----------
+   w.glossary: [{ term, definition, src, confirmed, at, alts?: [{ definition, src, at }] }]
+   문서가 새 명명 체계, 번호 체계, 핵심 개념을 처음 정하면 생성 응답의 "terms"로 받는다.
+   이미 있는 용어를 다르게 정의한 후보는 자동으로 고르지 않고 alts에 두어 설정 노트에서 사용자가 고른다 */
+const GLOSSARY_MAX = 80, GLOSSARY_PROMPT_N = 40;
+const termKey = t => norm(stripMarks(t)).normalize("NFKC").toLowerCase().replace(/[\s‘’'“”"「」]/g, "");
+const defKey = t => norm(stripMarks(t)).replace(/[\s.。,·]/g, "");
+const findTerm = (w, term) => (w.glossary || []).find(g => termKey(g.term) === termKey(term)) || null;
+function ingestTerms(w, src, list) {
+  if (!Array.isArray(list)) return 0;
+  w.glossary ||= []; let n = 0;
+  for (const x of list.slice(0, 6)) {
+    if (!x || typeof x !== "object") continue;
+    const term = evText(x.term, 40), definition = evText(x.definition, 300);
+    if (!term || !definition) continue;
+    const g = findTerm(w, term);
+    if (!g) { if (w.glossary.length < GLOSSARY_MAX) { w.glossary.push({ term, definition, src, confirmed: false, at: Date.now() }); n++; } continue; }
+    if (g.src === src && !g.confirmed) { g.definition = definition; continue; }   // 같은 문서가 다시 낸 정의는 바꿔 끼운다
+    if (g.confirmed || defKey(g.definition) === defKey(definition)) continue;     // 확정된 정의는 후보를 받지 않는다(어긋난 쓰임은 문서 검사가 잡는다)
+    g.alts ||= [];
+    const a = g.alts.find(y => y.src === src);
+    if (a) a.definition = definition; else if (!g.alts.some(y => defKey(y.definition) === defKey(definition)) && g.alts.length < 4) g.alts.push({ definition, src, at: Date.now() });
+  }
+  return n;
+}
+/* 문서가 지워지거나 다시 쓰일 때: 그 문서가 낸 후보는 걷어 내고, 그 문서가 처음 정한 미확정 용어는 후보가 있으면 첫 후보로, 없으면 지운다 */
+function purgeTerms(w, src) {
+  if (!w.glossary) return;
+  for (const g of w.glossary) if (g.alts) { g.alts = g.alts.filter(a => a.src !== src); if (!g.alts.length) delete g.alts; }
+  w.glossary = w.glossary.filter(g => {
+    if (g.src !== src || g.confirmed) return true;
+    if (!g.alts?.length) return false;
+    const a = g.alts.shift(); Object.assign(g, { definition: a.definition, src: a.src, at: a.at }); if (!g.alts.length) delete g.alts;
+    return true;
+  });
+}
+/* 사용자가 고른다. alt가 -1이면 지금 정의를 그대로 두고 확정, 아니면 그 후보로 바꿔 확정 */
+function pickTerm(w, i, alt) {
+  const g = w.glossary?.[i]; if (!g) return false;
+  const a = alt >= 0 ? g.alts?.[alt] : null; if (alt >= 0 && !a) return false;
+  if (a) Object.assign(g, { definition: a.definition, src: a.src });
+  g.confirmed = true; delete g.alts;
+  return true;
+}
+const termLine = (w, g) => `- ${g.term}: ${g.definition}${g.confirmed ? " [사용자 확정]" : ""}`;
+function glossaryBlock(w, text = null) {
+  let list = (w.glossary || []).filter(g => g.definition);
+  if (text !== null) list = list.filter(g => text.includes(g.term));   // 검사할 문서에 나온 용어만
+  if (!list.length) return "";
+  list = [...list.filter(g => g.confirmed), ...list.filter(g => !g.confirmed)].slice(0, GLOSSARY_PROMPT_N);
+  return `## 용어 정의 (이 세계의 용어는 이 뜻으로만 쓴다)\n${list.map(g => termLine(w, g)).join("\n")}`;
+}
+const TERMS_SPEC = `terms에는 이 문서가 처음 정한 명명 체계, 번호 체계, 이 세계의 핵심 개념만 0~3개 넣는다(예: 제식 번호가 개인의 이름인지 대대로 물려받는 칭호인지, 번호를 나라마다 매기는지 전 세계 일련번호인지). definition은 무엇을 가리키고 어떻게 붙는지 한두 문장으로 쓴다. '용어 정의'에 이미 있는 용어는 넣지 않고, 그 정의와 다른 뜻으로 쓰지 않는다. 처음 정한 것이 없으면 빈 배열.`;
+const TERMS_JSON = `"terms":[{"term":"용어","definition":"뜻과 붙는 방식"}]`;

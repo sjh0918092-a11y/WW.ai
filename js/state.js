@@ -254,10 +254,11 @@ function purge(w, key) {
   w.relations.forEach(x => { if (x.sup?.by === key) delete x.sup; });
   w.timeline = w.timeline.filter(x => x.src !== key);
   if (w.events) w.events = w.events.filter(x => x.src !== key);
+  if (w.glossary) purgeTerms(w, key);
 }
 /* 다시 쓰기 준비: 이전 버전이 남긴 흔적을 모두 걷어낸다. 실패하면 restoreRewrite로 되돌린다. */
 function prepareRewrite(w, key) {
-  const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], events: w.events || [] });
+  const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], events: w.events || [], glossary: w.glossary || [] });
   purge(w, key);                                   // 이전 버전이 확정한 사실·언급·연표
   for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === key) delete w.navboxes[id];  // 이전 버전이 만든 틀
   const e = w.entities[key];
@@ -268,7 +269,7 @@ function prepareRewrite(w, key) {
     if (k !== key && o.origin === key && !o.page && !o.facts.length && !o.mentions.length) delete w.entities[k];
   return backup;
 }
-function restoreRewrite(w, backup) { const b = JSON.parse(backup); w.entities = b.entities; w.timeline = b.timeline; w.navboxes = b.navboxes; if (b.relations) w.relations = b.relations; if (b.events) w.events = b.events; }
+function restoreRewrite(w, backup) { const b = JSON.parse(backup); w.entities = b.entities; w.timeline = b.timeline; w.navboxes = b.navboxes; if (b.relations) w.relations = b.relations; if (b.events) w.events = b.events; if (b.glossary) w.glossary = b.glossary; }
 const navboxesFor = (w, key) => Object.entries(w.navboxes || {}).filter(([, nb]) => nb.src === key || (nb.members || []).includes(key));
 function navboxText(nb) {
   return `### 틀: ${nb.title} (총 ${nb.members.length}개 항목, 「${nb.srcTitle}」 문서에서 확정)\n` + nb.rows.map(r => `- ${r.label}: ${r.items.map(stripMarks).join(" / ")}`).join("\n");
@@ -290,7 +291,7 @@ function related(w, key) {
 function canonBlock(w) {
   const rules = (w.rules || []).map(r => "- " + r).join("\n") || "- (없음)";
   const tl = (w.timeline || []).filter(live).map(t => `- ${t.year}: ${t.event}${S.pages[t.src]?.editedAt ? " [사용자 확정]" : ""}`).join("\n") || "- (없음)";
-  return `## 세계관 원안\n${w.seed}\n\n## 핵심 규칙 (절대 위반 금지)\n이 규칙들은 어기면 안 되는 전제일 뿐, 문서마다 언급해야 할 소재가 아니다. 이 항목과 직접 관련된 규칙만 본문에 반영한다.\n${rules}\n\n## 사용자 확정 설정 (최우선. 다른 모든 정보보다 우선한다)\n${(w.userCanon || "").trim() || "(없음)"}\n\n## 연표\n${tl}`;
+  return `## 세계관 원안\n${w.seed}\n\n## 핵심 규칙 (절대 위반 금지)\n이 규칙들은 어기면 안 되는 전제일 뿐, 문서마다 언급해야 할 소재가 아니다. 이 항목과 직접 관련된 규칙만 본문에 반영한다.\n${rules}\n\n## 사용자 확정 설정 (최우선. 다른 모든 정보보다 우선한다)\n${(w.userCanon || "").trim() || "(없음)"}\n\n## 연표\n${tl}${(w.glossary || []).length ? "\n\n" + glossaryBlock(w) : ""}`;
 }
 /* 검사의 기준: 검사하는 문서(p)보다 먼저 정해진 설정만. 원안·사용자 지정·이야기 장 줄거리·직접 수정한 문서는 언제나 기준이다.
    나중에 쓴 문서가 정한 설정과 어긋나면, 고칠 쪽은 그 나중 문서이므로 그쪽 검사에서 잡힌다 */

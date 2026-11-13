@@ -15,7 +15,7 @@ vm.runInContext([
   cut("const sentencesOf =", "/* 인포박스에서"), cut("function pageTexts(p)", "/* 이름이 목적어"),
   cut("const namesOf =", "function checkBrief"),
   require("fs").readFileSync(require("path").join(__dirname, "..", "js", "ledger.js"), "utf8").replace('"use strict";', ""),
-  "Object.assign(globalThis,{normEvent,ingestEvents,eventIssues,eventCandidates,eventBlock,eventCheckBlock,addFact,addMention,compactFacts,promptFacts,promptMentions,FACT_CAP,MENTION_CAP,addTimeline,acceptTimeline,acceptPageTimeline,timelineSubject,keyOf,norm,stripMarks});"
+  "Object.assign(globalThis,{ingestTerms,purgeTerms,pickTerm,glossaryBlock,findTerm,normEvent,ingestEvents,eventIssues,eventCandidates,eventBlock,eventCheckBlock,addFact,addMention,compactFacts,promptFacts,promptMentions,FACT_CAP,MENTION_CAP,addTimeline,acceptTimeline,acceptPageTimeline,timelineSubject,keyOf,norm,stripMarks});"
 ].join("\n"), c);
 let n = 0; const test = (name, fn) => { fn(); console.log(`  ✓ ${++n}. ${name}`); };
 const ent = title => ({ title, type: "", summary: "", facts: [], mentions: [], page: false, box: "" });
@@ -185,6 +185,61 @@ test("사건 장부가 생성·검사·수정 흐름에 연결되어 있다", ()
   assert((html.match(/\$\{EVENTS_JSON\}/g) || []).length >= 3, "문서 작성, 확정 사실 정리, 수정본 분석");
   assert(html.includes("ingestEvents(w, key, out.events)")); assert(html.includes("${eventBlock(w, key, rel)}")); assert(html.includes("${eventCheckBlock(w, key, ok)}"));
   assert(html.includes("if (w.events) w.events = w.events.filter(x => x.src !== key);"), "문서를 지우거나 다시 쓰면 그 문서의 기록을 걷어 낸다");
+});
+
+/* ---------- 4단계: 용어 정의 ---------- */
+test("문서가 처음 정한 용어를 기록하고, 같은 정의는 다시 넣지 않는다", () => {
+  const w = world("가");
+  assert.equal(c.ingestTerms(w, "p1", [{ term: "Type-05", definition: "나라마다 따로 매기는 제식 번호로, 대대로 물려받는 칭호다." }, { term: "", definition: "x" }, "잘못"]), 1);
+  assert.equal(w.glossary.length, 1); assert.equal(w.glossary[0].confirmed, false); assert.equal(w.glossary[0].src, "p1");
+  c.ingestTerms(w, "p2", [{ term: "type-05", definition: "나라마다 따로 매기는 제식 번호로, 대대로 물려받는 칭호다" }]);
+  assert.equal(w.glossary.length, 1); assert(!w.glossary[0].alts, "표기만 다른 같은 정의는 후보가 아니다");
+  assert.equal(c.ingestTerms(w, "p3", undefined), 0, "옛 응답처럼 terms가 없어도 된다");
+});
+test("정의가 엇갈리는 후보는 자동으로 고르지 않고 후보로 둔다", () => {
+  const w = world("가");
+  c.ingestTerms(w, "p1", [{ term: "Type-05", definition: "대대로 물려받는 칭호" }]);
+  c.ingestTerms(w, "p2", [{ term: "Type-05", definition: "소녀 한 명의 개인 이름" }]);
+  c.ingestTerms(w, "p3", [{ term: "Type-05", definition: "전 세계 일련번호" }]);
+  const g = w.glossary[0];
+  assert.equal(g.definition, "대대로 물려받는 칭호", "먼저 정한 정의를 바꾸지 않는다");
+  assert.deepEqual(g.alts.map(a => a.src), ["p2", "p3"]);
+  assert(c.glossaryBlock(w).includes("- Type-05: 대대로 물려받는 칭호"));
+});
+test("사용자가 고르면 확정되고 후보가 사라진다. 확정된 용어는 새 후보를 받지 않는다", () => {
+  const w = world("가");
+  c.ingestTerms(w, "p1", [{ term: "Type-05", definition: "대대로 물려받는 칭호" }]);
+  c.ingestTerms(w, "p2", [{ term: "Type-05", definition: "소녀 한 명의 개인 이름" }]);
+  assert.equal(c.pickTerm(w, 0, 0), true);
+  assert.equal(w.glossary[0].definition, "소녀 한 명의 개인 이름"); assert.equal(w.glossary[0].confirmed, true); assert(!w.glossary[0].alts);
+  c.ingestTerms(w, "p3", [{ term: "Type-05", definition: "전 세계 일련번호" }]);
+  assert(!w.glossary[0].alts);
+  assert(c.glossaryBlock(w).includes("[사용자 확정]"));
+  assert.equal(c.pickTerm(w, 5, -1), false);
+});
+test("문서를 지우거나 다시 쓰면 그 문서의 후보와 미확정 용어를 걷어 낸다", () => {
+  const w = world("가");
+  c.ingestTerms(w, "p1", [{ term: "A", definition: "가" }, { term: "B", definition: "나" }]);
+  c.ingestTerms(w, "p2", [{ term: "A", definition: "다" }]);
+  c.ingestTerms(w, "user", [{ term: "C", definition: "라" }]);
+  c.purgeTerms(w, "p1");
+  assert.deepEqual(w.glossary.map(g => [g.term, g.definition, g.src]), [["A", "다", "p2"], ["C", "라", "user"]], "후보가 있으면 후보가 정의가 된다");
+  w.glossary[0].confirmed = true; c.purgeTerms(w, "p2"); assert.equal(w.glossary.length, 2, "확정된 용어는 남는다");
+});
+test("검사할 문서에는 그 문서에 나온 용어만 넣는다", () => {
+  const w = world("가");
+  c.ingestTerms(w, "p1", [{ term: "Type-05", definition: "칭호" }, { term: "북해 협정", definition: "조약" }]);
+  const b = c.glossaryBlock(w, "Type-05가 출격했다"); assert(b.includes("Type-05")); assert(!b.includes("북해 협정"));
+  assert.equal(c.glossaryBlock(w, "아무것도"), "");
+  assert.equal(c.glossaryBlock({ entities: {} }), "", "옛 세계관에는 glossary가 없다");
+});
+test("용어 정의가 모든 문서 프롬프트와 문서 읽기 검사에 들어간다", () => {
+  assert(html.includes('${(w.glossary || []).length ? "\\n\\n" + glossaryBlock(w) : ""}'), "canonBlock에 넣는다");
+  assert(html.includes("이 세계의 용어를 아래 '용어 정의'와 다른 뜻으로 쓴 곳"));
+  assert(html.includes("const g = glossaryBlock(w, docForCheck(p))"));
+  assert(html.includes(",${TERMS_JSON}}")); assert(html.includes("ingestTerms(w, key, out.terms)"));
+  assert(html.includes("if (w.glossary) purgeTerms(w, key);"));
+  assert(html.includes("data-term-pick=") && html.includes("어느 쪽으로 할까요?"));
 });
 
 console.log(`\n모두 통과 (${n}개). AI 호출 0회.`);
