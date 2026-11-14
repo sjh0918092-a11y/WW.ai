@@ -17,6 +17,9 @@
  *   GET  /api/sync?since=n             since 뒤에 바뀐 세계관과 문서
  *   POST /api/sync {worlds, pages}     올리기. 기기의 수정 시각(updated)이 더 최근인 것만 저장한다
  */
+import { jobsApi } from "./jobs.js";
+export { AiJobs } from "./jobs.js";
+
 const UPSTREAM = "https://generativelanguage.googleapis.com";
 const DEFAULT_ORIGINS = "https://sjh0918092-a11y.github.io";
 const MAX_BODY = 2 * 1024 * 1024;   // 요청 본문 상한 2MB
@@ -49,7 +52,7 @@ export default {
     // runsIn은 이 Worker가 Google로 요청을 내보내는 Cloudflare 데이터센터(공항 코드)와 나라다. HKG(홍콩) 등이면 Gemini가 막는다.
     if (url.pathname === "/" && request.method === "GET") {
       const where = await egress();
-      return new Response(JSON.stringify({ ok: true, service: "WorldWiki relay", keyConfigured: !!env.GEMINI_KEY, passwordsConfigured: !!env.PASSWORDS, storageConfigured: !!env.DB, receivedAt: request.cf?.colo || null, runsIn: where }), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
+      return new Response(JSON.stringify({ ok: true, service: "WorldWiki relay", keyConfigured: !!env.GEMINI_KEY, passwordsConfigured: !!env.PASSWORDS, storageConfigured: !!env.DB, jobsConfigured: !!env.AI_JOBS, receivedAt: request.cf?.colo || null, runsIn: where }), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
     }
 
     if (!originOk) return fail(403, "허용되지 않은 사이트입니다. ALLOWED_ORIGINS 설정을 확인하세요.");
@@ -154,6 +157,7 @@ async function api(request, env, url, cors, fail) {
     const ses = tok ? await db.prepare("SELECT uid FROM sessions WHERE token = ?").bind(tok).first() : null;
     if (!ses) return fail(401, "로그인이 만료되었습니다. 다시 로그인해 주세요.");
     const uid = ses.uid;
+    if (path === "/api/jobs" || path.startsWith("/api/jobs/")) return jobsApi(request, env, url, cors, fail, uid, passOk);
     if (path === "/api/logout" && m === "POST") { await db.prepare("DELETE FROM sessions WHERE token = ?").bind(tok).run(); return json({ ok: true }); }
     if (path === "/api/sync" && m === "GET") {
       const since = Number(url.searchParams.get("since") || 0) || 0;

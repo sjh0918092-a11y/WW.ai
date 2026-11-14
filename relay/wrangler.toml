@@ -17,3 +17,12 @@ region = "gcp:us-east4"
 binding = "DB"
 database_name = "worldwiki-db"
 database_id = "3ce1b198-c233-45c6-8b46-8c0aa8638327"
+
+# 계정별 AI 작업 큐. alarm이 HTTP 연결과 독립적으로 실행하고 결과를 24시간 보관한다.
+[[durable_objects.bindings]]
+name = "AI_JOBS"
+class_name = "AiJobs"
+
+[[migrations]]
+tag = "v1-ai-jobs"
+new_sqlite_classes = ["AiJobs"]

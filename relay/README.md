@@ -1,5 +1,13 @@
 # Gemini 중계 서버 (Cloudflare Worker)
 
+## 서버 AI 작업 전환 (v6.88)
+
+화면 잠금·탭 전환 뒤에도 결과를 회수하기 위한 작업 기반을 추가했다.
+단계별 범위·API·배포 방법은 [JOBS_PLAN.md](JOBS_PLAN.md)에 정리했다.
+현재는 서버 기반을 검증하는 1단계이며, 앱의 기존 AI 호출은 아직 전환하지 않았다.
+Worker는 이제 `jobs.js`도 함께 가져오므로 아래의 코드 한 파일 붙여넣기 방식 대신
+GitHub 연결 또는 이 폴더에서 `wrangler deploy`로 배포한다.
+
 친구가 내 Gemini API 키로 WorldWiki.ai를 쓰게 하되, 키 자체는 보여 주지 않기 위한 중계 서버입니다.
 키는 Cloudflare에만 저장되고, 친구는 **접속 암호**만 받습니다.
 
