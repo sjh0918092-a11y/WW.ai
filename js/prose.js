@@ -103,7 +103,7 @@ async function generateProseImage() {
   if (portraitBusy(v.key) || S.portraitJob) { j.error = "문서 작업이 끝난 뒤 생성해 주세요."; renderMain(); return; }
   j.error = ""; j.preview = ""; j.stamp = proseImageStamp(story); j.docStamp = imageDocStamp(p); j.ref = portraitSrc(p); j.original = portraitSrc({ portrait: story.illustration });
   v.busy = true; v.ctl = new AbortController(); v.imageTask = true; renderMain();
-  const timer = gActiveTimeout(() => { j.timedOut = true; v.ctl.abort(); }, openAIImage(j.opts.model) ? 300000 : 180000); j.timedOut = false;
+  const timer = serverImageJob(j.opts.model) ? () => {} : gActiveTimeout(() => { j.timedOut = true; v.ctl.abort(); }, openAIImage(j.opts.model) ? 300000 : 180000); j.timedOut = false;
   try {
     const o = { ...j.opts, useRef: !!j.ref };
     const src = await requestDocImage(w, p, o, v.ctl.signal, proseImagePrompt(w, p, story, o));

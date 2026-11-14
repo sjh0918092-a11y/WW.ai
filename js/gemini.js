@@ -8,7 +8,7 @@ const PAGE_MODEL = {};   // 모델과 생각 깊이는 'AI 연결 설정'에서 
 const GKEY = "wwiki:gemini";
 const GBASE = "https://generativelanguage.googleapis.com/v1beta";
 const DEFAULT_RELAY = "https://lucky-feather-d3e9.sjh0918092.workers.dev";   // 기본 중계 서버. 주소는 공개돼도 되고, 접속 암호가 있어야 쓸 수 있다
-const GDEF = { mode: "key", relay: DEFAULT_RELAY, pass: "", key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "", check: "", checkThink: "medium", preCheck: true, imageModel: "gpt-image-2.5-flare", imageDefaultVersion: 1, openaiKey: "" };   // check: 설정 검사·수정 대조. 비우면 기본 모델
+const GDEF = { mode: "key", relay: DEFAULT_RELAY, pass: "", key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "", check: "", checkThink: "medium", preCheck: true, imageModel: "gpt-image-2.5-flare", imageDefaultVersion: 1, openaiKey: "", serverJobs: true, serverKeys: false, serverKeysFor: "" };   // check: 설정 검사·수정 대조. 비우면 기본 모델
 const THINKS = [["", "모델 기본값"], ["minimal", "minimal"], ["low", "low"], ["medium", "medium"], ["high", "high"]];
 let GS = (() => {
   let st = {}; try { st = JSON.parse(localStorage.getItem(GKEY) || "{}") || {}; } catch {}
@@ -94,8 +94,8 @@ function gWaitVisible(signal) {
 }
 
 const G_CONT = "직전 응답이 연결 문제로 중간에 끊겼다. 끊긴 바로 그 글자부터 이어서 출력하라. 이미 출력한 부분은 반복하지 않고, 앞말이나 설명, 코드 블록 표시 없이 나머지 JSON 텍스트만 출력해 원래 JSON 객체를 끝까지 완성한다.";
-const gRetryable = e => e && (e.code === "upstream_error" || e.code === "network" || e.code === "stalled" || /^api_5/.test(e.code || ""));
-const gSleep = (ms, signal) => new Promise((res, rej) => { if (signal?.aborted) return rej({ code: "cancelled" }); const t = setTimeout(res, ms); signal?.addEventListener("abort", () => { clearTimeout(t); rej({ code: "cancelled" }); }, { once: true }); });
+const gRetryable = e => e && !e.serverJob && (e.code === "upstream_error" || e.code === "network" || e.code === "stalled" || /^api_5/.test(e.code || ""));
+const gSleep = (ms, signal) => new Promise((res, rej) => { if (signal?.aborted) return rej({ code: "cancelled" }); const abort = () => { clearTimeout(t); rej({ code: "cancelled" }); }; const t = setTimeout(() => { signal?.removeEventListener("abort", abort); res(); }, ms); signal?.addEventListener("abort", abort, { once: true }); });
 /* 끊긴 응답 뒤에 이어 받은 조각을 붙인다. 모델이 끝부분을 조금 반복해 시작하면 겹친 만큼 잘라 낸다 */
 function joinCont(a, b) {
   b = b.replace(/^\s*```(?:json)?\s*\n?/i, "").replace(/\n?\s*```\s*$/, "");
@@ -105,6 +105,12 @@ function joinCont(a, b) {
 }
 const gemini = {
   async stream(model, body, opts, prefix) {
+    if (typeof AIJobs !== "undefined" && AIJobs.enabled("gemini")) {
+      const j = await AIJobs.run("gemini.generate", model, body, opts), c = j.candidates?.[0];
+      const text = (c?.content?.parts || []).filter(p => typeof p.text === "string" && !p.thought).map(p => p.text).join("");
+      if (text) opts.onText?.({ text: prefix ? joinCont(prefix, text) : text });
+      return { text, finish: c?.finishReason || "", block: j.promptFeedback?.blockReason || "", usage: j.usageMetadata, serverJob: true };
+    }
     const ctl = new AbortController(); let stalled = false, expired = false, timer = null, hardTimer = null, progressed = false, reader = null;
     const kick = () => { timer?.(); timer = gActiveTimeout(() => { stalled = true; ctl.abort(); }, opts.progressWatch && progressed ? G_PROGRESS_IDLE_MS : G_IDLE_MS); };
     const timeoutError = () => ({ code: "stage_timeout", message: "화면이 열린 동안의 최대 대기 시간(10분, 응답 복구 포함)을 넘었습니다. 잠시 뒤 다시 실행해 주세요." });
@@ -176,6 +182,7 @@ const gemini = {
       if (opts.deadline && gActiveNow() >= opts.deadline) throw { code: "stage_timeout", message: "화면이 열린 동안의 최대 대기 시간(10분, 응답 복구 포함)을 넘었습니다. 잠시 뒤 다시 실행해 주세요." };
       const cont = acc.length >= 200;   // 받은 게 어느 정도 있으면 이어 받기, 아니면 처음부터
       const body = cont ? mk([...user, { role: "model", parts: [{ text: acc }] }, { role: "user", parts: [{ text: G_CONT }] }], false) : mk(user, true);
+      let serverJobUsed = false;
       try {
         let r;
         try { r = await this.stream(model, body, opts, cont ? acc : ""); }
@@ -183,6 +190,7 @@ const gemini = {
           if (e.code === "api_400" && think && /think/i.test(e.message || "")) { think = ""; opts.onMeta?.({ model, think }); continue; }   // 이 모델이 지원하지 않는 생각 깊이면 기본값으로 다시 보낸다
           throw e;
         }
+        serverJobUsed = !!r.serverJob;
         if (r.usage) usage = sumUsage(usage, r.usage);
         if (r.block || /SAFETY|PROHIBITED|BLOCKLIST|SPII|RECITATION/.test(r.finish)) throw { code: "refused", message: r.block || r.finish, text: acc + r.text };
         const text = cont ? joinCont(acc, r.text) : r.text;
@@ -194,6 +202,7 @@ const gemini = {
         if (cont && retries < retryLimit) { retries++; acc = ""; opts.onRetry?.({ n: retries, mode: "restart", reason: "이어 붙인 응답이 맞지 않음" }); continue; }
         throw { code: "invalid_json", text, message: r.finish };
       } catch (e) {
+        if (serverJobUsed) e = { ...e, serverJob: true };
         if (e.code === "cancelled") throw { ...e, text: acc || e.text || "" };
         if (!gRetryable(e) || retries >= retryLimit) { opts.onMeta?.({ model, think, usage, retries }); throw { ...e, code: e.code === "stalled" ? "upstream_error" : e.code, text: e.text || acc }; }
         await gWaitVisible(opts.signal);
@@ -232,7 +241,8 @@ async function callJson(kind, prompt, opts = {}, meta = {}) {
   const t0 = performance.now(); let first = null, chars = 0;
   const user = opts.onText;
   const rec = { at: Date.now(), kind, tier: opts.modelTier || "default", model: "", effort: "", in: prompt.length, ...meta };
-  const o = { progressWatch: ["page", "check", "read", "prose", "section", "discovery"].includes(kind), ...opts, onText: u => { if (first === null) first = performance.now(); chars = u.text.length; if (user) user(u); },
+  const o = { progressWatch: ["page", "check", "read", "prose", "section", "discovery"].includes(kind), jobMeta: { kind, title: meta.title || "", wid: S.world?.id || "", key: S.gen?.key || S.view?.key || "" }, ...opts,
+    onJob: j => { rec.transport = "server"; (rec.jobs ||= []).push(j.id); opts.onJob?.(j); }, onText: u => { if (first === null) first = performance.now(); chars = u.text.length; if (user) user(u); },
     onRetry: r => { rec.retry = r.n; (rec.retries ||= []).push(r.reason ? String(r.reason).slice(0, 120) : r.mode); opts.onRetry?.(r); },
     onMeta: m => { rec.model = m.model; rec.effort = m.think || ""; if (m.retries) rec.retry = m.retries; if (m.usage) rec.tok = { i: m.usage.promptTokenCount || 0, o: m.usage.candidatesTokenCount || 0, t: m.usage.thoughtsTokenCount || 0 }; } };
   const done = () => { rec.first = first === null ? null : Math.round(first - t0); rec.total = Math.round(performance.now() - t0); rec.out = chars; };

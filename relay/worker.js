@@ -52,7 +52,7 @@ export default {
     // runsIn은 이 Worker가 Google로 요청을 내보내는 Cloudflare 데이터센터(공항 코드)와 나라다. HKG(홍콩) 등이면 Gemini가 막는다.
     if (url.pathname === "/" && request.method === "GET") {
       const where = await egress();
-      return new Response(JSON.stringify({ ok: true, service: "WorldWiki relay", keyConfigured: !!env.GEMINI_KEY, passwordsConfigured: !!env.PASSWORDS, storageConfigured: !!env.DB, jobsConfigured: !!env.AI_JOBS, receivedAt: request.cf?.colo || null, runsIn: where }), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
+      return new Response(JSON.stringify({ ok: true, service: "WorldWiki relay", keyConfigured: !!env.GEMINI_KEY, passwordsConfigured: !!env.PASSWORDS, storageConfigured: !!env.DB, jobsConfigured: !!env.AI_JOBS, jobsVersion: env.AI_JOBS ? 2 : 0, receivedAt: request.cf?.colo || null, runsIn: where }), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
     }
 
     if (!originOk) return fail(403, "허용되지 않은 사이트입니다. ALLOWED_ORIGINS 설정을 확인하세요.");

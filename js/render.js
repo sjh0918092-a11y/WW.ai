@@ -98,7 +98,7 @@ function gsetHtml() {
     <h2 class="nf-h">Gemini 연결 방식</h2>
     <select id="gMode" class="txt"><option value="key" ${gRelay() ? "" : "selected"}>내 API 키로 바로 연결</option><option value="relay" ${gRelay() ? "selected" : ""}>중계 서버로 연결 (초대받은 경우)</option></select>
     <div id="gKeyBox" ${gRelay() ? "hidden" : ""}>
-      <label class="lb" for="gKey">Gemini API 키 <span class="note" style="font-weight:400">Google AI Studio에서 발급 · 요청은 브라우저에서 Google로 바로 갑니다</span></label>
+      <label class="lb" for="gKey">Gemini API 키 <span class="note" style="font-weight:400">Google AI Studio에서 발급 · 기본은 Google 직접 연결이며, 아래에서 서버 실행을 허용할 수 있습니다</span></label>
       <div class="keyrow"><input id="gKey" class="txt" type="password" autocomplete="off" spellcheck="false" value="${esc(GS.key)}" placeholder="AIza…"><button type="button" class="btn" data-act="gkey-show" data-for="gKey">보기</button></div>
     </div>
     <div id="gRelayBox" ${gRelay() ? "" : "hidden"}>
@@ -120,7 +120,12 @@ function gsetHtml() {
     <label class="lb" for="gImage">기본 이미지 모델</label><input id="gImage" class="txt" list="gImageModels" value="${esc(GS.imageModel || GDEF.imageModel)}"><datalist id="gImageModels">${IMAGE_MODELS.map(m => `<option value="${m.id}">${m.label}</option>`).join("")}</datalist>
     <label class="lb" for="gOpenAI">OpenAI API 키 (이미지 생성용)</label>
     <div class="keyrow"><input id="gOpenAI" class="txt" type="password" autocomplete="off" spellcheck="false" value="${esc(GS.openaiKey || "")}" placeholder="sk-…"><button type="button" class="btn" data-act="gkey-show" data-for="gOpenAI">보기</button></div>
-    <p class="note">선택 사항입니다. OpenAI 모델을 고르면 브라우저에서 OpenAI로 직접 요청합니다. Gemini 중계 서버는 사용하지 않습니다. <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">API 키 발급</a> · ChatGPT 구독과 별도 과금되며, 계정에 따라 조직 인증이 필요할 수 있습니다. 키는 이 브라우저에만 저장되고 세계관 백업·동기화에는 포함되지 않습니다.</p>
+    <p class="note">선택 사항입니다. 기본은 OpenAI 직접 연결이며, 아래에서 서버 실행을 허용할 수 있습니다. <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">API 키 발급</a> · ChatGPT 구독과 별도 과금되며, 계정에 따라 조직 인증이 필요할 수 있습니다. 개인 키는 세계관 백업·동기화에 포함되지 않습니다.</p>
+    <h2 class="nf-h">화면을 꺼도 AI 요청 계속하기</h2>
+    <label class="lb" style="font-weight:400"><input type="checkbox" id="gServerJobs" ${GS.serverJobs !== false ? "checked" : ""}>로그인한 동안 AI 요청을 서버에서 실행</label>
+    <p class="note">중계 서버 Gemini 연결은 아래 계정으로 로그인하면 이 설정을 사용합니다. 서버에 접수된 AI 요청은 화면이 꺼져도 계속되고, 탭이 살아 있으면 돌아왔을 때 결과를 받습니다. 생성 중 글자가 조금씩 나타나는 대신 완료 결과를 한 번에 받습니다. 새로고침 뒤 화면 복원과 문서의 전체 단계 진행은 아직 준비 중입니다.</p>
+    <label class="lb" style="font-weight:400"><input type="checkbox" id="gServerKeys" ${GS.serverKeys === true ? "checked" : ""}>내 Gemini·OpenAI 키도 서버 작업에 사용하도록 허용</label>
+    <p class="note">허용하면 개인 키를 선택한 서버(${esc(GS.relay || DEFAULT_RELAY)})에 전송하고, 대기·실행 동안 서버 작업 저장소에 임시 보관합니다. 키는 작업 종료·취소 때 지우며 작업 조회 응답에는 포함하지 않습니다. 허용하지 않으면 개인 키 요청은 기존처럼 직접 연결합니다. 서버 주소를 바꾸면 이 허용은 해제됩니다.</p>
     <label class="lb" for="gPre" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="gPre" ${GS.preCheck !== false ? "checked" : ""}>문서 작성 직후 한 번 자동 검사하고, 어긋난 곳은 고쳐서 보여 주기 <span class="note">끄면 자동 검사하지 않습니다. 이후 검사는 문서의 설정 검사 버튼으로 실행합니다</span></label>
     <p class="note" style="margin-top:6px">자동 검사는 새 문서를 작성하거나 다시 쓸 때 한 번만 돕니다. 이후에는 설정 검사 버튼을 눌렀을 때만 검사합니다. 검사 모델을 높이거나 생각 깊이를 올리면 헛짚는 지적이 줄지만, 검사가 느려지고 사용량이 늘어납니다.</p>
     ${dl}
@@ -163,7 +168,8 @@ async function acctAction(kind) {
 }
 function readGsetForm() {
   const v = id => ($("#" + id)?.value ?? "").trim();
-  GS = { ...GS, mode: v("gMode") === "relay" ? "relay" : "key", key: v("gKey"), relay: normRelay(v("gRelay")) || DEFAULT_RELAY, pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT"), check: v("gCheck"), checkThink: v("gCheckT"), preCheck: !!$("#gPre")?.checked, imageModel: v("gImage") || GDEF.imageModel, openaiKey: v("gOpenAI") };
+  const relay = normRelay(v("gRelay")) || DEFAULT_RELAY, sameServer = relay === normRelay(GS.relay || DEFAULT_RELAY);
+  GS = { ...GS, mode: v("gMode") === "relay" ? "relay" : "key", key: v("gKey"), relay, pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT"), check: v("gCheck"), checkThink: v("gCheckT"), preCheck: !!$("#gPre")?.checked, imageModel: v("gImage") || GDEF.imageModel, openaiKey: v("gOpenAI"), serverJobs: !!$("#gServerJobs")?.checked, serverKeys: sameServer && !!$("#gServerKeys")?.checked, serverKeysFor: sameServer && $("#gServerKeys")?.checked ? relay : "" };
   saveGS(); S.sample = gReady() ? gemini : null;
 }
 function setGres(t) { S.gres = t; const el = $("#gRes"); if (el) el.textContent = t; }

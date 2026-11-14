@@ -105,7 +105,7 @@ try {
     ["network-error-01", async () => { throw new Error("연결 끊김"); }, "interrupted"],
     ["provider-error01", async () => new Response("rejected", { status: 429 }), "failed"],
     ["invalid-output01", async () => new Response("{bad"), "interrupted"],
-    ["empty-output-001", async () => Response.json({ promptFeedback: { blockReason: "SAFETY" } }), "failed"],
+    ["empty-output-001", async () => Response.json({}), "failed"],
     ["large-output-001", async () => success("x".repeat(4 * 1024 * 1024)), "interrupted"],
   ]) {
     const test = instance(); await request(test.obj, "", input(id)); let count = 0;

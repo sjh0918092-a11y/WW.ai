@@ -6,7 +6,7 @@
   setInterval(() => { if (S.gen) updateGenLive(); if (S.storyGen) updateStoryLive(); const ct = $("#chkTick"); if (ct && S.checking && S.checkT0) ct.textContent = Math.floor((performance.now() - S.checkT0) / 1000) + "초"; const t = $("#fxTick"); if (t && S.fixv?.t0) t.textContent = Math.floor((performance.now() - S.fixv.t0) / 1000) + "초"; }, 1000);
   const inv = /(?:^#|&)relay=([^&]+)/.exec(location.hash || "");   // 초대 링크(#relay=주소)로 들어오면 중계 서버 주소를 채운다
   let invited = false;
-  if (inv) { const u = normRelay(decodeURIComponent(inv[1])); if (/^https:\/\//i.test(u)) { const same = GS.mode === "relay" && GS.relay === u; GS = { ...GS, mode: "relay", relay: u, pass: same ? GS.pass : "" }; saveGS(); invited = !GS.pass; } history.replaceState(null, "", location.pathname + location.search); }
+  if (inv) { const u = normRelay(decodeURIComponent(inv[1])); if (/^https:\/\//i.test(u)) { const same = GS.mode === "relay" && GS.relay === u; GS = { ...GS, mode: "relay", relay: u, pass: same ? GS.pass : "", serverKeys: same ? GS.serverKeys : false }; saveGS(); invited = !GS.pass; } history.replaceState(null, "", location.pathname + location.search); }
   S.sample = gReady() ? gemini : null; S.sampleReady = true;
   await Store.init();
   try { S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)); }

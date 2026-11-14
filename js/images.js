@@ -108,8 +108,10 @@ const imageDocStamp = p => JSON.stringify([p.title, p.type, p.summary, p.infobox
 const openAIImage = model => /^gpt-image-/.test(model || "");
 const imageReady = model => openAIImage(model) ? !!GS.openaiKey : gReady();
 const imageSetupHint = model => openAIImage(model) ? "AI 연결 설정에서 OpenAI API 키를 저장해 주세요. ChatGPT 구독과 별도로 API 사용료가 청구됩니다." : "AI 연결 설정에서 이미지 생성이 가능한 Gemini API 연결을 저장해 주세요.";
+const imageSizeFor = ratio => ({ "1:1": "1024x1024", "3:4": "1152x1536", "4:3": "1536x1152", "9:16": "864x1536", "16:9": "1536x864" })[ratio] || "1024x1024";
+const serverImageJob = model => typeof AIJobs !== "undefined" && AIJobs.enabled(openAIImage(model) ? "openai" : "gemini");
 async function openAIImageFetch(model, prompt, ref, o, signal) {
-  const size = ({ "1:1": "1024x1024", "3:4": "1152x1536", "4:3": "1536x1152", "9:16": "864x1536", "16:9": "1536x864" })[o.ratio] || "1024x1024";
+  const size = imageSizeFor(o.ratio);
   const values = { model, prompt, n: 1, size, quality: o.quality || "high", output_format: "png" };
   let body, endpoint = "generations", headers = { Authorization: "Bearer " + GS.openaiKey };
   if (ref) {
@@ -140,12 +142,21 @@ async function requestDocImage(w, p, o, signal, customPrompt = "") {
   const prompt = customPrompt || imagePrompt(w, p, o), ref = o.useRef ? portraitSrc(p) : "";
   const m = /^data:(image\/[a-z]+);base64,(.+)$/.exec(ref);
   const parts = [{ text: prompt }, ...(m ? [{ inlineData: { mimeType: m[1], data: m[2] } }] : [])];
-  const send = () => openAIImage(model) ? openAIImageFetch(model, prompt, ref, o, signal) : gFetch(`/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", ...gAuth() }, body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: o.ratio, ...(model === "gemini-3.1-flash-lite-image" ? {} : { imageSize: "1K" }) } } }), signal });
+  const geminiBody = { contents: [{ role: "user", parts }], generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: o.ratio, ...(model === "gemini-3.1-flash-lite-image" ? {} : { imageSize: "1K" }) } } };
+  const send = () => openAIImage(model) ? openAIImageFetch(model, prompt, ref, o, signal) : gFetch(`/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", ...gAuth() }, body: JSON.stringify(geminiBody), signal });
   const t0 = performance.now();
   try {
-    const res = await send();   // 공급자에 맞는 API로 한 번만 요청한다.
-    if (!res.ok) throw await gError(res, model);
-    const j = await res.json(), images = [];
+    let j;
+    if (serverImageJob(model)) {
+      const input = openAIImage(model) ? { prompt, size: imageSizeFor(o.ratio), quality: o.quality || "high", ...(m ? { reference: { mimeType: m[1], data: m[2] } } : {}) } : geminiBody;
+      j = await AIJobs.run(openAIImage(model) ? "openai.image" : "gemini.image", model, input, { signal,
+        jobMeta: { kind: customPrompt ? "illustration" : "image", title: p.title, wid: w.id, key: p.key } });
+    } else {
+      const res = await send();   // 공급자에 맞는 API로 한 번만 요청한다.
+      if (!res.ok) throw await gError(res, model);
+      j = await res.json();
+    }
+    const images = [];
     if (openAIImage(model)) for (const entry of j.data || []) if (typeof entry.b64_json === "string") images.push({ mime: "image/png", data: entry.b64_json });
     const collect = x => {
       if (!x || typeof x !== "object" || x.thought === true || x.role === "user" || /thought|reason|^user$/.test(x.type || "")) return;
@@ -179,7 +190,7 @@ async function generateDocImage() {
   if (portraitBusy(v.key) || S.portraitJob) { v.error = "문서 작업이 끝난 뒤 생성해 주세요."; renderMain(); return; }
   v.busy = true; v.timedOut = false; v.error = ""; v.preview = ""; v.stamp = imageDocStamp(p); v.original = portraitSrc(p); v.ctl = new AbortController();
   renderMain();
-  const timer = gActiveTimeout(() => { v.timedOut = true; v.ctl.abort(); }, openAIImage(v.opts.model) ? 300000 : 180000);
+  const timer = serverImageJob(v.opts.model) ? () => {} : gActiveTimeout(() => { v.timedOut = true; v.ctl.abort(); }, openAIImage(v.opts.model) ? 300000 : 180000);
   try {
     const src = await requestDocImage(w, p, { ...v.opts }, v.ctl.signal);
     if (S.imageGen === v && !v.ctl.signal.aborted) v.preview = src;

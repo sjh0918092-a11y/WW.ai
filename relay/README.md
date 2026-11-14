@@ -1,11 +1,13 @@
 # Gemini 중계 서버 (Cloudflare Worker)
 
-## 서버 AI 작업 전환 (v6.88)
+## 서버 AI 작업 전환 (v6.89)
 
 화면 잠금·탭 전환 뒤에도 결과를 회수하기 위한 작업 기반을 추가했다.
 단계별 범위·API·배포 방법은 [JOBS_PLAN.md](JOBS_PLAN.md)에 정리했다.
-현재는 서버 기반을 검증하는 1단계이며, 앱의 기존 AI 호출은 아직 전환하지 않았다.
-Worker는 이제 `jobs.js`도 함께 가져오므로 아래의 코드 한 파일 붙여넣기 방식 대신
+2단계에서 앱의 문서·검사·Gemini/OpenAI 이미지 요청을 서버 작업에 연결했다.
+로그인하고 AI 연결 설정의 서버 실행을 켜면 사용하며, 개인 키는 별도의 서버별 허용이 필요하다.
+새로고침 후 화면 복원과 문서 전체 단계의 서버 진행은 이후 단계다.
+Worker는 이제 `jobs.js`·`providers.js`도 함께 가져오므로 아래의 코드 한 파일 붙여넣기 방식 대신
 GitHub 연결 또는 이 폴더에서 `wrangler deploy`로 배포한다.
 
 친구가 내 Gemini API 키로 WorldWiki.ai를 쓰게 하되, 키 자체는 보여 주지 않기 위한 중계 서버입니다.
@@ -15,7 +17,7 @@ GitHub 연결 또는 이 폴더에서 `wrangler deploy`로 배포한다.
 친구 브라우저 ──(접속 암호)──▶ Cloudflare Worker ──(내 API 키)──▶ Gemini API
 ```
 
-- 비용: Cloudflare Workers 무료 플랜(하루 10만 요청)으로 충분합니다.
+- 기존 중계는 Workers 요청을 사용하며, 서버 AI 작업은 Durable Objects의 요청·실행·저장 사용량도 발생합니다. 실제 비용은 계정 플랜과 사용량에 따릅니다.
 - 접속 암호가 없거나 틀린 요청, 허용하지 않은 사이트에서 온 요청은 막습니다.
 - Gemini 생성과 모델 목록 조회 외의 요청은 모두 막습니다.
 
@@ -150,11 +152,12 @@ Gemini 이미지 모델은 공식 `generateContent` 이미지 생성 경로를 �
 이미지 생성창에서 `OpenAI · GPT Image 2.5 Flare` 또는 `OpenAI · GPT Image 2.5 Sunburst`를 선택한다.
 설정의 **기본 이미지 모델**에도 지정할 수 있다. Gemini의 문서 작성·검사 모델과 연결은 그대로 유지된다.
 
-OpenAI는 브라우저에서 `https://api.openai.com/v1/images/generations`로 직접 요청한다.
+직접 연결에서는 브라우저에서 `https://api.openai.com/v1/images/generations`로 요청한다.
 기존 이미지 참고를 선택하면 `images/edits`에 multipart로 이미지를 함께 보낸다.
 Gemini 키·중계 암호는 OpenAI로 보내지 않으며 OpenAI 키도 Gemini로 보내지 않는다.
-OpenAI 키는 기존 연결 설정과 함께 이 브라우저 localStorage에만 저장되며 백업·서버 동기화에 포함되지 않는다.
-기존 Gemini Worker 변경·재배포는 필요 없다.
+OpenAI 키의 연결 설정은 이 브라우저 localStorage에 저장되며 백업·세계관 동기화에 포함되지 않는다.
+v6.89의 서버 실행과 개인 키 허용을 켜면, 로그인한 계정의 서버 작업이 OpenAI 요청을 대신 실행하고 키를 대기·실행 동안만 임시 보관한다.
+직접 연결만 사용하면 Worker 재배포가 필요 없고, 서버 AI 작업을 사용하려면 v6.89 Worker 배포가 필요하다.
 
 ChatGPT 구독과 별도로 OpenAI API 사용료가 발생한다. 조직 인증이나 모델 접근 권한이 필요할 수 있다.
 품질은 기본 `high`, 선택지는 `low` / `medium` / `high` / `auto`다. 출력은 PNG 한 장이며,
