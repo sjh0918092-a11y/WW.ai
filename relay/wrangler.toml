@@ -7,6 +7,9 @@ compatibility_date = "2025-09-01"
 # 대시보드에서 넣은 일반 변수(ALLOWED_ORIGINS 등)를 배포할 때 지우지 않는다. Secret은 원래 유지된다.
 keep_vars = true
 
+[build]
+command = "node build-engine.cjs"
+
 # Worker를 미국 동부 근처에서 실행하도록 고정한다.
 # 친구 요청이 홍콩(HKG)처럼 Gemini가 막는 지역의 데이터센터로 가면 "User location is not supported"가 나기 때문이다.
 [placement]

@@ -1,0 +1,64 @@
+  const copy = value => JSON.parse(JSON.stringify(value));
+  const baseWorld = copy(runtime.snapshot.world), basePages = copy(runtime.snapshot.pages);
+  S.world = copy(baseWorld); S.pages = copy(basePages); S.worlds = [S.world]; S.ready = true;
+  Store.mem.worlds[baseWorld.id] = copy(baseWorld); Store.mem.pages[baseWorld.id] = copy(basePages);
+  GS = { ...GDEF, ...runtime.input.settings, mode: "key", key: "server-managed", serverJobs: false };
+  S.sample = gemini;
+  if (!S.world.entities[runtime.input.key] && runtime.input.entity) {
+    const e = runtime.input.entity;
+    S.world.entities[runtime.input.key] = { ...newEntity(e.title, e.type, e.summary), ...(e.src ? { src: e.src } : {}), ...(e.searched ? { searched: true } : {}) };
+  }
+  const deferred = [];
+  let datesQueued = false;
+  afterTimeline = w => {
+    if (datesQueued || !(w.timeline || []).some(x => x.dateAsk)) return;
+    datesQueued = true;
+    deferred.push(async () => { datesQueued = false; await askTimelineDates(w); await Store.saveWorld(w); });
+  };
+  const syncFacts = bgSync;
+  bgSync = key => { deferred.push(() => syncFacts(key)); };
+  // 문서와 무관한 각도 목록 보충·다른 장 갱신은 문서 작업의 완료를 막지 않는다.
+  maybeAutoAngles = () => null; maybeRefillAngles = () => null; drainSync = () => {};
+  const drain = async () => { let count = 0; while (deferred.length && count++ < 12) await deferred.shift()(); };
+  S.pipelineDrain = drain;
+  gemini.stream = async (model, body, opts, prefix) => {
+    const j = await runtime.request(opts.jobMeta?.kind || "unknown", model, body), c = j.candidates?.[0];
+    const text = (c?.content?.parts || []).filter(p => typeof p.text === "string" && !p.thought).map(p => p.text).join("");
+    if (text) opts.onText?.({ text: prefix ? joinCont(prefix, text) : text });
+    return { text, finish: c?.finishReason || "", block: j.promptFeedback?.blockReason || "", usage: j.usageMetadata, serverJob: true };
+  };
+  const call = callJson;
+  callJson = async (kind, ...args) => {
+    try {
+      const result = await call(kind, ...args);
+      if (["check", "read"].includes(kind) && !Array.isArray(result?.issues)) throw { code: "invalid_check", message: "검사 응답 형식이 올바르지 않습니다." };
+      if (kind === "fix" && !Array.isArray(result?.edits)) throw { code: "invalid_fix", message: "수정 응답 형식이 올바르지 않습니다." };
+      if (kind === "analyze" && !Array.isArray(result?.facts)) throw { code: "invalid_facts", message: "확정 사실 응답 형식이 올바르지 않습니다." };
+      return result;
+    } catch (e) { if (e?.code !== "pipeline_yield") runtime.failures.push({ kind, code: e?.code || "engine_error" }); throw e; }
+  };
+  return {
+    async execute() {
+      const k = runtime.input.key;
+      let outcome;
+      if (runtime.input.action === "check") await checkPage(k);
+      else outcome = await generatePage(k, runtime.input.rewrite, runtime.input.direction, runtime.input.novel, runtime.input.angleId ? S.world.angles?.find(a => a.id === runtime.input.angleId) : null);
+      await drain(); await Store.q;
+      if (runtime.yielded) return { yielded: true };
+      if (runtime.input.novel && S.pages[k]) {
+        const angle = runtime.input.angleId ? S.world.angles?.find(a => a.id === runtime.input.angleId) : null;
+        await recordAngle(S.world, k, angle, outcome?.sceneUsed || ""); await Store.q;
+      }
+      const w = S.world, pages = Store.mem.pages[baseWorld.id] || {};
+      const redirect = w?.aliases?.[k], targetKey = pages[k] ? k : redirect && pages[redirect] ? redirect : k;
+      const page = pages[targetKey];
+      const required = runtime.failures.filter(f => ["page", "check", "read", "fix", "analyze"].includes(f.kind));
+      const error = S.genErr || (!page && !S.nf.has(k) ? { msg: "문서 결과를 완성하지 못했습니다." } : null);
+      const changed = Object.fromEntries(Object.entries(pages).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(basePages[key])));
+      const removed = Object.keys(basePages).filter(key => !pages[key]);
+      return { world: copy(w), pages: copy(changed), removed, page: page ? copy(page) : null, targetKey,
+        checked: !!page?.check && !required.some(f => ["check", "read"].includes(f.kind)), fixed: page?.autoFixed?.n || 0, remaining: page?.check?.issues?.length || 0,
+        notFound: S.nf.has(k), redirectTo: redirect || null, sceneUsed: outcome?.sceneUsed || "", failures: required, error,
+        warnings: runtime.failures.filter(f => !required.includes(f)) };
+    }
+  };

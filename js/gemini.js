@@ -8,7 +8,7 @@ const PAGE_MODEL = {};   // 모델과 생각 깊이는 'AI 연결 설정'에서 
 const GKEY = "wwiki:gemini";
 const GBASE = "https://generativelanguage.googleapis.com/v1beta";
 const DEFAULT_RELAY = "https://lucky-feather-d3e9.sjh0918092.workers.dev";   // 기본 중계 서버. 주소는 공개돼도 되고, 접속 암호가 있어야 쓸 수 있다
-const GDEF = { mode: "key", relay: DEFAULT_RELAY, pass: "", key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "", check: "", checkThink: "medium", preCheck: true, imageModel: "gpt-image-2.5-flare", imageDefaultVersion: 1, openaiKey: "", serverJobs: true, serverKeys: false, serverKeysFor: "" };   // check: 설정 검사·수정 대조. 비우면 기본 모델
+const GDEF = { mode: "key", relay: DEFAULT_RELAY, pass: "", key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "", check: "", checkThink: "medium", preCheck: true, imageModel: "gpt-image-2.5-flare", imageDefaultVersion: 1, openaiKey: "", serverJobs: true, documentPipeline: true, serverKeys: false, serverKeysFor: "" };   // check: 설정 검사·수정 대조. 비우면 기본 모델
 const THINKS = [["", "모델 기본값"], ["minimal", "minimal"], ["low", "low"], ["medium", "medium"], ["high", "high"]];
 let GS = (() => {
   let st = {}; try { st = JSON.parse(localStorage.getItem(GKEY) || "{}") || {}; } catch {}

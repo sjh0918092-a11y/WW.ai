@@ -51,7 +51,7 @@ const until = async fn => { for (let i = 0; i < 300; i++) { if (await fn()) retu
  try {
    browser = await chromium.launch(); context = await browser.newContext();
    await context.addInitScript(() => {
-     localStorage.setItem("wwiki:gemini", JSON.stringify({ mode: "relay", relay: "https://relay.test", pass: "relay-pass", main: "custom-main", mainThink: "low", check: "custom-check", checkThink: "high", quick: "custom-quick", openaiKey: "sk-private-openai", preCheck: false }));
+     localStorage.setItem("wwiki:gemini", JSON.stringify({ mode: "relay", relay: "https://relay.test", pass: "relay-pass", main: "custom-main", mainThink: "low", check: "custom-check", checkThink: "high", quick: "custom-quick", openaiKey: "sk-private-openai", preCheck: false, documentPipeline: false }));
      localStorage.setItem("wwiki:acct", JSON.stringify({ id: "tester", token: "session-test", since: 0 }));
      window.testHidden = false;
      Object.defineProperty(document, "hidden", { configurable: true, get: () => window.testHidden });

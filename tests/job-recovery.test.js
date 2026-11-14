@@ -37,7 +37,7 @@ const until = async fn => { for (let i = 0; i < 400; i++) { if (await fn()) retu
  try {
    browser = await chromium.launch(); context = await browser.newContext({ acceptDownloads: true });
    await context.addInitScript(() => {
-     if (!localStorage.getItem("wwiki:gemini")) localStorage.setItem("wwiki:gemini", JSON.stringify({ mode: "relay", relay: "https://relay.test", pass: "relay-pass", main: "main-test", check: "check-test", preCheck: false, openaiKey: "sk-test-personal", serverKeys: true, serverKeysFor: "https://relay.test" }));
+     if (!localStorage.getItem("wwiki:gemini")) localStorage.setItem("wwiki:gemini", JSON.stringify({ mode: "relay", relay: "https://relay.test", pass: "relay-pass", main: "main-test", check: "check-test", preCheck: false, documentPipeline: false, openaiKey: "sk-test-personal", serverKeys: true, serverKeysFor: "https://relay.test" }));
      if (!localStorage.getItem("wwiki:acct")) localStorage.setItem("wwiki:acct", JSON.stringify({ id: "account-a", token: "token-a", since: 0 }));
    });
    await context.route("https://fonts.googleapis.com/**", r => r.abort()); await context.route("https://fonts.gstatic.com/**", r => r.abort());

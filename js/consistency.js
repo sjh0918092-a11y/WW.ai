@@ -761,6 +761,7 @@ async function checkPage(k) {
   if (S.checking) return;
   const w = S.world, p = S.pages[k]; if (!w || !p) return;
   if (isHeld(k)) { toast("이 문서에 반영한 장을 설정과 맞춰 보는 중입니다."); return; }
+  if (typeof DocumentPipeline !== "undefined" && DocumentPipeline.enabled()) return DocumentPipeline.check(k);
   S.checking = k; S.checkT0 = performance.now(); renderMain();
   try {
     const group = typeof AIRecovery !== "undefined" && AIJobs.enabled("gemini") ? crypto.randomUUID() : "", issues = await runChecks(w, k, { recoveryMeta: { group } }, p.title);

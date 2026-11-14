@@ -2,6 +2,7 @@
  * HTTP 요청의 waitUntil이 아니라 Durable Object alarm에서 실행한다.
  * 브라우저에 접수 응답이 도착하지 않아도 같은 id로 다시 접수하면 같은 작업이다.
  */
+import { processPipeline } from "./pipeline.js";
 import { validateJob, boundedText, runProvider } from "./providers.js";
 const MAX_INPUT = 2 * 1024 * 1024;
 const MAX_JOBS = 20;
@@ -16,7 +17,7 @@ const reply = (value, status = 200) => new Response(JSON.stringify(value), {
   status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
 });
 const error = (status, code, message) => reply({ error: { code, message } }, status);
-const publicJob = j => Object.fromEntries(Object.entries(j).filter(([k]) => !["inputChunks", "resultChunks", "fingerprint", "runId"].includes(k)));
+const publicJob = j => Object.fromEntries(Object.entries(j).filter(([k]) => !["inputChunks", "resultChunks", "fingerprint", "runId", "uid", "pipelineChunks"].includes(k)));
 const hash = async s => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map(x => x.toString(16).padStart(2, "0")).join("");
 
 async function writeText(storage, prefix, text) {
@@ -57,7 +58,7 @@ export async function jobsApi(request, env, url, cors, fail, uid, passOk) {
     const obj = env.AI_JOBS.get(env.AI_JOBS.idFromName("account:" + uid), { locationHint: "enam" });
     const res = await obj.fetch(new Request("https://jobs.internal/" + tail.replace(/^\//, ""), {
       method: request.method,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-WW-Account": encodeURIComponent(uid) },
       body: ["GET", "HEAD"].includes(request.method) ? undefined : text ?? request.body,
       duplex: "half",
     }));
@@ -66,7 +67,7 @@ export async function jobsApi(request, env, url, cors, fail, uid, passOk) {
 }
 
 export class AiJobs {
-  constructor(state, env) { this.storage = state.storage; this.env = env; this.active = null; }
+  constructor(state, env) { this.state = state; this.storage = state.storage; this.env = env; this.active = null; }
 
   // 상태, 요청 본문, 실행 예약을 한 트랜잭션으로 저장해야 접수 직후 종료돼도 작업을 잃지 않는다.
   async update(fn) {
@@ -78,6 +79,7 @@ export class AiJobs {
         await deleteText(tx, "in:" + j.id + ":", j.inputChunks);
         await deleteText(tx, "out:" + j.id + ":", j.resultChunks);
         await tx.delete("key:" + j.id);
+        await deleteText(tx, "pipe:" + j.id + ":", j.pipelineChunks);
       }
       jobs = jobs.filter(j => !expired.includes(j));
       const value = await fn(jobs, tx);
@@ -119,7 +121,7 @@ export class AiJobs {
     if (request.method === "GET" && parts.length === 1) return this.update(async (jobs, tx) => {
       const j = jobs.find(j => j.id === id); if (!j) return error(404, "not_found", "작업을 찾을 수 없습니다.");
       const out = { job: publicJob(j) };
-      if (j.status === "succeeded" && j.resultChunks) out.result = JSON.parse(await readText(tx, "out:" + id + ":", j.resultChunks));
+      if (terminal(j) && j.resultChunks) out.result = JSON.parse(await readText(tx, "out:" + id + ":", j.resultChunks));
       return reply(out);
     });
     if (request.method === "POST" && parts.length === 2 && ["cancel", "forget", "ack", "resolve"].includes(parts[1])) {
@@ -136,12 +138,14 @@ export class AiJobs {
           await deleteText(tx, "in:" + id + ":", j.inputChunks);
           await deleteText(tx, "out:" + id + ":", j.resultChunks);
           await tx.delete("key:" + id);
+          await deleteText(tx, "pipe:" + id + ":", j.pipelineChunks);
           jobs.splice(jobs.indexOf(j), 1); return reply({ ok: true });
         }
         if (!terminal(j)) {
           j.status = "cancelled"; j.finishedAt = Date.now(); j.expiresAt = j.finishedAt + RETENTION;
           await deleteText(tx, "in:" + id + ":", j.inputChunks); j.inputChunks = 0;
           await tx.delete("key:" + id);
+          await deleteText(tx, "pipe:" + id + ":", j.pipelineChunks); j.pipelineChunks = 0;
         }
         return reply({ job: publicJob(j) });
       });
@@ -158,6 +162,7 @@ export class AiJobs {
       body = JSON.parse(await boundedText(request.body, MAX_INPUT));
     } catch (e) { return error(e?.code === "too_large" ? 413 : 400, e?.code || "invalid_json", "작업 요청을 확인해 주세요. 본문은 최대 2MiB입니다."); }
     const invalid = validateJob(body); if (invalid) return error(400, "invalid_job", invalid);
+    if (body.type === "document.pipeline" && (!this.env.DB || !request.headers.get("X-WW-Account"))) return error(503,"pipeline_unavailable","서버 문서 저장소와 계정 연결을 확인해 주세요.");
     input = JSON.stringify({ type: body.type, model: body.model, input: body.input });
     const fingerprint = await hash(input + "\n" + (body.credential?.key || "relay"));
     const legacy = body.type === "gemini.generate" && !body.credential ? await hash(JSON.stringify({ model: body.model, input: body.input })) : null;
@@ -166,30 +171,67 @@ export class AiJobs {
       if (old) return old.fingerprint === fingerprint || (!old.keyMode && old.fingerprint === legacy) ? reply({ job: publicJob(old) }, 200) : error(409, "id_conflict", "같은 작업 번호에 다른 요청이 이미 저장되어 있습니다.");
       if (jobs.length >= MAX_HISTORY || jobs.filter(j => !j.receivedAt).length >= MAX_JOBS || jobs.filter(j => !terminal(j)).length >= MAX_PENDING) return error(429, "queue_full", "작업이 많습니다. 완료 결과를 확인하거나 보관 기간이 지난 뒤 다시 시도해 주세요.");
       if (body.credential) await tx.put("key:" + body.id, body.credential.key);
-      const j = { id: body.id, type: body.type, model: body.model, ...(body.meta ? { meta: body.meta } : {}), keyMode: body.credential ? "personal" : "relay", status: "queued", createdAt: Date.now(), fingerprint,
+      const j = { ...(body.type === "document.pipeline" ? { uid: decodeURIComponent(request.headers.get("X-WW-Account")) } : {}), id: body.id, type: body.type, model: body.model, ...(body.meta ? { meta: body.meta } : {}), keyMode: body.credential ? "personal" : "relay", status: "queued", createdAt: Date.now(), fingerprint,
         inputChunks: await writeText(tx, "in:" + body.id + ":", input), resultChunks: 0 };
       jobs.push(j); return reply({ job: publicJob(j) }, 202);
     });
+  }
+
+  async pipelineState(id) {
+    return this.update(async (jobs, tx) => { const j = jobs.find(j => j.id === id); return j?.pipelineChunks ? JSON.parse(await readText(tx, "pipe:" + id + ":", j.pipelineChunks)) : null; });
+  }
+  async savePipeline(job, state, phase, queued) {
+    return this.update(async (jobs, tx) => {
+      const j = jobs.find(j => j.id === job.id); if (!j || j.status !== "running" || j.runId !== job.runId) return false;
+      const text = JSON.stringify(state);
+      if (new TextEncoder().encode(text).length > 16 * 1024 * 1024) throw { code:"pipeline_limit", definite:true, safeMessage:"작업 기록이 커서 초안으로 보관했습니다. 원본은 유지했습니다." };
+      const old = j.pipelineChunks || 0;
+      j.pipelineChunks = await writeText(tx, "pipe:" + j.id + ":", text);
+      for (let i = j.pipelineChunks; i < old; i++) await tx.delete("pipe:" + j.id + ":" + i);
+      j.phase = phase; j.steps = state.steps.map(({kind,status}) => ({kind,status}));
+      if (queued) { j.status = "queued"; await tx.setAlarm(Date.now()+1000); }
+      return true;
+    });
+  }
+  async finishPipeline(job, complete) {
+    const finish = () => this.update(async (jobs, tx) => {
+      const j = jobs.find(j => j.id === job.id); if (!j || j.status !== "running" || j.runId !== job.runId) return;
+      // 완료 저장과 취소를 직렬화한다. D1은 작업 번호로 멱등 저장하므로 저장 직후 재시작도 안전하다.
+      const out = await complete();
+      j.resultChunks = await writeText(tx, "out:" + j.id + ":", JSON.stringify(out.result));
+      j.status = out.status; if (out.error) j.error = out.error;
+      j.finishedAt = Date.now(); j.expiresAt = j.finishedAt + RETENTION;
+      await deleteText(tx, "in:" + j.id + ":", j.inputChunks); j.inputChunks = 0;
+      await deleteText(tx, "pipe:" + j.id + ":", j.pipelineChunks); j.pipelineChunks = 0;
+      await tx.delete("key:" + j.id);
+    });
+    return this.state.blockConcurrencyWhile ? this.state.blockConcurrencyWhile(finish) : finish();
   }
 
   async alarm() {
     if (this.active) return;
     // 중간에 서버가 종료됐다면 원래 API 요청의 완료 여부를 알 수 없다. 자동 재전송은 하지 않는다.
     const job = await this.update(async (jobs, tx) => {
-      for (const j of jobs.filter(j => j.status === "running")) {
+      for (const j of jobs.filter(j => j.status === "running" && j.type !== "document.pipeline")) {
         j.status = "interrupted"; j.error = { code: "outcome_unknown", message: "서버 실행이 중단되어 AI 처리 결과를 확인하지 못했습니다. 자동으로 재요청하지 않았습니다." };
         j.finishedAt = Date.now(); j.expiresAt = j.finishedAt + RETENTION;
         await deleteText(tx, "in:" + j.id + ":", j.inputChunks); j.inputChunks = 0;
         await tx.delete("key:" + j.id);
       }
-      const next = jobs.find(j => j.status === "queued"); if (!next) return null;
+      const next = jobs.find(j => j.status === "running" && j.type === "document.pipeline") || jobs.find(j => j.status === "queued"); if (!next) return null;
       next.status = "running"; next.startedAt = Date.now(); next.runId = crypto.randomUUID();
       // alarm 자체가 예기치 않게 종료돼도 남은 임시 키와 running 상태를 나중에 정리한다.
       await tx.setAlarm(next.startedAt + DEADLINE + 60000);
-      return { id: next.id, runId: next.runId, keyMode: next.keyMode, personalKey: await tx.get("key:" + next.id), input: JSON.parse(await readText(tx, "in:" + next.id + ":", next.inputChunks)) };
+      return { uid: next.uid, createdAt: next.createdAt, id: next.id, runId: next.runId, keyMode: next.keyMode, personalKey: await tx.get("key:" + next.id), input: JSON.parse(await readText(tx, "in:" + next.id + ":", next.inputChunks)) };
     });
     if (!job) return;
     const controller = new AbortController(); this.active = { id: job.id, controller };
+    if (job.input.type === "document.pipeline") {
+      const timer = setTimeout(() => controller.abort(), DEADLINE);
+      try { await processPipeline(this, job, controller.signal); }
+      finally { clearTimeout(timer); job.personalKey = null; if (this.active?.id === job.id) this.active = null; }
+      return;
+    }
     const timeout = setTimeout(() => controller.abort(), job.input.type === "openai.image" ? 300000 : job.input.type === "gemini.image" ? 180000 : DEADLINE);
     let result, failure;
     try {

@@ -147,7 +147,7 @@ const Store = {
    같은 것을 두 기기에서 고치면 수정 시각이 더 최근인 쪽이 남는다. 로그인하지 않으면 지금처럼 브라우저에만 저장한다. */
 const AKEY = "wwiki:acct", DKEY = "wwiki:dirty";
 const Sync = {
-  acct: LS.get(AKEY), dirty: null, timer: null, busy: false, err: "", lastAt: 0, pulling: false,
+  acct: LS.get(AKEY), dirty: null, timer: null, busy: false, err: "", lastAt: 0, pulling: false, marks: new Map(), markSeq: 0,
   base() { return (GS.relay || DEFAULT_RELAY).replace(/\/+$/, "") + "/api"; },
   load() { const d = LS.get(DKEY) || {}; this.dirty = { w: new Set(d.w || []), p: new Set(d.p || []), dw: new Set(d.dw || []), dp: new Set(d.dp || []) }; },
   persist() { LS.set(DKEY, { w: [...this.dirty.w], p: [...this.dirty.p], dw: [...this.dirty.dw], dp: [...this.dirty.dp] }); },
@@ -155,6 +155,7 @@ const Sync = {
   mark(kind, wid, key) {
     if (!this.acct) return; if (!this.dirty) this.load();
     const d = this.dirty, id = key === undefined ? wid : wid + "\u0001" + key;
+    this.marks.set(kind + ":" + id, ++this.markSeq);
     if (kind === "w") { d.w.add(id); d.dw.delete(id); }
     if (kind === "p") { d.p.add(id); d.dp.delete(id); }
     if (kind === "dw") { d.dw.add(id); d.w.delete(id); for (const x of [...d.p]) if (x.startsWith(wid + "\u0001")) d.p.delete(x); }
@@ -183,16 +184,19 @@ const Sync = {
     if (!this.dirty) this.load(); if (!this.pending()) return;
     this.busy = true; this.err = "";
     try {
-      const d = this.dirty, items = [];
-      for (const wid of d.w) { const w = await Store.getWorld(wid); if (w) items.push(["w", wid, { wid, data: JSON.stringify(w), updated: w.updatedAt || Date.now() }]); else d.w.delete(wid); }
-      for (const id of d.p) { const [wid, key] = id.split("\u0001"); const p = await Store.getPage(wid, key); if (p) items.push(["p", id, { wid, pkey: key, data: JSON.stringify(p), updated: p.savedAt || p.createdAt || Date.now() }]); else d.p.delete(id); }
-      for (const wid of d.dw) items.push(["dw", wid, { wid, deleted: true, updated: Date.now() }]);
-      for (const id of d.dp) { const [wid, key] = id.split("\u0001"); items.push(["dp", id, { wid, pkey: key, deleted: true, updated: Date.now() }]); }
+      await Store.q;
+      const token = this.acct?.token, base = this.base(), d = this.dirty, items = [];
+      for (const wid of [...d.w]) { const mark = this.marks.get("w:" + wid); const w = await Store.getWorld(wid); if (w) items.push(["w", wid, { wid, data: JSON.stringify(w), updated: w.updatedAt || Date.now() }, mark]); else d.w.delete(wid); }
+      for (const id of [...d.p]) { const mark = this.marks.get("p:" + id); const [wid, key] = id.split("\u0001"); const p = await Store.getPage(wid, key); if (p) items.push(["p", id, { wid, pkey: key, data: JSON.stringify(p), updated: p.savedAt || p.createdAt || Date.now() }, mark]); else d.p.delete(id); }
+      for (const wid of d.dw) items.push(["dw", wid, { wid, deleted: true, updated: Date.now() }, this.marks.get("dw:" + wid)]);
+      for (const id of d.dp) { const [wid, key] = id.split("\u0001"); items.push(["dp", id, { wid, pkey: key, deleted: true, updated: Date.now() }, this.marks.get("dp:" + id)]); }
       let batch = [], size = 0;
       const send = async () => {
         if (!batch.length) return;
+        if (this.acct?.token !== token || this.base() !== base || this.dirty !== d) throw new Error("동기화 중 계정이나 서버가 바뀌었습니다.");
         await this.req("/sync", { method: "POST", body: JSON.stringify({ worlds: batch.filter(x => x[0] === "w" || x[0] === "dw").map(x => x[2]), pages: batch.filter(x => x[0] === "p" || x[0] === "dp").map(x => x[2]) }) });
-        for (const [k, id] of batch) d[k].delete(id);
+        if (this.acct?.token !== token || this.base() !== base || this.dirty !== d) throw new Error("동기화 중 계정이나 서버가 바뀌었습니다.");
+        for (const [k, id, , mark] of batch) if (this.marks.get(k + ":" + id) === mark) d[k].delete(id);
         this.persist(); batch = []; size = 0;
       };
       for (const it of items) { const n = (it[2].data || "").length + 200; if (size + n > 4e6 && batch.length) await send(); batch.push(it); size += n; }
@@ -200,6 +204,18 @@ const Sync = {
       this.lastAt = Date.now();
     } catch (e) { this.err = e.message || "올리지 못했습니다."; this.schedule(30000); }
     this.busy = false; this.render();
+  },
+  async flush() {
+    const token = this.acct?.token, base = this.base(), until = Date.now() + 60000;
+    await Store.q;
+    for (;;) {
+      if (!token || this.acct?.token !== token || this.base() !== base) throw new Error("로그인 계정이나 서버가 바뀌었습니다.");
+      if (Date.now() > until) throw new Error("동기화가 지연되어 문서 작업을 시작하지 않았습니다.");
+      if (this.busy || this.pulling) { await gSleep(50); continue; }
+      if (!this.dirty) this.load();
+      if (!this.pending()) return;
+      await this.push(); if (this.err) throw new Error(this.err);
+    }
   },
   async pull() {
     if (!this.acct || this.pulling) return 0; this.pulling = true;

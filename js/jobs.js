@@ -108,10 +108,11 @@ const AIJobs = {
             return r.result;
           }
           if (["failed", "interrupted", "cancelled"].includes(r.job.status)) {
+            const cached = r.result !== undefined && await this.cache(receipt, r.result);
             receipt.error = r.job.error; this.save(receipt);
-            this.ack(ctx, receipt);
+            if (r.result === undefined || cached) this.ack(ctx, receipt);
             throw { code: r.job.status === "cancelled" ? "cancelled" : r.job.error?.code || "job_failed", serverJob: true,
-              message: r.job.error?.message || "서버 작업이 중단되었습니다.", httpStatus: r.job.error?.httpStatus };
+              result: r.result, message: r.job.error?.message || "서버 작업이 중단되었습니다.", httpStatus: r.job.error?.httpStatus };
           }
         } catch (e) {
           if (!e.transport) throw e;

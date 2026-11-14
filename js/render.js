@@ -124,7 +124,9 @@ function gsetHtml() {
     <p class="note">선택 사항입니다. 기본은 OpenAI 직접 연결이며, 아래에서 서버 실행을 허용할 수 있습니다. <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">API 키 발급</a> · ChatGPT 구독과 별도 과금되며, 계정에 따라 조직 인증이 필요할 수 있습니다. 개인 키는 세계관 백업·동기화에 포함되지 않습니다.</p>
     <h2 class="nf-h">화면을 꺼도 AI 요청 계속하기</h2>
     <label class="lb" style="font-weight:400"><input type="checkbox" id="gServerJobs" ${GS.serverJobs !== false ? "checked" : ""}>로그인한 동안 AI 요청을 서버에서 실행</label>
-    <p class="note">중계 서버 Gemini 연결은 아래 계정으로 로그인하면 이 설정을 사용합니다. 서버에 접수된 AI 요청은 화면이 꺼져도 계속됩니다. 새로고침하거나 탭을 다시 연 뒤에는 도구의 AI 작업에서 결과를 복구할 수 있습니다. 완료 결과를 한 번에 받으며, 복구한 문서의 자동 검사와 전체 단계의 서버 진행은 아직 준비 중입니다.</p>
+    <p class="note">중계 서버 Gemini 연결은 아래 계정으로 로그인하면 이 설정을 사용합니다. 서버에 접수된 AI 요청은 화면이 꺼져도 계속됩니다. 새로고침하거나 탭을 다시 연 뒤에는 도구의 AI 작업에서 결과를 복구할 수 있습니다. 완료 결과를 한 번에 받습니다. 문서 전체 과정을 켜면 브라우저가 없어도 검사·자동 수정·저장까지 서버가 진행합니다.</p>
+    <label class="lb" style="font-weight:400"><input type="checkbox" id="gDocumentPipeline" ${GS.documentPipeline !== false ? "checked" : ""}>문서 작성·검사·자동 수정을 서버에서 끝내고 저장</label>
+    <p class="note">화면을 닫아도 접수한 문서를 완성합니다. 진행 중 원본이 바뀌면 덮어쓰지 않고 AI 작업에 초안을 보관합니다.</p>
     <label class="lb" style="font-weight:400"><input type="checkbox" id="gServerKeys" ${GS.serverKeys === true ? "checked" : ""}>내 Gemini·OpenAI 키도 서버 작업에 사용하도록 허용</label>
     <p class="note">허용하면 개인 키를 선택한 서버(${esc(GS.relay || DEFAULT_RELAY)})에 전송하고, 대기·실행 동안 서버 작업 저장소에 임시 보관합니다. 키는 작업 종료·취소 때 지우며 작업 조회 응답에는 포함하지 않습니다. 허용하지 않으면 개인 키 요청은 기존처럼 직접 연결합니다. 서버 주소를 바꾸면 이 허용은 해제됩니다.</p>
     <label class="lb" for="gPre" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="gPre" ${GS.preCheck !== false ? "checked" : ""}>문서 작성 직후 한 번 자동 검사하고, 어긋난 곳은 고쳐서 보여 주기 <span class="note">끄면 자동 검사하지 않습니다. 이후 검사는 문서의 설정 검사 버튼으로 실행합니다</span></label>
@@ -170,7 +172,7 @@ async function acctAction(kind) {
 function readGsetForm() {
   const v = id => ($("#" + id)?.value ?? "").trim();
   const relay = normRelay(v("gRelay")) || DEFAULT_RELAY, sameServer = relay === normRelay(GS.relay || DEFAULT_RELAY);
-  GS = { ...GS, mode: v("gMode") === "relay" ? "relay" : "key", key: v("gKey"), relay, pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT"), check: v("gCheck"), checkThink: v("gCheckT"), preCheck: !!$("#gPre")?.checked, imageModel: v("gImage") || GDEF.imageModel, openaiKey: v("gOpenAI"), serverJobs: !!$("#gServerJobs")?.checked, serverKeys: sameServer && !!$("#gServerKeys")?.checked, serverKeysFor: sameServer && $("#gServerKeys")?.checked ? relay : "" };
+  GS = { ...GS, mode: v("gMode") === "relay" ? "relay" : "key", key: v("gKey"), relay, pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT"), check: v("gCheck"), checkThink: v("gCheckT"), preCheck: !!$("#gPre")?.checked, imageModel: v("gImage") || GDEF.imageModel, openaiKey: v("gOpenAI"), serverJobs: !!$("#gServerJobs")?.checked, documentPipeline: !!$("#gDocumentPipeline")?.checked, serverKeys: sameServer && !!$("#gServerKeys")?.checked, serverKeysFor: sameServer && $("#gServerKeys")?.checked ? relay : "" };
   saveGS(); S.sample = gReady() ? gemini : null;
   AIRecovery.authChanged();
 }
@@ -499,6 +501,7 @@ function updateGenLive() {
   const raw = S.gen.raw;
   const el = Math.floor((performance.now() - (S.gen.t0 || performance.now())) / 1000);
   const rt = S.gen.retry ? ` · 연결이 끊겨 ${S.gen.retry.mode === "continue" ? "이어 받는 중" : "다시 받는 중"}(${S.gen.retry.n}/${G_RETRY})` : "";
+  if (S.gen.serverPipeline) { c.textContent = `${({generate:"서버에서 문서 작성 중",check:"서버에서 설정 검사 중",fix:"서버에서 자동 수정 중",saving:"서버에 저장 중"}[S.gen.phase] || "서버 작업 확인 중")} · ${el}초`; return; }
   c.textContent = S.gen.phase === "check" ? `설정과 맞춰 보는 중 · ${el}초` : S.gen.phase === "fix" ? `설정과 어긋난 ${S.gen.nFix}곳을 고치는 중 · ${el}초`
     : (raw ? `문서를 작성하는 중 · ${raw.length.toLocaleString()}자 · ${el}초` : `생각하는 중 · ${el}초`) + rt;
   const heads = [...raw.matchAll(/"heading"\s*:\s*"([^"]*)"/g)].map(m => m[1]);

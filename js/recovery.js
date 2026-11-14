@@ -29,7 +29,7 @@ const AIRecovery = {
     const e = w.entities[key], story = extra.storyId && shortStoriesOf(p).find(s => s.id === extra.storyId);
     return { kind, title: e?.title || p?.title || "", wid: w.id, key, group: extra.group || crypto.randomUUID(), recoveryV: 1,
       worldStamp: await this.worldStamp(stored, kind), pageStamp: await this.hash([stored.id, stored.createdAt, stored.seed, this.pageBase(p)]), hadPage: !!p,
-      ...(e && !stored.entities[key] ? { entity: { title: e.title, type: e.type || "", summary: e.summary || "" } } : {}),
+      ...(e && !stored.entities[key] ? { entity: { title: String(e.title || "").slice(0,300), type: String(e.type || "").slice(0,300), summary: String(e.summary || "").slice(0,300) } } : {}),
       assetStamp: await this.hash(story ? portraitSrc({ portrait: story.illustration }) : portraitSrc(p)),
       refStamp: await this.hash(portraitSrc(p)), ...(story ? { storyStamp: await this.hash([story.id, story.title, story.body]) } : {}), ...extra };
   },
@@ -163,7 +163,12 @@ const AIRecovery = {
     if (!ctx || !r || this.applying || AIJobs.active.size || S.gen || S.storyGen || S.checking || S.edit || S.imageGen?.busy || S.proseGen?.busy || S.syncing) { toast("진행 중인 작업이나 편집을 먼저 마쳐 주세요."); return; }
     this.applying = true; this.error = "";
     try {
-      const result = await this.result(r, ctx), { w, p } = await this.guard(r), m = r.meta;
+      const result = await this.result(r, ctx);
+      if (r.type === "document.pipeline") {
+        if (!result?.pipeline?.saved) throw new Error(result?.pipeline?.error?.message || "자동 저장되지 않은 초안입니다. 내려받아 확인해 주세요.");
+        await DocumentPipeline.openSaved(r,result,ctx); return;
+      }
+      const { w, p } = await this.guard(r), m = r.meta;
       if (result === undefined) throw new Error("완료 결과를 찾을 수 없습니다.");
       let nextWorld = null, nextPage, appliedIds = [id];
       const text = (result.candidates?.[0]?.content?.parts || []).filter(p => typeof p.text === "string" && !p.thought).map(p => p.text).join(""), out = parseJsonLoose(text);
@@ -234,17 +239,18 @@ function jobsHtml() {
   const R = AIRecovery, all = R.items.length ? R.items : R.local(), list = R.all ? all : all.filter(r => !R.closed(r));
   const labels = { submitting: "접수 확인 중", queued: "대기 중", running: "실행 중", succeeded: "완료", failed: "실패", interrupted: "결과 확인 필요", cancelled: "중단됨", rejected: "접수 거절", not_received: "서버 기록 없음", expired: "보관 기간 만료" };
   const d = R.detail, r = d?.receipt, m = r?.meta || {}, parsed = d?.parsed;
-  const supported = r && (r.type?.endsWith(".image") || ["page", "check", "read", "prose"].includes(m.kind));
+  const supported = r?.type === "document.pipeline" ? !!d.result?.pipeline?.saved : r && (r.type?.endsWith(".image") || ["page", "check", "read", "prose"].includes(m.kind));
   const body = d?.src ? imageZoomHtml(d.src, (m.title || "복구") + " 이미지", true) : Array.isArray(parsed?.sections) ? parsed.sections.filter(s => typeof s?.body === "string").map(s => `<h3>${esc(s.heading || "본문")}</h3><div class="job-text">${esc(s.body)}</div>`).join("") : Array.isArray(parsed?.issues) ? `<p>${parseIssues(parsed).length ? "복구한 검사 지적입니다." : "이 검사 응답에는 지적이 없습니다."}</p>${parseIssues(parsed).map(i => `<article class="job-issue"><b>${esc(i.claim)}</b><p>${esc(i.conflict)}</p></article>`).join("")}` : `<div class="job-text">${esc((typeof parsed?.body === "string" ? parsed.body : d?.text || "").slice(0, 120000))}</div>`;
   return `<div class="sheet jobs"><div class="crumb"><span>도구</span></div><h1 class="t">AI 작업</h1>
-    <p class="note">새로고침하거나 탭을 다시 열어도 접수한 작업을 조회합니다. 복구할 때 AI를 다시 실행하지 않습니다. 결과를 확인한 뒤 직접 저장·적용해 주세요.</p>
+    <p class="note">새로고침하거나 탭을 다시 열어도 접수한 작업을 조회합니다. 복구할 때 AI를 다시 실행하지 않습니다. 서버 문서 작업은 생성·검사를 마치면 자동 저장합니다. 원본이 바뀐 작업의 초안과 개별 AI 결과도 여기서 확인할 수 있습니다.</p>
     <div class="row"><button class="btn" data-act="jobs-refresh">상태 새로고침</button><button class="btn" data-act="jobs-filter">${R.all ? "복구할 작업만 보기" : "전체 기록 보기"}</button></div>
     ${R.error ? `<p class="banner warn" role="alert">${esc(R.error)}</p>` : ""}
     ${R.networkError ? `<p class="banner warn" role="status">${esc(R.networkError)}</p>` : ""}
-    <div class="job-list">${list.slice(0, 60).map(x => `<article class="job-card ${x.id === S.view.job ? "selected" : ""}"><div><b>${esc(x.meta?.title || "대상 정보 없는 작업")}</b><span>${esc(x.meta?.kind === "illustration" ? "단편 삽화" : KIND[x.meta?.kind] || (x.type?.endsWith(".image") ? "이미지 생성" : "AI 작업"))} · ${esc(labels[x.status] || "상태 확인 필요")}${R.closed(x) ? " · 확인함" : ""}</span><small>${esc(new Date(x.createdAt).toLocaleString("ko-KR"))}</small></div><button class="btn" data-job-preview="${esc(x.id)}">${R.pending(x) ? "진행 보기" : "결과 보기"}</button></article>`).join("") || `<p class="note">${R.fetching ? "작업을 불러오는 중…" : "복구할 작업이 없습니다."}</p>`}</div>
+    <div class="job-list">${list.slice(0, 60).map(x => `<article class="job-card ${x.id === S.view.job ? "selected" : ""}"><div><b>${esc(x.meta?.title || "대상 정보 없는 작업")}</b><span>${esc(x.meta?.kind === "illustration" ? "단편 삽화" : KIND[x.meta?.kind] || (x.type?.endsWith(".image") ? "이미지 생성" : "AI 작업"))} · ${esc(R.pending(x) && x.phase ? ({generate:"문서 작성",check:"설정 검사",fix:"자동 수정",saving:"서버 저장"}[x.phase] || labels[x.status]) : labels[x.status] || "상태 확인 필요")}${R.closed(x) ? " · 확인함" : ""}</span><small>${esc(new Date(x.createdAt).toLocaleString("ko-KR"))}</small></div><button class="btn" data-job-preview="${esc(x.id)}">${R.pending(x) ? "진행 보기" : "결과 보기"}</button></article>`).join("") || `<p class="note">${R.fetching ? "작업을 불러오는 중…" : "복구할 작업이 없습니다."}</p>`}</div>
     ${R.busy ? `<p role="status">결과를 불러오는 중…</p>` : d ? `<section class="job-detail"><h2>${esc(m.title || "작업 결과")}</h2><p class="note">${esc(labels[r.status] || "상태 확인 필요")} · ${esc(r.model || "")}</p>
+      ${d.result?.pipeline ? `<p class="banner ${d.result.pipeline.saved ? "" : "warn"}">${d.result.pipeline.saved ? "서버에 저장된 결과입니다. 문서 열기는 AI를 다시 실행하지 않습니다." : "원본을 유지하고 보관한 초안입니다. 자동 저장되지 않았습니다."}</p>` : ""}
       ${d.error || r.error?.message ? `<p class="banner warn">${esc(d.error || r.error.message)}</p>` : ""}${R.pending(r) ? `<p>서버에서 작업을 계속하고 있습니다. 이 화면을 닫아도 작업은 유지됩니다.</p><button class="btn" data-job-cancel="${esc(r.id)}">작업 중단</button>` : ""}
-      ${d.result !== undefined ? body + `<div class="row">${supported && m.recoveryV === 1 && !R.closed(r) ? `<button class="btn pri" data-job-apply="${esc(r.id)}" ${R.applying ? "disabled" : ""}>${r.type.endsWith(".image") ? "이 이미지 적용" : m.kind === "page" ? "문서로 저장 (자동 검사 전)" : m.kind === "prose" ? "이 단편 보관" : "검사 결과 반영"}</button>` : ""}<button class="btn" data-job-download="${esc(r.id)}">결과 내려받기</button></div>` : ""}
+      ${d.result !== undefined ? body + `<div class="row">${supported && m.recoveryV === 1 && !R.closed(r) ? `<button class="btn pri" data-job-apply="${esc(r.id)}" ${R.applying ? "disabled" : ""}>${r.type === "document.pipeline" ? "저장된 문서 열기" : r.type.endsWith(".image") ? "이 이미지 적용" : m.kind === "page" ? "문서로 저장 (자동 검사 전)" : m.kind === "prose" ? "이 단편 보관" : "검사 결과 반영"}</button>` : ""}<button class="btn" data-job-download="${esc(r.id)}">결과 내려받기</button></div>` : ""}
       ${!R.pending(r) && !R.closed(r) ? `<div class="row"><button class="btn" data-job-dismiss="${esc(r.id)}">복구 목록에서 닫기</button></div>` : ""}
       <details class="memo"><summary>작업 번호</summary><p class="note">${esc(r.id)}</p></details></section>` : ""}</div>`;
 }

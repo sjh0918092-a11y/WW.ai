@@ -17,6 +17,7 @@
  *   GET  /api/sync?since=n             since 뒤에 바뀐 세계관과 문서
  *   POST /api/sync {worlds, pages}     올리기. 기기의 수정 시각(updated)이 더 최근인 것만 저장한다
  */
+import { pipelineSchema } from "./pipeline-store.js";
 import { jobsApi } from "./jobs.js";
 export { AiJobs } from "./jobs.js";
 
@@ -52,7 +53,7 @@ export default {
     // runsIn은 이 Worker가 Google로 요청을 내보내는 Cloudflare 데이터센터(공항 코드)와 나라다. HKG(홍콩) 등이면 Gemini가 막는다.
     if (url.pathname === "/" && request.method === "GET") {
       const where = await egress();
-      return new Response(JSON.stringify({ ok: true, service: "WorldWiki relay", keyConfigured: !!env.GEMINI_KEY, passwordsConfigured: !!env.PASSWORDS, storageConfigured: !!env.DB, jobsConfigured: !!env.AI_JOBS, jobsVersion: env.AI_JOBS ? 3 : 0, receivedAt: request.cf?.colo || null, runsIn: where }), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
+      return new Response(JSON.stringify({ ok: true, service: "WorldWiki relay", keyConfigured: !!env.GEMINI_KEY, passwordsConfigured: !!env.PASSWORDS, storageConfigured: !!env.DB, jobsConfigured: !!env.AI_JOBS, jobsVersion: env.AI_JOBS ? 4 : 0, receivedAt: request.cf?.colo || null, runsIn: where }), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
     }
 
     if (!originOk) return fail(403, "허용되지 않은 사이트입니다. ALLOWED_ORIGINS 설정을 확인하세요.");
@@ -114,6 +115,7 @@ function ensureSchema(db) {
     db.prepare("CREATE TABLE IF NOT EXISTS pages (uid TEXT NOT NULL, wid TEXT NOT NULL, pkey TEXT NOT NULL, data TEXT, updated INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0, stamp INTEGER NOT NULL, PRIMARY KEY (uid, wid, pkey))"),
     db.prepare("CREATE INDEX IF NOT EXISTS worlds_stamp ON worlds (uid, stamp)"),
     db.prepare("CREATE INDEX IF NOT EXISTS pages_stamp ON pages (uid, stamp)"),
+    ...pipelineSchema(db),
   ]).catch(e => { schema = null; throw e; });
   return schema;
 }
@@ -164,7 +166,7 @@ async function api(request, env, url, cors, fail) {
       const worlds = (await db.prepare("SELECT wid, data, updated, deleted, stamp FROM worlds WHERE uid = ? AND stamp > ? ORDER BY stamp").bind(uid, since).all()).results || [];
       const pages = (await db.prepare("SELECT wid, pkey, data, updated, deleted, stamp FROM pages WHERE uid = ? AND stamp > ? ORDER BY stamp LIMIT ?").bind(uid, since, PAGE_LIMIT).all()).results || [];
       const more = pages.length >= PAGE_LIMIT;
-      const top = Math.max(since, ...worlds.map(x => x.stamp), ...pages.map(x => x.stamp));
+      const top = more ? pages.at(-1).stamp : Math.max(since, ...worlds.map(x => x.stamp), ...pages.map(x => x.stamp));
       return json({ id: uid, worlds, pages, next: top, more });
     }
     if (path === "/api/sync" && m === "POST") {

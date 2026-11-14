@@ -403,7 +403,7 @@ async function discoverWorld(direction = "") {
       w.entities[key] = candidate; target = key; v.target = key; v.phase = "작성"; S.recent = [key, ...S.recent.filter(x => x !== key)].slice(0, 8);
       try {
         const res = await generatePage(key, false, [v.direction, angleBlock(used), "대상: " + plan.summary, "세계관과의 연결: " + plan.connection.slice(0, 1000), typeof plan.direction === "string" ? plan.direction.slice(0, 2000) : "", "기존 항목과의 독립적인 차이를 유지한다: " + plan.novelty.reason + "\n" + plan.novelty.comparisons.map(x => `「${w.entities[x.key].title}」: ${x.reason}`).join("\n")].filter(Boolean).join("\n"), true, used);
-        if (S.pages[key]) { target = null; candidate = null; await recordAngle(w, key, used, res?.sceneUsed); return; }
+        if (S.pages[key]) { target = null; candidate = null; if (!res?.angleRecorded) await recordAngle(w, key, used, res?.sceneUsed); return; }
         throw new Error("문서를 완성하지 못했습니다. 다시 시도해 주세요.");
       } catch (e) {
         discard();

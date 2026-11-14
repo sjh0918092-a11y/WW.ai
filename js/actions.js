@@ -308,6 +308,7 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
   if (S.gen) { toast(`「${S.gen.title}」 문서를 작성하는 중입니다.`); return; }
   if (S.storyGen) { toast("다음 장을 쓰는 중입니다. 끝난 뒤 작성해 주세요."); return; }
   if (rewrite && S.syncing === k) { toast("이 문서에 장의 변화를 반영하는 중입니다. 끝난 뒤 다시 써 주세요."); return; }
+  if (typeof DocumentPipeline !== "undefined" && DocumentPipeline.enabled()) return DocumentPipeline.generate(k, rewrite, direction, novel, novelAngle);
   const recovery = typeof AIRecovery !== "undefined" && AIJobs.enabled("gemini") ? await AIRecovery.capture("page", w, k, { rewrite: !!rewrite, direction: (direction || "").slice(0, 300) }) : null;
   let backup = null, oldPage = null;
   if (rewrite) { oldPage = S.pages[k]; backup = prepareRewrite(w, k); delete S.pages[k]; }
@@ -377,6 +378,7 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
     if (!rewrite && direction) page.direction = direction;
     if (rewrite) { page.direction = direction || ""; page.rewrittenAt = Date.now(); cleared = clearBadges(k); }   // 직접 수정본이 사라졌으니 그 수정이 남긴 표시도 지운다
     if (S.world === w) S.pages[k] = page;
+    if (S.pipelineDrain) await S.pipelineDrain();
     const pre = GS.preCheck !== false && S.world === w ? await preCheck(w, k, page) : null;   // 보여 주기 전에 검사하고 고친다
     const fin = pre?.page || page;
     if (angleUsed) fin.angle = angle.id;
