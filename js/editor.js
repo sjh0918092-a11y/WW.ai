@@ -300,6 +300,10 @@ async function saveCanon() {
   const w = S.world;
   w.rules = $("#rulesTa").value.split("\n").map(s => s.replace(/^[-•\s]+/, "").trim()).filter(Boolean).slice(0, 20);
   w.userCanon = $("#userTa").value.trim().slice(0, 4000);
+  if (!isStory(w) && $("#stageNow")) {
+    w.stage = normStage({ units: Array.from({ length: 6 }, (_, i) => ({ name: $(`#stageName${i}`)?.value, kind: $(`#stageKind${i}`)?.value, desc: $(`#stageDesc${i}`)?.value, rel: $(`#stageRel${i}`)?.value })), now: $("#stageNow").value });
+    registerStageUnits(w);
+  }
   const nt = norm($("#wTitle")?.value || "").slice(0, 40); if (nt) w.title = nt;
   if ($("#wTag")) w.tagline = norm($("#wTag").value).slice(0, 160);
   if ($("#wHist")) w.historical = $("#wHist").checked;

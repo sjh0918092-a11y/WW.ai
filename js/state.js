@@ -462,10 +462,37 @@ function promptTimeline(w, focus, list = w.timeline || [], n = TIMELINE_PROMPT_N
   const keep = new Set([...items.filter(fixed), ...pickRelevant(w, null, items.filter(t => !fixed(t)), t => `${t.year}년 ${t.event}`, n, focus)]);
   return timelineOrder(items.filter(t => keep.has(t)), w);
 }
+/* 무대는 일반 모드의 선택 필드다. 깨진 응답과 옛 데이터는 빈 무대로 읽는다. */
+function normStage(value) {
+  const text = (v, n) => typeof v === "string" ? stripMarks(v).trim().slice(0, n) : "";
+  const obj = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const seen = new Set(), units = [];
+  for (const u of Array.isArray(obj.units) ? obj.units : []) {
+    if (!u || typeof u !== "object" || Array.isArray(u)) continue;
+    const name = norm(text(u.name, 60)), k = keyOf(name);
+    if (!name || seen.has(k)) continue;
+    seen.add(k);
+    units.push({ name, kind: TYPES.includes(u.kind) ? u.kind : "", desc: text(u.desc, 200), rel: text(u.rel, 240) });
+    if (units.length === 6) break;
+  }
+  return { units, now: text(obj.now, 600) };
+}
+function registerStageUnits(w) {
+  for (const u of normStage(w.stage).units) {
+    const k = keyOf(u.name);
+    if (k !== w.mainKey && !w.entities[k]) w.entities[k] = newEntity(u.name, u.kind, u.desc);
+  }
+}
+function stageBlock(w) {
+  if (!w.stage || isStory(w)) return "";
+  const { units, now } = normStage(w.stage);
+  return (units.length ? "\n\n## 주요 단위\n" + units.map(u => `- ${u.name}${u.kind ? " (" + u.kind + ")" : ""}${u.desc ? ": " + u.desc : ""}${u.rel ? " — 관계: " + u.rel : ""}`).join("\n") : "")
+    + (now ? "\n\n## 지금 진행 중인 일\n" + now : "");
+}
 function canonBlock(w, focus = null) {
   const rules = (w.rules || []).map(r => "- " + r).join("\n") || "- (없음)";
   const tl = promptTimeline(w, focus).map(t => `- ${tlWhen(t)}: ${t.event}${S.pages[t.src]?.editedAt ? " [사용자 확정]" : ""}`).join("\n") || "- (없음)";
-  return `## 세계관 원안\n${w.seed}\n\n## 핵심 규칙 (절대 위반 금지)\n이 규칙들은 어기면 안 되는 전제일 뿐, 문서마다 언급해야 할 소재가 아니다. 이 항목과 직접 관련된 규칙만 본문에 반영한다.\n${rules}\n\n## 사용자 확정 설정 (최우선. 다른 모든 정보보다 우선한다)\n${(w.userCanon || "").trim() || "(없음)"}\n\n## 연표\n${tl}${(w.glossary || []).length ? "\n\n" + glossaryBlock(w) : ""}`;
+  return `## 세계관 원안\n${w.seed}\n\n## 핵심 규칙 (절대 위반 금지)\n이 규칙들은 어기면 안 되는 전제일 뿐, 문서마다 언급해야 할 소재가 아니다. 이 항목과 직접 관련된 규칙만 본문에 반영한다.\n${rules}${stageBlock(w)}\n\n## 사용자 확정 설정 (최우선. 다른 모든 정보보다 우선한다)\n${(w.userCanon || "").trim() || "(없음)"}\n\n## 연표\n${tl}${(w.glossary || []).length ? "\n\n" + glossaryBlock(w) : ""}`;
 }
 /* 검사의 기준: 검사하는 문서(p)보다 먼저 정해진 설정만. 원안·사용자 지정·이야기 장 줄거리·직접 수정한 문서는 언제나 기준이다.
    나중에 쓴 문서가 정한 설정과 어긋나면, 고칠 쪽은 그 나중 문서이므로 그쪽 검사에서 잡힌다 */

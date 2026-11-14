@@ -368,6 +368,26 @@ function sameKindEvents(w, key, rel = [], text = "") {
   return out;
 }
 const SAME_KIND_HEAD = "| 유형 | 사건 | 날짜 | 장소 | 참가 | 결과 | 출처 문서 |\n|---|---|---|---|---|---|---|";
+/* 기존 인물 문서의 생애 하위 제목만 보여 준다. 문서가 없는 항목은 대상이 아니다. */
+function lifeFlowBlock(w, key, rel = []) {
+  const cats = k => S.pages[k]?.categories || (w.entities[k]?.cats || []).map(c => c.name);
+  const mine = new Set(cats(key)), near = new Set(rel);
+  const list = Object.entries(S.pages).filter(([k, p]) => k !== key && w.entities[k] && (p.type || w.entities[k].type) === "인물")
+    .map(([k, p]) => {
+      let life = false; const headings = [];
+      for (const s of p.sections || []) {
+        if ((s.level || 1) === 1) life = /생애|생애와|일생|행적|이력|활동|삶/.test(s.heading);
+        else if (s.level === 2 && life && s.heading) headings.push(s.heading);
+      }
+      return { k, p, headings, score: (near.has(k) ? 2 : 0) + (cats(k).some(c => mine.has(c)) ? 1 : 0) };
+    }).filter(x => x.headings.length).sort((a, b) => b.score - a.score || (b.p.createdAt || 0) - (a.p.createdAt || 0)).slice(0, 3);
+  if (!list.length) return "";
+  return `## 기존 인물들의 생애 흐름
+${list.map(x => `- 「${x.p.title}」: ${x.headings.slice(0, 12).join(" → ")}`).join("\n")}
+같은 흐름(같은 방식의 출세, 같은 방식의 죽음이나 퇴장)을 반복하지 말고, 이 인물만의 전환점을 고른다. 확정 사실이 같은 흐름을 요구하면 그 안에서 다른 선택과 대가를 쓴다.
+
+`;
+}
 function sameKindBlock(w, key, rel = [], text = "") {
   const list = sameKindEvents(w, key, rel, text); if (!list.length) return "";
   return `## 같은 유형의 기존 사건 (다른 문서가 이미 기록한 것)

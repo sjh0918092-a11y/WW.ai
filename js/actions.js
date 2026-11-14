@@ -22,6 +22,7 @@ async function createWorld() {
     const mt = first || norm(b.mainTitle || b.title);
     w.mainKey = keyOf(mt); w.entities[w.mainKey] = newEntity(mt, "", "");
     if (story) setupStory(w, b, user);
+    else { w.stage = normStage(b.stage); registerStageUnits(w); }
     w.input = { first, ...(story ? { total: user.total, protoDesc: user.desc, cast: user.cast } : {}) };   // 다시 만들기에 쓰는 처음 입력값
     const rg = S.regen && !S.regen.keep ? S.worlds.find(x => x.id === S.regen.wid) : null;
     if (rg) {   // 다시 만들기: 새 설정 노트가 나온 뒤에야 기존 세계관과 문서를 지운다(실패하면 아무것도 지우지 않는다)

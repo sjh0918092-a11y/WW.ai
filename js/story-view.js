@@ -166,6 +166,21 @@ function eventsHtml(w) {
   return `<h2>사건 장부</h2><p class="note">문서가 날짜와 장소·수치까지 적은 사건입니다. 같은 사건은 먼저 기록된 값이 기준이고, 직접 수정한 문서의 기록은 언제나 기준입니다. 새 문서가 기준과 다른 수치를 쓰면 설정 검사에서 지적합니다.</p>
     <div style="overflow-x:auto"><table class="tl" id="eventLedger">${[...groups.values()].map(list => list.map((x, i) => `<tr><td>${i ? "" : esc(x.date)}</td><td>${i ? "" : `<b>${w.entities[x.k] ? linkHtml(w.entities[x.k].title, x.name) : esc(x.name)}</b> `}${esc([x.place, numText(x)].filter(Boolean).join(" · "))}${x.result ? ` <span class="note">${esc(x.result)}</span>` : ""} <span class="src">· ${linkHtml(S.pages[x.src].title)}${i ? "" : " · 기준"}${eventEdited(x) ? " · 직접 수정" : ""}</span></td></tr>`).join("")).join("")}</table></div>`;
 }
+function stageEditorHtml(w) {
+  if (isStory(w)) return "";
+  const stage = normStage(w.stage);
+  return `<h2>주요 단위</h2>
+    <p class="note">이야기의 규모에 맞는 가게, 이웃, 학교, 서식지 등을 적습니다. 이름을 비우면 그 줄은 저장하지 않습니다. 최대 6개입니다.</p>
+    ${Array.from({ length: 6 }, (_, i) => { const u = stage.units[i] || {};
+      return `<details class="ent"${u.name ? " open" : ""}><summary>주요 단위 ${i + 1}${u.name ? ": " + esc(u.name) : " 추가"}</summary>
+      <label class="lb" for="stageName${i}">고유명사</label><input class="txt" id="stageName${i}" data-stage-name="${i}" maxlength="60" value="${esc(u.name || "")}">
+      <label class="lb" for="stageKind${i}">유형</label><select id="stageKind${i}" data-stage-kind="${i}"><option value="">유형 미정</option>${TYPES.map(t => `<option${u.kind === t ? " selected" : ""}>${t}</option>`).join("")}</select>
+      <label class="lb" for="stageDesc${i}">한 줄 성격</label><input class="txt" id="stageDesc${i}" data-stage-desc="${i}" maxlength="200" value="${esc(u.desc || "")}">
+      <label class="lb" for="stageRel${i}">다른 단위와의 관계</label><input class="txt" id="stageRel${i}" data-stage-rel="${i}" maxlength="240" value="${esc(u.rel || "")}"></details>`;
+    }).join("")}
+    <h2>지금 진행 중인 일</h2>
+    <label class="lb" for="stageNow">작중 기준 시점의 현재</label><textarea id="stageNow" rows="3" maxlength="600" placeholder="예: 이웃 가게들이 여름 축제 준비를 함께 하고 있다. 시간이 흐르지 않는 세계라면 비워 둡니다.">${esc(stage.now)}</textarea>`;
+}
 function canonHtml() {
   const ex = S.worldExports[S.world.id] || { images: true, stories: true };
   const w = S.world; const ents = Object.entries(w.entities);
@@ -200,6 +215,7 @@ function canonHtml() {
     <label class="lb" for="toneGuide">문체 지침 <span class="note" style="font-weight:400">한 줄에 하나</span></label>
     <textarea id="toneGuide" rows="${Math.min(10, (w.tone?.guide.length || 4) + 1)}">${esc((w.tone?.guide || []).join("\n"))}</textarea>
     <div class="row"><button type="button" class="btn" data-act="tone-detect" id="toneBtn" ${!S.sample ? "disabled" : ""}>지침 다시 만들기</button><span class="note">장르와 문화권 칸에 적힌 분위기로 지침을 만듭니다. 비워 두면 원안에서 판별합니다. 결과를 확인한 뒤 아래 '설정 저장'을 눌러 주세요.</span></div>
+    ${stageEditorHtml(w)}
     <h2>핵심 규칙</h2>
     <label class="lb" for="rulesTa">한 줄에 하나씩</label>
     <textarea id="rulesTa" rows="${Math.min(12, (w.rules.length || 3) + 2)}">${esc(w.rules.join("\n"))}</textarea>

@@ -21,7 +21,7 @@ function discoveryIndex(w, except) {
     mentions: (e.mentions || []).filter(x => !x.sup).map(x => ({ from: w.entities[x.from]?.title || x.from, text: x.text }))
   }));
 }
-function discoveryConfig(w) { return JSON.stringify([w.seed, w.era, w.rules, w.userCanon, w.guide, w.story?.chapter]); }
+function discoveryConfig(w) { return JSON.stringify([w.seed, w.era, w.rules, w.userCanon, w.guide, w.story?.chapter, ...(w.stage ? [w.stage] : [])]); }
 function discoveryBasis(w, except) { return JSON.stringify([discoveryIndex(w, except), discoveryConfig(w)]); }
 async function assertDiscoveryCurrent(w, except, basis, signal) {
   if (signal.aborted || S.world !== w || !S.worlds.some(x => x.id === w.id)) throw { code: "cancelled" };

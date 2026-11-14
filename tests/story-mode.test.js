@@ -59,7 +59,7 @@ function answer(kind, p) {
   if (kind === "storyBible") return { ...BASE, title: "녹둔도 연대기", era: "1586년", mainTitle: "한서린", protagonist: { summary: "녹둔도의 젊은 무관", want: "고향을 지키는 것", wound: "아버지를 잃음" },
     secrets: [{ truth: "한서린은 녹둔도 습격 때 성문을 연 장본인이다", cover: "습격의 유일한 생존자로 알려져 있다", reveal: 3 }],
     spine: ["발단", "전개", "위기", "절정", "결말"].map((beat, i) => ({ n: i + 1, beat, intent: `${beat} 의도` })), chapter1: { title: "녹둔도의 밤", era: "1586년", summary: "1장 줄거리.", incident: "녹둔도 습격", nextChoices: ["추격한다", "보고한다", "숨는다"] } };
-  if (kind === "bible") return { ...BASE, title: "기본 세계", era: "1600년", mainTitle: "대문 항목" };
+  if (kind === "bible") return { ...BASE, title: "기본 세계", era: "1600년", mainTitle: "대문 항목", stage: { units: [{ name: "마을 서당", kind: "조직", desc: "마을의 배움터", rel: "북관 철령 주민과 교류한다" }], now: "새 학기를 준비한다" } };
   if (kind === "page") { const t = (/## 작성할 문서: 「([^」]+)」/.exec(p) || [])[1]; return Object.prototype.hasOwnProperty.call(ctl.pageOverride[t] || {}, "redirect") ? ctl.pageOverride[t] : { ...pageJson(t), ...(ctl.pageOverride[t] || {}) }; }
   if (kind === "chapterPlan") return ctl.planBad ? { title: "불완전" } : planJson(p);
   if (kind === "chapterBlock") return blockJson(p);
