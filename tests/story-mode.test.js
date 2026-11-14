@@ -237,7 +237,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
       assert(pp.includes("무작위로 정한 성격 경향이 주어지면 그 값을 출발점으로 삼고, 인물이 맡은 역할, 살아온 경험, 주변 사람과의 관계에 맞게 다듬어 자연스럽게 드러나게 한다") && !pp.includes("미리 정한 후보에서 고르지 않고") && !pp.includes("## 이 인물의 기본 기질"), "주사위 경향을 출발점으로 역할·경험·관계에 맞게 다듬는다");
       const protagonistPrompt = calls.filter(c => c.kind === "page" && c.prompt.includes("## 작성할 문서: 「한서린」")).shift().prompt;
       assert(protagonistPrompt.includes("사용자가 정한 특징과 이미 확정된 설정을 우선한다") && protagonistPrompt.includes("활은 잘 쏘지만 겁이 많은 막내 무관"), "주인공의 지정 특징을 우선한다");
-      assert(protagonistPrompt.includes("## 성격 경향과 지금 처지 (인물 문서일 때만)") && protagonistPrompt.includes("사용자가 정한 특징(주인공과 등장인물의 특징 포함)") && protagonistPrompt.includes("그쪽이 우선한다"), "주인공에도 성격 경향을 넘기되 사용자가 정한 특징이 우선한다");
+      assert(protagonistPrompt.includes("## Personality tendencies and current circumstances (character articles only)") && protagonistPrompt.includes("User-defined traits (including the protagonist and cast)") && protagonistPrompt.includes("take precedence"), "주인공에도 성격 경향을 영어로 넘기되 사용자가 정한 특징이 우선한다");
       assert(await page.evaluate(() => [S.world.story.protagonistKey, ...S.world.story.cast.map(c => c.key)].every(k => Number.isInteger(S.world.entities[k].persona?.axes?.intro) && ["편안함", "보통", "고단함"].includes(S.world.entities[k].persona.life))), "주인공과 등장인물을 만들 때 성격 경향을 굴려 항목에 저장한다");
       assert(pp.includes("서로 다른 인물의 성격이나 성향이 겹쳐도 된다") && pp.includes("특징은 기벽이나 집착이 아니어도 된다") && pp.includes("차별화하려고 억지 기벽이나 집착을 붙이지 않는다"), "성격 중복을 허용하고 억지 기벽을 막는다");
       assert(pp.includes("## 다른 인물의 특징 (표현 반복 참고)") && pp.includes("- 이일: 아날로그 무전기 집착") && pp.includes("같은 문구와 일화를 기계적으로 되풀이하거나") && !pp.includes("겹치지 않는") && !pp.includes("같은 소재나 같은 버릇을 쓰지 않고"), "기존 특징은 표현 반복 참고로만 넘긴다"); }

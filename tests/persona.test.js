@@ -57,39 +57,46 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
     await page.evaluate(() => { window.__r = Math.random; Math.random = () => 0.95; });
     let g = await write('바다 상인', '인물');
     assert.deepStrictEqual(g.saved.persona, { axes: { intro: 5, mood: 5, play: 5, rule: 5, temper: 5, drive: 5, calm: 5 }, life: '고단함' });
-    for (const t of ['## 성격 경향과 지금 처지 (인물 문서일 때만)', '성격 경향: 외향 쪽으로 강하게(5), 낙천 쪽으로 강하게(5), 장난기 쪽으로 강하게(5), 융통 쪽으로 강하게(5), 까칠 쪽으로 강하게(5), 느긋 쪽으로 강하게(5), 불안정 쪽으로 강하게(5)', '지금 처지: 고단함',
-      '불안정 쪽은 불안, 우울, 감정 기복, 무너짐과 회복으로 드러날 수 있다. 안정 쪽은 큰일 앞에서도 흔들리지 않는 모습으로 드러난다. 이 축도 형용사로 옮기지 말고 일화로 보여 준다.',
-      '이 값은 성격의 출발점이다. 인물이 맡은 역할, 살아온 경험, 주변 사람과의 관계에 맞게 자연스럽게 다듬는다', '값을 형용사로 옮겨 적지 않는다', '일화와 선택, 행동으로 보여 준다', '중간(3)인 축은 굳이 드러내지 않아도 된다',
-      '고단함이 아니면 큰 후유증, 장애, 중병, 몰락 같은 불행을 기본 결말로 쓰지 않는다', '실존 인물이거나 실존 인물을 바탕으로 한 인물(대체역사에서 재해석한 인물 포함)이면 이 값을 쓰지 않고', '확정 사실과 다른 문서의 언급에 이미 성격이나 처지가 드러나 있으면 그쪽이 우선한다',
+    for (const t of ['## Personality tendencies and current circumstances (character articles only)', 'Personality tendencies: strongly extraverted (5), strongly optimistic (5), strongly playful (5), strongly flexible (5), strongly prickly (5), strongly easygoing (5), strongly emotionally unstable (5)', 'Current circumstances: difficult circumstances',
+      'The emotionally unstable end may emerge through anxiety, low mood, emotional swings, breakdown and recovery.',
+      'Treat these values as a starting point', 'Keep the article in Korean', 'do not copy the labels or translate them into descriptive adjectives', 'Show them through anecdotes, choices, and actions', 'Neutral axes (3) need not be expressed',
+      'Unless the value is difficult circumstances, do not default to severe lasting injuries, disability, serious illness, or downfall', 'For a real person or a character based on a real person (including alternate-history reinterpretations), ignore these values', 'established facts, and characterization or circumstances already shown in other articles take precedence',
       '무작위로 정한 성격 경향이 주어지면 그 값을 출발점으로 삼고']) assert(g.prompt.includes(t), t);
     assert(!g.prompt.includes('미리 정한 후보에서 고르지 않고'));
     await page.evaluate(() => { Math.random = () => 0.05; });
     const first = g.saved.persona; g = await write('바다 상인', '인물', { rewrite: true });
-    assert.deepStrictEqual(g.saved.persona, first); assert(g.prompt.includes('## 다시 쓰기')); assert(g.prompt.includes('성격 경향: 외향 쪽으로 강하게(5), 낙천 쪽으로 강하게(5)'));
-    pass('새 인물 문서를 쓸 때 굴린 값을 항목에 저장하고 축 이름·값·지침을 프롬프트에 넣으며, 다시 쓸 때는 다시 굴리지 않고 같은 값을 쓴다');
+    assert.deepStrictEqual(g.saved.persona, first); assert(g.prompt.includes('## 다시 쓰기')); assert(g.prompt.includes('Personality tendencies: strongly extraverted (5), strongly optimistic (5)'));
+    pass('새 인물 주사위는 기존 형식으로 저장하고 모델에만 영어로 보내며, 다시 쓸 때 같은 값을 재사용한다');
 
     g = await write('등대지기', '인물', { persona: { axes: { intro: 3, mood: 2 }, life: '편안함' } });
-    assert.deepStrictEqual(g.saved.persona, { axes: { intro: 3, mood: 2 }, life: '편안함' }); assert(g.prompt.includes('성격 경향: 내향·외향 중간(3), 비관 쪽으로 약하게(2)\n지금 처지: 편안함') && !g.prompt.includes('불안, 우울'));
+    assert.deepStrictEqual(g.saved.persona, { axes: { intro: 3, mood: 2 }, life: '편안함' }); assert(g.prompt.includes('Personality tendencies: between introverted and extraverted (3), slightly pessimistic (2)\nCurrent circumstances: comfortable circumstances') && !g.prompt.includes('anxiety, low mood'));
     pass('이미 값이 있는 항목은 새로 굴리지 않고, calm이 없는 옛 값에 calm을 채우지 않는다');
 
-    g = await write('세관 창고', '지명'); assert.equal(g.saved.persona, undefined); assert(!g.prompt.includes('## 성격 경향'));
-    pageType = '지명'; g = await write('붉은 부두', ''); assert(g.prompt.includes('## 성격 경향과 지금 처지 (인물 문서일 때만)') && g.prompt.includes('인물이 아니면 이 항목은 무시한다'));
+    g = await write('세관 창고', '지명'); assert.equal(g.saved.persona, undefined); assert(!g.prompt.includes('## Personality tendencies'));
+    pageType = '지명'; g = await write('붉은 부두', ''); assert(g.prompt.includes('## Personality tendencies and current circumstances (character articles only)') && g.prompt.includes('Ignore it for other article types'));
     assert.equal(g.saved.persona, undefined); assert.equal((await page.evaluate(k => S.world.entities[k].persona, g.k)), undefined); pageType = '인물';
     pass('인물이 아닌 유형이면 굴리지 않고, 유형이 없으면 "인물 문서일 때만" 조건으로 넘기며 인물이 아닌 문서로 정해지면 값을 버린다');
 
     await page.evaluate(k => openEntity(k), old); await page.waitForFunction(() => document.querySelector('h1.t')?.textContent === '옛 선장');
     assert.equal((await read(page, 'w:port')).entities[old].persona, undefined);
-    g = await write('옛 선장', '인물', { rewrite: true }); assert.equal(g.saved.persona, undefined); assert(!g.prompt.includes('## 성격 경향'));
+    g = await write('옛 선장', '인물', { rewrite: true }); assert.equal(g.saved.persona, undefined); assert(!g.prompt.includes('## Personality tendencies'));
     const bad = await page.evaluate(() => [personaBlock(null), personaBlock({}), personaBlock({ axes: { intro: 9, mood: 'x' }, life: '모름' }), personaBlock({ axes: null })]);
     assert.deepStrictEqual(bad, ['', '', '', '']);
     const mix = await page.evaluate(() => personaBlock({ axes: { intro: 1, mood: 5, play: 2, rule: 4, temper: 3, drive: 4 }, life: '보통' }));
-    assert(mix.includes('성격 경향: 내향 쪽으로 강하게(1), 낙천 쪽으로 강하게(5), 진지 쪽으로 약하게(2), 융통 쪽으로 약하게(4), 온화·까칠 중간(3), 느긋 쪽으로 약하게(4)\n지금 처지: 보통'));
-    assert(!mix.includes('불안정') && !mix.includes('불안, 우울'));
+    assert(mix.includes('Personality tendencies: strongly introverted (1), strongly optimistic (5), slightly serious (2), slightly flexible (4), between gentle and prickly (3), slightly easygoing (4)\nCurrent circumstances: ordinary circumstances'));
+    assert(!mix.includes('emotionally unstable') && !mix.includes('anxiety, low mood'));
     const calm = await page.evaluate(() => [1, 2, 3].map(v => personaBlock({ axes: { intro: 3, calm: v }, life: '보통' })));
-    assert(calm[0].includes('성격 경향: 내향·외향 중간(3), 안정 쪽으로 강하게(1)') && calm[0].includes('안정 쪽은 큰일 앞에서도 흔들리지 않는 모습으로 드러난다'));
-    assert(calm[1].includes('안정 쪽으로 약하게(2)') && calm[1].includes('불안, 우울, 감정 기복'));
-    assert(calm[2].includes('안정·불안정 중간(3)') && !calm[2].includes('불안, 우울'));
+    assert(calm[0].includes('Personality tendencies: between introverted and extraverted (3), strongly emotionally stable (1)') && calm[0].includes('The stable end may emerge through steadiness even in a crisis'));
+    assert(calm[1].includes('slightly emotionally stable (2)') && calm[1].includes('anxiety, low mood, emotional swings'));
+    assert(calm[2].includes('between emotionally stable and emotionally unstable (3)') && !calm[2].includes('anxiety, low mood'));
     pass('값이 없는 기존 항목은 그대로 열리고 다시 써도 값을 만들지 않으며, 깨진 값과 calm이 없는 옛 값의 정서 축·지시는 프롬프트에서 빠진다');
+
+    const blocks = await page.evaluate(() => [1, 2, 3, 4, 5].flatMap(v => PERSONA_LIFE.map(([life]) => {
+      const p = { axes: Object.fromEntries(PERSONA_AXES.map(([id]) => [id, v])), life }, before = JSON.stringify(p);
+      const block = personaBlock(p); if (JSON.stringify(p) !== before) throw new Error('persona mutated'); return block;
+    })));
+    assert(blocks.every(b => b.startsWith('## Personality tendencies') && !/[^\x00-\x7f]/.test(b)), '키워드·설명·금지 예시까지 블록 전체를 영어로 보낸다');
+    pass('모든 축의 1~5와 처지 세 종류에서 저장값을 바꾸지 않고 키워드·설명·금지 예시 전체를 영어로 변환한다');
 
     await page.evaluate(() => { Math.random = window.__r; });
     assert.deepStrictEqual(errors, []); console.log(`\n모두 통과 (${n}개). 실제 유료 API 호출 0회.`);

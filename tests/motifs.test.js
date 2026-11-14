@@ -44,7 +44,7 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
     for (const t of ['"motifs":["이 인물 문서에서 성격을 보여 준 일화의 중심 소재(짧은 명사)"]', 'motifs에는 이 항목이 인물이면 이 문서에서 성격을 보여 준 일화의 중심 소재 1~3개를 짧은 명사로 쓴다',
       '원안과 핵심 규칙에 나오는 장치(그 세계의 기본 보급품, 기본 장비, 기본 제도 등)를 성격 일화의 중심 소재로 삼지 않는 것을 기본으로 한다', '성격은 그 인물의 생활, 취향, 사람, 장소, 습관, 일하는 방식에서 찾는다',
       '성격 경향은 한 가지 방식으로만 드러내지 않는다', '원칙과 융통은 규칙 위반만이 아니라 일, 돈, 시간, 약속, 사람, 취향을 대하는 방식으로도 드러난다',
-      '처지는 결말과 근황 섹션에서 어디서 무엇을 하며 지내는지, 누구와 어떤 관계인지로 구체적으로 보여 준다', "'후유증 없이', '건강을 유지하며', '평온한·편안한·고단한 일상'처럼 상태를 요약하거나, 없는 불행을 부정하는 문장으로 쓰지 않는다"])
+      'Show concretely where and how the character lives, what they do, and their relationships', 'Do not summarize with phrases such as "without lasting injuries", "remaining healthy", or "a peaceful, comfortable, or difficult daily life", or deny misfortunes that never occurred'])
       assert(g.prompt.includes(t), t);
     assert(g.prompt.includes('- 옛 서기: 장부 정리') && !g.prompt.includes('옛 서기: 장부 정리 (소재') && !g.prompt.includes('- 옛 선장:') && !g.prompt.includes('이미 많이 쓰인 소재'));
     pass('인물 문서 응답의 motifs를 다듬어(링크 표시·중복·빈 값 제거, 3개까지) 저장하고, 프롬프트에 motifs 요청과 핵심 규칙 장치·한 가지 방식·처지 직역 금지 지침을 넣는다');
