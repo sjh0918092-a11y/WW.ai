@@ -293,6 +293,52 @@ function exportWorld() {
   downloadBackup([w], { [w.id]: pages }, `worldwiki-${title}-${new Date().toISOString().slice(0, 10)}.json`);
   toast(`「${w.title}」 세계관을 내보냈습니다.`);
 }
+/* 읽기 전용 내보내기: 문서·단편·이미지·연표만 담은 HTML 한 장. 원안·지침·각도·작성 방향 같은 프롬프트는 넣지 않는다 */
+function readOnlyHtml(w, pages, opts) {
+  const keys = Object.keys(pages).filter(k => pages[k] && Array.isArray(pages[k].sections))
+    .sort((a, b) => (b === w.mainKey) - (a === w.mainKey) || String(pages[a].title).localeCompare(String(pages[b].title), "ko"));
+  const has = new Set(keys);
+  const links = html => html.replace(/<a class="wl[^"]*" href="#" data-k="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g, (m, k, label) => has.has(k) ? `<a href="#d-${k}">${label}</a>` : label);
+  const body = (text, fns) => links(blocks(text, fns));
+  const one = s => body(s, []).replace(/^<p>|<\/p>$/g, "");
+  const img = (src, alt) => opts.images && src ? `<figure><img src="${src}" alt="${esc(alt)}"></figure>` : "";
+  const docs = keys.map(k => {
+    const p = pages[k], fns = [];
+    const rows = (p.infobox || []).map(r => `<tr><th>${esc(stripMarks(r.label))}</th><td>${links(blocks(r.value, fns).replace(/^<p>|<\/p>$/g, ""))}</td></tr>`).join("");
+    const pic = img(portraitSrc(p), p.title);
+    const box = rows || pic ? `<aside class="ib"><div class="ih">${esc(p.title)}</div>${pic}${p.type ? `<div class="ity">${esc(p.type)}</div>` : ""}<table>${rows}</table></aside>` : "";
+    const notices = (p.notices || []).length ? `<div class="notice">${p.notices.map(n => `<div>${one(n)}</div>`).join("")}</div>` : "";
+    const secs = p.sections.map(s => `<${(s.level || 1) === 2 ? "h3" : "h2"}>${esc(s.heading)}</${(s.level || 1) === 2 ? "h3" : "h2"}>${body(s.body, fns)}`).join("");
+    const fnHtml = fns.length ? `<ol class="fns">${fns.map(f => `<li>${links(inline(f))}</li>`).join("")}</ol>` : "";
+    const stories = opts.stories ? shortStoriesOf(p).map(st => `<section class="story"><h3>단편 · ${esc(st.title)}</h3>${img(portraitSrc({ portrait: st.illustration }), st.title + " 삽화")}${body(st.body, [])}</section>`).join("") : "";
+    const cats = pageCats(p, w);
+    return `<article id="d-${k}"><h1>${esc(p.title)}</h1>${cats.length ? `<p class="meta">분류: ${cats.map(esc).join(" · ")}</p>` : ""}${notices}${box}${p.summary ? `<p class="lead">${leadHtml(p)}</p>` : ""}${secs}${fnHtml}${stories}<p class="top"><a href="#top">맨 위로</a></p></article>`;
+  }).join("");
+  const tl = timelineOrder(w.timeline || [], w).filter(t => !t.sup).map(t => `<tr><td>${esc(tlWhen(t))}</td><td>${esc(t.event)}</td></tr>`).join("");
+  const toc = keys.map(k => `<li><a href="#d-${k}">${esc(pages[k].title)}</a></li>`).join("");
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(w.title)}</title><style>
+body{margin:0;background:#fff;color:#202122;font:16px/1.7 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+main{max-width:860px;margin:0 auto;padding:16px}h1{font-size:1.7em;border-bottom:1px solid #a2a9b1;margin:1.4em 0 .4em}h2{font-size:1.3em;border-bottom:1px solid #eaecf0;margin:1.2em 0 .3em}h3{font-size:1.08em;margin:1em 0 .2em}
+a{color:#0645ad}.meta{color:#54595d;font-size:.9em;margin:0}.lead{margin-top:.6em}article{overflow:hidden;padding-bottom:12px;border-bottom:3px double #c8ccd1}
+.ib{float:right;width:280px;max-width:100%;margin:0 0 12px 16px;border:1px solid #a2a9b1;background:#f8f9fa;font-size:.9em}.ib .ih{background:#cedff2;font-weight:700;text-align:center;padding:6px}.ib .ity{text-align:center;color:#54595d;padding:4px}.ib table{width:100%;border-collapse:collapse}.ib th{text-align:left;vertical-align:top;padding:4px 6px;width:35%}.ib td{padding:4px 6px}.ib p{margin:0}
+figure{margin:0;text-align:center}img{max-width:100%;height:auto}.story figure{margin:8px 0}.story{border-top:1px solid #eaecf0;margin-top:16px}
+.notice{border:1px solid #a2a9b1;border-left:4px solid #36c;background:#f8f9fa;padding:6px 10px;margin:8px 0}blockquote{margin:8px 0;padding:4px 14px;border-left:3px solid #c8ccd1;color:#333}.fns{font-size:.88em;color:#333}
+.tl{border-collapse:collapse;width:100%}.tl td{border-top:1px solid #eaecf0;padding:4px 8px;vertical-align:top}.tl td:first-child{white-space:nowrap;color:#54595d}.toc{columns:2 220px}.top{font-size:.85em;text-align:right;clear:both}
+@media (max-width:600px){.ib{float:none;width:auto;margin:8px 0}.tl td:first-child{white-space:normal}}
+@media (prefers-color-scheme:dark){body{background:#101418;color:#e6e6e6}a{color:#8ab4f8}.ib,.notice{background:#1b2027;border-color:#3a414a}.ib .ih{background:#24364f}h1,h2{border-color:#3a414a}.meta,.ib .ity,.tl td:first-child{color:#a0a6ad}blockquote,.fns{color:#cfd3d7}}
+</style></head><body><main id="top"><header><h1 style="margin-top:.4em">${esc(w.title)}</h1>${w.era ? `<p class="meta">작중 기준 ${esc(w.era)}</p>` : ""}</header>
+<nav><h2>문서 ${keys.length}개</h2><ul class="toc">${toc || "<li>없음</li>"}</ul></nav>${tl ? `<section><h2>연표</h2><table class="tl">${tl}</table></section>` : ""}${docs}</main></body></html>`;
+}
+function exportWorldReadOnly() {
+  const w = S.world; if (!w) return;
+  const opts = S.worldExports[w.id] || { images: true, stories: true };
+  const blob = new Blob([readOnlyHtml(w, S.pages, opts)], { type: "text/html" });
+  const title = String(w.title || "world").replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").trim().slice(0, 60) || "world";
+  const a = document.createElement("a"); const url = URL.createObjectURL(blob); a.href = url;
+  a.download = `worldwiki-${title}-읽기전용-${new Date().toISOString().slice(0, 10)}.html`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+  toast(`「${w.title}」을(를) 읽기 전용 HTML로 내보냈습니다.`);
+}
 async function importAll(file) {
   let data; try { data = JSON.parse(await file.text()); } catch { toast("JSON 파일을 읽지 못했습니다."); return; }
   const worlds = (Array.isArray(data?.worlds) ? data.worlds : []).filter(w => w && w.kind === "world" && w.id && w.entities);

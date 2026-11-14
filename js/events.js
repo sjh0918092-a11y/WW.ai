@@ -180,6 +180,7 @@ document.addEventListener("click", ev => {
       catch (e) { setGres("불러오지 못했습니다. " + errMsg(e)); }
     })(); break;
     case "export-world": try { exportWorld(); } catch (e) { toast("내보내지 못했습니다. " + errMsg(e)); } break;
+    case "export-world-ro": try { exportWorldReadOnly(); } catch (e) { toast("내보내지 못했습니다. " + errMsg(e)); } break;
     case "export": exportAll().catch(e => toast("내보내지 못했습니다. " + errMsg(e))); break;
     case "import": $("#importFile")?.click(); break;
     case "log-back": S.view = S.world ? { name: "article", key: (S.recent.find(x => S.world.entities[x]) || S.world.mainKey) } : { name: "home" }; renderAll(); break;
