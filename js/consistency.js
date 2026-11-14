@@ -123,10 +123,29 @@ function numFacts(p) {
   return f;
 }
 /* 문장에서 항목을 가리키는 이름들: 제목과 괄호 표기, 인물은 겹치지 않는 성이나 이름 */
+/* 동기 검사 한 번에만 이름과 문장의 인물 목록을 보관한다. 중첩된 detIssues/ageRuleIssues는 공유하고 반환·예외 때 버린다. */
+let nameCheckContext = null;
+function withNameCheckContext(w, check) {
+  if (nameCheckContext?.w === w && nameCheckContext.pages === S.pages) return check();
+  const previous = nameCheckContext;
+  nameCheckContext = { w, pages: S.pages, names: new Map(), mentions: new Map(), people: Object.keys(w.entities).filter(k => w.entities[k].type === "인물" || S.pages[k]?.type === "인물") };
+  try { return check(); } finally { nameCheckContext = previous; }
+}
 function refNames(w, k) {
+  const memo = nameCheckContext?.w === w && nameCheckContext.pages === S.pages ? nameCheckContext.names : null;
+  if (memo?.has(k)) return memo.get(k);
   const o = w.entities[k], out = new Set(namesOf(o.title));
   if (o.type === "인물") for (const t of o.title.replace(/\(.*\)$/, "").split(/[\s·]+/)) if (t.length >= 2 && nameOwner(w, t) === k) out.add(t);
-  return [...out];
+  const names = [...out]; if (memo) memo.set(k, names);
+  return names;
+}
+function mentionedPeople(w, text) {
+  const context = nameCheckContext?.w === w && nameCheckContext.pages === S.pages ? nameCheckContext : null;
+  if (context?.mentions.has(text)) return context.mentions.get(text);
+  const keys = context?.people || Object.keys(w.entities).filter(k => w.entities[k].type === "인물" || S.pages[k]?.type === "인물");
+  const people = keys.filter(k => refNames(w, k).some(n => hasName(text, n)));
+  if (context) context.mentions.set(text, people);
+  return people;
 }
 function pageTexts(p) {
   return [p.summary || "", ...(p.infobox || []).map(r => `${r.label}: ${stripMarks(r.value)}`), ...p.sections.map(s => stripMarks(s.body))];
@@ -227,7 +246,7 @@ function numericIssues(w, k) {
 /* ---------- 나이 규칙: 핵심 규칙의 나이 제한으로 출생·기간 연도를 맞춰 본다 ---------- */
 /* 숫자 대조 로직(numericIssues, quoteIssues, ageRuleIssues, 성별 규칙)을 바꿀 때마다 올린다.
    문서를 열 때 p.check.numV가 이 값과 다르면 결정론 지적만 다시 계산해 바꿔 끼운다 */
-const NUMERIC_VERSION = 9;
+const NUMERIC_VERSION = 10;
 /* 규칙 문장은 세계관마다 표현이 달라 코드로 읽지 않는다. 핵심 규칙이 바뀌었을 때만 AI가 한 번 구조로 뽑고(w.ageRules),
    판정은 그 구조로 코드가 한다. 그래서 검사할 때마다 결과가 같다 */
 const rulesText = w => (w.rules || []).join("\n");
@@ -460,13 +479,15 @@ const AGE_END = /쇠퇴|감퇴|축소|퇴역|전역|제대|소멸|도달/;
 /* 시작 행위를 적은 절만 쓴다. '거체화 형질' 같은 명사 수식은 시작이 아니다. */
 const ageOnset = text => !AGE_END.test(text) && !/이후|했던|하였던/.test(text) && !uncertainPersonClaim(text) && /(?:발현|각성)(?:했|하(?:였|여|며|고|자|다|기\s*시작)|되(?:었|어|며|고|다)|됐|을\s*시작|이\s*시작)|거체화(?:했|하(?:였|여|며|고|자|다|기\s*시작)|되(?:었|어|며|고|다)|됐|를\s*시작|\s*징후를?\s*보)|골격\s*팽창(?:과[^.!?]*관측|이\s*(?:시작|관측)|을\s*보)/.test(text);
 const ageClauses = text => text.split(/[,，;；]/).map(s => s.trim()).filter(Boolean);
+const birthDatedClause = text => /\d\s*년[^,，;；.!?]*(?:태어난|태어났|태어나|출생)|\d\s*년(?:\s*\d+\s*월(?:\s*\d+\s*일)?)?\s*생(?=\s|[,，]|$|인|의|으로|이|은|는|가)|출생(?:일|연도|년도)?\s*[:：]?\s*\d/.test(text);
 /* 다른 사건의 연도나 관형절을 나이 시점으로 넘기지 않는다. '당시'만 같은 문단의 유일한 날짜를 받는다. */
 function ageClaimDate(w, clause, sentence, paragraph, records) {
-  if (/\d\s*년[^,，;；.!?]*(?:이후|했던|하였던|이었던|였던)/.test(clause)) return null;
+  if (birthDatedClause(clause) || /\d\s*년[^,，;；.!?]*(?:이후|했던|하였던|이었던|였던)/.test(clause)) return null;
   if (yearHits(clause, w).length) return ageDateInParagraph(w, clause, records);
-  if (/당시/.test(clause)) return ageDateInParagraph(w, paragraph, records);
-  if (/\d\s*월\s*\d+\s*일/.test(clause)) return ageDateInParagraph(w, clause, records);
-  if (/\d\s*월\s*\d+\s*일/.test(sentence) && !/\d\s*년[^,，;；.!?]*(?:이후|했던|하였던)/.test(sentence)) return ageDateInParagraph(w, sentence, records);
+  const paragraphDate = () => birthDatedClause(paragraph) ? null : ageDateInParagraph(w, paragraph, records);
+  if (/당시/.test(clause)) return paragraphDate();
+  if (/\d\s*월\s*\d+\s*일/.test(clause)) return ageDateInParagraph(w, clause, records) || paragraphDate();
+  if (/\d\s*월\s*\d+\s*일/.test(sentence) && !/\d\s*년[^,，;；.!?]*(?:이후|했던|하였던)/.test(sentence)) return ageDateInParagraph(w, sentence, records) || paragraphDate();
   return null;
 }
 function datedAgeIssues(w, k) {
@@ -495,27 +516,33 @@ function datedAgeIssues(w, k) {
     for (const [P, p] of Object.entries(S.pages)) {
       if ((P !== k && E !== k) || !w.entities[P]) continue;
       for (const raw of [p.summary || "", ...(p.sections || []).map(s => s.body)]) for (const paragraph of stripMarks(raw).split(/\n\s*\n/)) {
-        for (const sentence of personSentences(paragraph)) for (const sen of ageClauses(sentence)) {
-          if (uncertainPersonClaim(sen) || KIN_RE.test(sen)) continue;
-          const subjects = personSubjects(w, E, sen);
-          const otherPerson = Object.keys(w.entities).some(x => x !== E && w.entities[x].type === "인물" && personSubjects(w, x, sen).length);
-          const ageLead = /^(?:(?:만\s*)?\d{1,3}\s*세|\d{3,4}\s*년\s*(?:봄|여름|가을|겨울|초|중|말)?\s*(?:현재|당시)\s*(?:만\s*)?\d{1,3}\s*세)/.test(sen);
-          const implicit = P === E && !otherPerson && (subjects.length === 1 || ageLead);
-          const date = ageClaimDate(w, sen, sentence, paragraph, records);
-          const ages = [...sen.matchAll(/(만\s*)?(\d{1,3})\s*세(?![대기])/g)];
-          for (const am of ages) {
-            /* 다른 문서에서는 나이 바로 뒤에 붙은 주어 또는 주어 바로 뒤의 나이만 읽는다. */
-            const afterAge = am.index + am[0].length;
-            const attached = names.some(name => {
-              const at = sen.indexOf(name, afterAge); if (at < 0 || !hasName(sen.slice(afterAge), name)) return false;
-              return /^(?:의|이던|였던|인|가\s*되던)?\s*(?:제\d+세대\s*)?(?:[가-힣]+\s+){0,3}$/.test(sen.slice(afterAge, at)) && /^(?:(?:은|는|이|가|의)(?=\s|$)|[(（]|$)/.test(sen.slice(at + name.length));
-            }) || subjects.some(s => s.end <= am.index && /^\s*$/.test(sen.slice(s.end, am.index)));
-            if (!attached && (!implicit || /^(?:의|이던|였던)\s*[가-힣]/.test(sen.slice(afterAge)))) continue;
-            const actual = !/^\s*도달\s*(?:후|로|뒤)/.test(sen.slice(afterAge)) && date && completedAges(birth, date), value = +am[2];
-            if (actual && (value < actual[0] || value > actual[1])) push(P, E, sen, `${b.line} / ${fmtY(date)}${date.month ? ` ${date.month}월 ${date.day}일` : ""}`, `적힌 ${value}세와 달리 만 ${ageRangeText(actual)}다.`, JSON.stringify(["age", E, ageDateKey(date), value, actual]));
-            if (am[1]) checkRule(P, sen, [value, value], date);
+        for (const sentence of personSentences(paragraph)) {
+          /* 본인 문서의 생략 주어는 보존하고, 다른 문서에서는 이름이 없는 문장을 즉시 제외한다. */
+          if (P !== E && !mentionedPeople(w, sentence).includes(E)) continue;
+          for (const sen of ageClauses(sentence)) {
+            if (uncertainPersonClaim(sen) || KIN_RE.test(sen)) continue;
+            const people = mentionedPeople(w, sen);
+            if (P !== E && !people.includes(E)) continue;
+            const subjects = personSubjects(w, E, sen);
+            const otherPerson = people.some(x => x !== E && w.entities[x].type === "인물" && personSubjects(w, x, sen).length);
+            const ageLead = /^(?:(?:만\s*)?\d{1,3}\s*세|\d{3,4}\s*년\s*(?:봄|여름|가을|겨울|초|중|말)?\s*(?:현재|당시)\s*(?:만\s*)?\d{1,3}\s*세)/.test(sen);
+            const implicit = P === E && !otherPerson && (subjects.length === 1 || ageLead);
+            const date = ageClaimDate(w, sen, sentence, paragraph, records);
+            const ages = [...sen.matchAll(/(만\s*)?(\d{1,3})\s*세(?![대기])/g)];
+            for (const am of ages) {
+              /* 다른 문서에서는 나이 바로 뒤에 붙은 주어 또는 주어 바로 뒤의 나이만 읽는다. */
+              const afterAge = am.index + am[0].length;
+              const attached = names.some(name => {
+                const at = sen.indexOf(name, afterAge); if (at < 0 || !hasName(sen.slice(afterAge), name)) return false;
+                return /^(?:의|이던|였던|인|가\s*되던)?\s*(?:제\d+세대\s*)?(?:[가-힣]+\s+){0,3}$/.test(sen.slice(afterAge, at)) && /^(?:(?:은|는|이|가|의)(?=\s|$)|[(（]|$)/.test(sen.slice(at + name.length));
+              }) || subjects.some(s => s.end <= am.index && /^\s*$/.test(sen.slice(s.end, am.index)));
+              if (!attached && (!implicit || /^(?:의|이던|였던)\s*[가-힣]/.test(sen.slice(afterAge)))) continue;
+              const actual = !/^\s*도달\s*(?:후|로|뒤)/.test(sen.slice(afterAge)) && date && completedAges(birth, date), value = +am[2];
+              if (actual && (value < actual[0] || value > actual[1])) push(P, E, sen, `${b.line} / ${fmtY(date)}${date.month ? ` ${date.month}월 ${date.day}일` : ""}`, `적힌 ${value}세와 달리 만 ${ageRangeText(actual)}다.`, JSON.stringify(["age", E, ageDateKey(date), value, actual]));
+              if (am[1]) checkRule(P, sen, [value, value], date);
+            }
+            if (date && (subjects.length || implicit)) checkRule(P, sen, completedAges(birth, date), date);
           }
-          if (date && (subjects.length || implicit)) checkRule(P, sen, completedAges(birth, date), date);
         }
       }
     }
@@ -524,6 +551,9 @@ function datedAgeIssues(w, k) {
 }
 /* 이 인물 문서(k)의 출생·기간 연도가 나이 규칙과 맞는지. 다른 기준 문서가 함께 적은 연도는 잠긴 것으로 보고 고칠 곳에서 뺀다 */
 function ageRuleIssues(w, k) {
+  return withNameCheckContext(w, () => ageRuleIssuesInContext(w, k));
+}
+function ageRuleIssuesInContext(w, k) {
   const p = S.pages[k], out = datedAgeIssues(w, k);
   if (!p || p.type !== "인물") return out;
   const rules = ageRules(w); if (!rules.length) return out;
@@ -599,6 +629,9 @@ function genderIssues(w, k) {
 }
 /* 결정론 지적 전부 (숫자 대조 → 나이 규칙 → 인용 대조 → 성별 규칙). 하나가 실패해도 나머지는 쓴다 */
 function detIssues(w, k) {
+  return withNameCheckContext(w, () => detIssuesInContext(w, k));
+}
+function detIssuesInContext(w, k) {
   let num = [];
   for (const [name, fn] of [["숫자 대조", numericIssues], ["나이 규칙", ageRuleIssues], ["인용 대조", quoteIssues], ["성별 규칙", genderIssues], ["사건 장부", (w, k) => [...eventIssues(w, k), ...timelineIssues(w, k)]]]) {
     try { num = num.concat(fn(w, k)); } catch (e) { console.warn(`[${name}]`, e); }
