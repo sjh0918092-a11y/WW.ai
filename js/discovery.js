@@ -433,7 +433,7 @@ function discoveryHtml() {
     <p class="note">이름뿐 아니라 대상의 종류·역할·특징을 적을 수 있습니다. 비워 두면 세계관에 어울리는 새 대상을 고릅니다.</p>
     <label class="lb" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" data-angle-off ${w.angleOff ? "checked" : ""} ${v.busy ? "disabled" : ""}>이 세계관에서 각도 쓰지 않기 <span class="note">랜덤 서핑·빨간 링크 등 모든 새 문서에 적용합니다. 켜 두면 가끔 세계를 다른 자리에서 비추는 시선을 얹습니다.</span></label>
     <div class="tools" style="margin-top:4px"><button type="button" class="btn" data-act="angles-open" ${v.busy ? "disabled" : ""}>각도 목록 보기</button></div>
-    ${v.busy ? `<p role="status"><span class="dot"></span>${v.phase === "각도" ? "세계관의 각도 목록을 만드는 중…" : v.phase === "작성" ? "새 문서를 작성하는 중…" : "세계관에 맞는 새 대상과 기존 항목의 차이를 검토하는 중…"}${v.angle ? ` <span id="discoveryAngle">이번 각도: ${esc(v.angle.label)}</span>` : ""}</p>` : ""}${v.error ? `<div class="banner warn" role="alert">${esc(v.error)}</div>` : ""}
+    ${v.busy ? `<p role="status"><span class="dot"></span>${v.phase === "각도" ? "세계관의 각도 목록을 만드는 중…" : v.phase === "작성" ? "새 문서를 작성하는 중…" : "세계관에 맞는 새 대상과 기존 항목의 차이를 검토하는 중…"}</p>` : ""}${v.error ? `<div class="banner warn" role="alert">${esc(v.error)}</div>` : ""}
     ${!S.sample ? `<button type="button" class="btn" data-act="gset">AI 연결 설정</button>` : ""}
     <div class="row"><button type="button" class="btn pri" data-act="discovery-create" ${v.busy || !S.sample ? "disabled" : ""}>${v.direction ? "이 내용으로 새 문서 만들기" : "랜덤으로 새 문서 만들기"}</button>${v.busy ? `<button type="button" class="btn" data-act="discovery-stop">생성 중단</button>` : `<button type="button" class="btn" data-act="discovery-back">문서로 돌아가기</button>`}</div></section>`;
 }
