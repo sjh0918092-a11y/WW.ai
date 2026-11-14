@@ -45,6 +45,7 @@ const ANGLE_RATE = 0.3;   // 사용자 설명 없는 랜덤 서핑 중 각도를
 const ANGLE_CANDIDATES = 15, ANGLE_PICK = 8;
 const ANGLE_MAX_USES = 1, ANGLE_MIN_ACTIVE = 4, ANGLE_REFILL = 6;   // 한 번 쓴 각도는 은퇴(장면까지 정해져 있어 두 번째 문서가 첫 문서의 장면을 되풀이한다), 활성 각도가 4개 미만이면 6개 보충
 const ANGLE_PRIOR_FULL = 30;   // 보충 때 은퇴·삭제 각도를 장면까지 넘기는 최근 개수
+const ANGLE_AUTO_PAGES = 10;   // 작성된 문서가 이만큼 쌓이면 랜덤 서핑을 쓰지 않아도 각도 목록을 자동으로 만든다
 const ANGLE_CROWDED = 3;   // 관련 문서가 이만큼 있는 후보는 이미 다뤄진 영역으로 보고 버린다
 const ANGLE_FLIP = ["감정 반전", "체계의 지지자"];   // 기존 문서들의 공통 결론(dominant)을 뒤집는 축
 /* 후보를 낼 축. 축마다 최소 하나씩 후보를 낸다 */
@@ -227,13 +228,33 @@ async function buildAngles(w, signal, prior = [], pick = ANGLE_PICK) {
   } catch (e) { if (e?.code === "cancelled" || signal?.aborted) throw { code: "cancelled" }; return null; }
 }
 const anglesTried = new Set();   // 이번 접속에서 목록 만들기를 이미 시도한 세계관(실패해도 랜덤 서핑마다 다시 부르지 않는다)
-async function ensureAngles(w, signal) {
-  if (Array.isArray(w.angles) || w.angleOff || anglesTried.has(w.id)) return;
-  anglesTried.add(w.id);
-  const list = await buildAngles(w, signal);
-  if (!list || Array.isArray(w.angles) || S.world !== w) return;
-  w.angles = list.angles; w.angleDominant = list.dominant;
-  try { await Store.saveWorld(w); } catch {}
+const anglesBuilding = new Map();   // 세계관 id → 진행 중인 목록 만들기(같은 세계관에서 동시에 두 번 돌지 않게)
+/* auto: 문서 생성 뒤 백그라운드로 부르는 경우. 실패해도 anglesTried에 남기지 않아 다음 문서 생성 뒤 다시 시도한다 */
+async function ensureAngles(w, signal, { auto = false } = {}) {
+  if (Array.isArray(w.angles) || w.angleOff) return;
+  const running = anglesBuilding.get(w.id);
+  if (running) {   // 이미 만드는 중이면 새로 부르지 않고 그 결과를 기다린다(취소하면 바로 빠진다)
+    if (auto) return running;
+    return Promise.race([running, new Promise((_, no) => { if (signal?.aborted) no({ code: "cancelled" }); signal?.addEventListener("abort", () => no({ code: "cancelled" }), { once: true }); })]);
+  }
+  if (!auto && anglesTried.has(w.id)) return;
+  if (!auto) anglesTried.add(w.id);
+  const run = (async () => {
+    const list = await buildAngles(w, signal);
+    if (!list || Array.isArray(w.angles) || w.angleOff || (auto ? !S.worlds.some(x => x.id === w.id) : S.world !== w)) return;
+    w.angles = list.angles; w.angleDominant = list.dominant;
+    try { await Store.saveWorld(w); } catch {}
+    if (auto && S.world === w && S.view.name === "canon") renderMain();
+  })();
+  anglesBuilding.set(w.id, run);
+  try { return await run; } finally { if (anglesBuilding.get(w.id) === run) anglesBuilding.delete(w.id); }
+}
+/* 작성된 문서가 ANGLE_AUTO_PAGES개 이상이고 각도 목록이 아직 없으면, 문서 생성 뒤 백그라운드로 목록을 한 번 만든다. 기다리지 않고, 실패는 조용히 넘긴다 */
+const writtenCount = w => Object.values(w?.entities || {}).filter(e => e?.page).length;
+function maybeAutoAngles(w) {
+  if (!w || Array.isArray(w.angles) || w.angleOff || !S.sample || S.angleGen === w.id || anglesBuilding.has(w.id)) return null;
+  if (writtenCount(w) < ANGLE_AUTO_PAGES) return null;
+  return ensureAngles(w, null, { auto: true }).catch(() => {});
 }
 /* 문서가 실제로 저장된 뒤에만 각도 사용을 기록한다 */
 async function recordAngle(w, key, used, scene = "") {
@@ -264,7 +285,7 @@ function maybeRefillAngles(w) {
   return run;
 }
 async function regenAngles() {
-  const w = S.world; if (!w || !S.sample || S.angleGen || S.discovery?.busy) return;
+  const w = S.world; if (!w || !S.sample || S.angleGen || S.discovery?.busy || anglesBuilding.has(w.id)) return;
   S.angleGen = w.id; renderMain();
   const kept = (w.angles || []).map(a => a.retired || a.removed ? a : { ...a, removed: true, endedAt: Date.now() });   // 은퇴·삭제·이전 각도는 다시 만들지 않게 남긴다
   let list = null; try { list = await buildAngles(w, null, kept); } catch {}
@@ -285,7 +306,7 @@ async function editAngle(id, op, value) {
   if (S.view.name === "canon") renderMain();
 }
 function anglesHtml(w) {
-  const all = Array.isArray(w.angles) ? w.angles : null, list = all ? all.filter(a => !a.removed) : null, removed = all ? all.length - list.length : 0, busy = S.angleGen === w.id;
+  const all = Array.isArray(w.angles) ? w.angles : null, list = all ? all.filter(a => !a.removed) : null, removed = all ? all.length - list.length : 0, busy = S.angleGen === w.id || anglesBuilding.has(w.id);
   const item = a => `<li class="${a.off || a.retired ? "off" : ""}"><input class="txt" data-angle-label="${esc(a.id)}" maxlength="80" value="${esc(a.label)}" aria-label="각도 문구"><span class="src">${!a.area ? `<b data-angle-legacy="${esc(a.id)}">이전 버전에서 만든 각도입니다. 다시 만들기를 권장합니다.</b><br>` : ""}${a.retired ? `<b data-angle-retired="${esc(a.id)}">은퇴 · ${a.uses || 0}번 사용</b> · ` : ""}${a.axis ? esc(a.axis) + " · " : ""}${a.area ? "영역: " + esc(a.area) + " · " : ""}이 세계에서 생긴 결과: ${esc(angleBasis(a))}${a.surprise ? `<br>의외인 이유: ${esc(a.surprise)}` : ""}${a.scene ? `<br>장면: ${esc(a.scene)}` : ""}${a.contrast ? `<br>기존 결론과 다른 점: ${esc(a.contrast)}` : ""}${a.safe ? `<br>규칙·문체를 지키는 이유: ${esc(a.safe)}` : ""}${a.scenes?.length ? `<br>쓴 장면: ${a.scenes.map(esc).join(" / ")}` : ""} · <span data-angle-stat="${esc(a.id)}">기존 문서 ${a.existing || 0}개 · 사용 ${a.uses || 0}번</span>${a.off ? " · 꺼짐" : ""}</span>
       <div class="row" style="margin-top:4px"><button type="button" class="btn" data-angle-save="${esc(a.id)}">문구 저장</button>${a.retired ? `<button type="button" class="btn" data-angle-revive="${esc(a.id)}">다시 켜기</button>` : `<button type="button" class="btn" data-angle-toggle="${esc(a.id)}">${a.off ? "켜기" : "끄기"}</button>`}<button type="button" class="btn" data-angle-del="${esc(a.id)}">삭제</button></div></li>`;
   return `<h2 id="angles">랜덤 서핑 각도</h2>
@@ -294,9 +315,9 @@ function anglesHtml(w) {
     <label class="lb" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" data-angle-off ${w.angleOff ? "checked" : ""}>이 세계관에서 각도 쓰지 않기 <span class="note">모든 새 문서에 적용</span></label>
     ${w.angleDominant ? `<p class="note">기존 문서들의 공통 결론: ${esc(w.angleDominant)}</p>` : ""}
     ${list ? (list.length ? `<ul class="angles">${list.map(item).join("")}</ul>` : `<p class="note">각도가 없습니다.</p>`)
-      : `<p class="note">아직 만들지 않았습니다. 랜덤 서핑을 처음 쓸 때 자동으로 만듭니다.</p>`}
+      : `<p class="note" id="anglesNone">아직 만들지 않았습니다. 문서가 ${ANGLE_AUTO_PAGES}개 쌓이면 자동으로 만들어집니다(랜덤 서핑을 처음 쓸 때도 만듭니다).</p>`}
     ${removed ? `<p class="note" id="anglesRemoved">삭제한 각도 ${removed}개는 다시 만들거나 보충할 때 겹치지 않도록 기억해 둡니다.</p>` : ""}
-    <div class="row"><button type="button" class="btn" data-act="angles-regen" ${!S.sample || busy || S.discovery?.busy ? "disabled" : ""}>${busy ? "만드는 중…" : list ? "각도 목록 다시 만들기" : "각도 목록 만들기"}</button><span class="note">원안·규칙·분위기·작가 지침과 기존 항목을 보고 새로 뽑고, 작성된 문서 수를 다시 셉니다. 지금까지의 각도와 겹치지 않게 만듭니다. 이미 있는 목록은 이 버튼을 눌러야만 바뀝니다.</span></div>`;
+    <div class="row"><button type="button" class="btn" data-act="angles-regen" ${!S.sample || busy || S.discovery?.busy ? "disabled" : ""}>${busy ? "만드는 중…" : list ? "각도 목록 다시 만들기" : "지금 만들기"}</button><span class="note">원안·규칙·분위기·작가 지침과 기존 항목을 보고 새로 뽑고, 작성된 문서 수를 다시 셉니다. 지금까지의 각도와 겹치지 않게 만듭니다. 이미 있는 목록은 이 버튼을 눌러야만 바뀝니다.</span></div>`;
 }
 function discoveryPrompt(w, direction, rejected, angle = null) {
   const index = discoveryIndex(w);
