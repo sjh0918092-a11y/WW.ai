@@ -70,7 +70,7 @@ function patchInfobox(box, patch) {
   }
   return out;
 }
-const PAGE_KEEP = ["createdAt", "rewrittenAt", "direction", "editedAt", "fixedAt", "stale", "conflicts", "autoConflicts", "autoDismissed", "pending", "baseAsOf", "syncedTo", "storyNotice", "portrait", "shortStories", "motifs"];
+const PAGE_KEEP = ["createdAt", "rewrittenAt", "direction", "editedAt", "fixedAt", "stale", "conflicts", "autoConflicts", "autoDismissed", "pending", "baseAsOf", "syncedTo", "storyNotice", "portrait", "shortStories", "motifs", "recoveryJobs"];
 /* 기존 본문은 그대로 두고 섹션을 덧붙인 새 문서 객체. 링크, 언급, 사실은 integrate가 다시 계산한다 */
 function rebuildPage(w, k, p, addSecs, extra = {}) {
   autoLink(w, k, { sections: addSecs, infobox: [] });

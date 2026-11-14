@@ -241,12 +241,15 @@ async function callJson(kind, prompt, opts = {}, meta = {}) {
   const t0 = performance.now(); let first = null, chars = 0;
   const user = opts.onText;
   const rec = { at: Date.now(), kind, tier: opts.modelTier || "default", model: "", effort: "", in: prompt.length, ...meta };
-  const o = { progressWatch: ["page", "check", "read", "prose", "section", "discovery"].includes(kind), jobMeta: { kind, title: meta.title || "", wid: S.world?.id || "", key: S.gen?.key || S.view?.key || "" }, ...opts,
+  const target = opts.recoveryTarget || { wid: S.world?.id, key: S.gen?.key || S.checking || S.proseGen?.key || S.edit?.key || S.view?.key };
+  const recoveryMeta = typeof AIRecovery !== "undefined" && AIJobs.enabled("gemini") && S.world?.id === target.wid ? await AIRecovery.capture(kind, S.world, target.key, opts.recoveryMeta || (S.gen?.recovery ? { group: S.gen.recovery.group } : {})) : null;
+  const jobMeta = { kind, title: meta.title || "", wid: target.wid || "", key: target.key || "", ...(recoveryMeta || {}), ...(opts.jobMeta || {}) };
+  const o = { progressWatch: ["page", "check", "read", "prose", "section", "discovery"].includes(kind), ...opts, jobMeta,
     onJob: j => { rec.transport = "server"; (rec.jobs ||= []).push(j.id); opts.onJob?.(j); }, onText: u => { if (first === null) first = performance.now(); chars = u.text.length; if (user) user(u); },
     onRetry: r => { rec.retry = r.n; (rec.retries ||= []).push(r.reason ? String(r.reason).slice(0, 120) : r.mode); opts.onRetry?.(r); },
     onMeta: m => { rec.model = m.model; rec.effort = m.think || ""; if (m.retries) rec.retry = m.retries; if (m.usage) rec.tok = { i: m.usage.promptTokenCount || 0, o: m.usage.candidatesTokenCount || 0, t: m.usage.thoughtsTokenCount || 0 }; } };
   const done = () => { rec.first = first === null ? null : Math.round(first - t0); rec.total = Math.round(performance.now() - t0); rec.out = chars; };
-  try { const r = await S.sample.json(prompt, o); done(); rec.ok = true; pushLog(rec); return r; }
+  try { const r = await S.sample.json(prompt, o); done(); rec.ok = true; pushLog(rec); if (typeof AIRecovery !== "undefined" && !["page", "check", "read", "prose", "section", "fix", "analyze"].includes(kind)) for (const id of rec.jobs || []) AIRecovery.handled(id); return r; }
   catch (e) { if (!chars && typeof e?.text === "string") chars = e.text.length; done(); rec.ok = false; rec.err = e?.code || String(e?.message || e).slice(0, 80); if (e?.message) rec.msg = String(e.message).slice(0, 200); pushLog(rec); throw e; }
 }
 const secs = ms => ms == null ? "-" : (ms / 1000).toFixed(1) + "초";

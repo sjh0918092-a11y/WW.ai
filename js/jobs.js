@@ -1,7 +1,7 @@
 "use strict";
-/* AI 한 호출을 서버에 접수하고 같은 번호로 조회한다. 전체 화면 복원은 다음 단계에서 연결한다. */
+/* AI 한 호출을 서버에 접수하고 같은 번호로 조회한다. 복구 화면은 recovery.js에서 연결한다. */
 const AIJobs = {
-  prefix: "wwiki:job:",
+  prefix: "wwiki:job:", active: new Set(),
   enabled(provider = "gemini") {
     if (GS.serverJobs === false || !Sync.acct?.token) return false;
     const personal = GS.serverKeys === true && GS.serverKeysFor === normRelay(GS.relay || DEFAULT_RELAY);
@@ -61,16 +61,16 @@ const AIJobs = {
     if (!this.enabled(provider)) throw { code: "job_unavailable", serverJob: true, message: "로그인과 서버 AI 작업 설정을 확인해 주세요." };
     const ctx = { base: Sync.base(), owner: Sync.acct.id, token: Sync.acct.token, pass: GS.pass };
     const key = provider === "openai" ? GS.openaiKey : gRelay() ? "" : GS.key;
-    const id = crypto.randomUUID(), body = { id, type, model, input, ...(key ? { credential: { type: "personal", key } } : {}) };
+    const id = crypto.randomUUID(), body = { id, type, model, input, ...(opts.jobMeta ? { meta: opts.jobMeta } : {}), ...(key ? { credential: { type: "personal", key } } : {}) };
     const receipt = { id, type, model, owner: ctx.owner, base: ctx.base, createdAt: Date.now(), status: "submitting", meta: opts.jobMeta || {} };
     // 접수보다 먼저 저장한다. 저장할 수 없으면 AI를 시작하지 않는다. 키·입력은 이 기록에 넣지 않는다.
     if (!this.save(receipt)) throw { code: "job_storage", serverJob: true, message: "작업 번호를 이 브라우저에 저장하지 못해 시작하지 않았습니다." };
     for (const old of this.receipts().filter(r => r.owner === ctx.owner && r.base === ctx.base && !r.acked && (r.cached || ["failed", "interrupted", "cancelled"].includes(r.status))).slice(-10)) this.ack(ctx, old);
-    for (const old of this.receipts()) if (old.id !== id && old.createdAt < Date.now() - 86400000 && !["submitting", "queued", "running"].includes(old.status)) {
+    for (const old of this.receipts()) if (old.id !== id && old.createdAt < Date.now() - 86400000 && (old.handledAt || old.dismissedAt || !old.cached) && !["submitting", "queued", "running"].includes(old.status)) {
       if (Store.mode === "idb") IDB.del("job:" + old.id).catch(() => {}); else LS.del("job:" + old.id);
       LS.del(this.prefix + old.id);
     }
-    opts.onJob?.({ id, type });
+    this.active.add(id); opts.onJob?.({ id, type });
     let accepted = false, attempted = false;
     const cancel = async () => {
       receipt.cancelRequested = true; this.save(receipt);
@@ -122,6 +122,6 @@ const AIJobs = {
     } catch (e) {
       if (!accepted && e.status && e.status < 500) { receipt.status = "rejected"; receipt.error = { code: e.code, message: e.message }; this.save(receipt); }
       throw { ...e, serverJob: true, jobId: id };
-    } finally { opts.signal?.removeEventListener("abort", onAbort); }
+    } finally { this.active.delete(id); opts.signal?.removeEventListener("abort", onAbort); }
   },
 };

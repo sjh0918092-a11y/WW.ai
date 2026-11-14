@@ -136,6 +136,22 @@ ${o.useRef && portraitSrc(p) ? "첨부 이미지는 같은 대상의 외모·형
 ## 문서 내용
 ${docText(p, w).slice(0, 10000)}`;
 }
+async function imageResultSrc(j, openai = false) {
+  const images = [];
+  if (openai) for (const entry of j.data || []) if (typeof entry.b64_json === "string") images.push({ mime: "image/png", data: entry.b64_json });
+  const collect = x => {
+    if (!x || typeof x !== "object" || x.thought === true || x.role === "user" || /thought|reason|^user$/.test(x.type || "")) return;
+    const mime = x.mime_type || x.mimeType, data = x.data;
+    if (/^image\/(png|jpeg|webp)$/.test(mime || "") && typeof data === "string") images.push({ mime, data });
+    for (const [k, v] of Object.entries(x)) if (!["input", "arguments", "data"].includes(k) && typeof v === "object") Array.isArray(v) ? v.forEach(collect) : collect(v);
+  };
+  collect(j.output_image); collect(j.output); collect(j.outputs); collect(j.steps); collect(j.candidates);
+  const img = images[images.length - 1];
+  if (!img) throw new Error("모델이 이미지를 반환하지 않았습니다. 요청이나 이미지 모델을 바꿔 다시 시도해 주세요.");
+  if (img.data.length > 14e6 || !/^[A-Za-z0-9+/]+=*$/.test(img.data)) throw new Error("반환된 이미지 형식이나 크기를 확인할 수 없습니다.");
+  const bytes = Uint8Array.from(atob(img.data), c => c.charCodeAt(0));
+  return preparePortrait(new File([bytes], "generated", { type: img.mime }));
+}
 async function requestDocImage(w, p, o, signal, customPrompt = "") {
   const model = o.model.trim();
   if (!/^[A-Za-z0-9._-]+$/.test(model)) throw new Error("이미지 모델 이름을 확인해 주세요.");
@@ -149,27 +165,14 @@ async function requestDocImage(w, p, o, signal, customPrompt = "") {
     let j;
     if (serverImageJob(model)) {
       const input = openAIImage(model) ? { prompt, size: imageSizeFor(o.ratio), quality: o.quality || "high", ...(m ? { reference: { mimeType: m[1], data: m[2] } } : {}) } : geminiBody;
-      j = await AIJobs.run(openAIImage(model) ? "openai.image" : "gemini.image", model, input, { signal,
-        jobMeta: { kind: customPrompt ? "illustration" : "image", title: p.title, wid: w.id, key: p.key } });
+      const jobMeta = await AIRecovery.capture(customPrompt ? "illustration" : "image", w, p.key, o.recoveryMeta || {});
+      j = await AIJobs.run(openAIImage(model) ? "openai.image" : "gemini.image", model, input, { signal, onJob: o.onJob, jobMeta });
     } else {
       const res = await send();   // 공급자에 맞는 API로 한 번만 요청한다.
       if (!res.ok) throw await gError(res, model);
       j = await res.json();
     }
-    const images = [];
-    if (openAIImage(model)) for (const entry of j.data || []) if (typeof entry.b64_json === "string") images.push({ mime: "image/png", data: entry.b64_json });
-    const collect = x => {
-      if (!x || typeof x !== "object" || x.thought === true || x.role === "user" || /thought|reason|^user$/.test(x.type || "")) return;
-      const mime = x.mime_type || x.mimeType, data = x.data;
-      if (/^image\/(png|jpeg|webp)$/.test(mime || "") && typeof data === "string") images.push({ mime, data });
-      for (const [k, v] of Object.entries(x)) if (!["input", "arguments", "data"].includes(k) && typeof v === "object") Array.isArray(v) ? v.forEach(collect) : collect(v);
-    };
-    collect(j.output_image); collect(j.output); collect(j.outputs); collect(j.steps); collect(j.candidates);
-    const img = images[images.length - 1];
-    if (!img) throw new Error("모델이 이미지를 반환하지 않았습니다. 요청이나 이미지 모델을 바꿔 다시 시도해 주세요.");
-    if (img.data.length > 14e6 || !/^[A-Za-z0-9+/]+=*$/.test(img.data)) throw new Error("반환된 이미지 형식이나 크기를 확인할 수 없습니다.");
-    const bytes = Uint8Array.from(atob(img.data), c => c.charCodeAt(0));
-    const src = await preparePortrait(new File([bytes], "generated", { type: img.mime }));
+    const src = await imageResultSrc(j, openAIImage(model));
     pushLog({ at: Date.now(), kind: "image", title: p.title, model, in: prompt.length, total: Math.round(performance.now() - t0), out: src.length, ok: true });
     return src;
   } catch (e) {
@@ -192,7 +195,7 @@ async function generateDocImage() {
   renderMain();
   const timer = serverImageJob(v.opts.model) ? () => {} : gActiveTimeout(() => { v.timedOut = true; v.ctl.abort(); }, openAIImage(v.opts.model) ? 300000 : 180000);
   try {
-    const src = await requestDocImage(w, p, { ...v.opts }, v.ctl.signal);
+    const src = await requestDocImage(w, p, { ...v.opts, onJob: j => { v.jobId = j.id; } }, v.ctl.signal);
     if (S.imageGen === v && !v.ctl.signal.aborted) v.preview = src;
   } catch (e) { if (S.imageGen === v) v.error = v.timedOut ? "이미지 생성 시간이 초과되었습니다. 다시 시도해 주세요." : e.code === "cancelled" ? "이미지 생성을 중단했습니다." : (e.message || errMsg(e)); }
   finally { timer(); v.busy = false; if (S.imageGen === v && S.world === w && S.view.key === v.key) renderMain(); }
@@ -206,6 +209,7 @@ async function applyDocImage() {
     if (!latest || imageDocStamp(latest) !== v.stamp || imageDocStamp(p) !== v.stamp || portraitSrc(latest) !== v.original || portraitSrc(p) !== v.original) throw new Error("생성 중 문서나 기존 이미지가 바뀌었습니다. 문서를 다시 열고 생성해 주세요.");
     const next = { ...latest, portrait: v.preview };
     await Store.savePage(w.id, next);
+    if (v.jobId) AIRecovery.handled(v.jobId);
     if (S.world === w && S.pages[v.key] === p) S.pages[v.key] = next;
     S.imageGen = null; renderMain(); toast("생성한 이미지를 적용했습니다.");
   } catch (e) { v.error = "이미지를 적용하지 못했습니다. " + (e.message || errMsg(e)); renderMain(); }

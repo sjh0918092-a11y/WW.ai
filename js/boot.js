@@ -17,6 +17,9 @@
   Nav.active = true;
   if ("scrollRestoration" in history) history.scrollRestoration = "manual";
   const route = Nav.read();
-  if (route && !invited) await Nav.restore(route, history.state?.wwNav);
+  const recovery = AIRecovery.focus();
+  if (recovery && !invited && route?.view !== "gset") { S.view = { name: "jobs", job: recovery }; renderAll(); Nav.write(true); }
+  else if (route && !invited) await Nav.restore(route, history.state?.wwNav);
   else { renderAll(); Nav.write(true); }
+  AIRecovery.start();
 })();

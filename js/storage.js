@@ -90,6 +90,40 @@ const Store = {
     if (this.mode === "local") return (LS.get("wwiki:v1:p:" + wid) || {})[key] || null;
     return this.mem.pages[wid]?.[key] || null;
   },
+  /* 복구 결과는 읽었던 원본과 같을 때만 세계관·문서를 한 트랜잭션으로 저장한다. */
+  commitRecovery(beforeWorld, beforePage, nextWorld, nextPage, valid = () => true) {
+    return this.run(async () => {
+      const wid = beforeWorld.id, key = nextPage.key;
+      const check = (w, p) => {
+        if (!valid() || JSON.stringify(w || null) !== JSON.stringify(beforeWorld) || JSON.stringify(p || null) !== JSON.stringify(beforePage || null)) throw new Error("원본이나 로그인 계정이 바뀌었습니다. 결과를 보관한 뒤 다시 확인해 주세요.");
+      };
+      const page = JSON.parse(JSON.stringify({ ...nextPage, savedAt: Date.now() }));
+      const world = nextWorld && JSON.parse(JSON.stringify({ ...nextWorld, updatedAt: Date.now() }));
+      if (this.mode === "idb") {
+        await IDB.tx("readwrite", st => new Promise((resolve, reject) => {
+          const wr = st.get("w:" + wid), pr = st.get("p:" + wid + ":" + key); let count = 0;
+          const done = () => {
+            if (++count !== 2) return;
+            try { check(wr.result, pr.result); } catch (e) { st.transaction.abort(); reject(e); return; }
+            if (world) st.put(world, "w:" + wid);
+            st.put(page, "p:" + wid + ":" + key);
+            resolve();
+          };
+          wr.onsuccess = done; pr.onsuccess = done;
+        }));
+      } else if (this.mode === "local") {
+        // 두 항목을 원자적으로 바꿀 수 없는 저장 방식에서는 복구 원문을 내려받도록 안내한다.
+        throw new Error("이 브라우저에서는 안전한 복구 저장을 사용할 수 없습니다. 결과 내려받기를 이용해 주세요.");
+      } else {
+        check(this.mem.worlds[wid], this.mem.pages[wid]?.[key]);
+        if (world) this.mem.worlds[wid] = world;
+        (this.mem.pages[wid] ||= {})[key] = page;
+      }
+      if (world) Sync.mark("w", wid);
+      Sync.mark("p", wid, key);
+      return { world: world || beforeWorld, page };
+    });
+  },
   deletePage(wid, key, silent) {
     if (!silent) Sync.mark("dp", wid, key);
     return this.run(async () => {
@@ -197,6 +231,13 @@ const Sync = {
   async refresh() {
     const cur = S.world?.id, key = S.view.key;
     S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    if (S.view.name === "jobs") {
+      if (cur && !S.gen && !S.storyGen && !S.checking && !S.syncing && !S.edit && !S.imageGen?.busy && !S.proseGen?.busy) {
+        S.world = S.worlds.find(w => w.id === cur) || null;
+        S.pages = S.world ? await Store.listPages(cur) : {};
+      }
+      renderSide(); return;
+    }
     if (cur) {
       const busy = S.gen || S.storyGen || S.syncing || S.checking || S.edit || S.bgSync || S.portraitJob || S.imageGen?.busy || S.proseGen?.busy || S.discovery?.busy;
       if (!S.worlds.some(x => x.id === cur)) { if (!busy) { S.world = null; S.view = { name: "home" }; renderAll(); } toast("다른 기기에서 이 세계관을 지웠습니다."); return; }
@@ -204,7 +245,7 @@ const Sync = {
       await openWorld(cur, key); toast("다른 기기에서 바뀐 내용을 받았습니다.");
     } else renderAll();
   },
-  render() { try { if (S.view.name === "gset") { const el = $("#acctBox"); if (el) el.outerHTML = acctHtml(); } renderSide(); } catch {} },
+  render() { try { if (typeof AIRecovery !== "undefined") AIRecovery.authChanged(); if (S.view.name === "gset") { const el = $("#acctBox"); if (el) el.outerHTML = acctHtml(); } renderSide(); } catch {} },
 };
 
 /* ---------- 백업 ---------- */

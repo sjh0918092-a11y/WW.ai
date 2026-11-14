@@ -254,6 +254,15 @@ textarea.die-v:focus{border-color:var(--link);background:var(--paper);outline:no
 .chip[aria-pressed="true"]{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:18px}
 .note{font-size:12.5px;color:var(--muted)}
+.job-list{display:grid;gap:10px;margin-top:18px}
+.job-card{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--line);border-radius:var(--r);padding:12px}
+.job-card.selected{border-color:var(--accent);background:var(--tint)}
+.job-card>div{min-width:0;display:grid;gap:4px;overflow-wrap:anywhere}
+.job-card span,.job-card small{font-size:12px;color:var(--muted)}
+.job-card button{flex-shrink:0}
+.job-detail{margin-top:24px;border-top:1px solid var(--line);padding-top:18px;overflow-wrap:anywhere}
+.job-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.8;max-height:65vh;overflow:auto}
+.job-issue{border-left:2px solid var(--line);padding:8px 12px;margin-top:12px}
 .wlist{display:flex;flex-direction:column;gap:10px}
 .wcard{border:1px solid var(--line);background:var(--sheet);border-radius:var(--r);padding:14px 16px;display:flex;flex-direction:column;gap:6px}
 .wcard button.open{background:none;border:0;padding:0;text-align:left;cursor:pointer;font-family:var(--f-display);font-weight:700;font-size:17px;color:var(--link)}

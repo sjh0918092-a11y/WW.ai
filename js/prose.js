@@ -43,7 +43,7 @@ async function generateProse() {
   if (portraitBusy(v.key) || S.portraitJob) { v.error = "문서 작업이 끝난 뒤 생성해 주세요."; renderMain(); return; }
   v.busy = true; v.error = ""; v.ctl = new AbortController(); v.stamp = imageDocStamp(p); renderMain();
   try {
-    const out = await callJson("prose", prosePrompt(w, p, v.opts), { modelTier: "default", signal: v.ctl.signal, onText: ({ text }) => { if (S.proseGen === v && $("#proseProgress")) $("#proseProgress").textContent = `단편을 쓰는 중 · ${text.length.toLocaleString()}자 수신`; }, onRetry: r => { if (S.proseGen === v && $("#proseProgress")) $("#proseProgress").textContent = `응답을 복구하는 중 · ${r.n}회`; } }, { title: p.title });
+    const out = await callJson("prose", prosePrompt(w, p, v.opts), { modelTier: "default", signal: v.ctl.signal, recoveryMeta: { direction: v.opts.direction, length: v.opts.length }, onJob: j => { v.jobId = j.id; }, onText: ({ text }) => { if (S.proseGen === v && $("#proseProgress")) $("#proseProgress").textContent = `단편을 쓰는 중 · ${text.length.toLocaleString()}자 수신`; }, onRetry: r => { if (S.proseGen === v && $("#proseProgress")) $("#proseProgress").textContent = `응답을 복구하는 중 · ${r.n}회`; } }, { title: p.title });
     if (v.ctl.signal.aborted || S.proseGen !== v) return;
     if (!out || typeof out.title !== "string" || typeof out.body !== "string" || !out.title.trim() || !out.body.trim() || out.body.length > 60000) throw new Error("단편 응답 형식이나 분량을 확인할 수 없습니다. 다시 생성해 주세요.");
     v.preview = { id: crypto.randomUUID(), title: out.title.trim().slice(0, 100), body: out.body.trim(), direction: v.opts.direction, length: v.opts.length, createdAt: Date.now(), sourceTitle: p.title, sourceStamp: v.stamp };
@@ -62,6 +62,7 @@ async function saveProse(removeId = null) {
     if (removeId) stories = stories.filter(x => x.id !== removeId);
     else { if (stories.length >= 20) throw new Error("문서당 20편까지 보관할 수 있습니다. 필요 없는 단편을 삭제한 뒤 보관해 주세요."); stories = [...stories, v.preview]; }
     const next = { ...latest, shortStories: stories }; await Store.savePage(w.id, next);
+    if (!removeId && v.jobId) AIRecovery.handled(v.jobId);
     if (S.world === w && S.pages[v.key] === p) S.pages[v.key] = next;
     if (!removeId) v.preview = null; v.confirmDelete = null; toast(removeId ? "단편을 삭제했습니다." : "단편을 보관했습니다. 세계관 설정에는 반영하지 않습니다.");
   } catch (e) { v.error = "단편을 저장하지 못했습니다. " + (e.message || errMsg(e)); }
@@ -105,7 +106,7 @@ async function generateProseImage() {
   v.busy = true; v.ctl = new AbortController(); v.imageTask = true; renderMain();
   const timer = serverImageJob(j.opts.model) ? () => {} : gActiveTimeout(() => { j.timedOut = true; v.ctl.abort(); }, openAIImage(j.opts.model) ? 300000 : 180000); j.timedOut = false;
   try {
-    const o = { ...j.opts, useRef: !!j.ref };
+    const o = { ...j.opts, useRef: !!j.ref, recoveryMeta: { storyId: story.id }, onJob: task => { j.jobId = task.id; } };
     const src = await requestDocImage(w, p, o, v.ctl.signal, proseImagePrompt(w, p, story, o));
     if (S.proseGen === v && v.illustration === j && !v.ctl.signal.aborted) j.preview = src;
   } catch (e) { if (S.proseGen === v) j.error = j.timedOut ? "삽화 생성 시간이 초과되었습니다." : e.code === "cancelled" ? "삽화 생성을 중단했습니다." : (e.message || errMsg(e)); }
@@ -122,6 +123,7 @@ async function saveProseImage(remove = false, id = null) {
     if (!remove && (proseImageStamp(story) !== j.stamp || proseImageStamp(local) !== j.stamp || imageDocStamp(latest) !== j.docStamp || imageDocStamp(p) !== j.docStamp || portraitSrc(latest) !== j.ref || portraitSrc(p) !== j.ref || portraitSrc({ portrait: story.illustration }) !== j.original)) throw new Error("생성 중 단편·문서·프로필 또는 기존 삽화가 바뀌었습니다. 다시 열고 생성해 주세요.");
     const nextStory = { ...story }; if (remove) delete nextStory.illustration; else nextStory.illustration = j.preview;
     const next = { ...latest, shortStories: stories.map(x => x.id === target ? nextStory : x) }; await Store.savePage(w.id, next);
+    if (!remove && j?.jobId) AIRecovery.handled(j.jobId);
     if (S.world === w && S.pages[v.key] === p) S.pages[v.key] = next;
     if (!remove || j?.storyId === target) v.illustration = null;
     v.confirmImageDelete = null; toast(remove ? "단편 삽화를 삭제했습니다." : "삽화를 단편에 적용했습니다. 문서 프로필은 유지됩니다.");

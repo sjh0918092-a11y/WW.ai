@@ -41,7 +41,7 @@ async function deleteText(storage, prefix, chunks) {
 export async function jobsApi(request, env, url, cors, fail, uid, passOk) {
   if (!env.AI_JOBS) return fail(503, "서버 작업 기능이 아직 배포되지 않았습니다.");
   const tail = url.pathname.slice("/api/jobs".length);
-  if (tail && !/^\/[a-zA-Z0-9_-]{16,80}(?:\/cancel|\/forget|\/ack)?$/.test(tail)) return fail(404, "작업을 찾을 수 없습니다.");
+  if (tail && !/^\/[a-zA-Z0-9_-]{16,80}(?:\/cancel|\/forget|\/ack|\/resolve)?$/.test(tail)) return fail(404, "작업을 찾을 수 없습니다.");
   let text;
   if (!tail && request.method === "POST") {
     let body;
@@ -122,12 +122,14 @@ export class AiJobs {
       if (j.status === "succeeded" && j.resultChunks) out.result = JSON.parse(await readText(tx, "out:" + id + ":", j.resultChunks));
       return reply(out);
     });
-    if (request.method === "POST" && parts.length === 2 && ["cancel", "forget", "ack"].includes(parts[1])) {
+    if (request.method === "POST" && parts.length === 2 && ["cancel", "forget", "ack", "resolve"].includes(parts[1])) {
       const res = await this.update(async (jobs, tx) => {
         const j = jobs.find(j => j.id === id); if (!j) return error(404, "not_found", "작업을 찾을 수 없습니다.");
-        if (parts[1] === "ack") {
+        if (parts[1] === "ack" || parts[1] === "resolve") {
           if (!terminal(j)) return error(409, "still_running", "아직 결과를 받을 수 없습니다.");
-          j.receivedAt ||= Date.now(); return reply({ job: publicJob(j) });
+          j.receivedAt ||= Date.now();
+          if (parts[1] === "resolve") j.resolvedAt ||= Date.now();
+          return reply({ job: publicJob(j) });
         }
         if (parts[1] === "forget") {
           if (!terminal(j)) return error(409, "still_running", "진행 중인 작업은 먼저 중단해 주세요.");
@@ -164,7 +166,7 @@ export class AiJobs {
       if (old) return old.fingerprint === fingerprint || (!old.keyMode && old.fingerprint === legacy) ? reply({ job: publicJob(old) }, 200) : error(409, "id_conflict", "같은 작업 번호에 다른 요청이 이미 저장되어 있습니다.");
       if (jobs.length >= MAX_HISTORY || jobs.filter(j => !j.receivedAt).length >= MAX_JOBS || jobs.filter(j => !terminal(j)).length >= MAX_PENDING) return error(429, "queue_full", "작업이 많습니다. 완료 결과를 확인하거나 보관 기간이 지난 뒤 다시 시도해 주세요.");
       if (body.credential) await tx.put("key:" + body.id, body.credential.key);
-      const j = { id: body.id, type: body.type, model: body.model, keyMode: body.credential ? "personal" : "relay", status: "queued", createdAt: Date.now(), fingerprint,
+      const j = { id: body.id, type: body.type, model: body.model, ...(body.meta ? { meta: body.meta } : {}), keyMode: body.credential ? "personal" : "relay", status: "queued", createdAt: Date.now(), fingerprint,
         inputChunks: await writeText(tx, "in:" + body.id + ":", input), resultChunks: 0 };
       jobs.push(j); return reply({ job: publicJob(j) }, 202);
     });

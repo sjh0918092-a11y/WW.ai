@@ -8,8 +8,17 @@ const reference = r => only(r, ["mimeType", "data"]) && MIMES.includes(r.mimeTyp
 const parts = (c, image = false) => only(c, ["role", "parts"]) && Array.isArray(c.parts) && c.parts.length > 0 && c.parts.every(p =>
   only(p, ["text"]) && typeof p.text === "string" || image && only(p, ["inlineData"]) && reference(p.inlineData));
 
+function validMeta(m) {
+  const strings = ["kind", "title", "wid", "key", "group", "worldStamp", "pageStamp", "assetStamp", "refStamp", "storyId", "storyStamp", "direction", "length"];
+  return only(m, [...strings, "recoveryV", "hadPage", "entity", "rewrite"]) && JSON.stringify(m).length <= 4096 &&
+    strings.every(k => m[k] === undefined || typeof m[k] === "string" && m[k].length <= (k === "direction" ? 2000 : 300)) &&
+    (m.recoveryV === undefined || m.recoveryV === 1) && ["hadPage", "rewrite"].every(k => m[k] === undefined || typeof m[k] === "boolean") &&
+    (m.entity === undefined || only(m.entity, ["title", "type", "summary"]) && ["title", "type", "summary"].every(k => typeof m.entity[k] === "string" && m.entity[k].length <= 300));
+}
+
 export function validateJob(b) {
   if (!b || typeof b.id !== "string" || !/^[a-zA-Z0-9_-]{16,80}$/.test(b.id) || !TYPES.includes(b.type) || typeof b.model !== "string" || !MODEL.test(b.model)) return "작업 번호·종류·모델을 확인해 주세요.";
+  if (b.meta !== undefined && !validMeta(b.meta)) return "작업 복구 정보를 확인해 주세요.";
   if (b.credential !== undefined && (!only(b.credential, ["type", "key"]) || b.credential.type !== "personal" || typeof b.credential.key !== "string" || !/^[\x21-\x7e]{8,512}$/.test(b.credential.key))) return "개인 API 키 형식을 확인해 주세요.";
   const i = b.input;
   if (b.type === "openai.image") {

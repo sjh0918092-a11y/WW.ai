@@ -15,6 +15,7 @@ const Nav = {
   active: false, restoring: false, current: "", pos: 0, pending: null, scrollTimer: null,
   route() {
     let view = S.view.name, key = S.view.key;
+    if (view === "jobs") return { view, ...(S.view.job ? { job: S.view.job } : {}) };
     if (["loading"].includes(view)) return null;
     if (["fix", "compose", "advance"].includes(view)) { view = "article"; key ||= S.world?.mainKey; }
     const r = { view };
@@ -29,8 +30,8 @@ const Nav = {
     const q = new URLSearchParams(location.hash.slice(1));
     if (!q.has("view")) return null;
     const view = q.get("view");
-    if (!["home", "gset", "log", "article", "canon", "notfound", "discovery", "epilogue", "category", "categories"].includes(view)) return { view: "home" };
-    return { view, ...(q.get("cat") ? { cat: q.get("cat") } : {}), ...(q.get("world") ? { world: q.get("world") } : {}), ...(q.get("key") ? { key: q.get("key") } : {}), ...(q.get("title") ? { title: q.get("title") } : {}) };
+    if (!["home", "gset", "log", "jobs", "article", "canon", "notfound", "discovery", "epilogue", "category", "categories"].includes(view)) return { view: "home" };
+    return { view, ...(q.get("job") ? { job: q.get("job") } : {}), ...(q.get("cat") ? { cat: q.get("cat") } : {}), ...(q.get("world") ? { world: q.get("world") } : {}), ...(q.get("key") ? { key: q.get("key") } : {}), ...(q.get("title") ? { title: q.get("title") } : {}) };
   },
   write(replace = false, y = 0) {
     const r = this.route(); if (!r) return;
@@ -45,6 +46,7 @@ const Nav = {
   },
   sync() { if (this.active && !this.restoring && S.ready) this.write(); },
   async apply(r) {
+    if (r.view === "jobs") { S.view = { name: "jobs", ...(r.job ? { job: r.job } : {}) }; return; }
     if (r.world) {
       if (!S.worlds.some(w => w.id === r.world)) { S.world = null; S.view = { name: "home" }; toast("저장된 세계관을 찾을 수 없습니다."); return; }
       if (S.world?.id !== r.world) await openWorld(r.world, r.key, true);

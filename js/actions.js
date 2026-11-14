@@ -296,6 +296,8 @@ async function followRedirect(w, k, to) {
 async function generatePage(k, rewrite, direction, novel = false, novelAngle = null) {
   if (S.discovery?.busy && !novel) { toast("새 문서 탐색을 마치거나 중단한 뒤 작성해 주세요."); return; }
   const w = S.world; const e = w.entities[k];
+  const pendingJob = typeof AIRecovery !== "undefined" && !S.gen && AIRecovery.pendingFor(w.id, k);
+  if (pendingJob) { AIRecovery.open(pendingJob.id); return; }
   const named = !rewrite && !S.pages[k] && !protectedEntity(w, k) ? identityOwner(w, e.title, k) : null;
   if (novel && named) throw { code: "discovery_duplicate", existing: w.entities[named].title };
   if (named && !S.gen && !S.storyGen && !S.syncing && !S.edit) {
@@ -306,6 +308,7 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
   if (S.gen) { toast(`「${S.gen.title}」 문서를 작성하는 중입니다.`); return; }
   if (S.storyGen) { toast("다음 장을 쓰는 중입니다. 끝난 뒤 작성해 주세요."); return; }
   if (rewrite && S.syncing === k) { toast("이 문서에 장의 변화를 반영하는 중입니다. 끝난 뒤 다시 써 주세요."); return; }
+  const recovery = typeof AIRecovery !== "undefined" && AIJobs.enabled("gemini") ? await AIRecovery.capture("page", w, k, { rewrite: !!rewrite, direction: (direction || "").slice(0, 300) }) : null;
   let backup = null, oldPage = null;
   if (rewrite) { oldPage = S.pages[k]; backup = prepareRewrite(w, k); delete S.pages[k]; }
   const ctl = new AbortController();
@@ -313,7 +316,7 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
   const birthday = !rewrite && (!e.type || e.type === "인물") && !hasBirth(e) ? randomBirthday() : null;   // 랜덤 서핑·스토리 모드 인물도 모두 여기서 고른다
   if (!rewrite && (!e.type || e.type === "인물") && !e.persona) e.persona = rollPersona();   // 한 번 굴린 성격 경향은 항목에 남겨 다시 쓰거나 고칠 때도 그대로 쓴다
   const persona = !e.type || e.type === "인물" ? e.persona || null : null;
-  S.gen = { key: k, wid: w.id, title: e.title, raw: "", t0: performance.now(), ctl, rewrite: !!rewrite, direction: direction || "", angle };
+  S.gen = { key: k, wid: w.id, title: e.title, raw: "", t0: performance.now(), ctl, rewrite: !!rewrite, direction: direction || "", angle, recovery };
   S.genErr = null; S.confirmRewrite = null; S.view = { name: "article", key: k };
   renderAll(); window.scrollTo({ top: 0 });
   try {
@@ -322,7 +325,7 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
       try { const t = await detectTone(w); if (t) { w.tone = t; toast(`분위기를 「${t.label}」(으)로 판별했습니다. 설정 노트에서 고칠 수 있습니다.`); } } catch {}
       if (ctl.signal.aborted) throw { code: "cancelled" };
     }
-    const out = await callJson("page", pagePrompt(w, k, rewrite ? (direction || "") : null, rewrite ? "" : (direction || ""), angle || (novel ? novelAngle : null), angle ? "section" : "novel", birthday, persona), { signal: ctl.signal, modelTier: "default", ...PAGE_MODEL, onRetry: r => { if (S.gen) { S.gen.retry = r; updateGenLive(); } }, onText: ({ text }) => { if (S.gen) { S.gen.raw = text; updateGenLive(); } } }, { title: e.title, type: TYPES.includes(e.type) ? e.type : "", ents: Object.keys(w.entities).length });
+    const out = await callJson("page", pagePrompt(w, k, rewrite ? (direction || "") : null, rewrite ? "" : (direction || ""), angle || (novel ? novelAngle : null), angle ? "section" : "novel", birthday, persona), { signal: ctl.signal, modelTier: "default", ...(recovery ? { jobMeta: recovery } : {}), ...PAGE_MODEL, onRetry: r => { if (S.gen) { S.gen.retry = r; updateGenLive(); } }, onText: ({ text }) => { if (S.gen) { S.gen.raw = text; updateGenLive(); } } }, { title: e.title, type: TYPES.includes(e.type) ? e.type : "", ents: Object.keys(w.entities).length });
     if (out && Object.prototype.hasOwnProperty.call(out, "redirect")) {
       if (novel) throw { code: "discovery_duplicate", existing: out.redirect };
       if (ctl.signal.aborted) throw { code: "cancelled" };
@@ -380,7 +383,7 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
     if (!rewrite && e.persona && (fin.type || e.type) !== "인물") delete e.persona;   // 인물이 아닌 문서로 정해지면 굴린 값은 버린다
     S.gen = null;
     const named = S.world === w && S.pages[k] === fin ? await registerPersonNames(w, k).catch(() => null) : null;   // 인포박스의 본명·코드명을 이 문서로 잇는다(어느 경로로 만들어졌든)
-    try { await Store.savePage(w.id, fin); for (const x of cleared) if (S.pages[x] && x !== k) await Store.savePage(w.id, S.pages[x]); if (!novel && !rewrite) noteAngleUse(w, angleUsed ? angle : null, sceneUsed); await Store.saveWorld(w); if (!novel) maybeRefillAngles(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
+    try { await Store.savePage(w.id, fin); for (const x of cleared) if (S.pages[x] && x !== k) await Store.savePage(w.id, S.pages[x]); if (!novel && !rewrite) noteAngleUse(w, angleUsed ? angle : null, sceneUsed); await Store.saveWorld(w); if (recovery) AIRecovery.handled(recovery.group); if (!novel) maybeRefillAngles(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
     afterGen(k, true);
     maybeAutoAngles(w);   // 기다리지 않는다. 실패하면 다음 문서 생성 뒤 다시 시도한다
     if (S.world === w && S.pages[k] === fin) {
@@ -431,7 +434,7 @@ function cleanMotifs(v) {
   const r = []; for (const x of v) { if (typeof x !== "string") continue; const t = norm(stripMarks(x)).slice(0, 20); if (t && !r.includes(t)) r.push(t); if (r.length >= 3) break; }
   return r.length ? r : null;
 }
-function integrate(w, key, out) {
+function integrate(w, key, out, options = {}) {
   const e = w.entities[key];
   if (Array.isArray(out?.sections)) for (const s of out.sections) if (s && typeof s.body === "string") s.body = cleanLinks(w, unglueLinks(s.body));
   if (Array.isArray(out?.infobox)) for (const r of out.infobox) if (r && typeof r.value === "string") r.value = cleanLinks(w, unglueLinks(r.value));
@@ -469,7 +472,7 @@ function integrate(w, key, out) {
   e.type = type; if (summary) e.summary = summary; e.page = true; delete e.src;
   e.box = infobox.map(r => r.label + ": " + stripMarks(r.value)).join(" / ").slice(0, 400);
   acceptPageTimeline(w, out.timeline, key);   // 주어 없는 항목, 같은 해·같은 대상의 중복은 받지 않는다
-  afterTimeline(w);
+  if (!options.noAI) afterTimeline(w);
   if (Array.isArray(out.events)) ingestEvents(w, key, out.events);
   if (Array.isArray(out.terms)) ingestTerms(w, key, out.terms);   // 정의가 엇갈리는 후보는 고르지 않고 설정 노트에 띄운다   // 고친 본문처럼 events가 없는 결과는 이전 기록을 둔다
   w.navboxes ||= {};

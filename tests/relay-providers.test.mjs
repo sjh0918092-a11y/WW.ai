@@ -118,5 +118,18 @@ try {
   let legacyCalls = 0; globalThis.fetch = async () => { legacyCalls++; return success(); };
   await fireAlarm(legacyObj); assert.equal(legacyCalls, 1); assert.equal((await request(legacyObj, legacyBody.id)).json.job.status, "succeeded");
   ok("v6.88에서 접수한 번호·입력도 업그레이드 뒤 중복 접수 없이 그대로 실행한다");
+
+  const metadataStorage = new JobStorage(), metadataObj = new AiJobs({ storage: metadataStorage }, env);
+  const metadataBody = { ...textBody("recovery-meta-001", false), meta: { kind: "page", title: "복구 문서", wid: "world", key: "page", group: "group", recoveryV: 1, worldStamp: "a".repeat(64), pageStamp: "b".repeat(64), hadPage: false, entity: { title: "복구 문서", type: "인물", summary: "정의" } } };
+  assert.equal((await request(metadataObj, "", { ...metadataBody, meta: { ...metadataBody.meta, credential: "secret" } })).status, 400);
+  assert.equal((await request(metadataObj, "", { ...metadataBody, meta: { kind: "page", title: "x".repeat(4000) } })).status, 400);
+  assert.equal((await request(metadataObj, "", metadataBody)).status, 202);
+  assert.deepEqual((await request(metadataObj)).json.jobs[0].meta, metadataBody.meta);
+  assert.equal((await request(metadataObj, metadataBody.id + "/resolve", {})).status, 409);
+  globalThis.fetch = async () => success(); await fireAlarm(metadataObj);
+  r = await request(metadataObj, metadataBody.id + "/resolve", {}); assert.equal(r.status, 200); assert(r.json.job.resolvedAt && r.json.job.receivedAt);
+  assert((await request(metadataObj, metadataBody.id)).json.result);
+  assert.equal((await request(metadataObj, "", metadataBody)).status, 200);
+  ok("제한된 복구 대상 정보를 보관하고 완료 확인 뒤에도 번호와 원본 결과를 유지한다");
   console.log(`\n모두 통과 (${n}개). 유료 API 호출 0회.`);
 } finally { globalThis.fetch = original; }

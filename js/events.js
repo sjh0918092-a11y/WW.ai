@@ -42,6 +42,11 @@ document.addEventListener("click", ev => {
   if (!ev.target.closest(".search")) $("#sugg").hidden = true;
   const el = ev.target.closest("button, a"); if (!el) return;
   const d = el.dataset;
+  if (d.jobPreview) { AIRecovery.preview(d.jobPreview); return; }
+  if (d.jobApply) { AIRecovery.apply(d.jobApply); return; }
+  if (d.jobCancel) { AIRecovery.cancel(d.jobCancel); return; }
+  if (d.jobDownload) { AIRecovery.download(d.jobDownload); return; }
+  if (d.jobDismiss) { AIRecovery.handled(d.jobDismiss, true).then(() => { AIRecovery.detail = null; AIRecovery.selected = null; S.view = { name: "jobs" }; renderAll(); }); return; }
   if (d.imageView !== undefined) { const img = el.querySelector("img"); if (img) openImageViewer(img.getAttribute("src"), img.alt, el); return; }
   if (el.matches("a.wl.new")) {
     ev.preventDefault();
@@ -145,6 +150,9 @@ document.addEventListener("click", ev => {
     case "fixv-redo": if (S.fixv) { S.fixv.phase = "pick"; S.fixv.edits = []; S.fixv.err = ""; renderMain(); } break;
     case "fixv-back": { const k = S.fixv?.key || S.view.key; S.fixv = null; S.view = S.world && S.world.entities[k] ? { name: "article", key: k } : { name: "home" }; renderAll(); break; }
     case "log": S.view = { name: "log" }; renderAll(); window.scrollTo({ top: 0 }); break;
+    case "jobs": AIRecovery.open(); break;
+    case "jobs-refresh": AIRecovery.detail = null; AIRecovery.refresh(); break;
+    case "jobs-filter": AIRecovery.all = !AIRecovery.all; renderMain(); break;
     case "gset": S.view = { name: "gset" }; S.gres = ""; renderAll(); window.scrollTo({ top: 0 }); break;
     case "gkey-show": { const i = $("#" + (d.for || "gKey")); if (i) i.type = i.type === "password" ? "text" : "password"; break; }
     case "gset-save": readGsetForm(); setGres(""); renderSide(); toast("AI 연결 설정을 저장했습니다."); renderMain(); break;
@@ -225,15 +233,15 @@ document.addEventListener("click", ev => {
     case "world-check": runWorldCheck(); break;
     case "prose-image-generate": generateProseImage(); break;
     case "prose-image-apply": saveProseImage(); break;
-    case "prose-image-discard": if (S.proseGen?.illustration && !S.proseGen.busy) { S.proseGen.illustration.preview = ""; renderMain(); } break;
+    case "prose-image-discard": if (S.proseGen?.illustration && !S.proseGen.busy) { AIRecovery.handled(S.proseGen.illustration.jobId, true); S.proseGen.illustration.preview = ""; renderMain(); } break;
     case "prose-image-close": if (S.proseGen && !S.proseGen.saving) { if (S.proseGen.imageTask) S.proseGen.ctl?.abort(); else { S.proseGen.illustration = null; renderMain(); } } break;
     case "prose-generate": generateProse(); break;
     case "prose-save": saveProse(); break;
-    case "prose-discard": if (S.proseGen && !S.proseGen.busy) { S.proseGen.preview = null; S.proseGen.error = ""; renderMain(); } break;
+    case "prose-discard": if (S.proseGen && !S.proseGen.busy) { AIRecovery.handled(S.proseGen.jobId, true); S.proseGen.preview = null; S.proseGen.error = ""; renderMain(); } break;
     case "prose-close": if (S.proseGen?.saving) break; S.proseGen?.ctl?.abort(); S.proseGen = null; renderMain(); break;
     case "image-generate": generateDocImage(); break;
     case "image-apply": applyDocImage(); break;
-    case "image-discard": if (S.imageGen && !S.imageGen.busy) { S.imageGen.preview = ""; S.imageGen.error = ""; renderMain(); } break;
+    case "image-discard": if (S.imageGen && !S.imageGen.busy) { AIRecovery.handled(S.imageGen.jobId, true); S.imageGen.preview = ""; S.imageGen.error = ""; renderMain(); } break;
     case "image-close": S.imageGen?.ctl?.abort(); S.imageGen = null; renderMain(); break;
     case "image-guide": S.view = { name: "canon" }; renderAll(); $("#wImageGuide")?.focus(); break;
     case "roll": rollDice(true); S.seed = diceSeed(S.dice); renderMain(); break;
@@ -349,10 +357,13 @@ document.addEventListener("click", ev => {   // 길게 누른 뒤 손을 뗄 때
 }, true);
 document.addEventListener("contextmenu", ev => { if (ev.target.closest?.("a.wl.new")) ev.preventDefault(); });
 document.addEventListener("visibilitychange", () => {   // 다른 기기에서 작업하고 돌아오면 바뀐 것을 받아 온다
+  if (document.visibilityState === "visible" && S.ready) AIRecovery.refresh();
   if (document.visibilityState === "visible" && (S.discovery?.busy || S.creating || S.gen || S.storyGen || S.checking || S.syncing || S.fixing || S.bgSync || S.edit?.aiBusy || S.proseGen?.busy || S.imageGen?.busy)) toast("진행 중인 응답을 이어받습니다.");
   if (document.visibilityState === "visible" && Sync.acct && S.ready && Date.now() - Sync.lastAt > 30000) Sync.pull();
   if (document.visibilityState === "hidden" && Sync.acct && Sync.pending()) Sync.push();
 });
+window.addEventListener("storage", ev => { if ([AKEY, GKEY].includes(ev.key)) { Sync.acct = LS.get(AKEY); AIRecovery.authChanged(); } else if (ev.key?.startsWith(AIJobs.prefix) && S.ready) AIRecovery.refresh(); });
+window.addEventListener("online", () => { if (S.ready) AIRecovery.refresh(); });
 document.addEventListener("keydown", ev => {
   if (ev.key === "Escape") document.querySelectorAll(".portrait-menu[open]").forEach(m => { m.open = false; m.querySelector("summary").focus(); });
   if (ev.key === "Escape") $("#sugg").hidden = true;
