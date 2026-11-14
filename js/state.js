@@ -247,9 +247,20 @@ function tlWhen(t) {
 }
 const TL_DATE_SPEC = `연표(timeline)의 모든 사건은 월과 일까지 정한다. month와 day는 숫자로 쓰고, 계절, 초·중·말, '무렵' 같은 모호한 표현은 쓰지 않는다. 같은 사건이 사건 장부, 확정 사실, 다른 문서의 언급에 날짜와 함께 있으면 그 날짜를 그대로 쓴다. 이 세계의 기년법에 달이 없으면(아래 '월·일이 없는 기년법') month와 day를 빈 문자열로 둔다.`;
 const tlDateNote = w => (w.undatedCalendars || []).length ? `\n월·일이 없는 기년법: ${w.undatedCalendars.join(", ")}` : "";
+/* 단일 기년법의 연도 표기만 맞춘다. 숫자 연도에 접두어를 보충할 근거는 기존 연표다. */
+function normTimelineYear(w, year) {
+  const text = String(year).slice(0, 24);
+  if (w.calendars?.length !== 1) return text;
+  const cal = w.calendars[0];
+  const prefixed = s => s.startsWith(cal) && /^\s*\d+\s*년?$/.test(s.slice(cal.length));
+  if (prefixed(text)) return `${cal} ${text.slice(cal.length).trim().replace(/\s*년$/, "")}`;
+  if (!/^\d+\s*년?$/.test(text.trim())) return text;
+  const digits = text.trim().replace(/\s*년$/, "");
+  return (w.timeline || []).some(t => prefixed(String(t.year))) ? `${cal} ${digits}` : digits;
+}
 function addTimeline(w, t, src, ch) {
   if (!t || !t.year || !t.event) return null;
-  const ev = stripMarks(t.event).slice(0, 200), yr = String(t.year).slice(0, 24);
+  const ev = stripMarks(t.event).slice(0, 200), yr = normTimelineYear(w, t.year);
   if (w.timeline.some(x => x.year === yr && x.event === ev)) return null;
   const x = ch ? { year: yr, event: ev, src, ch } : { year: yr, event: ev, src };
   const md = tlMD(t.month, t.day);
@@ -475,19 +486,31 @@ function normStage(value) {
     units.push({ name, kind: TYPES.includes(u.kind) ? u.kind : "", desc: text(u.desc, 200), rel: text(u.rel, 240) });
     if (units.length === 6) break;
   }
-  return { units, now: text(obj.now, 600) };
+  const now = text(obj.now, 600), parties = [], partyNames = new Set();
+  for (const p of now && Array.isArray(obj.parties) ? obj.parties : []) {
+    if (!p || typeof p !== "object" || Array.isArray(p)) continue;
+    const name = norm(text(p.name, 60)), k = keyOf(name);
+    if (!name || partyNames.has(k)) continue;
+    partyNames.add(k);
+    parties.push({ name, kind: TYPES.includes(p.kind) ? p.kind : "", want: text(p.want, 200) });
+    if (parties.length === 4) break;
+  }
+  return { units, now, parties };
 }
 function registerStageUnits(w) {
-  for (const u of normStage(w.stage).units) {
+  if (isStory(w)) return;
+  const { units, parties } = normStage(w.stage);
+  for (const u of [...units, ...parties]) {
     const k = keyOf(u.name);
-    if (k !== w.mainKey && !w.entities[k]) w.entities[k] = newEntity(u.name, u.kind, u.desc);
+    if (k !== w.mainKey && !w.entities[k]) w.entities[k] = newEntity(u.name, u.kind, u.desc || u.want);
   }
 }
 function stageBlock(w) {
   if (!w.stage || isStory(w)) return "";
-  const { units, now } = normStage(w.stage);
+  const { units, now, parties } = normStage(w.stage);
   return (units.length ? "\n\n## 주요 단위\n" + units.map(u => `- ${u.name}${u.kind ? " (" + u.kind + ")" : ""}${u.desc ? ": " + u.desc : ""}${u.rel ? " — 관계: " + u.rel : ""}`).join("\n") : "")
-    + (now ? "\n\n## 지금 진행 중인 일\n" + now : "");
+    + (now ? "\n\n## 지금 진행 중인 일\n" + now : "")
+    + (parties.length ? "\n\n## 지금 진행 중인 일의 당사자\n" + parties.map(p => `- ${p.name}${p.kind ? " (" + p.kind + ")" : ""}${p.want ? ": " + p.want : ""}`).join("\n") : "");
 }
 function canonBlock(w, focus = null) {
   const rules = (w.rules || []).map(r => "- " + r).join("\n") || "- (없음)";

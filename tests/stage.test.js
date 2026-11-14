@@ -17,7 +17,7 @@ const server = appServer();
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await page.waitForSelector('#importFile', { state: 'attached' });
     const prompts = await page.evaluate(() => ({ normal: biblePrompt('작은 가게의 원안', '', '', false), story: biblePrompt('원안', '', '', true), chosen: biblePrompt('원안', '지정 항목', '', false) }));
-    for (const text of ['무대(stage)', '없는 갈등이나 큰 규모를 만들지 않는다', '메타 항목은 고르지 않는다', '확장 요소:', '학교·동아리·반', '군락·서식지', 'stage.units', '척도', '피하거나 거부한', '서로 부딪히는 지침', '곁가지 한두 군데']) assert(prompts.normal.includes(text), text);
+    for (const text of ['무대(stage)', 'parties는 지금 진행 중인 일의 당사자 2~4개', 'now의 문장에서도 그 이름을 쓴다', '없는 갈등이나 큰 규모를 만들지 않는다', '메타 항목은 고르지 않는다', '확장 요소:', '학교·동아리·반', '군락·서식지', 'stage.units', '척도', '피하거나 거부한', '서로 부딪히는 지침', '곁가지 한두 군데']) assert(prompts.normal.includes(text), text);
     assert(!prompts.story.includes('무대(stage)') && !prompts.story.includes('"stage"') && !prompts.story.includes('stage.units'));
     assert(prompts.chosen.includes('지정 항목'));
 
@@ -45,13 +45,20 @@ const server = appServer();
     }, fixtures);
     assert(!('stage' in made[5].w)); assert.equal(Object.keys(made[5].w.entities).length,1);
     for (const [i, b] of fixtures.entries()) {
-      assert.deepStrictEqual(made[i].w.stage, b.stage);
+      assert.deepStrictEqual(made[i].w.stage, { ...b.stage, parties: b.stage.parties || [] });
       for (const u of b.stage.units) {
         assert(made[i].prompt.includes(u.name));
         const e = Object.values(made[i].w.entities).find(e => e.title === u.name);
         assert(e); if (u.name !== b.mainTitle) { assert.equal(e.type, u.kind); assert.equal(e.summary, u.desc); }
       }
       assert(made[i].prompt.includes(b.stage.now));
+      assert(made[i].prompt.includes('항목 유형별 개수:') && made[i].prompt.includes('연표의 마지막 사건 날짜:'));
+      for (const p of b.stage.parties || []) {
+        assert(made[i].prompt.includes(p.name) && made[i].prompt.includes(p.want));
+        const e = Object.values(made[i].w.entities).find(e => e.title === p.name);
+        assert(e); assert.equal(e.type, p.kind);
+        if (!b.stage.units.some(u => u.name === p.name)) assert.equal(e.summary, p.want);
+      }
       assert(made[i].prompt.indexOf('## 이 위키의 첫 문서') < made[i].prompt.indexOf('## 세계 넓히기'));
       assert(made[i].canon.includes('## 주요 단위') && made[i].canon.includes('## 지금 진행 중인 일'));
     }
@@ -63,7 +70,7 @@ const server = appServer();
     assert.equal(made[2].w.stage.units[2].rel.length, 240);
     assert.equal(made[2].w.stage.now.length, 600);
     assert.equal(Object.values(made[2].w.entities).filter(e => e.title === fixtures[1].mainTitle).length, 1);
-    for (const i of [3,4]) { assert.deepStrictEqual(made[i].w.stage, {units:[],now:''}); assert(!made[i].canon.includes('## 주요 단위')); assert(!made[i].prompt.includes('stage.units')); assert(!made[i].prompt.includes('stage.now')); }
+    for (const i of [3,4]) { assert.deepStrictEqual(made[i].w.stage, {units:[],now:'',parties:[]}); assert(!made[i].canon.includes('## 주요 단위')); assert(!made[i].prompt.includes('stage.units')); assert(!made[i].prompt.includes('stage.now')); }
 
     const checks = await page.evaluate(w => {
       S.pages = {}; const k = w.mainKey, other = keyOf('다른 항목'); w.entities[other] = newEntity('다른 항목', '', '');
@@ -71,7 +78,7 @@ const server = appServer();
       S.pages[k] = {key:k}; out.existing = pagePrompt(w, k); S.pages = {};
       const story = {...w, mode:'story', story:{ protagonistKey:k, chapter:1, total:5, chapters:[{n:1, era:w.era, summary:'줄거리', explore:{}}], spine:[], secrets:[] }};
       out.storyFirst = firstPageBlock(story,k,null); out.storyCanon = stageBlock(story); out.storyEditor = stageEditorHtml(story);
-      delete w.stage; out.legacy = pagePrompt(w,k); out.empty = canonBlock({...w, stage:{units:[],now:''}}); out.nowOnly = canonBlock({...w,stage:{now:'축제'}}); out.unitsOnly=canonBlock({...w, stage:{units:[{name:'가게'}]}});
+      delete w.stage; out.legacy = pagePrompt(w,k); out.empty = canonBlock({...w, stage:{units:[],now:'',parties:[]}}); out.nowOnly = canonBlock({...w,stage:{now:'축제'}}); out.unitsOnly=canonBlock({...w, stage:{units:[{name:'가게'}]}});
       const base = {entities:{},rules:[],timeline:[],era:'842년',stage:{units:[],now:'준비 중'}};
       out.gaps = {
         country:worldGapSignals({...base, stage:{units:[{name:'나라',kind:'국가'}]}}), rules:worldGapSignals({...base,rules:['강대국이 경쟁한다']}),
@@ -91,12 +98,52 @@ const server = appServer();
     assert(!checks.legacy.includes('## 주요 단위')); assert(!checks.empty.includes('## 지금 진행 중인 일'));
     assert(checks.nowOnly.includes('## 지금 진행 중인 일') && !checks.nowOnly.includes('## 주요 단위'));
     assert(checks.unitsOnly.includes('## 주요 단위') && !checks.unitsOnly.includes('## 지금 진행 중인 일'));
-    for (const f of ['country','rules']) assert(checks.gaps[f].some(s => s.includes('국가가 비었다')));
-    for (const f of ['filled','school','old']) assert(!checks.gaps[f].some(s => s.includes('국가가 비었다')));
-    assert(checks.gaps.school.filter(s => s.includes('주요 단위')).length === 2);
+    for (const f of ['country','rules','filled','school','old']) assert(!checks.gaps[f].some(s => s.includes('국가가 비었다')));
+    assert(checks.gaps.rules.some(s => s.includes('국가 0개')));
+    assert(checks.gaps.filled.some(s => s.includes('국가 1개')));
+    assert(checks.gaps.school.filter(s => s.includes('문서 0개, 다른 문서의 언급 0개')).length === 2);
     for (const f of ['mentioned','done']) assert(!checks.gaps[f].some(s => s.includes('주요 단위')));
-    const gap = checks.gaps.current; assert(gap.findIndex(s => s.includes('지금이 거의')) < gap.findIndex(s => s.includes('연표에서')));
-    for (const f of ['near','noEra','noNow','old']) assert(!checks.gaps[f].some(s => s.includes('지금이 거의')), f);
+    for (const f of ['current','near','noEra','noNow','old']) {
+      assert(checks.gaps[f].some(s => s.includes('연표의 마지막 사건 날짜:')));
+      assert(checks.gaps[f].some(s => s.includes('작중 기준 시점:')));
+      assert(!checks.gaps[f].some(s => /지금이 거의|거의 없는 항목 유형/.test(s)));
+    }
+    assert(checks.gaps.current.some(s => s.includes('520') && s.includes('842')));
+    assert(checks.gaps.current.some(s => s.includes('연도 차이 322년')));
+    assert(checks.gaps.near.some(s => s.includes('연도 차이 4년')));
+    assert(checks.gaps.noEra.some(s => s.includes('한여름')));
+    const facts = await page.evaluate(() => {
+      const w = { entities: {}, calendars: ['서임력'], era: '서임력 941년 10월 12일', timeline: [
+        {year:'서임력 755', month:11, day:14}, {year:'서임력 940', month:12, day:3},
+        {year:'서임력 943', month:1, day:1}, {year:'서임력 100', sup:{by:'x'}}
+      ] };
+      return worldGapSignals(w);
+    });
+    assert(facts.some(s => s.includes('서임력 943년 1월 1일') && s.includes('서임력 941년 10월 12일')));
+    assert(facts.some(s => s.includes('연도 차이 185년')));
+
+    const parties = await page.evaluate(() => {
+      const raw = { units: [{name:'기존 단위',kind:'조직',desc:'보존할 정의'}], now:'축제 준비', parties:[
+        null, [], 'bad', {}, {name:1}, {name:'첫 문서',kind:'인물',want:'첫 문서 덮어쓰기 금지'},
+        {name:'기존 단위',kind:'인물',want:'기존 단위 덮어쓰기 금지'},
+        {name:'새 당사자',kind:'가문',want:{}}, {name:'새 당사자',kind:'인물',want:'중복'},
+        {name:'긴 당사자',kind:'조직',want:'가'.repeat(300)}, {name:'초과',kind:'조직'}
+      ] };
+      const w = { mainKey:keyOf('첫 문서'), entities:{[keyOf('첫 문서')]:newEntity('첫 문서','기술','첫 정의')}, stage:normStage(raw) };
+      registerStageUnits(w); registerStageUnits(w);
+      return { normalized:w.stage, entities:Object.values(w.entities), blank:normStage({...raw,now:''}),
+        broken:normStage({...raw,parties:'broken'}), old:normStage({now:'축제'}),
+        story:stageBlock({...w,mode:'story',story:{}}), block:stageBlock(w) };
+    });
+    assert.equal(parties.normalized.parties.length,4);
+    assert.equal(parties.normalized.parties[2].kind,''); assert.equal(parties.normalized.parties[2].want,'');
+    assert.equal(parties.normalized.parties[3].want.length,200);
+    for (const f of ['blank','broken','old']) assert.deepStrictEqual(parties[f].parties,[]);
+    assert.equal(parties.entities.length,4);
+    assert.equal(parties.entities.find(e=>e.title==='첫 문서').summary,'첫 정의');
+    assert.equal(parties.entities.find(e=>e.title==='기존 단위').summary,'보존할 정의');
+    assert(parties.block.includes('지금 진행 중인 일의 당사자') && parties.block.includes('새 당사자'));
+    assert.equal(parties.story,'');
 
     const flows = await page.evaluate(w => {
       S.pages = {}; const k = w.mainKey; w.entities[k].type = '인물'; w.entities[k].cats = [{name:'이웃'}];
@@ -111,9 +158,14 @@ const server = appServer();
 
     await page.evaluate(w => { S.world=w; S.pages={}; S.view={name:'canon'}; renderAll(); }, made[1].w);
     assert.equal(await page.inputValue('#stageNow'), fixtures[1].stage.now);
+    await page.locator('details:has(#stagePartyName0) > summary').click();
+    await page.fill('#stagePartyName0','축제 준비 위원회');
+    await page.selectOption('#stagePartyKind0','조직'); await page.fill('#stagePartyWant0','모두의 축제를 연다');
     await page.fill('#stageDesc1','수리된 독서 공간'); await page.fill('#stageNow','내일 축제를 연다');
     await page.click('[data-act="save-canon"]');
     const saved = await page.evaluate(async () => { await Store.q; return (await Store.getWorld(S.world.id)).stage; });
+    assert.deepStrictEqual(saved.parties,[{name:'축제 준비 위원회',kind:'조직',want:'모두의 축제를 연다'}]);
+    assert(await page.evaluate(() => Object.values(S.world.entities).some(e=>e.title==='축제 준비 위원회' && e.summary==='모두의 축제를 연다')));
     assert.equal(saved.now,'내일 축제를 연다'); assert.equal(saved.units[1].desc,'수리된 독서 공간');
     await page.reload(); await page.waitForFunction(() => S.ready);
     const persisted = await page.evaluate(async id => (await Store.getWorld(id)).stage, made[1].w.id);

@@ -14,7 +14,7 @@ vm.runInContext([
   cut("const sentencesOf =", "/* 인포박스에서"), cut("function pageTexts(p)", "/* 이름이 목적어"),
   cut("const namesOf =", "function checkBrief"),
   require("fs").readFileSync(require("path").join(__dirname, "..", "js", "ledger.js"), "utf8").replace('"use strict";', ""),
-  "Object.assign(globalThis,{keyOf,addTimeline,timelineOrder,sortTimeline,tlWhen,tlMD,tlYear,promptTimeline,canonBlock,askTimelineDates,afterTimeline,timelineIssues,ingestEvents,acceptPageTimeline,worldCheckPrompt,TL_DATE_SPEC});"
+  "Object.assign(globalThis,{norm,keyOf,addTimeline,normTimelineYear,dedupeTimeline,sameTimelineOccurrence,acceptTimeline,timelineOrder,sortTimeline,tlWhen,tlMD,tlYear,promptTimeline,canonBlock,askTimelineDates,afterTimeline,timelineIssues,ingestEvents,acceptPageTimeline,worldCheckPrompt,TL_DATE_SPEC});"
 ].join("\n"), c);
 let n = 0; const tests = []; const test = (name, fn) => tests.push([name, fn]);
 const world = (extra = {}) => { const w = { title: "시험 세계", era: "2016년", seed: "원안", rules: [], entities: {}, timeline: [], ...extra }; c.S.world = w; c.S.pages = {}; return w; };
@@ -85,9 +85,44 @@ test("다시 묻기가 실패해도 항목은 날짜 없이 남는다", async ()
 test("월·일이 없는 기년법의 연도는 날짜를 묻지 않는다", () => {
   const w = world({ calendars: ["성력"], undatedCalendars: ["성력"] });
   c.addTimeline(w, { year: "성력 312", event: "달 없는 세계의 일" }, "seed");
-  c.addTimeline(w, { year: "2016", event: "서기의 일" }, "seed");
+  c.addTimeline(w, { year: "서기 2016", event: "서기의 일" }, "seed");
   assert.equal(w.timeline.find(t => t.event === "달 없는 세계의 일").dateAsk, undefined);
   assert.equal(w.timeline.find(t => t.event === "서기의 일").dateAsk, 1);
+});
+test("단일 기년법은 기존 접두어를 보충하고 년 접미어를 맞추며 다른 기년법은 보존한다", () => {
+  const w = world({ calendars: ['서임력'] });
+  assert.equal(c.normTimelineYear(w, '940'), '940', '기존 접두어가 없으면 추정하지 않는다');
+  c.addTimeline(w, { year: '서임력 755년', month: 11, day: 14, event: '기준 사건' }, 'seed');
+  assert.equal(w.timeline[0].year, '서임력 755');
+  for (const year of ['940', '940년', '서임력 940', '서임력 940년']) assert.equal(c.normTimelineYear(w, year), '서임력 940');
+  for (const year of ['서기 2016년', '기원전 202', '건안 13년', '서임력 940~941', '940년 무렵']) assert.equal(c.normTimelineYear(w, year), year);
+  for (const calendars of [[], ['서임력','건안']]) {
+    const other = world({ calendars, timeline: [{ year: '서임력 755년' }] });
+    for (const year of ['755', '755년', '서임력 755년', '2016']) assert.equal(c.normTimelineYear(other, year), year);
+    c.dedupeTimeline(other); assert.equal(other.timeline[0].year, '서임력 755년');
+  }
+  const legacy = world(); assert.equal(c.normTimelineYear(legacy, '2016년'), '2016년');
+});
+test("새 문서 연표도 정규화한 연도로 등록하고 주어 기록을 유지한다", () => {
+  const w = world({ calendars: ['서임력'], timeline: [{ year:'서임력 755', event:'기준 사건', src:'seed' }] });
+  assert(c.acceptTimeline(w, {year:'940년', month:12, day:3, about:'지크프리트 바이스', event:'지크프리트 바이스가 암살되다.'}, 'p1'));
+  const t = w.timeline.find(t => t.src === 'p1');
+  assert.equal(t.year,'서임력 940'); assert.equal(t.about,'지크프리트 바이스');
+  assert(!c.acceptTimeline(w, {...t,year:'940'},'p2'));
+});
+test("제공된 사건 쌍 가·나는 연도가 같아져도 기존 발생 판정으로는 각각 두 건이 남는다", () => {
+  const fixtures = require('./fixtures/timeline-succession.json');
+  for (const pair of fixtures) {
+    const w = world({calendars:['서임력'],timelineDedupeV:2});
+    for (const t of pair) c.addTimeline(w, t, t.src);
+    assert.equal(w.timeline.length,2); assert.equal(w.timeline[0].year,w.timeline[1].year);
+    assert.equal(c.sameTimelineOccurrence(w,...w.timeline),false);
+    assert(c.dedupeTimeline(w)); assert.equal(w.timeline.length,2); assert.equal(w.timelineDedupeV,3);
+    assert.equal(c.dedupeTimeline(w),false);
+    const old = world({calendars:['서임력'],timeline:JSON.parse(JSON.stringify(pair)),timelineDedupeV:2});
+    c.dedupeTimeline(old); assert.equal(old.timeline[0].year,old.timeline[1].year); assert.equal(old.timeline.length,2);
+    console.log(`    진단: ${pair[0].year} 사건 쌍은 동일 날짜이나 기존 발생 판정에 해당하지 않아 2건 유지`);
+  }
 });
 test("연표 날짜가 사건 장부의 같은 사건 날짜와 다르면 지적한다", () => {
   const w = world();

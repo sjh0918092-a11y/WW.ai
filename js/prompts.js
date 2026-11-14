@@ -82,6 +82,7 @@ ${TONE_SPEC}
 ${story ? "" : `- 무대(stage)를 정한다. units는 이야기가 벌어지는 주요 단위 3~5개이며 원안의 규모에 맞춘다. 대륙 판타지는 국가·세력, 학원물은 학교·동아리·반, 마을 이야기는 가게·이웃·가문, 생태 세계는 군락·서식지가 될 수 있다. kind는 ${TYPES.join("|")} 중 하나다.
 - 원안이 정한 단위가 있으면 그대로 옮기고 없으면 장르와 규모에 맞게 정한다. 대체역사라면 실재 국가·기관을 쓴다. rules, timeline, tone에 이름 없는 "제국", "강대국", "왕국", "학교", "마을"이 나오면 units의 고유명사로 부른다.
 - now는 작중 기준 시점에 진행 중인 일 한두 문장이다. 분쟁일 필요는 없다(선거, 축제 준비, 개업, 철새의 이동, 새 학기 등). 원안이나 제목이 진행 중인 사건(예: "○○전쟁")을 약속했다면 그것을 쓴다. 연표의 마지막 사건이 now로 이어지게 한다. 시간이 흐르지 않는 사전형 설정집 등은 빈 문자열로 둔다.
+- parties는 지금 진행 중인 일의 당사자 2~4개다. 각각 name(고유명사), kind(${TYPES.join("|")} 중 하나), want(지금 진행 중인 일에서 원하는 것 한 줄)를 정한다. 당사자는 이름으로 정하고 now의 문장에서도 그 이름을 쓴다. now가 비면 parties는 빈 배열이다.
 - 이 필드를 채우려고 원안에 없는 갈등이나 큰 규모를 만들지 않는다. 작은 공동체 이야기는 그 규모를 유지한다.
 `}
 ${story ? (first ? `- mainTitle은 사용자가 지정한 주인공 "${first}"를 글자 그대로 쓴다. 이 인물이 이야기의 주인공이고 위키의 첫 문서가 된다. 핵심 규칙이나 연표 중 하나 이상이 이 인물과 연결되게 한다.` : "- mainTitle은 이 원안에서 가장 흥미로운 이야기를 끌고 갈 주인공 인물의 이름이다. 코드명이나 별명이 아니라 본명 풀 네임으로 쓴다. 이 인물이 위키의 첫 문서가 된다. 핵심 규칙이나 연표 중 하나 이상이 이 인물과 연결되게 한다.")
@@ -103,7 +104,7 @@ ${user.desc ? `- 사용자가 정한 주인공의 특징(그대로 지키고, �
 JSON 객체 하나만 출력:
 {"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"calendars":["서기 말고 이 세계가 쓰는 기년법·연호 이름"],"undatedCalendars":["calendars 중 달과 날이 없는 기년법(없으면 빈 배열)"],"timeline":[{"year":"1947","month":3,"day":14,"event":"..."}],"mainTitle":"주인공 이름","tone":{"label":"...","guide":["..."]},"storyPromise":{"focus":"원안이 약속한 이야기 경험","central":{"kind":"goal/relationship/promise/conflict/consequence/ongoing/mystery","subject":"장르에 맞게 이어갈 중심 내용"}},"protagonist":{"summary":"한 문장 정의","want":"주인공이 바라는 것","wound":"주인공의 결핍이나 상처"},"spine":[${beatsFor(user.total || STORY_DEF).map((b, i) => `{"n":${i + 1},"beat":"${b}","intent":"${i === (user.total || STORY_DEF) - 1 ? "결말의 방향만" : "..."}"}`).join(",")}],"secrets":[{"truth":"감춰진 진실","cover":"드러나기 전 알려진 겉모습","reveal":3}],"chapter1":{"title":"작중 사건명","era":"1장 작중 시점","summary":"공개 줄거리 3~5문장","incident":"발단 사건 한 문장","nextChoices":["...","...","..."]}}` : `
 JSON 객체 하나만 출력:
-{"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"calendars":["서기 말고 이 세계가 쓰는 기년법·연호 이름"],"undatedCalendars":["calendars 중 달과 날이 없는 기년법(없으면 빈 배열)"],"timeline":[{"year":"1947","month":3,"day":14,"event":"..."}],"mainTitle":"...","stage":{"units":[{"name":"고유명사","kind":"TYPES 중 하나","desc":"한 줄 성격","rel":"다른 단위와의 관계 한 줄"}],"now":"작중 기준 시점에 진행 중인 일 한두 문장"},"tone":{"label":"...","guide":["..."]}}`}`;
+{"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"calendars":["서기 말고 이 세계가 쓰는 기년법·연호 이름"],"undatedCalendars":["calendars 중 달과 날이 없는 기년법(없으면 빈 배열)"],"timeline":[{"year":"1947","month":3,"day":14,"event":"..."}],"mainTitle":"...","stage":{"units":[{"name":"고유명사","kind":"TYPES 중 하나","desc":"한 줄 성격","rel":"다른 단위와의 관계 한 줄"}],"now":"작중 기준 시점에 진행 중인 일 한두 문장","parties":[{"name":"당사자 고유명사","kind":"TYPES 중 하나","want":"지금 진행 중인 일에서 원하는 것 한 줄"}]},"tone":{"label":"...","guide":["..."]}}`}`;
 }
 /* 세계에서 아직 비어 있는 영역: 항목 유형 분포와 연표의 긴 공백 */
 /* 몇 안 되는 인물·개체를 수로만 말하고("A국은 ○○ 2기를 운용 중이다") 누구인지 밝히지 않는 버릇을 막는다 */
@@ -111,25 +112,28 @@ const FEW_NAMED_RULE = "몇 안 되는 인물이나 개체를 수로만 말하�
 function linkNameRule() {
   return `${FEW_NAMED_RULE} 이미 있는 인물을 성이나 이름, 별명, 코드명만으로 부를 때도 링크는 [[그 인물의 전체 제목|부른 이름]]으로 건다(예: [[마커스 벡|벡]]). ${PERSON_TITLE_RULE}`;
 }
-/* 순수 판정: 현재는 기준 연도 전후 5년, 긴 공백은 10년 이상으로 본다. */
+/* 공백의 판단은 모델이 한다. 유형별 수, 단위의 문서·언급 수와 연표의 날짜·연도 차이만 전달한다. */
 function worldGapSignals(w) {
   const entities = Object.values(w.entities || {}), cnt = {};
   for (const o of entities) if (o.type) cnt[o.type] = (cnt[o.type] || 0) + 1;
-  const thin = ["인물", "지명", "조직", "사건", "기술", "문화", "물건"].filter(t => (cnt[t] || 0) <= 1);
-  const stage = normStage(w.stage), out = [];
-  if (thin.length && entities.length >= 6) out.push(`아직 거의 없는 항목 유형: ${thin.join(", ")}`);
-  if (!cnt["국가"] && (stage.units.some(u => u.kind === "국가") || (w.rules || []).some(r => /(?:^|[\s「"(])(?:제국|왕국|강대국|열강|국가)(?=$|[\s」"),.·]|은|는|이|가|의|에|를|을|와|과|로|들)/.test(r)))) out.push("국가가 비었다: 원안의 규모에 맞는 국가 항목이 아직 없다");
+  const stage = normStage(w.stage);
+  const out = [`항목 유형별 개수: ${[...new Set([...TYPES, ...Object.keys(cnt)])].map(t => `${t} ${cnt[t] || 0}개`).join(", ")}`];
   for (const u of stage.units) {
     const o = w.entities?.[keyOf(u.name)] || entities.find(o => o.title === u.name);
     const sources = new Set((o?.mentions || []).filter(m => live(m) && m.from !== keyOf(u.name)).map(m => m.from));
-    if (!o?.page && sources.size <= 1) out.push(`주요 단위 「${u.name}」는 아직 문서가 없고 다른 문서의 언급도 거의 없다`);
+    if (!o?.page && sources.size <= 1) out.push(`주요 단위 「${u.name}」: 문서 0개, 다른 문서의 언급 ${sources.size}개`);
   }
-  const ys = (w.timeline || []).filter(live).map(t => yearNum(t.year)).filter(Number.isFinite).sort((a, b) => a - b);
-  const era = yearNum(w.era), past = ys.filter(y => y <= era);
-  if (stage.now && Number.isFinite(era) && (!past.length || era - past[past.length - 1] >= 10 || ys.filter(y => Math.abs(y - era) <= 5).length <= 1)) out.push("작중 기준 시점의 지금이 거의 비어 있다");
+  const timeline = timelineOrder((w.timeline || []).filter(live), w), last = timeline[timeline.length - 1];
+  out.push(`연표의 마지막 사건 날짜: ${last ? tlWhen(last) : "(없음)"}; 작중 기준 시점: ${w.era || "(없음)"}`);
+  const era = tlYear(w, w.era);
+  const past = era ? timeline.map(t => ({ t, h: tlYear(w, t.year) })).filter(x => x.h && x.h.cal === era.cal && x.h.y <= era.y).sort((a, b) => a.h.y - b.h.y) : [];
+  const bounds = [...past.map(x => ({ year: x.h.y, date: tlWhen(x.t) })), ...(era ? [{ year: era.y, date: w.era }] : [])];
   let gap = null;
-  for (let i = 0; i + 1 < ys.length; i++) { const d = ys[i + 1] - ys[i]; if (d >= 10 && (!gap || d > gap.d)) gap = { a: ys[i], b: ys[i + 1], d }; }
-  if (gap) out.push(`연표에서 ${gap.a}년부터 ${gap.b}년까지 ${gap.d}년간 기록된 사건이 없다`);
+  for (let i = 0; i + 1 < bounds.length; i++) {
+    const a = bounds[i], b = bounds[i + 1], d = b.year - a.year;
+    if (!gap || d > gap.d) gap = { a: a.date, b: b.date, d };
+  }
+  out.push(gap ? `기준 시점 이전 가장 긴 사건 간격(같은 기년법, 기준 시점까지, 연도 기준): ${gap.a} → ${gap.b} (연도 차이 ${gap.d}년)` : "기준 시점 이전 가장 긴 사건 간격: 계산할 날짜 자료 없음");
   return out;
 }
 function worldGaps(w) {

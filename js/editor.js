@@ -301,7 +301,7 @@ async function saveCanon() {
   w.rules = $("#rulesTa").value.split("\n").map(s => s.replace(/^[-•\s]+/, "").trim()).filter(Boolean).slice(0, 20);
   w.userCanon = $("#userTa").value.trim().slice(0, 4000);
   if (!isStory(w) && $("#stageNow")) {
-    w.stage = normStage({ units: Array.from({ length: 6 }, (_, i) => ({ name: $(`#stageName${i}`)?.value, kind: $(`#stageKind${i}`)?.value, desc: $(`#stageDesc${i}`)?.value, rel: $(`#stageRel${i}`)?.value })), now: $("#stageNow").value });
+    w.stage = normStage({ units: Array.from({ length: 6 }, (_, i) => ({ name: $(`#stageName${i}`)?.value, kind: $(`#stageKind${i}`)?.value, desc: $(`#stageDesc${i}`)?.value, rel: $(`#stageRel${i}`)?.value })), now: $("#stageNow").value, parties: Array.from({ length: 4 }, (_, i) => ({ name: $(`#stagePartyName${i}`)?.value, kind: $(`#stagePartyKind${i}`)?.value, want: $(`#stagePartyWant${i}`)?.value })) });
     registerStageUnits(w);
   }
   const nt = norm($("#wTitle")?.value || "").slice(0, 40); if (nt) w.title = nt;

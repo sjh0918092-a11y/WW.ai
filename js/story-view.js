@@ -179,7 +179,15 @@ function stageEditorHtml(w) {
       <label class="lb" for="stageRel${i}">다른 단위와의 관계</label><input class="txt" id="stageRel${i}" data-stage-rel="${i}" maxlength="240" value="${esc(u.rel || "")}"></details>`;
     }).join("")}
     <h2>지금 진행 중인 일</h2>
-    <label class="lb" for="stageNow">작중 기준 시점의 현재</label><textarea id="stageNow" rows="3" maxlength="600" placeholder="예: 이웃 가게들이 여름 축제 준비를 함께 하고 있다. 시간이 흐르지 않는 세계라면 비워 둡니다.">${esc(stage.now)}</textarea>`;
+    <label class="lb" for="stageNow">작중 기준 시점의 현재</label><textarea id="stageNow" rows="3" maxlength="600" placeholder="예: 이웃 가게들이 여름 축제 준비를 함께 하고 있다. 시간이 흐르지 않는 세계라면 비워 둡니다.">${esc(stage.now)}</textarea>
+    <h2>지금 진행 중인 일의 당사자</h2>
+    <p class="note">지금 진행 중인 일의 당사자 이름과 바라는 것을 적습니다. 최대 4개이며, 진행 중인 일을 비우면 당사자도 비워집니다.</p>
+    ${Array.from({ length: 4 }, (_, i) => { const p = stage.parties[i] || {};
+      return `<details class="ent"${p.name ? " open" : ""}><summary>당사자 ${i + 1}${p.name ? ": " + esc(p.name) : " 추가"}</summary>
+      <label class="lb" for="stagePartyName${i}">고유명사</label><input class="txt" id="stagePartyName${i}" maxlength="60" value="${esc(p.name || "")}">
+      <label class="lb" for="stagePartyKind${i}">유형</label><select id="stagePartyKind${i}"><option value="">유형 미정</option>${TYPES.map(t => `<option${p.kind === t ? " selected" : ""}>${t}</option>`).join("")}</select>
+      <label class="lb" for="stagePartyWant${i}">지금 진행 중인 일에서 원하는 것</label><input class="txt" id="stagePartyWant${i}" maxlength="200" value="${esc(p.want || "")}"></details>`;
+    }).join("")}`;
 }
 function canonHtml() {
   const ex = S.worldExports[S.world.id] || { images: true, stories: true };

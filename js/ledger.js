@@ -99,19 +99,24 @@ function pipelineTimelineOccurrence(w, t) {
 }
 /* 옛 연표 정리. 원안과 직접 수정한 출처를 먼저 고르고, 결과의 표시 순서는 보존한다. */
 function dedupeTimeline(w) {
-  if (w.timelineDedupeV === 2) return false;
+  if (w.timelineDedupeV === 3) return false;
   const list = w.timeline || [], rank = t => t.src === "seed" || t.src === "user" ? 0 : S.pages[t.src]?.editedAt ? 1 : 2;
+  if (w.calendars?.length === 1) {
+    const years = list.map(t => normTimelineYear(w, t.year));
+    list.forEach((t, i) => { t.year = years[i]; });
+  }
   const kept = [], removed = new Set();
   for (const t of [...list].sort((a, b) => rank(a) - rank(b))) {
     if (live(t) && kept.some(x => live(x) && sameTimelineOccurrence(w, x, t))) removed.add(t);
     else kept.push(t);
   }
-  w.timeline = list.filter(t => !removed.has(t)); w.timelineDedupeV = 2;
+  w.timeline = list.filter(t => !removed.has(t)); w.timelineDedupeV = 3;
   return true;   // 중복이 없어도 한 번 검사했다는 표시를 저장한다
 }
 /* 생성된 문서가 낸 연표 항목을 받아 둘지 정한다. 받았으면 true */
 function acceptTimeline(w, t, src) {
   if (!t || !t.year || !t.event) return false;
+  t = { ...t, year: normTimelineYear(w, t.year) };
   const s = timelineSubject(w, t); if (!s) return false;           // 주어가 되는 고유명사가 없다
   const yr = String(t.year).slice(0, 24);
   if (sameTimelineEntry(w, yr, s, t)) return false;                 // 같은 대상 또는 날짜까지 같은 사건의 발생
