@@ -221,12 +221,13 @@ function numericIssues(w, k) {
     const am = /\((\d{1,3})\s*세\)/.exec(f.birth.line), age = yDiff(f.birth.y, eraH.y);
     if (am && Math.abs(+am[1] - age) > 1) push(f.birth.line, `작중 기준 시점 ${w.era}`, `작중 기준 시점으로 계산하면 ${age - 1}~${age}세인데 ${am[1]}세로 적혀 있다.`, "high");
   }
+  out.push(...personNumericIssues(w, k));
   return out.slice(0, 8);
 }
 /* ---------- 나이 규칙: 핵심 규칙의 나이 제한으로 출생·기간 연도를 맞춰 본다 ---------- */
 /* 숫자 대조 로직(numericIssues, quoteIssues, ageRuleIssues, 성별 규칙)을 바꿀 때마다 올린다.
    문서를 열 때 p.check.numV가 이 값과 다르면 결정론 지적만 다시 계산해 바꿔 끼운다 */
-const NUMERIC_VERSION = 7;
+const NUMERIC_VERSION = 8;
 /* 규칙 문장은 세계관마다 표현이 달라 코드로 읽지 않는다. 핵심 규칙이 바뀌었을 때만 AI가 한 번 구조로 뽑고(w.ageRules),
    판정은 그 구조로 코드가 한다. 그래서 검사할 때마다 결과가 같다 */
 const rulesText = w => (w.rules || []).join("\n");
@@ -319,9 +320,192 @@ function spanFacts(p, spanWords) {
 }
 /* 이름이 다른 낱말의 일부로 들어간 경우(뉘른베르크의 베르크)는 이름으로 보지 않는다 */
 const hasName = (t, n) => { let i = -1; while ((i = t.indexOf(n, i + 1)) >= 0) if (!i || !/[\p{L}\p{N}_]/u.test(t[i - 1])) return true; return false; };
+/* 문장 속 인물을 명시적 주어로 확인한다. 성·이름 조각은 refNames의 유일 소유자 판정을 따른다. */
+function personSubjects(w, key, text) {
+  const hits = [];
+  for (const name of refNames(w, key)) {
+    let at = -1;
+    while ((at = text.indexOf(name, at + 1)) >= 0) {
+      if (at && /[\p{L}\p{N}_]/u.test(text[at - 1])) continue;
+      const tail = /^(?:은|는|이|가)(?=\s|$)/.exec(text.slice(at + name.length));
+      if (tail) hits.push({ at, end: at + name.length + tail[0].length });
+    }
+  }
+  const unique = new Map();
+  for (const h of hits.sort((a, b) => a.at - b.at)) if (!unique.has(h.end)) unique.set(h.end, h);
+  return [...unique.values()];
+}
+/* 소수점과 단위 안의 점은 문장 경계가 아니다. 이 네 검사에서만 사용한다. */
+const personSentences = text => stripMarks(text).split(/(?<=[.!?。])\s+|\n+/).map(s => s.trim()).filter(Boolean);
+const uncertainPersonClaim = text => /않|아니|아닌|못했|였다면|었더라면|라면|가정|추정|추측|약\s*\d|대략|가량|남짓|무렵|전후|보다|비해|달리/.test(text);
+/* 퇴역 연도는 인물 본인의 명시적 전역·퇴역만. 여러 연도와 다른 주어가 얽히면 읽지 않는다. */
+function personRetirements(w, key, p) {
+  const rows = [];
+  for (const text of personSentences([p.summary || "", ...(p.sections || []).map(s => s.body)].join("\n"))) {
+    const subjects = personSubjects(w, key, text), ys = yearHits(text, w);
+    if (subjects.length !== 1 || ys.length !== 1 || ys[0].approx || uncertainPersonClaim(text) || KIN_RE.test(text)) continue;
+    const tail = text.slice(subjects[0].end).replace(/\d+\s*세(?:은|는|이|가)(?=\s)/g, "");
+    if (/[\p{L}\p{N}]+(?:을|를)(?=\s)/u.test(tail.replace(/(?:생일|전역|퇴역)을|가을|겨울/g, ""))) continue;
+    if (/[\p{L}\p{N}]+(?:은|는|이|가)(?=\s)/u.test(tail) || !/(?:명예\s*)?(?:전역|퇴역)(?:을\s*(?:마쳤|완료)|했|하|했고|하였다|했다)/.test(tail)) continue;
+    rows.push({ ...ys[0], line: text });
+  }
+  for (const r of p.infobox || []) if (/^(?:명예\s*)?(?:전역|퇴역)(?:\s*(?:연도|년도|일자|일))?$/.test(r.label)) {
+    const ys = yearHits(stripMarks(r.value), w);
+    if (ys.length === 1 && !ys[0].approx) rows.push({ ...ys[0], line: `${r.label}: ${stripMarks(r.value)}` });
+  }
+  return rows;
+}
+/* 인포박스에 확정된 신장·전고만 같은 단위로 대조한다. 계수·식량 등 본문 수치는 수집하지 않는다. */
+function personHeights(p) {
+  const rows = [];
+  for (const r of p.infobox || []) {
+    if (!/^(?:전성기\s*)?(?:신장|전고|키)$/.test(r.label.trim())) continue;
+    const m = /^\s*(\d+(?:\.\d+)?)\s*(m|미터|cm|센티미터)\s*$/.exec(stripMarks(r.value));
+    if (m) rows.push({ value: +m[1], unit: /^(?:m|미터)$/.test(m[2]) ? "m" : "cm", line: `${r.label}: ${stripMarks(r.value)}` });
+  }
+  return rows;
+}
+function personNumericIssues(w, k) {
+  const out = [];
+  const push = (P, E, claim, evidence, detail) => {
+    const ref = pageIsRef(E, P), target = ref ? P : E;
+    out.push({ claim: (ref ? claim : evidence).slice(0, 300), conflict: `근거: 「${S.pages[ref ? E : P].title}」 ${ref ? evidence : claim} · 숫자 대조: ${detail} 고칠 쪽은 「${S.pages[target].title}」 문서다.`.slice(0, 500), severity: target === k ? "high" : "low", by: "num", ...(target === k ? {} : { target, targetOld: (ref ? claim : evidence).slice(0, 300) }) });
+  };
+  for (const [E, pe] of Object.entries(S.pages)) {
+    if (pe.type !== "인물" || !w.entities[E]) continue;
+    const rs = personRetirements(w, E, pe), unique = [...new Set(rs.map(x => x.cal + ":" + x.y))], retirement = unique.length === 1 ? rs[0] : null, heights = personHeights(pe);
+    for (const [P, p] of Object.entries(S.pages)) {
+      if ((P !== k && E !== k) || !w.entities[P]) continue;
+      if (P !== E && retirement) for (const r of personRetirements(w, E, p).filter(x => !p.infobox?.some(b => x.line === `${b.label}: ${stripMarks(b.value)}`))) {
+        if (r.cal === retirement.cal && r.y !== retirement.y) push(P, E, r.line, retirement.line, `「${pe.title}」의 전역·퇴역 연도가 ${fmtY(retirement)}과 ${fmtY(r)}으로 다르다.`);
+      }
+      if (!heights.length) continue;
+      for (const text of personSentences([p.summary || "", ...(p.sections || []).map(s => s.body)].join("\n"))) {
+        const subjects = personSubjects(w, E, text);
+        if (subjects.length !== 1 || uncertainPersonClaim(text) || KIN_RE.test(text)) continue;
+        /* "신장 60.4미터의 설리번은"처럼 값 바로 뒤의 인물이 주어일 때만 확정한다. */
+        const prefix = text.slice(0, subjects[0].at), tail = text.slice(subjects[0].end);
+        const m = /(?:신장|전고|키)\s*(\d+(?:\.\d+)?)\s*(m|미터|cm|센티미터)의\s*$/.exec(prefix)
+          || /^\s*(?:신장|전고|키)(?:은|는|이|가|:)?\s*(\d+(?:\.\d+)?)\s*(m|미터|cm|센티미터)(?=\s*(?:이다|였다|다[.!?。]|에\s*달|로[서써]?\s|[.!?。]|$))/.exec(tail);
+        if (!m) continue;
+        const unit = /^(?:m|미터)$/.test(m[2]) ? "m" : "cm", bases = heights.filter(h => h.unit === unit);
+        if (!bases.length || new Set(bases.map(h => h.value)).size !== 1 || bases[0].value === +m[1]) continue;
+        push(P, E, text, bases[0].line, `「${pe.title}」의 신장·전고가 ${bases[0].value}${unit}와 ${m[1]}${unit}로 다르다.`);
+      }
+    }
+  }
+  return out;
+}
+/* 날짜를 확정할 수 있는 부분만 보존한다. 계절과 초·중·말은 월·일로 추정하지 않는다. */
+function ageDates(w, text) {
+  return yearHits(text, w).filter(h => !h.approx).map(h => {
+    const m = /^\d+\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일/.exec(text.slice(h.at));
+    const md = m && ageMD(h, +m[1], +m[2]);
+    return { ...h, ...(md || {}) };
+  });
+}
+function ageMD(year, month, day) {
+  const leap = year.cal || (year.y % 4 === 0 && (year.y % 100 !== 0 || year.y % 400 === 0));
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1] ? { month, day } : null;
+}
+function completedAges(birth, date) {
+  if (birth.cal !== date.cal) return null;
+  const d = yDiff(birth.y, date.y);
+  if (d < 0) return null;
+  if (birth.month && date.month) { const a = d - (date.month < birth.month || (date.month === birth.month && date.day < birth.day) ? 1 : 0); return [a, a]; }
+  return [Math.max(0, d - 1), d];
+}
+const ageRangeText = a => a[0] === a[1] ? `${a[0]}세` : `${a[0]}~${a[1]}세`;
+/* 해당 인물이 주어인 날짜 기록만. 장부의 단순 참가(parts)는 발생 시점의 근거가 아니다. */
+function personDatedEvents(w, key) {
+  const rows = [], names = refNames(w, key);
+  for (const t of w.timeline || []) {
+    if (!live(t) || !personSubjects(w, key, stripMarks(t.event || "")).length) continue;
+    if (/[~～∼–—-]|\d\s*년?\s*(?:대|경|무렵|전후|이전|이후)/.test(String(t.year))) continue;
+    const y = tlYear(w, t.year), md = y && ageMD(y, +t.month, +t.day);
+    if (y) rows.push({ ...y, ...(md || {}), text: stripMarks(t.event), src: t.src });
+  }
+  for (const e of w.events || []) {
+    const ds = ageDates(w, e.date || "");
+    if (ds.length !== 1) continue;
+    /* 본문이 이름으로 가리킨 사건의 날짜는 나이의 시점으로 쓸 수 있다. 발현의 주체 근거로는 쓰지 않는다. */
+    if (e.name) rows.push({ ...ds[0], name: e.name, text: "", context: true });
+    for (const b of e.beats || []) if (names.includes(norm(stripMarks(b.actor || "")))) rows.push({ ...ds[0], text: `${b.actor}는 ${b.action}`, name: e.name, src: e.src });
+  }
+  return rows;
+}
+/* 한 문단의 날짜 후보가 하나일 때만 연결한다. 부분 날짜는 같은 인물의 확정 기록으로만 보충한다. */
+function ageDateInParagraph(w, text, records) {
+  const dates = ageDates(w, text), years = [...new Set(dates.map(d => d.cal + ":" + d.y))];
+  if (years.length > 1 || yearHits(text, w).some(h => h.approx)) return null;
+  const mds = [...text.matchAll(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/g)].map(m => ({ month: +m[1], day: +m[2] }));
+  const mdKeys = [...new Set(mds.map(d => d.month + ":" + d.day))]; if (mdKeys.length > 1) return null;
+  let date = dates[0] || null;
+  if (date && mds.length) { const md = ageMD(date, mds[0].month, mds[0].day); if (!md) return null; date = { ...date, ...md }; }
+  const candidates = records.filter(r => (!r.context || (r.name && text.includes(r.name))) && (!date || sameYear(r, date)) && (!mds.length || (r.month === mds[0].month && r.day === mds[0].day)) && (mds.length || (r.name && text.includes(r.name))));
+  const precise = [...new Map(candidates.filter(r => r.month).map(r => [r.cal + ":" + r.y + ":" + r.month + ":" + r.day, r])).values()];
+  if (precise.length > 1) return null;
+  if ((!date || !date.month) && precise.length === 1) date = precise[0];
+  return date;
+}
+function datedAgeIssues(w, k) {
+  const out = [], seen = new Set();
+  const push = (P, E, claim, evidence, message) => {
+    const id = P + "|" + claim + "|" + message; if (seen.has(id)) return; seen.add(id);
+    out.push({ claim: claim.slice(0, 300), conflict: `근거: 「${S.pages[E].title}」 ${evidence} · 나이 규칙: ${message}`.slice(0, 650), severity: P === k ? "high" : "low", by: "num", ...(P === k ? {} : { target: P, targetOld: claim.slice(0, 300) }) });
+  };
+  for (const [E, pe] of Object.entries(S.pages)) {
+    if (pe.type !== "인물" || !w.entities[E]) continue;
+    const b = numFacts(pe).birth; if (!b) continue;
+    const birthDate = ageDates(w, b.line), birth = birthDate.length === 1 ? birthDate[0] : b;
+    const records = personDatedEvents(w, E), names = refNames(w, E);
+    const head = [pe.summary || "", ...(pe.categories || []), ...(pe.infobox || []).filter(r => /분류|신분|종족|구분|등급|유형|직업|정체|계통|세대|종류|개체/.test(r.label)).map(r => stripMarks(r.value))].join("\n");
+    const rules = ageRules(w).filter(R => R.subjects.some(s => head.includes(s)));
+    const onset = text => /발현|각성|거체화|골격\s*팽창/.test(text) && !uncertainPersonClaim(text);
+    const checkRule = (P, text, a, start = false) => {
+      if (!a || (!start && !onset(text))) return;
+      for (const R of rules) if ((R.min !== null && a[1] < R.min) || (R.max !== null && a[0] > R.max)) push(P, E, text, b.line + ` / 핵심 규칙: ${R.text}`, `발현 시 만 ${ageRangeText(a)}로 허용 범위 ${R.min ?? "하한 없음"}~${R.max ?? "상한 없음"}세를 벗어난다.`);
+    };
+    if (E === k) for (const r of records) if (r.month && !r.context) checkRule(E, `${fmtY(r)} ${r.month}월 ${r.day}일: ${r.text}`, completedAges(birth, r));
+    if (E === k) for (const row of pe.infobox || []) {
+      if (!rules.some(R => R.spanWords.some(s => row.label.includes(s)))) continue;
+      const dates = ageDates(w, stripMarks(row.value));
+      if (dates[0]?.month && (dates.length === 1 || (dates.length === 2 && /[~～∼–—-]/.test(row.value)))) checkRule(E, `${row.label}: ${stripMarks(row.value)}`, completedAges(birth, dates[0]), true);
+    }
+    for (const [P, p] of Object.entries(S.pages)) {
+      if ((P !== k && E !== k) || !w.entities[P]) continue;
+      for (const raw of [p.summary || "", ...(p.sections || []).map(s => s.body)]) for (const paragraph of stripMarks(raw).split(/\n\s*\n/)) {
+        for (const sen of personSentences(paragraph)) {
+          if (uncertainPersonClaim(sen) || KIN_RE.test(sen)) continue;
+          const subjects = personSubjects(w, E, sen);
+          const otherPerson = Object.keys(w.entities).some(x => x !== E && w.entities[x].type === "인물" && personSubjects(w, x, sen).length);
+          const ageLead = /^(?:(?:만\s*)?\d{1,3}\s*세|\d{3,4}\s*년\s*(?:봄|여름|가을|겨울|초|중|말)?\s*(?:현재|당시)\s*(?:만\s*)?\d{1,3}\s*세)/.test(sen);
+          const implicit = P === E && !otherPerson && (subjects.length === 1 || ageLead);
+          const date = ageDateInParagraph(w, paragraph, records);
+          const ages = [...sen.matchAll(/(만\s*)?(\d{1,3})\s*세(?![대기])/g)];
+          for (const am of ages) {
+            /* 다른 문서에서는 나이 바로 뒤에 붙은 주어 또는 주어 바로 뒤의 나이만 읽는다. */
+            const afterAge = am.index + am[0].length;
+            const attached = names.some(name => {
+              const at = sen.indexOf(name, afterAge); if (at < 0 || !hasName(sen.slice(afterAge), name)) return false;
+              return /^(?:의|이던|였던|인|가\s*되던)?\s*(?:제\d+세대\s*)?(?:[가-힣]+\s+){0,3}$/.test(sen.slice(afterAge, at)) && /^(?:(?:은|는|이|가)(?=\s|$)|$)/.test(sen.slice(at + name.length));
+            }) || subjects.some(s => s.end <= am.index && /^\s*$/.test(sen.slice(s.end, am.index)));
+            if (!attached && (!implicit || /^(?:의|이던|였던)\s*[가-힣]/.test(sen.slice(afterAge)))) continue;
+            const actual = date && completedAges(birth, date), value = +am[2];
+            if (actual && (value < actual[0] || value > actual[1])) push(P, E, sen, `${b.line} / ${fmtY(date)}${date.month ? ` ${date.month}월 ${date.day}일` : ""}`, `적힌 ${value}세와 달리 만 ${ageRangeText(actual)}다.`);
+            if (am[1]) checkRule(P, sen, [value, value]);
+          }
+          if (date && (subjects.length || implicit)) checkRule(P, sen, completedAges(birth, date));
+        }
+      }
+    }
+  }
+  return out;
+}
 /* 이 인물 문서(k)의 출생·기간 연도가 나이 규칙과 맞는지. 다른 기준 문서가 함께 적은 연도는 잠긴 것으로 보고 고칠 곳에서 뺀다 */
 function ageRuleIssues(w, k) {
-  const p = S.pages[k], out = [];
+  const p = S.pages[k], out = datedAgeIssues(w, k);
   if (!p || p.type !== "인물") return out;
   const rules = ageRules(w); if (!rules.length) return out;
   const birth = numFacts(p).birth; if (!birth) return out;
@@ -356,6 +540,8 @@ function ageRuleIssues(w, k) {
     cal = span.cal;
     const nm = span.label.replace(/\s*기간$/, ""), now = span.now && eraH && eraH.cal === cal;   // "~ 현재"면 작중 기준 시점까지 이어진 것으로 계산한다
     const b = birth.y, s = span.start, e = now ? eraH.y : span.end, endName = now ? `작중 기준 시점(${fmtY(eraH)})의 ${nm}` : `${nm} 종료`;
+    const startAge = completedAges(birth, { y: s, cal });
+    if (startAge && (R.min === null || startAge[1] >= R.min) && (R.max === null || startAge[0] <= R.max) && (e == null || R.end === null || yDiff(b, e) <= R.end + 1)) continue;
     const C = [];
     if (R.min !== null || R.max !== null) C.push({ v: "start", y: s, lo: R.max !== null ? s - R.max : -Infinity, hi: R.min !== null ? s - R.min : Infinity });
     if (e != null && R.end !== null) C.push({ v: "end", y: e, lo: e - (R.end + 1), hi: Infinity });   // 일찍 끝날 수는 있으니 상한만 둔다. 연도만으로 계산하므로 1년 여유

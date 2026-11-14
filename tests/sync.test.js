@@ -110,7 +110,8 @@ const until = async (fn, msg, ms = 15000) => { const t0 = Date.now(); while (Dat
     pass("한 기기에서 고친 문서를 다른 기기가 동기화하면 받는다");
 
     /* 새로고침해도 로그인이 유지되고, 오래된 수정이 최신을 덮지 않는다 */
-    await A.page.reload(); await A.page.waitForSelector("#acctBox");
+    await A.page.reload(); await A.page.waitForFunction(() => S.ready && Nav.active);
+    await A.page.click('#side [data-act="gset"]'); await A.page.waitForSelector("#acctBox");   // 새로고침은 원래 문서 주소를 복원하므로 계정 화면을 직접 연다
     assert((await A.page.locator("#acctBox").innerText()).includes("테스터"));
     assert.strictEqual(row("SELECT count(*) c FROM sessions").c, 2);
     pass("새로고침해도 로그인이 유지된다");

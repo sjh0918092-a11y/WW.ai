@@ -254,6 +254,7 @@ async function openWorld(wid, goKey, restoring = false) {
   const unbadged = await cleanAiSupersede(w);
   if (fixOldAngles(w, S.pages)) { try { await Store.saveWorld(w); } catch {} maybeRefillAngles(w); }   // 이전 형식 각도 변환, 한도까지 쓴 각도 은퇴. 활성 각도가 모자라면 보충
   if (dedupeRelations(w)) { try { await Store.saveWorld(w); } catch {} }
+  if (dedupeTimeline(w)) { try { await Store.saveWorld(w); } catch {} }
   if (sortTimeline(w)) { try { await Store.saveWorld(w); } catch {} }   // 연표를 연도 → 월 → 일 기준으로 다시 정렬한다(항목은 그대로)
   afterTimeline(w);
   if (!w.relMigrated && S.sample) migrateRelations(w).then(async ok => {   // 옛 관계(type 없음)가 같은 쌍에 여럿이면 한 번만 정리한다. 실패하면 그대로 둔다

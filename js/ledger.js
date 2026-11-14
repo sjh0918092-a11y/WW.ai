@@ -29,21 +29,53 @@ function timelineSubject(w, t) {
 }
 const sameYearText = (a, b) => { const A = yearNum(a), B = yearNum(b); return isNaN(A) || isNaN(B) ? String(a).trim() === String(b).trim() : A === B; };
 /* 이미 연표에 있는 항목 중 연도와 주어가 같은 것. 옛 항목에는 주어 기록이 없으므로 같은 방법으로 그 자리에서 구한다 */
-function sameTimelineEntry(w, year, s) {
+function sameTimelineEntry(w, year, s, entry = null) {
   return (w.timeline || []).find(x => {
     if (!live(x) || !sameYearText(x.year, year)) return false;
+    if (entry && sameTimelineOccurrence(w, x, entry)) return true;
     if (s.k && x.k) return s.k === x.k;
     const xs = x.k ? { k: x.k, name: w.entities[x.k]?.title || x.about || "" } : timelineSubject(w, x);
     if (!xs) return false;
     return s.k && xs.k ? s.k === xs.k : norm(s.name) === norm(xs.name);
   }) || null;
 }
+/* 날짜와 장부 사건이 같은 발생 기록만 합친다. 후속 행위나 귀속이 애매한 서술은 남긴다. */
+function sameTimelineOccurrence(w, a, b) {
+  if ([a, b].some(t => /[~～∼–—-]|\d\s*년?\s*(?:대|경|무렵|전후|이전|이후)/.test(String(t.year)))) return false;
+  const A = tlYear(w, a.year), B = tlYear(w, b.year), am = tlMD(a.month, a.day), bm = tlMD(b.month, b.day);
+  if (!A || !B || A.y !== B.y || A.cal !== B.cal || !am || !bm || am.month !== bm.month || am.day !== bm.day) return false;
+  const occurrence = t => {
+    const text = stripMarks(t.event || "");
+    if (/여파|계기|이후|영향|조사|기념|추모|(?:발생한|발발한|일어난)\s*(?:뒤|후)/.test(text)) return [];
+    const happens = /^(?:이|가|을|를)?\s*(?:발생(?:했|하다|한다|하며)|발발(?:했|하다|한다)|일어(?:났|나다|나며)|일으(?:켰|키다|킨다|키며))/;
+    return [...new Set((w.events || []).filter(e => {
+      const at = e.name ? text.indexOf(e.name) : -1;
+      if (at < 0 && t.k !== e.k) return false;
+      const tail = at < 0 ? text : text.slice(at + e.name.length);
+      return happens.test(tail) || (/^로\s/.test(tail) && /최초로?\s*관측(?:되|됐)/.test(tail));
+    }).map(e => e.k))];
+  };
+  const ak = occurrence(a), bk = occurrence(b);
+  return ak.length === 1 && bk.length === 1 && ak[0] === bk[0];
+}
+/* 옛 연표 정리. 원안과 직접 수정한 출처를 먼저 고르고, 결과의 표시 순서는 보존한다. */
+function dedupeTimeline(w) {
+  if (w.timelineDedupeV === 1) return false;
+  const list = w.timeline || [], rank = t => t.src === "seed" || t.src === "user" ? 0 : S.pages[t.src]?.editedAt ? 1 : 2;
+  const kept = [], removed = new Set();
+  for (const t of [...list].sort((a, b) => rank(a) - rank(b))) {
+    if (live(t) && kept.some(x => live(x) && sameTimelineOccurrence(w, x, t))) removed.add(t);
+    else kept.push(t);
+  }
+  w.timeline = list.filter(t => !removed.has(t)); w.timelineDedupeV = 1;
+  return true;   // 중복이 없어도 한 번 검사했다는 표시를 저장한다
+}
 /* 생성된 문서가 낸 연표 항목을 받아 둘지 정한다. 받았으면 true */
 function acceptTimeline(w, t, src) {
   if (!t || !t.year || !t.event) return false;
   const s = timelineSubject(w, t); if (!s) return false;           // 주어가 되는 고유명사가 없다
   const yr = String(t.year).slice(0, 24);
-  if (sameTimelineEntry(w, yr, s)) return false;                    // 같은 해, 같은 대상의 사건이 이미 있다
+  if (sameTimelineEntry(w, yr, s, t)) return false;                 // 같은 대상 또는 날짜까지 같은 사건의 발생
   const ev = stripMarks(t.event).slice(0, 200), mine = x => x.src === src && x.year === yr && x.event === ev;
   if (w.timeline.some(mine)) return false;
   addTimeline(w, t, src);
@@ -281,11 +313,16 @@ function sameKindEvents(w, key, rel = [], text = "") {
   const txt = [text, ent?.title, ent?.summary, ...(ent?.facts || []).filter(f => !f.sup).map(f => f.t)].filter(Boolean).join("\n");
   const relK = new Set([...all.filter(e => near.has(e.k) || near.has(e.src) || e.parts.some(p => near.has(p))).map(e => kindKey(e.kind)),
     ...eventKinds(w).filter(k => txt.includes(k)).map(kindKey)]);
-  const cnt = new Map(); for (const e of all) cnt.set(kindKey(e.kind), (cnt.get(kindKey(e.kind)) || 0) + 1);
+  const cnt = new Map(); for (const e of w.events || []) if (e.kind) cnt.set(kindKey(e.kind), (cnt.get(kindKey(e.kind)) || 0) + 1);
   const pool = all.filter(e => e.src !== key && e.k !== key && (!relK.size || relK.has(kindKey(e.kind))));
+  const cats = k => (S.pages[k]?.categories || w.entities[k]?.cats?.map(c => c.name) || []).filter(Boolean);
+  const mine = new Set(cats(key));
+  const type = S.pages[key]?.type || ent?.type;
+  const peer = e => !!type && [e.src, ...e.parts].some(k => k !== key && (S.pages[k]?.type || w.entities[k]?.type) === type && cats(k).some(c => mine.has(c)));
+  const peerFirst = e => cnt.get(kindKey(e.kind)) > (w.events || []).length / 3 && peer(e) ? 1 : 0;
   const score = e => e.parts.filter(p => near.has(p)).length * 4 + (relK.has(kindKey(e.kind)) ? 2 : 0) + (cnt.get(kindKey(e.kind)) > 1 ? 1 : 0);
   const seen = new Set(), out = [];
-  for (const e of pool.sort((a, b) => score(b) - score(a) || eventRank(a, b))) {
+  for (const e of pool.sort((a, b) => peerFirst(b) - peerFirst(a) || score(b) - score(a) || eventRank(a, b))) {
     const id = e.k + "|" + e.src; if (seen.has(id)) continue; seen.add(id);
     out.push(e); if (out.length >= EVENT_SAME_KIND_N) break;
   }
@@ -315,7 +352,7 @@ ${list.map(x => beatLine(w, x)).join("\n")}
 `;
 }
 const eventKindsNote = w => { const ks = eventKinds(w); return ks.length ? ` 이미 쓰는 유형 이름: ${ks.join(", ")}. 같은 종류면 이 이름을 글자 그대로 쓰고, 새 종류일 때만 새 이름을 짓는다.` : ""; };
-const EVENTS_SPEC_BASE = `events에는 이 문서가 날짜와 함께 장소나 수치까지 구체적으로 서술한 사건만 0~4개 넣는다. 막연히 언급만 한 사건, 날짜가 없는 사건은 넣지 않는다. name은 사건 항목을 링크했다면 그 제목을 글자 그대로 쓰고, 장부에 이미 있는 사건이면 장부의 사건 이름, 수치 이름, 단위를 똑같이 쓴다. nums의 value에는 단위 없이 값만 쓴다. participants에는 참가한 항목 제목을 글자 그대로 쓴다. kind에는 이 세계에서 쓰는 짧은 사건 유형 이름(예: 결투, 침투, 사고, 조약, 쿠데타)을 하나 쓴다. detail은 이 문서가 이 사건을 한 문단 넘게 자세히 서술했으면 true, 짧게 요약하거나 언급만 했으면 false다. beats에는 이 문서가 서술한 사건의 핵심 경과 3~5줄을 순서대로 쓰고, 각 줄은 actor(그 일을 한 주체: 항목 제목이나 이름)와 action(한 일)이다. 장부에 핵심 경과가 이미 있는 사건이면 그 주체와 행위를 그대로 따른다.`;
+const EVENTS_SPEC_BASE = `events에는 이 문서가 날짜와 함께 장소나 수치까지 구체적으로 서술한 사건만 0~4개 넣는다. 막연히 언급만 한 사건, 날짜가 없는 사건은 넣지 않는다. name은 사건 항목을 링크했다면 그 제목을 글자 그대로 쓰고, 장부에 이미 있는 사건이면 장부의 사건 이름, 수치 이름, 단위를 똑같이 쓴다. nums의 value에는 단위 없이 값만 쓴다. participants에는 참가한 항목 제목을 글자 그대로 쓴다. kind에는 이 세계에서 쓰는 짧은 사건 유형 이름으로, 무엇을 상대로 무엇을 한 일인지 드러나는 이름(예: 영해 침범 선박 저지, 재난 방호, 거체 간 격투, 기동 거부)을 하나 쓴다. detail은 이 문서가 이 사건을 한 문단 넘게 자세히 서술했으면 true, 짧게 요약하거나 언급만 했으면 false다. beats에는 이 문서가 서술한 사건의 핵심 경과 3~5줄을 순서대로 쓰고, 각 줄은 actor(그 일을 한 주체: 항목 제목이나 이름)와 action(한 일)이다. 장부에 핵심 경과가 이미 있는 사건이면 그 주체와 행위를 그대로 따른다.`;
 const eventsSpec = w => EVENTS_SPEC_BASE + eventKindsNote(w);
 const EVENTS_JSON = `"events":[{"name":"사건 이름","kind":"사건 유형","date":"날짜(문서에 쓴 그대로)","place":"장소","nums":[{"name":"수치 이름(예: 거리, 수심, 병력, 사상자)","value":"값","unit":"단위"}],"participants":["참가 항목 제목"],"result":"결과 한 문장","detail":"true 또는 false","beats":[{"actor":"주체","action":"한 일"}]}]`;
 
