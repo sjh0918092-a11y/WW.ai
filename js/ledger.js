@@ -113,6 +113,36 @@ function dedupeTimeline(w) {
   w.timeline = list.filter(t => !removed.has(t)); w.timelineDedupeV = 3;
   return true;   // 중복이 없어도 한 번 검사했다는 표시를 저장한다
 }
+/* 기존 설정 검사에 실을 날짜가 같은 쌍. 코드는 후보만 고르고 동일 사건인지는 모델이 정한다. */
+const timelineMatchStamp = t => JSON.stringify(t);
+function timelineMatchPairs(w, key) {
+  if (!w.stage || isStory(w) || S.pages[key]?.editedAt) return [];
+  const list = (w.timeline || []).filter(live), pairs = [];
+  for (const drop of list.filter(t => t.src === key)) {
+    const d = tlYear(w, drop.year), dm = tlMD(drop.month, drop.day);
+    if (!d || !dm) continue;
+    for (const keep of list.filter(t => t.src !== key && refOK(t.src, S.pages[key]))) {
+      const k = tlYear(w, keep.year), km = tlMD(keep.month, keep.day);
+      if (k && km && k.cal === d.cal && k.y === d.y && km.month === dm.month && km.day === dm.day)
+        pairs.push({ keep, drop, a: timelineMatchStamp(keep), b: timelineMatchStamp(drop) });
+    }
+  }
+  return pairs;
+}
+/* 번호는 요청 당시 객체에만 대응한다. 응답이 없거나 대조 중 기록이 바뀌면 원본을 보존한다. */
+function applyTimelineMatches(w, pairs, result) {
+  if (!Array.isArray(result?.issues) || !Array.isArray(result?.timelineSame)) return false;
+  const removed = new Set();
+  for (const n of result.timelineSame) {
+    const pair = Number.isInteger(n) && n > 0 ? pairs[n - 1] : null;
+    if (!pair || !w.timeline.includes(pair.keep) || !w.timeline.includes(pair.drop)) continue;
+    if (timelineMatchStamp(pair.keep) !== pair.a || timelineMatchStamp(pair.drop) !== pair.b) continue;
+    removed.add(pair.drop);
+  }
+  if (!removed.size) return false;
+  w.timeline = w.timeline.filter(t => !removed.has(t));
+  return true;
+}
 /* 생성된 문서가 낸 연표 항목을 받아 둘지 정한다. 받았으면 true */
 function acceptTimeline(w, t, src) {
   if (!t || !t.year || !t.event) return false;

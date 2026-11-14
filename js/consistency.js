@@ -729,12 +729,14 @@ function refreshNumeric(w, k) {
 /* 두 검사(설정 대조, 문서 읽기)를 동시에 돌려 결과를 합친다. 하나가 실패해도 다른 하나의 결과는 쓴다 */
 async function runChecks(w, k, opts, label) {
   const p = S.pages[k];
+  const timelinePairs = timelineMatchPairs(w, k);
   if (typeof AIRecovery !== "undefined" && AIJobs.enabled("gemini")) opts = { ...opts, recoveryTarget: { wid: w.id, key: k }, recoveryMeta: { group: opts.recoveryMeta?.group || S.gen?.recovery?.group || crypto.randomUUID() } };
   const [ar, ...rs] = await Promise.allSettled([
     ensureAgeRules(w, opts),   // 핵심 규칙이 바뀌었을 때만 AI를 부른다. 실패하면 나이 검사만 건너뛴다
-    callJson("check", checkPrompt(w, k), { modelTier: "check", ...opts }, { title: label }),
+    callJson("check", checkPrompt(w, k, timelinePairs), { modelTier: "check", ...opts }, { title: label }),
     callJson("read", readPrompt(w, k), { modelTier: "check", ...opts }, { title: label })]);
   if ([ar, ...rs].some(r => r.status === "rejected" && r.reason?.code === "cancelled")) throw { code: "cancelled" };
+  if (S.world === w && S.pages[k] === p && !p.editedAt && !opts?.signal?.aborted && rs[0].status === "fulfilled") applyTimelineMatches(w, timelinePairs, rs[0].value);
   const num = detIssues(w, k);
   if (rs.every(r => r.status === "rejected") && !num.length) throw rs[0].reason;   // AI 검사가 모두 실패해도 숫자 대조 결과는 쓴다
   return mergeIssues([...num, ...rs.filter(r => r.status === "fulfilled").flatMap(r => parseIssues(r.value))]);
@@ -803,11 +805,12 @@ async function checkPage(k) {
   if (typeof DocumentPipeline !== "undefined" && DocumentPipeline.enabled()) return DocumentPipeline.check(k);
   S.checking = k; S.checkT0 = performance.now(); renderMain();
   try {
+    const beforeTimeline = w.timeline;
     const group = typeof AIRecovery !== "undefined" && AIJobs.enabled("gemini") ? crypto.randomUUID() : "", issues = await runChecks(w, k, { recoveryMeta: { group } }, p.title);
     if (S.pages[k] === p) {   // 검사하는 동안 문서가 바뀌었으면(장 반영 등) 옛 문서를 저장하지 않는다
       p.check = { at: Date.now(), issues, auto: false, numV: numStamp(w) };
       saveRouted(w, routeAutoConflicts(w, k, issues));
-      try { await Store.savePage(w.id, p); if (typeof AIRecovery !== "undefined") AIRecovery.handled(group); } catch (err) { toast("검사 결과를 저장하지 못했습니다. " + errMsg(err)); }
+      try { await Store.savePage(w.id, p); if (w.timeline !== beforeTimeline) await Store.saveWorld(w); if (typeof AIRecovery !== "undefined") AIRecovery.handled(group); } catch (err) { toast("검사 결과를 저장하지 못했습니다. " + errMsg(err)); }
     }
   } catch (err) { toast(errMsg(err)); }
   S.checking = null;
