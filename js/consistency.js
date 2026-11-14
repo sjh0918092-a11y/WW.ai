@@ -227,7 +227,7 @@ function numericIssues(w, k) {
 /* ---------- 나이 규칙: 핵심 규칙의 나이 제한으로 출생·기간 연도를 맞춰 본다 ---------- */
 /* 숫자 대조 로직(numericIssues, quoteIssues, ageRuleIssues, 성별 규칙)을 바꿀 때마다 올린다.
    문서를 열 때 p.check.numV가 이 값과 다르면 결정론 지적만 다시 계산해 바꿔 끼운다 */
-const NUMERIC_VERSION = 8;
+const NUMERIC_VERSION = 9;
 /* 규칙 문장은 세계관마다 표현이 달라 코드로 읽지 않는다. 핵심 규칙이 바뀌었을 때만 AI가 한 번 구조로 뽑고(w.ageRules),
    판정은 그 구조로 코드가 한다. 그래서 검사할 때마다 결과가 같다 */
 const rulesText = w => (w.rules || []).join("\n");
@@ -369,7 +369,8 @@ function personNumericIssues(w, k) {
   const out = [];
   const push = (P, E, claim, evidence, detail) => {
     const ref = pageIsRef(E, P), target = ref ? P : E;
-    out.push({ claim: (ref ? claim : evidence).slice(0, 300), conflict: `근거: 「${S.pages[ref ? E : P].title}」 ${ref ? evidence : claim} · 숫자 대조: ${detail} 고칠 쪽은 「${S.pages[target].title}」 문서다.`.slice(0, 500), severity: target === k ? "high" : "low", by: "num", ...(target === k ? {} : { target, targetOld: (ref ? claim : evidence).slice(0, 300) }) });
+    const issueKey = JSON.stringify(["person-number", E, ageDates(w, claim).map(ageDateKey), detail]);
+    out.push({ claim: (ref ? claim : evidence).slice(0, 300), conflict: `근거: 「${S.pages[ref ? E : P].title}」 ${ref ? evidence : claim} · 숫자 대조: ${detail} 고칠 쪽은 「${S.pages[target].title}」 문서다.`.slice(0, 500), severity: "low", advisory: true, issueKey, by: "num", ...(target === k ? {} : { target, targetOld: (ref ? claim : evidence).slice(0, 300) }) });
   };
   for (const [E, pe] of Object.entries(S.pages)) {
     if (pe.type !== "인물" || !w.entities[E]) continue;
@@ -389,12 +390,18 @@ function personNumericIssues(w, k) {
           || /^\s*(?:신장|전고|키)(?:은|는|이|가|:)?\s*(\d+(?:\.\d+)?)\s*(m|미터|cm|센티미터)(?=\s*(?:이다|였다|다[.!?。]|에\s*달|로[서써]?\s|[.!?。]|$))/.exec(tail);
         if (!m) continue;
         const unit = /^(?:m|미터)$/.test(m[2]) ? "m" : "cm", bases = heights.filter(h => h.unit === unit);
-        if (!bases.length || new Set(bases.map(h => h.value)).size !== 1 || bases[0].value === +m[1]) continue;
+        if (!bases.length || new Set(bases.map(h => h.value)).size !== 1 || bases[0].value === +m[1] || (!m[1].includes(".") && Math.round(bases[0].value) === +m[1])) continue;
         push(P, E, text, bases[0].line, `「${pe.title}」의 신장·전고가 ${bases[0].value}${unit}와 ${m[1]}${unit}로 다르다.`);
       }
     }
   }
-  return out;
+  return dedupeAdvisories(out);
+}
+/* v6.85에 더한 검사는 참고로만 남긴다. 같은 인물·시점·결론은 문장 표현과 무관하게 한 건이다. */
+const ageDateKey = d => d ? [d.cal, d.y, d.month || null, d.day || null] : null;
+function dedupeAdvisories(list) {
+  const seen = new Set();
+  return list.filter(i => { if (!i.advisory || !i.issueKey) return true; if (seen.has(i.issueKey)) return false; seen.add(i.issueKey); return true; });
 }
 /* 날짜를 확정할 수 있는 부분만 보존한다. 계절과 초·중·말은 월·일로 추정하지 않는다. */
 function ageDates(w, text) {
@@ -449,11 +456,24 @@ function ageDateInParagraph(w, text, records) {
   if ((!date || !date.month) && precise.length === 1) date = precise[0];
   return date;
 }
+const AGE_END = /쇠퇴|감퇴|축소|퇴역|전역|제대|소멸|도달/;
+/* 시작 행위를 적은 절만 쓴다. '거체화 형질' 같은 명사 수식은 시작이 아니다. */
+const ageOnset = text => !AGE_END.test(text) && !/이후|했던|하였던/.test(text) && !uncertainPersonClaim(text) && /(?:발현|각성)(?:했|하(?:였|여|며|고|자|다|기\s*시작)|되(?:었|어|며|고|다)|됐|을\s*시작|이\s*시작)|거체화(?:했|하(?:였|여|며|고|자|다|기\s*시작)|되(?:었|어|며|고|다)|됐|를\s*시작|\s*징후를?\s*보)|골격\s*팽창(?:과[^.!?]*관측|이\s*(?:시작|관측)|을\s*보)/.test(text);
+const ageClauses = text => text.split(/[,，;；]/).map(s => s.trim()).filter(Boolean);
+/* 다른 사건의 연도나 관형절을 나이 시점으로 넘기지 않는다. '당시'만 같은 문단의 유일한 날짜를 받는다. */
+function ageClaimDate(w, clause, sentence, paragraph, records) {
+  if (/\d\s*년[^,，;；.!?]*(?:이후|했던|하였던|이었던|였던)/.test(clause)) return null;
+  if (yearHits(clause, w).length) return ageDateInParagraph(w, clause, records);
+  if (/당시/.test(clause)) return ageDateInParagraph(w, paragraph, records);
+  if (/\d\s*월\s*\d+\s*일/.test(clause)) return ageDateInParagraph(w, clause, records);
+  if (/\d\s*월\s*\d+\s*일/.test(sentence) && !/\d\s*년[^,，;；.!?]*(?:이후|했던|하였던)/.test(sentence)) return ageDateInParagraph(w, sentence, records);
+  return null;
+}
 function datedAgeIssues(w, k) {
   const out = [], seen = new Set();
-  const push = (P, E, claim, evidence, message) => {
-    const id = P + "|" + claim + "|" + message; if (seen.has(id)) return; seen.add(id);
-    out.push({ claim: claim.slice(0, 300), conflict: `근거: 「${S.pages[E].title}」 ${evidence} · 나이 규칙: ${message}`.slice(0, 650), severity: P === k ? "high" : "low", by: "num", ...(P === k ? {} : { target: P, targetOld: claim.slice(0, 300) }) });
+  const push = (P, E, claim, evidence, message, issueKey) => {
+    if (seen.has(issueKey)) return; seen.add(issueKey);
+    out.push({ claim: claim.slice(0, 300), conflict: `근거: 「${S.pages[E].title}」 ${evidence} · 나이 규칙: ${message}`.slice(0, 650), severity: "low", advisory: true, issueKey, by: "num", ...(P === k ? {} : { target: P, targetOld: claim.slice(0, 300) }) });
   };
   for (const [E, pe] of Object.entries(S.pages)) {
     if (pe.type !== "인물" || !w.entities[E]) continue;
@@ -462,41 +482,40 @@ function datedAgeIssues(w, k) {
     const records = personDatedEvents(w, E), names = refNames(w, E);
     const head = [pe.summary || "", ...(pe.categories || []), ...(pe.infobox || []).filter(r => /분류|신분|종족|구분|등급|유형|직업|정체|계통|세대|종류|개체/.test(r.label)).map(r => stripMarks(r.value))].join("\n");
     const rules = ageRules(w).filter(R => R.subjects.some(s => head.includes(s)));
-    const onset = text => /발현|각성|거체화|골격\s*팽창/.test(text) && !uncertainPersonClaim(text);
-    const checkRule = (P, text, a, start = false) => {
-      if (!a || (!start && !onset(text))) return;
-      for (const R of rules) if ((R.min !== null && a[1] < R.min) || (R.max !== null && a[0] > R.max)) push(P, E, text, b.line + ` / 핵심 규칙: ${R.text}`, `발현 시 만 ${ageRangeText(a)}로 허용 범위 ${R.min ?? "하한 없음"}~${R.max ?? "상한 없음"}세를 벗어난다.`);
+    const checkRule = (P, text, a, date, start = false) => {
+      if (!a || AGE_END.test(text) || (!start && !ageOnset(text))) return;
+      for (const R of rules) if ((R.min !== null && a[1] < R.min) || (R.max !== null && a[0] > R.max)) push(P, E, text, b.line + ` / 핵심 규칙: ${R.text}`, `발현 시 만 ${ageRangeText(a)}로 허용 범위 ${R.min ?? "하한 없음"}~${R.max ?? "상한 없음"}세를 벗어난다.`, JSON.stringify(["onset", E, ageDateKey(date), R.min, R.max, a]));
     };
-    if (E === k) for (const r of records) if (r.month && !r.context) checkRule(E, `${fmtY(r)} ${r.month}월 ${r.day}일: ${r.text}`, completedAges(birth, r));
+    if (E === k) for (const r of records) if (r.month && !r.context) checkRule(E, `${fmtY(r)} ${r.month}월 ${r.day}일: ${r.text}`, completedAges(birth, r), r);
     if (E === k) for (const row of pe.infobox || []) {
-      if (!rules.some(R => R.spanWords.some(s => row.label.includes(s)))) continue;
+      if (AGE_END.test(row.label + row.value) || !rules.some(R => R.spanWords.some(s => new RegExp(`^(?:최초\\s*)?${s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\s*(?:시작|개시))?(?:\\s*(?:일|일자|시점|시기|연도|기간))?$`).test(row.label)))) continue;
       const dates = ageDates(w, stripMarks(row.value));
-      if (dates[0]?.month && (dates.length === 1 || (dates.length === 2 && /[~～∼–—-]/.test(row.value)))) checkRule(E, `${row.label}: ${stripMarks(row.value)}`, completedAges(birth, dates[0]), true);
+      if (dates[0]?.month && (dates.length === 1 || (dates.length === 2 && /[~～∼–—-]/.test(row.value)))) checkRule(E, `${row.label}: ${stripMarks(row.value)}`, completedAges(birth, dates[0]), dates[0], true);
     }
     for (const [P, p] of Object.entries(S.pages)) {
       if ((P !== k && E !== k) || !w.entities[P]) continue;
       for (const raw of [p.summary || "", ...(p.sections || []).map(s => s.body)]) for (const paragraph of stripMarks(raw).split(/\n\s*\n/)) {
-        for (const sen of personSentences(paragraph)) {
+        for (const sentence of personSentences(paragraph)) for (const sen of ageClauses(sentence)) {
           if (uncertainPersonClaim(sen) || KIN_RE.test(sen)) continue;
           const subjects = personSubjects(w, E, sen);
           const otherPerson = Object.keys(w.entities).some(x => x !== E && w.entities[x].type === "인물" && personSubjects(w, x, sen).length);
           const ageLead = /^(?:(?:만\s*)?\d{1,3}\s*세|\d{3,4}\s*년\s*(?:봄|여름|가을|겨울|초|중|말)?\s*(?:현재|당시)\s*(?:만\s*)?\d{1,3}\s*세)/.test(sen);
           const implicit = P === E && !otherPerson && (subjects.length === 1 || ageLead);
-          const date = ageDateInParagraph(w, paragraph, records);
+          const date = ageClaimDate(w, sen, sentence, paragraph, records);
           const ages = [...sen.matchAll(/(만\s*)?(\d{1,3})\s*세(?![대기])/g)];
           for (const am of ages) {
             /* 다른 문서에서는 나이 바로 뒤에 붙은 주어 또는 주어 바로 뒤의 나이만 읽는다. */
             const afterAge = am.index + am[0].length;
             const attached = names.some(name => {
               const at = sen.indexOf(name, afterAge); if (at < 0 || !hasName(sen.slice(afterAge), name)) return false;
-              return /^(?:의|이던|였던|인|가\s*되던)?\s*(?:제\d+세대\s*)?(?:[가-힣]+\s+){0,3}$/.test(sen.slice(afterAge, at)) && /^(?:(?:은|는|이|가)(?=\s|$)|$)/.test(sen.slice(at + name.length));
+              return /^(?:의|이던|였던|인|가\s*되던)?\s*(?:제\d+세대\s*)?(?:[가-힣]+\s+){0,3}$/.test(sen.slice(afterAge, at)) && /^(?:(?:은|는|이|가|의)(?=\s|$)|[(（]|$)/.test(sen.slice(at + name.length));
             }) || subjects.some(s => s.end <= am.index && /^\s*$/.test(sen.slice(s.end, am.index)));
             if (!attached && (!implicit || /^(?:의|이던|였던)\s*[가-힣]/.test(sen.slice(afterAge)))) continue;
-            const actual = date && completedAges(birth, date), value = +am[2];
-            if (actual && (value < actual[0] || value > actual[1])) push(P, E, sen, `${b.line} / ${fmtY(date)}${date.month ? ` ${date.month}월 ${date.day}일` : ""}`, `적힌 ${value}세와 달리 만 ${ageRangeText(actual)}다.`);
-            if (am[1]) checkRule(P, sen, [value, value]);
+            const actual = !/^\s*도달\s*(?:후|로|뒤)/.test(sen.slice(afterAge)) && date && completedAges(birth, date), value = +am[2];
+            if (actual && (value < actual[0] || value > actual[1])) push(P, E, sen, `${b.line} / ${fmtY(date)}${date.month ? ` ${date.month}월 ${date.day}일` : ""}`, `적힌 ${value}세와 달리 만 ${ageRangeText(actual)}다.`, JSON.stringify(["age", E, ageDateKey(date), value, actual]));
+            if (am[1]) checkRule(P, sen, [value, value], date);
           }
-          if (date && (subjects.length || implicit)) checkRule(P, sen, completedAges(birth, date));
+          if (date && (subjects.length || implicit)) checkRule(P, sen, completedAges(birth, date), date);
         }
       }
     }
@@ -592,7 +611,8 @@ const isNumIssue = i => i.by === "num" || /· (?:숫자 대조|인용 대조|나
 function mergeIssues(list) {
   const all = [], seen = new Map(), keyOfClaim = c => stripMarks(c).replace(/\s+/g, "").slice(0, 40);
   for (const i of list) {
-    const ck = keyOfClaim(i.claim), prev = seen.get(ck);
+    if (i.advisory) i.severity = "low";
+    const ck = i.advisory ? "advisory:" + (i.issueKey || keyOfClaim(i.claim)) : keyOfClaim(i.claim), prev = seen.get(ck);
     if (prev) {
       if (isNumIssue(prev) && !isNumIssue(i)) (prev.ai ||= []).push({ claim: i.claim, conflict: i.conflict, severity: i.severity });   // 결정론 지적을 다시 계산할 때 AI 지적을 되살리려고 따로 남긴다
       if (i.severity === "high") prev.severity = "high"; if (!prev.conflict.includes(i.conflict)) prev.conflict = (prev.conflict + " / " + i.conflict).slice(0, 500); continue;
@@ -603,12 +623,13 @@ function mergeIssues(list) {
   return all.slice(0, 10);
 }
 /* 작성 직후 자동으로 고칠 지적: 다듬을 곳 중 고칠 대상이 이 문서인 것만. 다른 문서가 고칠 대상이면 이 문서를 고쳐도 풀리지 않고 다른 서술만 망가진다 */
-const autoFixList = (issues, k) => issues.filter(i => i.severity === "high" && (!i.target || i.target === k));
+const autoFixList = (issues, k) => issues.filter(i => !i.advisory && i.severity === "high" && (!i.target || i.target === k));
 /* 다른 문서가 고칠 대상인 지적을 그 문서의 autoConflicts에 단다. 이 문서(k)를 다시 검사해 더 이상 나오지 않는 지적은 지운다.
    p.conflicts는 직접 수정한 문서가 낸 것만 남기므로(cleanAiSupersede) 따로 둔다. 바뀐 문서 키들을 돌려준다 */
 function routeAutoConflicts(w, k, issues) {
   const changed = new Set(), now = new Map(), byTitle = w.entities[k]?.title || S.pages[k]?.title || "?";
   for (const i of issues) {
+    if (i.advisory) continue;
     const T = i.target && i.target !== k && S.pages[i.target]; if (!T) continue;
     const old = i.targetOld || i.claim;
     (now.get(i.target) || now.set(i.target, new Set()).get(i.target)).add(old);

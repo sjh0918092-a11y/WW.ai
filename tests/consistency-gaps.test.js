@@ -94,7 +94,7 @@ test('인포박스에 없어도 명시적 주어의 퇴역 연도 1985년과 198
 test('전역 연도도 직접 수정한 문서를 우선하며 여러 연도·다른 주체·부정은 보류한다', () => {
   const p = person('엘리자베스 해밀턴', '', '해밀턴은 1985년 명예 전역했다.');
   const w = world({ p, q: doc('기록', '해밀턴은 1987년 명예 전역했다.', { editedAt: 3 }) });
-  assert(c.numericIssues(w, 'p').some(x => x.severity === 'high' && !x.target));
+  assert(c.numericIssues(w, 'p').some(x => x.severity === 'low' && !x.target));
   for (const body of ['해밀턴의 모친은 1987년 전역했다.', '해밀턴은 1987년 전역하지 않았다.', '해밀턴은 1985년 또는 1987년 전역했다.', '해밀턴이 이끈 부대는 1987년 퇴역했다.']) {
     assert.equal(c.numericIssues(world({ p, q: doc('기록', body) }), 'q').length, 0, body);
   }

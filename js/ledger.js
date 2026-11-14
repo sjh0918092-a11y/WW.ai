@@ -56,18 +56,57 @@ function sameTimelineOccurrence(w, a, b) {
     }).map(e => e.k))];
   };
   const ak = occurrence(a), bk = occurrence(b);
-  return ak.length === 1 && bk.length === 1 && ak[0] === bk[0];
+  if (ak.length === 1 && bk.length === 1 && ak[0] === bk[0]) return true;
+  const an = namedTimelineOccurrence(w, a), bn = namedTimelineOccurrence(w, b);
+  if (an.length === 1 && bn.length === 1 && an[0] === bn[0]) return true;
+  const ai = pipelineTimelineOccurrence(w, a), bi = pipelineTimelineOccurrence(w, b);
+  return !!(ai && bi && ai.key === bi.key && ai.places.some(p => bi.places.includes(p)));
+}
+/* 장부에 없어도 이름이 명시된 같은 조약·작전의 체결·서명·개시는 확인할 수 있다. */
+function namedTimelineOccurrence(w, t) {
+  const text = norm(stripMarks(t.event || ""));
+  if (/여파|계기|이후|영향|기념|추모|조사|거부|준비|계획|않|아니/.test(text)) return [];
+  const names = new Set([
+    ...(w.events || []).map(e => e.name).filter(Boolean),
+    ...Object.values(w.entities).map(e => e.title).filter(n => /조약|협정|작전/.test(n)),
+    ...[...text.matchAll(/['"‘“「『]([^'"’”」』]{4,80}(?:조약|협정|작전))['"’”」』]/g)].map(m => m[1]),
+    ...[...text.matchAll(/제\d+차\s*[가-힣A-Za-z0-9·]+(?:\s+[가-힣A-Za-z0-9·]+){0,5}?(?:조약|협정|작전)/g)].map(m => m[0])
+  ]);
+  return [...new Set([...names].filter(name => {
+    const at = text.indexOf(name); if (at < 0) return false;
+    const tail = text.slice(at + name.length).replace(/^['"’”」』)]+\s*/, "");
+    return /^(?:(?:이|가|을|를|에)\s*)?(?:체결(?:되|됐|하)|서명(?:하|했)|개시(?:되|하|했)|실시(?:되|하|했)|시작(?:되|하|했))/.test(tail);
+  }).map(norm))];
+}
+/* 이름 없는 배관 파괴는 확정된 동일 인물(본명·별칭), 같은 기지·대상·수치까지 모두 맞아야 합친다. */
+function pipelineTimelineOccurrence(w, t) {
+  const text = stripMarks(t.event || "");
+  if (/여파|계기|이후|계획|시도|훈련|복구|교체|않|아니/.test(text) || !/영양액\s*(?:주입\s*)?(?:파이프라인|배관)(?:을|를)\s*파괴(?:하여|해|하|했)/.test(text)) return null;
+  const amounts = [...new Set([...text.matchAll(/(\d[\d,]*(?:\.\d+)?)\s*톤/g)].map(m => String(Number(m[1].replace(/,/g, "")))))];
+  if (amounts.length !== 1) return null;
+  const actors = [];
+  for (const [k, e] of Object.entries(w.entities)) {
+    if (e.type !== "인물") continue;
+    const names = namesOf(e.title).concat((S.pages[k]?.infobox || []).filter(r => /^(?:본명|성명|이름|코드명|호출부호|암호명|별칭|가명)$/.test(r.label)).flatMap(r => namesOf(stripMarks(r.value))));
+    if (names.some(name => {
+      const at = text.indexOf(name); if (at < 0 || (at && /[\p{L}\p{N}_]/u.test(text[at - 1]))) return false;
+      return /^(?:은|는|이|가)(?=\s|$)/.test(text.slice(at + name.length));
+    })) actors.push(k);
+  }
+  if (actors.length !== 1) return null;
+  const places = [...new Set([...text.matchAll(/[가-힣A-Za-z0-9·]{2,20}\s*해군기지/g)].map(m => norm(m[0])))];
+  return places.length ? { key: JSON.stringify([actors[0], "영양액 배관 파괴", amounts[0]]), places } : null;
 }
 /* 옛 연표 정리. 원안과 직접 수정한 출처를 먼저 고르고, 결과의 표시 순서는 보존한다. */
 function dedupeTimeline(w) {
-  if (w.timelineDedupeV === 1) return false;
+  if (w.timelineDedupeV === 2) return false;
   const list = w.timeline || [], rank = t => t.src === "seed" || t.src === "user" ? 0 : S.pages[t.src]?.editedAt ? 1 : 2;
   const kept = [], removed = new Set();
   for (const t of [...list].sort((a, b) => rank(a) - rank(b))) {
     if (live(t) && kept.some(x => live(x) && sameTimelineOccurrence(w, x, t))) removed.add(t);
     else kept.push(t);
   }
-  w.timeline = list.filter(t => !removed.has(t)); w.timelineDedupeV = 1;
+  w.timeline = list.filter(t => !removed.has(t)); w.timelineDedupeV = 2;
   return true;   // 중복이 없어도 한 번 검사했다는 표시를 저장한다
 }
 /* 생성된 문서가 낸 연표 항목을 받아 둘지 정한다. 받았으면 true */
