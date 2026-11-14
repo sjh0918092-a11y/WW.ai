@@ -414,7 +414,7 @@ const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 function randomBirthday(rand = Math.random) { const m = 1 + Math.min(11, Math.floor(rand() * 12)); return { m, d: 1 + Math.min(MONTH_DAYS[m - 1] - 1, Math.floor(rand() * MONTH_DAYS[m - 1])) }; }
 /* 새 인물의 성격 경향(축마다 1~5)과 지금 처지도 코드에서 굴린다(같은 세계관 인물들의 성격과 결말이 한쪽으로 쏠리는 것을 막는다).
    축·가중치·처지는 여기서만 정한다. 1과 5는 각 끝 쪽으로 강하게, 2와 4는 약하게, 3은 중간 */
-const PERSONA_AXES = [["intro", "내향", "외향"], ["mood", "비관", "낙천"], ["play", "진지", "장난기"], ["rule", "원칙", "융통"], ["temper", "온화", "까칠"], ["drive", "근면", "느긋"]];
+const PERSONA_AXES = [["intro", "내향", "외향"], ["mood", "비관", "낙천"], ["play", "진지", "장난기"], ["rule", "원칙", "융통"], ["temper", "온화", "까칠"], ["drive", "근면", "느긋"], ["calm", "안정", "불안정"]];
 const PERSONA_WEIGHTS = [0.1, 0.2, 0.4, 0.2, 0.1];   // 1~5가 나올 확률
 const PERSONA_LIFE = [["편안함", 0.3], ["보통", 0.4], ["고단함", 0.3]];   // 지금 형편
 const weightedIndex = (ws, r) => { let a = 0; for (let i = 0; i < ws.length; i++) { a += ws[i]; if (r < a) return i; } return ws.length - 1; };
