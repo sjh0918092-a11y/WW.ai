@@ -9,6 +9,8 @@ c.namesOf=t=>{const m=String(t).match(/^(.+?)\((.+)\)$/);return [t,...(m?[m[1].t
 c.nameOwner=(w,t)=>{const ks=Object.keys(w.entities).filter(k=>w.entities[k].title.split(/[\s·]+/).includes(t));return ks.length===1?ks[0]:null;};
 c.live=x=>!x.sup;c.factLine=f=>f.t;c.chOf=()=>0;
 vm.createContext(c);
+/* 나이 검사가 인포박스 별칭도 읽으므로 실제 이름 파서와 그 상수를 함께 실행한다. */
+vm.runInContext(cut('function cyrb53(', '/* 모델이 글 대신') + cut('const IDENTITY_LABEL =', 'const identityName =') + cut('const NAME_JUNK =', 'const isPerson ='), c);
 vm.runInContext(cut('/* ---------- 인용 대조','/* 두 검사(설정 대조')+'\n'+cut('const refOK =','/* ---------- 스토리 모드: 상태')+`
 Object.assign(globalThis,{spanOf,mergeIssues,yearHits,cleanCalendars,numericIssues,numFacts,spanFacts,ageRules,parseAgeRules,ageRulePrompt,ageRuleIssues,autoFixList,routeAutoConflicts,refreshNumeric,entityBrief,NUMERIC_VERSION,numStamp});`,c);
 let n=0;const test=(name,fn)=>{fn();console.log(`  ✓ ${++n}. ${name}`);};

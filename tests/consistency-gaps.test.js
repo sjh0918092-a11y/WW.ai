@@ -24,6 +24,93 @@ let n = 0, failed = 0; const tests = [];
 function test(name, fn) { tests.push([name, fn]); }
 const age = (w, k, text) => c.ageRuleIssues(w, k).filter(x => !text || x.claim.includes(text));
 
+const monarch = (title, birth, body = '') => person(title, birth, body, { summary: '군주', categories: [] });
+const ordination = pages => world(pages, { calendars: ['서임력'], era: '서임력 941년' });
+for (const [name, date, body] of [
+  ['요한 2세의 요새 진군', '서임력 140년 5월 19일', '요한 2세는 황실 기사단과 서임청 사법관들을 이끌고 바일부르크 요새로 향했다.'],
+  ['요한 2세의 칭호 양도와 사망', '서임력 161년 5월 19일', "카이저스하펜의 황궁 예식장에서 요한 2세는 서임청 감찰관들이 지켜보는 가운데 서약 의식을 치르고 '황금의 심판관' 칭호를 요한 3세에게 온전히 양도한 뒤 숨을 거두었다."],
+  ['서임력 941년의 요한 2세 공증 조항 인용', '', '서임력 941년 현재까지도 칭호의 소유권 분쟁이 발생하면 서임청과 명경학사는 요한 2세가 제정한 바일부르크 공증 조항을 첫 번째 판례로 인용한다.'],
+]) test(name + '은 나이로 지적하지 않는다', () => {
+  const p = monarch('요한 2세', '서임력 98년 12월 30일', body);
+  p.infobox.push({ label: '사망', value: '서임력 161년 5월 19일' });
+  const w = ordination({ p });
+  w.entities.successor = c.newEntity('요한 3세', '인물', '문서 없는 후계자');
+  assert.equal(age(w, 'p').length, 0, body);
+  // 날짜가 없는 원문 두 건은 날짜 절을 덧붙인 경우에도 확인한다. 생몰 필터 없이 이름 필터만으로 통과해야 한다.
+  p.infobox.pop();
+  if (date) p.sections[0].body = `${date}, ${body}`;
+  assert.equal(age(w, 'p').length, 0, '기준 날짜가 있어도 대수는 나이가 아니다');
+});
+test('루이 14세는 1643년 즉위했다는 나이로 지적하지 않는다', () => {
+  const w = world({ p: monarch('루이 14세', '1638년 9월 5일', '루이 14세는 1643년 즉위했다.') });
+  assert.equal(age(w, 'p').length, 0);
+});
+test('문서 없는 항목·인포박스 별칭·합쳐진 별칭·refNames 안의 대수는 나이가 아니다', () => {
+  for (const source of ['항목', '인포박스 별칭', '합쳐진 별칭', '합쳐진 별칭의 뒤 호칭', 'refNames']) {
+    const p = monarch('요한 2세', '서임력 98년 12월 30일', '요한 2세는 서임력 140년 당시 요한 3세였다.');
+    const w = ordination({ p });
+    if (source === '항목') w.entities.q = c.newEntity('요한 3세', '인물', '');
+    if (source === '인포박스 별칭') p.infobox.push({ label: '별칭', value: '요한 3세' });
+    if (source === '합쳐진 별칭') w.aliases = { [c.keyOf('요한 3세')]: 'p' };
+    if (source === '합쳐진 별칭의 뒤 호칭') { w.aliases = { [c.keyOf('요한 3세 대왕')]: 'p' }; p.sections[0].body = '요한 2세는 서임력 140년 당시 요한 3세 대왕이었다.'; }
+    if (source === 'refNames') w.entities.q = c.newEntity('요한 3세(황제)', '인물', '');
+    assert.equal(age(w, 'p').length, 0, source);
+  }
+});
+test('장부에 없는 고유명사 뒤의 대수와 조사·쉼표는 나이로 읽지 않는다', () => {
+  for (const name of ['루이 14세', '엘리자베스 2세', '하인리히 4세']) for (const particle of ['은', '는', '이', '가', '의', '를', '에게', '와', '과', '도', ',']) {
+    const w = world({ p: monarch('기록자', '1638년 9월 5일', `기록자는 1643년 ${name}${particle} 왕실 기록에 등장했다고 적었다.`) });
+    assert.equal(age(w, 'p').length, 0, name + particle);
+  }
+});
+test('만·당시·향년·나이·올해·불과·겨우·현재 뒤의 실제 나이는 계속 대조한다', () => {
+  for (const lead of ['만', '당시', '향년', '나이', '올해', '불과', '겨우', '현재']) {
+    const w = world({ p: monarch('루이', '1638년 9월 5일', `루이는 1643년 5월 1일 ${lead} 14세가 되었다.`) });
+    assert(age(w, 'p').some(x => /만 4세/.test(x.conflict) && x.severity === 'low'), lead);
+  }
+});
+test('같은 N세 이름 조각이 있어도 인물 앞에서 꾸미는 나이는 계속 대조한다', () => {
+  for (const lead of ['', '그날 ']) {
+    const w = world({ p: person('엘리너 레이놀즈', '1940년 5월 27일', `1954년 3월 1일, ${lead}14세의 레이놀즈는 바다로 솟구쳤다.`) });
+    w.entities.king = c.newEntity('루이 14세', '인물', '');
+    assert(age(w, 'p').some(x => /만 13세/.test(x.conflict) && x.severity === 'low'), lead);
+  }
+});
+test('인포박스·연표·사건 장부·사실 장부의 사망일 뒤는 대조하지 않고 사망 당일까지는 대조한다', () => {
+  for (const source of ['인포박스', '연표', '사건 장부', '사실 장부', '주어를 생략한 사실 장부']) {
+    const p = monarch('요한', '서임력 98년 12월 30일');
+    const w = ordination({ p });
+    if (source === '인포박스') p.infobox.push({ label: '사망일', value: '서임력 161년 5월 19일' });
+    if (source === '연표') w.timeline.push({ year: '서임력 161', month: 5, day: 19, event: '요한은 숨을 거두었다.', src: 'p' });
+    if (source === '사건 장부') w.events.push({ name: '군주의 서거', date: '서임력 161년 5월 19일', parts: ['p'], beats: [{ actor: '요한', action: '숨을 거두었다.' }] });
+    if (source === '사실 장부') w.entities.p.facts.push({ t: '요한은 서임력 161년 5월 19일 사망했다.', src: 'p' });
+    if (source === '주어를 생략한 사실 장부') w.entities.p.facts.push({ t: '서임력 161년 5월 19일 사망했다.', src: 'p' });
+    for (const [date, bad] of [['서임력 161년 5월 18일', true], ['서임력 161년 5월 19일', true], ['서임력 161년 5월 20일', false], ['서임력 941년', false]]) {
+      p.sections[0].body = `요한은 ${date} 당시 2세였다.`;
+      assert.equal(age(w, 'p').length > 0, bad, source + ': ' + date);
+    }
+  }
+});
+test('출생 연도 전과 같은 해 생일 전은 대조하지 않고 출생 당일부터 대조한다', () => {
+  for (const [date, bad] of [['서임력 97년', false], ['서임력 98년 12월 29일', false], ['서임력 98년 12월 30일', true]]) {
+    const w = ordination({ p: monarch('요한', '서임력 98년 12월 30일', `요한은 ${date} 당시 2세였다.`) });
+    assert.equal(age(w, 'p').length > 0, bad, date);
+  }
+});
+test('생몰 연도의 사망 이후는 건너뛰고 생존 시점은 계속 대조한다', () => {
+  const p = monarch('요한', ''); p.infobox.push({ label: '생몰', value: '서임력 98년 ~ 서임력 161년' });
+  const w = ordination({ p });
+  for (const [date, bad] of [['서임력 140년', true], ['서임력 941년', false]]) {
+    p.sections[0].body = `요한은 ${date} 당시 2세였다.`;
+    assert.equal(age(w, 'p').length > 0, bad, date);
+  }
+});
+test('장수 인물의 서임력 941년 당시 500세는 상한 없이 만 840~841세로 지적한다', () => {
+  const w = ordination({ p: monarch('아렌', '서임력 100년', '서임력 941년 당시 500세였던 아렌은 왕국을 지켰다.') });
+  const issues = age(w, 'p');
+  assert.equal(issues.length, 1); assert(issues[0].conflict.includes('만 840~841세')); assert.equal(issues[0].severity, 'low');
+});
+
 test('정확한 생일·연표 날짜로 비키니 쇼크 당시 만 13세와 발현 하한 위반을 찾는다', () => {
   const p = person('엘리너 레이놀즈', '1940년 5월 27일', '3월 1일 오전 6시 45분, … 14세의 레이놀즈는 기폭 장치가 작동함과 동시에 격벽을 뚫고 해상으로 솟구쳤다.');
   p.infobox[0].label = '출생일';
