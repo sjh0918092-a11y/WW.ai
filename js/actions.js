@@ -293,6 +293,7 @@ async function followRedirect(w, k, to) {
   if (S.world !== w) return;
   if (S.view.name === "article" && S.view.key === k) openEntity(to); else renderAll();
   toast(`「${from}」은(는) 「${title}」의 다른 이름입니다. 기존 문서로 연결했습니다.`);
+  drainGenQ();   // afterGen을 거치지 않으므로 대기열을 여기서 잇는다
 }
 async function generatePage(k, rewrite, direction, novel = false, novelAngle = null, opts = {}) {
   if (S.discovery?.busy && !novel) { toast("새 문서 탐색을 마치거나 중단한 뒤 작성해 주세요."); return; }
@@ -346,6 +347,7 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
       S.nf.add(k); S.recent = S.recent.filter(x => x !== k);
       if (S.view.name === "article" && S.view.key === k) { S.view = { name: "notfound", title: nf }; renderAll(); }
       else { renderSide(); toast(`‘${nf}’ 문서를 찾을 수 없습니다.`); }
+      drainGenQ();   // afterGen을 거치지 않으므로 대기열을 여기서 잇는다
       return;
     }
     if (novel) {

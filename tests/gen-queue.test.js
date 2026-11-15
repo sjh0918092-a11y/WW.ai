@@ -25,7 +25,7 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
     // AI 호출을 손으로 끝낼 수 있게 바꾼다
     await page.evaluate(() => {
       window.__calls = []; 
-      window.callJson = (kind, prompt, opts, meta) => new Promise((res, rej) => {
+      window.callJson = (kind, prompt, opts, meta) => meta?.title === "없는 이름" ? Promise.resolve({ notFound: true }) : meta?.title === "다른 이름" ? Promise.resolve({ redirect: "붉은 격납고" }) : new Promise((res, rej) => {
         opts?.signal?.addEventListener("abort", () => rej({ code: "cancelled" }));
         window.__calls.push({ title: meta?.title, done: () => res({ title: meta.title, type: "장소", summary: meta.title + " 요약", categories: ["장소", "대기열 세계 장소"], infobox: [{ label: "소속", value: "대기열 세계" }], sections: [{ heading: "개요", level: 1, body: meta.title + "은 오래된 곳이다." }] }) });
       });
@@ -57,6 +57,18 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
     assert.strictEqual(await page.locator("#side .genq").count(), 0);
     assert.strictEqual(await page.evaluate(() => window.__calls.length), 2);
     pass("작성 중인 문서도 대기열에서 취소할 수 있고, 대기열이 비면 패널이 사라진다");
+    await home(); await red(titles[2]); await page.waitForFunction(() => window.__calls.length === 3);
+    await page.evaluate(() => { goSearch("없는 이름"); goSearch("다른 이름"); });
+    await home(); await red(titles[3]);
+    assert.deepStrictEqual(await page.evaluate(() => S.genQ.map(q => q.title)), ["없는 이름", "다른 이름", titles[3]]);
+    await page.evaluate(() => window.__calls[2].done());
+    await page.waitForFunction(() => S.gen?.title === "흰 등대", null, { timeout: 5000 });
+    assert.deepStrictEqual(await page.evaluate(() => S.genQ.length), 0);
+    pass("검색창으로 만든 항목이 대기열 중간에서 '문서 없음'이나 다른 이름으로 끝나도 다음 대기 문서를 이어서 작성한다");
+    await page.evaluate(() => window.__calls[3].done()); await page.waitForFunction(k => !!S.pages[k], ks[3]);
+    assert.deepStrictEqual(await page.locator("#side .genr .gq-t").allInnerTexts(), [titles[3], titles[2], titles[0], "주인공"]);
+    await page.locator("#side .genr .gq-t", { hasText: titles[2] }).click(); await page.waitForFunction(() => document.querySelector("h1.t")?.textContent === "검은 탑");
+    pass("최근 생성 칸에 새로 만든 문서가 최근 순으로 보이고, 누르면 그 문서를 연다");
     assert.deepStrictEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 })().catch(e => { console.error(e); process.exit(1); });
