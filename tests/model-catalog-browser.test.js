@@ -1,0 +1,19 @@
+const assert=require('node:assert/strict'),{chromium}=require('playwright'),{appServer}=require('./helpers/app');
+(async()=>{
+ const server=appServer();await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch();let release,started,offline=false,gets=0;
+ try{
+  const context=await browser.newContext();await context.addInitScript(()=>{if(!localStorage.getItem('wwiki:acct'))localStorage.setItem('wwiki:acct',JSON.stringify({id:'tester',token:'test-token',since:0}));if(!localStorage.getItem('wwiki:gemini'))localStorage.setItem('wwiki:gemini',JSON.stringify({pass:'do-not-cache-secret',relay:'https://relay.test',main:'gemini-3.8-flash',quick:'gemini-3.5-flash-lite'}))});
+  await context.route('https://fonts.googleapis.com/**',r=>r.abort());await context.route('https://fonts.gstatic.com/**',r=>r.abort());
+  await context.route('**/api/**',r=>r.fulfill({json:{worlds:[],pages:[],next:0}}));
+  const gate=new Promise(r=>{started=r});
+  await context.route('**/v1beta/models?*',async r=>{gets++;assert.equal(r.request().method(),'GET');if(offline)return r.fulfill({status:503,json:{error:{message:'offline'}}});if(!r.request().url().includes('pageToken=')){started();await new Promise(resolve=>release=resolve)}return r.fulfill({json:r.request().url().includes('pageToken=')?{models:[{name:'models/gemini-2.5-pro',displayName:'Gemini 2.5 Pro',supportedGenerationMethods:['generateContent']}]}:{models:[{name:'models/gemini-3.8-flash',supportedGenerationMethods:['generateContent']},{name:'models/gemini-3.5-flash-lite',supportedGenerationMethods:['generateContent']},{name:'models/gemini-2.5-flash',displayName:'Gemini 2.5 Flash',supportedGenerationMethods:['generateContent']}],nextPageToken:'second'}})});
+  await context.route('**/api/models/claude?*',r=>{assert.equal(r.request().method(),'GET');return r.fulfill({status:offline?503:200,json:offline?{error:{message:'offline'}}:{models:[{id:'claude-sonnet-4-6',label:'Claude Sonnet 4.6'},{id:'claude-haiku-4-5-20251001',label:'Claude Haiku 4.5'}],aliases:{},total:2}})});
+  const page=await context.newPage();await page.goto(`http://127.0.0.1:${server.address().port}`);await page.waitForFunction(()=>S.ready);await page.click('#side [data-act="gset"]');await gate;
+  await page.evaluate(()=>{document.querySelector('#gTasks').open=true;document.querySelector('#gInputs').open=true});await page.selectOption('#gTask-prose','gemini-3.5-flash-lite');await page.selectOption('#gTaskThink-prose','high');await page.fill('#gInput-factsCount','7');release();
+  await page.waitForSelector('#gTask-prose option[value="gemini-2.5-pro"]',{state:'attached'});assert.equal(await page.inputValue('#gTask-prose'),'gemini-3.5-flash-lite');assert.equal(await page.inputValue('#gTaskThink-prose'),'high');assert.equal(await page.inputValue('#gInput-factsCount'),'7');assert.equal(await page.isVisible('#gInputs [data-prompt-count="factsCount"]'),true);
+  assert.equal(await page.locator('#gTask-prose option[value="claude-sonnet-4-5"]').count(),0);assert.equal(await page.locator('#gTask-prose option[value="claude-haiku-4-5-20251001"]').count(),1);assert.equal(gets,2);
+  const cache=await page.evaluate(()=>JSON.stringify(GS.modelCatalog));assert(!cache.includes('do-not-cache-secret'));assert(!cache.includes('test-token'));
+  offline=true;await page.reload();await page.waitForSelector('#gTask-prose option[value="gemini-2.5-pro"]',{state:'attached'});assert.equal(await page.locator('#gTask-prose option[value="gemini-2.5-flash"]').count(),1);assert.equal(await page.inputValue('#gMain'),'gemini-3.8-flash');
+  console.log('✓ Automatic paginated model lists, all task dropdowns, unsaved-form preservation and catalog reuse after reload; GET requests only');
+ }finally{release?.();await browser.close();await new Promise(r=>server.close(r))}
+})().catch(e=>{console.error(e);process.exitCode=1});

@@ -42,12 +42,18 @@ function taskSelection(kind,tier="main",settings=GS){
  const task=normalizeTaskModels(settings.taskModels)[kind]||{};
  return {model:task.model||(tier==="check"?settings.check||settings.main||GDEF.main:settings[tier]||GDEF[tier]),think:task.think&&task.think!=="inherit"?task.think:task.think===""?"":(tier==="check"?settings.checkThink??GDEF.checkThink:settings[tier+"Think"])||""};
 }
+function normalizeModelCatalog(raw={}) {
+ const out={};for(const provider of ["gemini","claude"]){if(!Array.isArray(raw?.[provider]))continue;
+  const ids=new Map();for(const m of raw[provider])if(m&&typeof m.id==="string"&&(provider==="gemini"?/^gemini-[A-Za-z0-9._-]{1,100}$/:/^claude-[A-Za-z0-9._-]{1,100}$/).test(m.id))ids.set(m.id,{id:m.id,label:typeof m.label==="string"?m.label.slice(0,150):m.id});
+  out[provider]=[...ids.values()].slice(0,500);
+ }return out;
+}
 const AI_EXPORT_FIELDS=["main","mainThink","quick","quickThink","check","checkThink","preCheck","imageModel","serverJobs","documentPipeline"];
-function aiSettingsFile(){return {format:"worldwiki-ai-settings",version:1,settings:{...Object.fromEntries(AI_EXPORT_FIELDS.map(k=>[k,GS[k]])),taskModels:normalizeTaskModels(GS.taskModels),prompt:writingOptions()}}}
+function aiSettingsFile(){return {format:"worldwiki-ai-settings",version:1,settings:{...Object.fromEntries(AI_EXPORT_FIELDS.map(k=>[k,GS[k]])),taskModels:normalizeTaskModels(GS.taskModels),prompt:writingOptions(),modelCatalog:normalizeModelCatalog(GS.modelCatalog)}}}
 function parseAISettingsFile(value){
  const plain=o=>o&&typeof o==="object"&&!Array.isArray(o);
  if(!plain(value)||value.format!=="worldwiki-ai-settings"||value.version!==1||!plain(value.settings))throw new Error("WorldWiki AI 설정 파일을 선택해 주세요.");
- const raw=value.settings,allowed=new Set([...AI_EXPORT_FIELDS,"taskModels","prompt"]);
+ const raw=value.settings,allowed=new Set([...AI_EXPORT_FIELDS,"taskModels","prompt","modelCatalog"]);
  if(Object.keys(raw).some(k=>!allowed.has(k)))throw new Error("알 수 없는 설정 항목이 있습니다.");
  const out={};
  for(const k of AI_EXPORT_FIELDS){if(raw[k]===undefined)continue;const v=raw[k];
@@ -56,5 +62,7 @@ function parseAISettingsFile(value){
  }
  if(raw.taskModels!==undefined){if(!plain(raw.taskModels)||Object.entries(raw.taskModels).some(([k,v])=>!AI_TASKS.some(([id])=>id===k)||!plain(v)||Object.keys(v).some(f=>!["model","think"].includes(f))||typeof v.model!=="string"||v.model!==""&&(!/^[A-Za-z0-9._-]{1,100}$/.test(v.model)||/image|tts|live|audio|embedding|transcribe|robotics/i.test(v.model))||!AI_THINK_VALUES.includes(v.think)))throw new Error("작업별 모델 설정을 확인해 주세요.");out.taskModels=normalizeTaskModels(raw.taskModels)}
  if(raw.prompt!==undefined){const defs=normalizePromptOptions();if(!plain(raw.prompt)||Object.entries(raw.prompt).some(([k,v])=>!Object.hasOwn(defs,k)||(typeof defs[k]==="boolean"?typeof v!=="boolean":!Number.isInteger(v)||v<0||v>500)))throw new Error("작성 입력 설정을 확인해 주세요.");out.prompt=normalizePromptOptions(raw.prompt)}
+ if(raw.modelCatalog!==undefined){const c=raw.modelCatalog;if(!plain(c)||Object.keys(c).some(k=>!["gemini","claude"].includes(k))||Object.entries(c).some(([provider,rows])=>!Array.isArray(rows)||rows.length>500||rows.some(m=>!plain(m)||Object.keys(m).some(k=>!["id","label"].includes(k))||typeof m.label!=="string"||m.label.length>150||typeof m.id!=="string"||!(provider==="gemini"?/^gemini-[A-Za-z0-9._-]{1,100}$/:/^claude-[A-Za-z0-9._-]{1,100}$/).test(m.id))))throw new Error("모델 목록을 확인해 주세요.");}
+ out.modelCatalog=normalizeModelCatalog(raw.modelCatalog);
  return out;
 }

@@ -21,7 +21,7 @@ const TEXT_MODELS = [
 const THINKS = [["", "모델 기본값"], ["minimal", "minimal"], ["low", "low"], ["medium", "medium"], ["high", "high"]];
 let GS = (() => {
   let st = {}; try { st = JSON.parse(localStorage.getItem(GKEY) || "{}") || {}; } catch {}
-  const g = { ...GDEF, ...st, taskModels: normalizeTaskModels(st.taskModels), prompt: normalizePromptOptions(st.prompt) };
+  const g = { ...GDEF, ...st, taskModels: normalizeTaskModels(st.taskModels), prompt: normalizePromptOptions(st.prompt), modelCatalog: normalizeModelCatalog(st.modelCatalog) };
   // 서버 연결로 이전하면서 브라우저에 저장했던 개인 키와 전송 허용을 제거한다.
   g.mode = "relay";
   for (const key of ["key", "openaiKey", "serverKeys", "serverKeysFor"]) delete g[key];
@@ -245,9 +245,11 @@ function sumUsage(a, b) {
   return out;
 }
 async function listGeminiModels() {
+  const base=gBase(),auth=gAuth(),ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),20000);
+  try {
   const models = new Map(); let token = "";
   for (let page=0;page<10;page++) {
-    const res = await gFetch(`/models?pageSize=200${token ? "&pageToken="+encodeURIComponent(token) : ""}`, { headers: gAuth() });
+    const res = await fetch(base+`/models?pageSize=200${token ? "&pageToken="+encodeURIComponent(token) : ""}`, { headers: auth, signal:ctl.signal });
     if (!res.ok) throw await gError(res, "");
     const j = await res.json();
     for(const m of j.models || []) if((m.supportedGenerationMethods || []).includes("generateContent") && /gemini/i.test(m.name) && !/image|tts|live|audio|embedding|transcribe|robotics/i.test(m.name)) {
@@ -258,6 +260,7 @@ async function listGeminiModels() {
     token=j.nextPageToken;
   }
   throw {message:"모델 목록을 끝까지 확인하지 못했습니다. 잠시 뒤 다시 새로고침해 주세요."};
+  } finally { clearTimeout(timer); }
 }
 
 async function listClaudeModels() {

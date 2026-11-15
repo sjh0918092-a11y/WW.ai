@@ -139,8 +139,7 @@ function updateModelIds() {
   }
 }
 
-function gsetHtml() {
-  const modelOptions = (value, image = false, inherit = false) => {
+function gModelOptions(value, image = false, inherit = false) {
     const listed = Array.isArray(S.gmodels), clisted=Array.isArray(S.cmodels);
     const models = new Map((image ? IMAGE_MODELS : [...TEXT_MODELS.filter(m=>(!listed || !/^gemini-/.test(m.id)) && (!clisted || !/^claude-/.test(m.id))), ...(S.gmodels || []), ...(S.cmodels || [])]).map(m => [m.id, m.label || m.id]));
     if (value && !models.has(value)) models.set(value, value + ((listed && /^gemini-/.test(value) || clisted && /^claude-/.test(value)) ? " (서버 목록에 없음)" : " (기존 설정)"));
@@ -149,7 +148,9 @@ function gsetHtml() {
       const entries = [...models].filter(([id]) => match(id));
       return entries.length ? `<optgroup label="${label}">${entries.map(([id, name]) => `<option value="${esc(id)}" ${value === id ? "selected" : ""}>${esc(name)}</option>`).join("")}</optgroup>` : "";
     }).join("");
-  };
+  }
+function gsetHtml() {
+  const modelOptions = gModelOptions;
   const tasks=normalizeTaskModels(GS.taskModels), inputs=writingOptions();
   const taskRows=AI_TASKS.map(([kind,label])=>{
     const task=tasks[kind]||{model:"",think:"inherit"};
@@ -171,6 +172,7 @@ function gsetHtml() {
       <div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="relay-invite">사이트 링크 복사</button><span class="note">친구에게 링크를 보내고, 접속 암호는 따로 알려 주세요.</span></div>
     </div>
     <h2 class="nf-h">공통 모델</h2>
+    <p class="note" id="gCatalogStatus">${esc(ModelCatalog.message())}</p>
     <p class="note">용도별로 Gemini 또는 Claude를 선택하세요. Claude는 로그인과 서버 AI 실행이 필요합니다. 공통 생각 깊이는 실행·검사 옵션에서, 작업별 값은 아래에서 조정하세요.</p>
     <div><label class="lb" for="gMain">기본 모델 <span class="note" style="font-weight:400">세계관 생성, 문서 작성, 랜덤 서핑, 충돌 고치기</span></label><select id="gMain">${modelOptions(GS.main)}</select><p class="note" id="gMainId">API ID: ${esc(GS.main)}</p></div>
     <div><label class="lb" for="gQuick">빠른 모델 <span class="note" style="font-weight:400">분위기 판별</span></label><select id="gQuick">${modelOptions(GS.quick)}</select><p class="note" id="gQuickId">API ID: ${esc(GS.quick)}</p></div>
@@ -265,7 +267,7 @@ function renderMain(force) {
   else if (S.view.name === "log") m.innerHTML = logHtml();
   else if (S.view.name === "jobs") m.innerHTML = jobsHtml();
   else if (S.view.name === "discovery") m.innerHTML = discoveryHtml();
-  else if (S.view.name === "gset") m.innerHTML = gsetHtml();
+  else if (S.view.name === "gset") { ModelCatalog.prepare(); m.innerHTML = gsetHtml(); ModelCatalog.ensure(); }
   else if (S.view.name === "fix") m.innerHTML = fixvHtml(S.view.key);
   else if (S.view.name === "compose") m.innerHTML = composeHtml(S.view.key);
   else if (S.view.name === "advance") m.innerHTML = advanceHtml();

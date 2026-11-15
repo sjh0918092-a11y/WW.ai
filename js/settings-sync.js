@@ -6,7 +6,7 @@ const AISettingsSync = {
   key(ctx){return this.prefix+JSON.stringify([ctx.base,ctx.owner])},
   current(ctx){return !!ctx&&Sync.acct?.id===ctx.owner&&Sync.acct?.token===ctx.token&&Sync.base()===ctx.base},
   value(){return {...aiSettingsFile().settings,pass:GS.pass||""}},
-  defaults(){return {...Object.fromEntries(AI_EXPORT_FIELDS.map(k=>[k,GDEF[k]])),taskModels:{},prompt:normalizePromptOptions(),pass:""}},
+  defaults(){return {...Object.fromEntries(AI_EXPORT_FIELDS.map(k=>[k,GDEF[k]])),taskModels:{},prompt:normalizePromptOptions(),modelCatalog:{},pass:""}},
   validate(value){
     if(!value||typeof value.pass!=="string"||value.pass.length>1024)throw new Error("서버 설정 형식을 확인하지 못했습니다.");
     const {pass,...settings}=value;
@@ -25,6 +25,7 @@ const AISettingsSync = {
   apply(ctx,value){
     if(!this.current(ctx))return;
     GS={...GS,...structuredClone(value)};saveGS({sync:false});LS.set(this.ownerKey,this.key(ctx));S.sample=gReady()?gemini:null;
+    if(typeof ModelCatalog!=="undefined"){ModelCatalog.prepare();}
     if(S.ready&&S.view.name==="gset"&&!this.formDirty){
       const open=[...document.querySelectorAll(".gset details[id][open]")].map(el=>el.id);renderMain();for(const id of open){const el=document.getElementById(id);if(el)el.open=true}
     }
@@ -68,7 +69,7 @@ const AISettingsSync = {
     const ctx=this.context();if(!ctx)return false;
     if(this.running&&this.running.ctx.base===ctx.base&&this.running.ctx.token===ctx.token&&this.running.ctx.owner===ctx.owner)return this.running.promise;
     const run={ctx,promise:null};this.running=run;run.promise=this.work(ctx);
-    try{return await run.promise}finally{if(this.running===run){this.running=null;this.render()}}
+    try{return await run.promise}finally{if(this.running===run){this.running=null;this.render();if(typeof ModelCatalog!=="undefined"&&S.ready&&S.view.name==="gset"){ModelCatalog.prepare();ModelCatalog.ensure();}}}
   },
   async flush(){
     clearTimeout(this.timer);this.timer=null;

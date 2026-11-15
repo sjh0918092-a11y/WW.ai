@@ -182,7 +182,7 @@ document.addEventListener("click", ev => {
     case "gset-models": (async () => {
       readGsetForm(); if (!gReady()) { setGres("서버 접속 암호를 먼저 저장해 주세요."); return; }
       setGres("모델 목록을 불러오는 중…");
-      try { S.gmodels = await listGeminiModels(); const ids=new Set(S.gmodels.map(m=>m.id));
+      try { S.gmodels = await listGeminiModels(); ModelCatalog.remember("gemini",S.gmodels); const ids=new Set(S.gmodels.map(m=>m.id));
         const missing=[['기본',GS.main],['빠른',GS.quick],['검사',GS.check]].filter(([,id])=>/^gemini-/.test(id||"")&&!ids.has(id)).map(([role,id])=>`${role}: ${id}`);
         S.gres = `서버 모델 ${S.gmodels.length}개를 불러왔습니다.`+(missing.length?` 서버 목록에 없는 선택값: ${missing.join(" / ")}. 드롭다운에서 다시 선택해 주세요.`:" 드롭다운에서 선택할 수 있습니다."); renderMain(); }
       catch (e) { setGres("불러오지 못했습니다. " + errMsg(e)); }
@@ -190,7 +190,7 @@ document.addEventListener("click", ev => {
     case "gset-claude-models": (async()=>{
       readGsetForm();setGres("서버 키로 Claude 모델과 선택한 별칭을 확인하는 중…");
       try{
-        const result=await listClaudeModels();S.cmodels=result.models;
+        const result=await listClaudeModels();S.cmodels=result.models;ModelCatalog.remember("claude",S.cmodels);
         const resolved=[];
         for(const role of ["main","quick","check"]){const id=result.aliases?.[GS[role]];if(id&&S.cmodels.some(m=>m.id===id)){resolved.push(GS[role]+" → "+id);GS[role]=id}}
         for(const task of Object.values(GS.taskModels||{})){const id=result.aliases?.[task.model];if(id&&S.cmodels.some(m=>m.id===id)){resolved.push(task.model+" → "+id);task.model=id}}
