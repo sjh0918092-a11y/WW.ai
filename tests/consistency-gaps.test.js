@@ -9,7 +9,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} },
   window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,parseAgeRules,ageRuleIssues,numericIssues,sameKindEvents,sameKindBlock,pagePrompt,checkPrompt,checkSourceBatches,autoLink,acceptTimeline,openWorld,Store});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,parseAgeRules,ageRuleIssues,numericIssues,sameKindEvents,sameKindBlock,pagePrompt,checkPrompt,checkSourceBatches,autoLink,limitInfoboxValue,acceptTimeline,openWorld,Store});', c);
 const person = (title, birth, body = '', extra = {}) => ({ title, type: '인물', summary: '전략 소녀', categories: ['전략 소녀'], infobox: birth ? [{ label: '출생', value: birth }] : [], sections: [{ heading: '생애', body }], links: [], createdAt: 1, ...extra });
 const doc = (title, body, extra = {}) => person(title, '', body, { type: '사건', summary: '', categories: [], createdAt: 2, ...extra });
 const rule = '전략 소녀는 만 14세~19세에만 발현한다.';
@@ -276,7 +276,7 @@ test('집필에는 확정 사실과 언급을 주고, 설정 대조에서는 양
   pages[far].infobox = [{ label: '이명', value: '밤의 관문 (Night Gate / Nachtpforte)' }];
   assert(c.checkPrompt(w, city, []).includes(pages[far].sections[0].body), '표시명이 다른 문서의 별칭이면 그 원문도 비교한다');
 });
-test('기존 문서의 빠진 링크를 인포박스와 본문에 붙이고 이름이 겹치는 별칭은 추정하지 않는다', () => {
+test('이미 링크한 이름도 본문과 인포박스에서 다시 나올 때마다 링크한다', () => {
   const river = c.keyOf('은빛 강'), port = c.keyOf('검은 항구'), street = c.keyOf('비단 거리'), key = c.keyOf('도시 안내');
   const pages = {
     [river]: doc('은빛 강', '', { infobox: [{ label: '별칭', value: '빛줄기' }] }),
@@ -285,11 +285,18 @@ test('기존 문서의 빠진 링크를 인포박스와 본문에 붙이고 이�
   };
   const w = world(pages);
   w.entities[key] = c.newEntity('도시 안내', '개념', '');
-  const out = doc('도시 안내', '은빛 강철을 지나 빛줄기를 건넌다. 관문에서 쉰다.', { infobox: [{ label: '목적지', value: '검은 항구' }] });
-  assert.equal(c.autoLink(w, key, out), 2);
-  assert.equal(out.sections[0].body, '은빛 강철을 지나 [[은빛 강|빛줄기]]를 건넌다. 관문에서 쉰다.');
-  assert.equal(out.infobox[0].value, '[[검은 항구]]');
+  const out = doc('도시 안내', '[[은빛 강|빛줄기]]에 닿았다. 은빛 강철을 지나 빛줄기를 건넌다. 관문에서 쉰다.', { infobox: [{ label: '목적지', value: '[[검은 항구]] 및 검은 항구' }] });
+  out.sections.push({ heading: '돌아가는 길', body: '은빛 강을 다시 건넜다. [[푸른 다리]] 앞에서 멈췄다. 푸른 다리 너머로 갔다.' });
+  assert.equal(c.autoLink(w, key, out), 4);
+  assert.equal(out.sections[0].body, '[[은빛 강|빛줄기]]에 닿았다. 은빛 강철을 지나 [[은빛 강|빛줄기]]를 건넌다. 관문에서 쉰다.');
+  assert.equal(out.sections[1].body, '[[은빛 강]]을 다시 건넜다. [[푸른 다리]] 앞에서 멈췄다. [[푸른 다리]] 너머로 갔다.');
+  assert.equal(out.infobox[0].value, '[[검은 항구]] 및 [[검은 항구]]');
   assert.equal(c.autoLink(w, key, out), 0);
+});
+test('인포박스는 표시 글자 한도 안의 반복 링크를 모두 보존한다', () => {
+  const links = '[[은빛 강|빛줄기]] '.repeat(70);
+  assert.equal(c.limitInfoboxValue(links), links);
+  assert.equal(c.limitInfoboxValue('가'.repeat(299) + '[[은빛 강|빛줄기]]'), '가'.repeat(299));
 });
 test('연결 문서가 많으면 검사 입력을 문서 경계에서 나눈다', () => {
   const key = c.keyOf('도시 안내'), a = c.keyOf('은빛 강'), b = c.keyOf('검은 항구');

@@ -21,56 +21,55 @@ function documentNameOwners(w) {
   }
   return names;
 }
-/* 본문에 이름만 나오고 링크가 빠진 기존 항목을 첫 등장 위치에서 링크한다 (생성 직후, 조용히) */
+/* 생성 직후, 본문과 인포박스에서 이름이 나올 때마다 빠진 링크를 붙인다. */
 function autoLink(w, key, out) {
   if (!Array.isArray(out?.sections)) return 0;
-  const linked = new Set();
   const fields = [...out.sections.filter(s => typeof s?.body === "string").map(s => [s, "body"]),
     ...(Array.isArray(out.infobox) ? out.infobox : []).filter(r => typeof r?.value === "string").map(r => [r, "value"])];
-  for (const [row, field] of fields) for (const m of row[field].matchAll(LINK_RE)) linked.add(kOf(w, m[1]));
   const owners = documentNameOwners(w);
   const cands = [];
   for (const [k, o] of Object.entries(w.entities)) {
-    if (k === key || linked.has(k)) continue;
+    if (k === key) continue;
     for (const n of namesOf(o.title)) if (n === o.title || !/^[㐀-鿿]+$/.test(n)) {
-      if ((owners.get(identityName(n))?.size || 0) <= 1 || n === o.title) cands.push({ k, n, title: o.title, existing: !!S.pages[k] });
+      if ((owners.get(identityName(n))?.size || 0) <= 1 || n === o.title) cands.push({ n, title: o.title });
     }
   }
   for (const group of owners.values()) if (group.size === 1) {
     const [[k, n]] = group;
-    if (k !== key && !linked.has(k)) cands.push({ k, n, title: w.entities[k].title, existing: true });
+    if (k !== key) cands.push({ n, title: w.entities[k].title });
   }
-  /* 이 문서가 관계·사실·사건 참가자·새 항목으로 이름을 댄 새 대상(아직 항목이 없는 것)도, 본문에 링크 없이 나오면 처음 나온 곳에 링크한다 */
+  /* 이 초안이 링크나 구조화한 항목으로 명시한 새 이름도 링크한다. */
   const self = w.entities[key]?.title, named = new Set();
   const nameOf = t => { t = norm(stripMarks(String(t ?? ""))); if (t.length >= 2 && t.length <= 40 && t !== self && !/[\[\]|]/.test(t)) named.add(t); };
   for (const r of Array.isArray(out.relations) ? out.relations : []) { nameOf(r?.a); nameOf(r?.b); }
   for (const f of Array.isArray(out.facts) ? out.facts : []) nameOf(f?.about);
   for (const e of Array.isArray(out.events) ? out.events : []) for (const x of Array.isArray(e?.participants) ? e.participants : []) nameOf(x);
   for (const x of Array.isArray(out.newEntities) ? out.newEntities : []) nameOf(x?.title);
-  for (const t of named) { const k = kOf(w, t); if (k === key || linked.has(k) || w.entities[k] || cands.some(c => c.k === k)) continue; cands.push({ k, n: t, title: t }); }
+  for (const [row, field] of fields) for (const m of row[field].matchAll(LINK_RE)) nameOf(m[1]);
+  for (const t of named) {
+    const k = kOf(w, t);
+    if (k !== key && !w.entities[k]) cands.push({ n: t, title: t });
+  }
   cands.sort((a, b) => b.n.length - a.n.length || (b.n === b.title) - (a.n === a.title));
   const inLink = (t, i) => t.lastIndexOf("[[", i) > t.lastIndexOf("]]", i);
   const insideWord = /[\p{L}\p{N}_]/u;
   const particles = /^(?:(?:으로|에서|에게|한테|께서|까지|부터|보다|처럼|마저|조차|하고|이며|이라고|라는|이란|이나|라도|로|에|의|은|는|이|가|을|를|과|와|도|만|께|랑|라고)(?:는|도|만)?)(?![\p{L}\p{N}_])/u;
   let added = 0;
-  let newLinks = 0;
   for (const c of cands) {
-    if (linked.has(c.k) || (!c.existing && newLinks >= 20)) continue;
+    const tag = c.n === c.title ? `[[${c.title}]]` : `[[${c.title}|${c.n}]]`;
     for (const [row, field] of fields) {
       const value = row[field];
-      let i = value.indexOf(c.n);
-      while (i >= 0) {
+      const parts = [];
+      let offset = 0;
+      for (let i = value.indexOf(c.n); i >= 0; i = value.indexOf(c.n, i + 1)) {
+        if (i < offset || inLink(value, i) || insideWord.test(value[i - 1] || "")) continue;
         const end = i + c.n.length;
-        if (!inLink(value, i) && !insideWord.test(value[i - 1] || "") &&
-            (!insideWord.test(value[end] || "") || particles.test(value.slice(end)))) break;
-        i = value.indexOf(c.n, i + 1);
+        if (insideWord.test(value[end] || "") && !particles.test(value.slice(end))) continue;
+        parts.push(value.slice(offset, i), tag);
+        offset = end;
+        added++;
       }
-      if (i < 0) continue;
-      const tag = c.n === c.title ? `[[${c.title}]]` : `[[${c.title}|${c.n}]]`;
-      row[field] = value.slice(0, i) + tag + value.slice(i + c.n.length);
-      linked.add(c.k); added++;
-      if (!c.existing) newLinks++;
-      break;
+      if (parts.length) row[field] = parts.join("") + value.slice(offset);
     }
   }
   return added;

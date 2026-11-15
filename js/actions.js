@@ -417,6 +417,17 @@ function afterGen(k, ok) {
    링크를 뽑기 전에 풀기 때문에 그 링크로 빈 항목이 생기지 않는다 */
 const LINK_TAIL_OK = /^(?:으로써|으로서|으로|로써|로서|로|에서|에게|에는|에도|에의|에|께서|께|한테|은|는|이|가|의|을|를|와|과|도|만|까지|부터|처럼|보다|이다|였다|이었|였|이며|며|이나|나|이랑|랑|하고|하|한|했|할|해|함|히|들|뿐|마저|조차|밖에|대로|마다|씩|쯤|이라|라는|라고|란|이란|인|이자|이고|고|과의|와의)/;
 const unglueLinks = t => String(t).replace(/\[\[([^\[\]|]+?)(?:\|([^\[\]]+?))?\]\]([가-힣]+)/g, (m, a, b, tail) => LINK_TAIL_OK.test(tail) ? m : (b || a) + tail);
+/* 인포박스 길이는 화면에 보이는 글자로 제한하고 링크 표기는 중간에서 자르지 않는다. */
+function limitInfoboxValue(text, limit = 300) {
+  let end = limit;
+  for (const match of text.matchAll(LINK_RE)) {
+    if (match.index >= end) break;
+    const labelLength = (match[2] || match[1]).length;
+    if (match.index + labelLength > end) return text.slice(0, match.index);
+    end += match[0].length - labelLength;
+  }
+  return text.slice(0, end);
+}
 /* 새 인물 문서의 생일(월·일)은 코드에서 고르게 정한다(모델이 특정 날짜에 몰아 정하는 버릇을 막는다) */
 const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 function randomBirthday(rand = Math.random) { const m = 1 + Math.min(11, Math.floor(rand() * 12)); return { m, d: 1 + Math.min(MONTH_DAYS[m - 1] - 1, Math.floor(rand() * MONTH_DAYS[m - 1])) }; }
@@ -450,7 +461,7 @@ function integrate(w, key, out, options = {}) {
   const cats = parseCats(out.categories), categories = cats.map(c => c.name);   // 축별 객체 또는 예전 형식(이름 배열). 유형 이름은 분류로 두지 않는다
   const prevAx = S.world === w ? S.pages[key]?.catAxes || [] : [];   // 편집·고치기처럼 이름만 돌아오면 이전 축을 이어 쓴다
   const catAxes = cats.map(c => c.axis ? c : prevAx.find(x => x.name === c.name) ? { name: c.name, axis: prevAx.find(x => x.name === c.name).axis } : null).filter(Boolean);
-  const infobox = (Array.isArray(out.infobox) ? out.infobox : []).filter(r => r && r.label && r.value).slice(0, 10).map(r => ({ label: String(r.label).slice(0, 30), value: String(r.value).slice(0, 300) }));
+  const infobox = (Array.isArray(out.infobox) ? out.infobox : []).filter(r => r && r.label && r.value).slice(0, 10).map(r => ({ label: String(r.label).slice(0, 30), value: limitInfoboxValue(String(r.value)) }));
   const type = TYPES.includes(out.type) ? out.type : (String(out.type || "").slice(0, 8) || "개념");
   const summary = stripMarks(out.summary).slice(0, 220);
   const notices = (Array.isArray(out.notices) ? out.notices : []).filter(x => typeof x === "string" && x.trim()).slice(0, 3).map(x => x.slice(0, 300));
