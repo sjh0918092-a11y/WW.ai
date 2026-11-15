@@ -20,6 +20,7 @@
 import { pipelineSchema } from "./pipeline-store.js";
 import { jobsApi } from "./jobs.js";
 import { claudeModels } from "./models.js";
+import { accountSettings } from "./account-settings.js";
 export { AiJobs } from "./jobs.js";
 
 const UPSTREAM = "https://generativelanguage.googleapis.com";
@@ -116,6 +117,7 @@ function ensureSchema(db) {
     db.prepare("CREATE TABLE IF NOT EXISTS pages (uid TEXT NOT NULL, wid TEXT NOT NULL, pkey TEXT NOT NULL, data TEXT, updated INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0, stamp INTEGER NOT NULL, PRIMARY KEY (uid, wid, pkey))"),
     db.prepare("CREATE INDEX IF NOT EXISTS worlds_stamp ON worlds (uid, stamp)"),
     db.prepare("CREATE INDEX IF NOT EXISTS pages_stamp ON pages (uid, stamp)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS account_settings (uid TEXT PRIMARY KEY, data TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1, updated INTEGER NOT NULL)"),
     ...pipelineSchema(db),
   ]).catch(e => { schema = null; throw e; });
   return schema;
@@ -160,6 +162,10 @@ async function api(request, env, url, cors, fail) {
     const ses = tok ? await db.prepare("SELECT uid FROM sessions WHERE token = ?").bind(tok).first() : null;
     if (!ses) return fail(401, "로그인이 만료되었습니다. 다시 로그인해 주세요.");
     const uid = ses.uid;
+    if (path === "/api/settings") {
+      const response=await accountSettings(request,env,uid);
+      return new Response(response.body,{status:response.status,headers:{...cors,"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}});
+    }
     if (path === "/api/jobs" || path.startsWith("/api/jobs/")) return jobsApi(request, env, url, cors, fail, uid, passOk);
     if (path === "/api/models/claude" && m === "GET") {
       const response=await claudeModels(request,env,url,passOk);

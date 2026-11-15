@@ -178,7 +178,7 @@ const Sync = {
     for (const w of S.worlds) { this.mark("w", w.id); for (const k of Object.keys(await Store.listPages(w.id))) this.mark("p", w.id, k); }   // 이 브라우저의 세계관도 올려서 합친다(서버에 더 최근 것이 있으면 그쪽이 남는다)
     await this.push();
   },
-  async logout() { try { await this.req("/logout", { method: "POST" }); } catch {} this.acct = null; LS.del(AKEY); LS.del(DKEY); this.dirty = null; this.err = ""; },
+  async logout() { if(typeof AISettingsSync!=="undefined")AISettingsSync.logout(); try { await this.req("/logout", { method: "POST" }); } catch {} this.acct = null; LS.del(AKEY); LS.del(DKEY); this.dirty = null; this.err = ""; },
   async push() {
     if (!this.acct || this.busy) { if (this.acct) this.schedule(); return; }
     if (!this.dirty) this.load(); if (!this.pending()) return;
@@ -221,6 +221,8 @@ const Sync = {
     if (!this.acct || this.pulling) return 0; this.pulling = true;
     let changed = 0;
     try {
+      if(typeof AISettingsSync!=="undefined")await AISettingsSync.load();
+      if(!this.acct)throw new Error("다시 로그인해 주세요.");
       let since = this.acct.since || 0, more = true;
       while (more) {
         const j = await this.req("/sync?since=" + since);

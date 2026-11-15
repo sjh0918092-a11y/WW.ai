@@ -159,7 +159,8 @@ function gsetHtml() {
   }).join("");
   const inputRows=AI_PROMPT_FIELDS.map(([key,label,,count])=>`<div class="ai-input"><label for="gInput-${key}"><input type="checkbox" id="gInput-${key}" data-prompt-flag="${key}" ${inputs[key]?"checked":""}> ${esc(label)}</label>${count?`<label class="note" for="gInput-${count}">최대 <input class="txt" type="number" min="0" max="500" step="1" id="gInput-${count}" data-prompt-count="${count}" value="${inputs[count]}" style="width:78px" ${inputs[key]?"":"disabled"}> 개</label>`:""}</div>`).join("");
   return `<div class="sheet gset"><div class="crumb"><span>도구</span></div><h1 class="t">AI 연결 설정</h1>
-    <p class="note">접속 암호와 모델만 설정하세요. API 키는 서버에서 관리합니다.</p>
+    <p class="note">AI 설정은 로그인 계정에 저장되어 다른 기기에서도 자동으로 불러옵니다. API 키는 서버에서 관리합니다.</p>
+    <p class="note" id="gSyncStatus">${esc(AISettingsSync.message())}</p>
     <h2 class="nf-h">서버 연결</h2>
     <div id="gRelayBox">
       <label class="lb" for="gPass">접속 암호</label>
@@ -239,7 +240,7 @@ function readGsetForm() {
   const prompt={};document.querySelectorAll("[data-prompt-flag]").forEach(el=>{prompt[el.dataset.promptFlag]=el.checked});
   document.querySelectorAll("[data-prompt-count]").forEach(el=>{if(el.value!=="")prompt[el.dataset.promptCount]=Number(el.value)});
   GS.prompt=normalizePromptOptions(prompt);
-  saveGS(); S.sample = gReady() ? gemini : null;
+  AISettingsSync.formDirty=false;saveGS(); S.sample = gReady() ? gemini : null;
   AIRecovery.authChanged();
 }
 function setGres(t) { S.gres = t; const el = $("#gRes"); if (el) el.textContent = t; }

@@ -40,10 +40,11 @@ const gReady = () => gRelay() ? !!(GS.relay && GS.pass) : !!GS.key;
 const gBase = () => gRelay() ? GS.relay.replace(/\/+$/, "") + "/v1beta" : GBASE;
 const gAuth = () => gRelay() ? { "X-WW-Pass": GS.pass } : { "x-goog-api-key": GS.key };
 const normRelay = u => { u = String(u || "").trim().replace(/\/+$/, "").replace(/\/v1beta$/, ""); if (u && !/^https?:\/\//i.test(u)) u = "https://" + u; return u; };
-const saveGS = () => {
+const saveGS = ({sync = true} = {}) => {
   GS.mode = "relay";
   for (const key of ["key", "openaiKey", "serverKeys", "serverKeysFor"]) delete GS[key];
   try { localStorage.setItem(GKEY, JSON.stringify(GS)); } catch {}
+  if(sync && typeof AISettingsSync!=="undefined")AISettingsSync.changed();
 };
 function parseJsonLoose(t) {
   const tries = [t, t.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "")];

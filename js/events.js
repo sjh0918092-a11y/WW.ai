@@ -156,7 +156,7 @@ document.addEventListener("click", ev => {
     case "jobs-filter": AIRecovery.all = !AIRecovery.all; renderMain(); break;
     case "gset": S.view = { name: "gset" }; S.gres = ""; renderAll(); window.scrollTo({ top: 0 }); break;
     case "gkey-show": { const i = $("#" + (d.for || "gPass")); if (i) i.type = i.type === "password" ? "text" : "password"; break; }
-    case "gset-save": readGsetForm(); setGres(""); renderSide(); toast("AI 연결 설정을 저장했습니다."); renderMain(); break;
+    case "gset-save": (async()=>{readGsetForm();setGres("");renderSide();renderMain();const logged=!!Sync.acct,ok=await AISettingsSync.flush();toast(ok?"AI 설정을 계정에 저장했습니다.":logged?"이 기기에 저장했습니다. 서버 저장은 다시 시도합니다.":"AI 설정을 이 기기에 저장했습니다.");AISettingsSync.render()})();break;
     case "relay-invite": {
       readGsetForm();
       const link = location.origin + location.pathname + (GS.relay !== DEFAULT_RELAY ? "#relay=" + encodeURIComponent(GS.relay) : "");
@@ -327,7 +327,8 @@ document.addEventListener("change", ev => {
   if (["gMain", "gQuick", "gCheck", "gImage"].includes(ev.target.id)) { updateThinkingOptions(); updateTaskThinkingOptions(); updateModelIds(); }
   if(ev.target.dataset?.taskModel)updateTaskThinkingOptions();
   if(ev.target.dataset?.promptFlag){const row=ev.target.closest(".ai-input"),count=row?.querySelector("[data-prompt-count]");if(count)count.disabled=!ev.target.checked;}
-  if(ev.target.id==="aiSettingsFile"&&ev.target.files?.[0]){const file=ev.target.files[0];ev.target.value="";(async()=>{try{if(file.size>1024*1024)throw new Error("설정 파일이 너무 큽니다.");const settings=parseAISettingsFile(JSON.parse(await file.text()));GS={...GS,...settings};saveGS();S.sample=gReady()?gemini:null;S.gres="AI 설정을 가져와 저장했습니다.";renderMain();}catch(e){setGres("가져오지 못했습니다. "+e.message)}})();}
+  if(ev.target.closest?.(".gset")&&ev.target.id?.startsWith("g"))AISettingsSync.formDirty=true;
+  if(ev.target.id==="aiSettingsFile"&&ev.target.files?.[0]){const file=ev.target.files[0];ev.target.value="";(async()=>{try{if(file.size>1024*1024)throw new Error("설정 파일이 너무 큽니다.");const settings=parseAISettingsFile(JSON.parse(await file.text()));GS={...GS,...settings};AISettingsSync.formDirty=false;saveGS();S.sample=gReady()?gemini:null;S.gres="AI 설정을 가져와 저장했습니다.";renderMain();await AISettingsSync.flush();AISettingsSync.render();}catch(e){setGres("가져오지 못했습니다. "+e.message)}})();}
   if (ev.target.dataset?.wcExtra) { wcToggleExtra(ev.target.dataset.wcExtra, ev.target.dataset.wcDoc, ev.target.checked); return; }
   if (ev.target.dataset?.worldExport && S.world) { const field = ev.target.dataset.worldExport; if (["images", "stories"].includes(field)) (S.worldExports[S.world.id] ||= { images: true, stories: true })[field] = ev.target.checked; return; }
   if (ev.target.dataset?.proseImage === "model" && S.proseGen?.illustration && !S.proseGen.busy) { S.proseGen.illustration.opts.model = ev.target.value; renderMain(); return; }
@@ -381,15 +382,20 @@ document.addEventListener("click", ev => {   // 길게 누른 뒤 손을 뗄 때
 }, true);
 document.addEventListener("contextmenu", ev => { if (ev.target.closest?.("a.wl.new")) ev.preventDefault(); });
 document.addEventListener("visibilitychange", () => {   // 다른 기기에서 작업하고 돌아오면 바뀐 것을 받아 온다
-  if (document.visibilityState === "visible" && S.ready) AIRecovery.refresh();
+  if (document.visibilityState === "visible" && S.ready) {AIRecovery.refresh();AISettingsSync.load();}
   if (document.visibilityState === "visible" && (S.discovery?.busy || S.creating || S.gen || S.storyGen || S.checking || S.syncing || S.fixing || S.bgSync || S.edit?.aiBusy || S.proseGen?.busy || S.imageGen?.busy)) toast("진행 중인 응답을 이어받습니다.");
   if (document.visibilityState === "visible" && Sync.acct && S.ready && Date.now() - Sync.lastAt > 30000) Sync.pull();
-  if (document.visibilityState === "hidden" && Sync.acct && Sync.pending()) Sync.push();
+  if (document.visibilityState === "hidden" && Sync.acct) {if(Sync.pending())Sync.push();AISettingsSync.load();}
 });
-window.addEventListener("storage", ev => { if ([AKEY, GKEY].includes(ev.key)) { Sync.acct = LS.get(AKEY); AIRecovery.authChanged(); } else if (ev.key?.startsWith(AIJobs.prefix) && S.ready) AIRecovery.refresh(); });
-window.addEventListener("online", () => { if (S.ready) AIRecovery.refresh(); });
+window.addEventListener("storage", ev => { if ([AKEY, GKEY].includes(ev.key)) { Sync.acct = LS.get(AKEY); AIRecovery.authChanged(); AISettingsSync.external(); } else if (ev.key?.startsWith(AIJobs.prefix) && S.ready) AIRecovery.refresh(); });
+window.addEventListener("online", () => { if (S.ready) {AIRecovery.refresh();AISettingsSync.load();} });
 document.addEventListener("keydown", ev => {
   if (ev.key === "Escape") document.querySelectorAll(".portrait-menu[open]").forEach(m => { m.open = false; m.querySelector("summary").focus(); });
   if (ev.key === "Escape") $("#sugg").hidden = true;
   if (ev.key === "Enter" && ev.target.matches?.("textarea.die-v")) { ev.preventDefault(); ev.target.blur(); }   // 주사위 칸은 한 줄. Enter는 입력을 마친다
 });
+
+// 편집 중인 설정 폼은 자동 수신 때문에 다시 그리지 않는다.
+document.addEventListener("input",ev=>{if(ev.target.closest?.(".gset")&&ev.target.id?.startsWith("g"))AISettingsSync.formDirty=true});
+
+window.addEventListener("focus",()=>{if(S.ready)AISettingsSync.load()});
