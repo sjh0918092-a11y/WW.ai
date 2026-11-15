@@ -21,7 +21,7 @@ const page=()=>({key:A,title:'항구',type:'지명',summary:'항구 도시',info
 let calls=[],behavior='ok',gate,release,n=0;
 const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
 const originalFetch=globalThis.fetch;
-const response=(kind)=> kind==='page'?{title:'선장',type:'인물',summary:'해양 탐험가',infobox:[{label:'성별',value:'남성'}],sections:[{heading:'개요',level:1,body:'선장은 푸른 바다를 항해한다.'}],categories:['소속:항구','유형:인물'],facts:[],newEntities:[],relations:[],timeline:behavior==='dedupe'?[{year:'1900',month:1,day:1,about:'선장',event:'선장이 참여한 항구 항해법 공표가 이루어지다.'}]:[]}:kind==='check'&&behavior==='dedupe'?{issues:[],timelineSame:[1]}:kind==='fix'?{edits:[{field:'body',old:'푸른',new:'붉은',memo:1}]}:kind==='analyze'?{facts:[{about:'선장',fact:'붉은 바다를 항해한다.'}],relations:[],timeline:[]}:kind==='check'&&behavior==='fix'?{issues:[{claim:'푸른 바다를 항해한다.',evidence:'세계의 바다는 붉다.',conflict:'붉은 바다여야 한다.',severity:'high'}]}:{issues:[]};
+const response=(kind)=> kind==='page'?{title:'선장',type:'인물',summary:'해양 탐험가',infobox:[{label:'성별',value:'남성'}],sections:[{heading:'개요',level:1,body:'선장은 푸른 바다를 항해한다.'}],categories:['소속:항구','유형:인물'],facts:[],newEntities:[],relations:[],timeline:behavior==='dedupe'?[{year:'1900',month:1,day:1,about:'선장',event:'선장이 참여한 항구 항해법 공표가 이루어지다.'}]:[]}:kind==='check'&&behavior==='dedupe'?{issues:[],timelineSame:[1]}:kind==='fix'?{edits:[{field:'body',old:'푸른',new:'붉은',memo:1}]}:kind==='analyze'?{facts:[{about:'선장',fact:'붉은 바다를 항해한다.'}],relations:[],timeline:[]}:kind==='check'&&['fix','timeout-fix'].includes(behavior)?{issues:[{claim:'푸른 바다를 항해한다.',evidence:'세계의 바다는 붉다.',conflict:'붉은 바다여야 한다.',severity:'high'}]}:{issues:[]};
 // 스텝 종류는 큐의 공개 상태로 확인한다. 프롬프트 문구 변경에 테스트가 의존하지 않는다.
 let activeEntry;
 globalThis.fetch=async(url,opts)=>{
@@ -32,6 +32,7 @@ globalThis.fetch=async(url,opts)=>{
  if(behavior==='hold'&&kind==='page') { gate?.(); await new Promise(r=>{release=r}); }
  if(behavior==='unknown'&&kind==='check') throw new Error('private-key must not leak');
  if(behavior==='reject'&&kind==='read') return Response.json({error:{message:'private-key'}},{status:429});
+ if ((behavior==='timeout-page'&&kind==='page')||(behavior==='timeout-fix'&&kind==='fix')) return new Response('private-key',{status:524});
  if(behavior==='thinking'&&kind==='page'&&JSON.parse(opts.body).generationConfig.thinkingConfig) return Response.json({error:{message:'thinking unsupported'}},{status:400});
  return Response.json({candidates:[{content:{parts:[{text:'hidden',thought:true},{text:JSON.stringify(response(kind))}]},finishReason:'STOP'}]});
 };
@@ -82,6 +83,18 @@ try {
  for(const mode of ['unknown','reject']){
  e=await reset();behavior=mode;await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,mode==='unknown'?'interrupted':'failed');assert(!r.result.pipeline.saved);assert(!r.result.pipeline.checked);assert.equal(storedPage(B),null);const before=calls.length;await fireAlarm(e.obj);assert.equal(calls.length,before);assert(r.result.candidates[0].content.parts[0].text);assert(!JSON.stringify(r).includes('private-key'));}
  pass('불명확한 제공자 결과·검사 실패는 원본을 유지하고 생성된 초안을 보관하며 자동 재호출하지 않는다');
+
+ for (const failedKind of ['page','fix']) {
+  e=await reset();behavior='timeout-'+failedKind;await request(e,'',e.body);r=await run(e);
+  assert.equal(r.job.status,'failed');
+  assert.equal(r.result.pipeline.error.code,'api_524');
+  assert.equal(r.result.pipeline.error.httpStatus,524);
+  assert.match(r.result.pipeline.error.message,/응답 시간이 초과/);
+  assert.equal(r.result.pipeline.steps.find(s=>s.kind===failedKind).error.code,'api_524');
+  assert.equal(Boolean(r.result.candidates[0].content.parts[0].text),failedKind==='fix');
+  assert.equal(storedPage(B),null);assert(!JSON.stringify(r).includes('private-key'));
+ }
+ pass('초안 생성과 자동 수정의 524 오류를 단계별로 보존하고, 오류가 난 초안은 자동 저장하지 않는다');
 
  e=await reset();await request(e,'',e.body);await fireAlarm(e.obj);
  // 다음 호출의 running 기록만 남긴 재시작: 제공자 결과를 모르므로 재전송 금지.

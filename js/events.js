@@ -42,7 +42,7 @@ document.addEventListener("click", ev => {
   if (!ev.target.closest(".search")) $("#sugg").hidden = true;
   const el = ev.target.closest("button, a"); if (!el) return;
   const d = el.dataset;
-  if (d.jobPreview) { AIRecovery.preview(d.jobPreview); return; }
+  if (d.jobPreview) { AIRecovery.preview(d.jobPreview, true); return; }
   if (d.jobApply) { AIRecovery.apply(d.jobApply); return; }
   if (d.jobCancel) { AIRecovery.cancel(d.jobCancel); return; }
   if (d.jobDownload) { AIRecovery.download(d.jobDownload); return; }

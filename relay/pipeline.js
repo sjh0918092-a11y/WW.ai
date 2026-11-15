@@ -12,7 +12,7 @@ const resultFor = (state, output, saved, error) => {
     version: 1, saved, wid: state.snapshot?.world.id, targetKey: output?.targetKey || state.input.key, checked: !!output?.checked,
     fixed: output?.fixed || 0, remaining: output?.remaining || 0, notFound: !!output?.notFound, redirectTo: output?.redirectTo || null,
     sceneUsed: output?.sceneUsed || "", angleRecorded: !!state.input.novel && saved,
-    steps: state.steps.map(({ kind, model, status }) => ({ kind, model, status })), ...(error ? { error } : {}),
+    steps: state.steps.map(({ kind, model, status, error }) => ({ kind, model, status, ...(error ? { error: safeError(error) } : {}) })), ...(error ? { error } : {}),
   } };
 };
 
@@ -81,7 +81,9 @@ export async function processPipeline(host, job, signal) {
   }
   const uncertain = state.steps.some(s => s.status === "unknown");
   if (engineError || output?.error || output?.failures?.length || runtime.failures.some(f => f.code === "replay_changed")) {
-    const e = engineError || output?.error || { code: output?.failures?.[0]?.code };
+    const failure = output?.failures?.[0];
+    const provider = failure && state.steps.find(s => s.kind === failure.kind && s.error?.code === failure.code)?.error;
+    const e = engineError?.safeMessage ? engineError : provider || failure || engineError || output?.error;
     await finish(uncertain ? "interrupted" : "failed", safeError(e), output); return;
   }
   if (uncertain) { await finish("interrupted", safeError({ code: "outcome_unknown" }), output); return; }

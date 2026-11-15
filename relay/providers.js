@@ -61,6 +61,7 @@ async function providerError(res) {
   else if (status === 401 || status === 403) code = "bad_key";
   else if (status === 404) code = "model_not_found";
   else if (status === 429) code = "rate_limited";
+  else if (status === 524) safeMessage = "AI 서버의 응답 시간이 초과되었습니다.";
   else if (status === 413 || /token count|too long|exceeds the maximum/i.test(message)) code = "prompt_too_large";
   else if (status === 400 && /think/i.test(message)) safeMessage = "선택한 thinking 설정을 지원하지 않습니다.";
   return { code, safeMessage, definite: true, status };
