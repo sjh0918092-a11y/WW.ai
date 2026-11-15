@@ -310,7 +310,7 @@ function chapterPlanPrompt(w, nextN, choice) {
 
 ${canonBlock(w)}
 
-${toneBlock(w)}${w.guide ? `## 작가 지침 (사용자 지정)\n${w.guide}\n\n` : ""}## 주인공
+${toneBlock(w)}## 주인공
 「${w.entities[pk].title}」${w.entities[pk].summary ? " — " + w.entities[pk].summary : ""}
 - 바라는 것: ${pr.want || "(정해지지 않음)"}
 - 결핍이나 상처: ${pr.wound || "(정해지지 않음)"}
@@ -385,7 +385,7 @@ function chapterBlockPrompt(w, key, chs) {
 
 ${canonBlock(w)}
 
-${toneBlock(w)}${w.guide ? `## 작가 지침 (사용자 지정)\n${w.guide}\n\n` : ""}${storyBlock(w, key)}
+${toneBlock(w)}${storyBlock(w, key)}
 
 ## 이 문서의 현재 내용
 ${docText(p, w)}

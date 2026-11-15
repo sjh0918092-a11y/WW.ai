@@ -307,7 +307,7 @@ function homeHtml() {
       <p class="note" style="margin:6px 0 0">${S.mode === "story" ? `주인공 한 명의 이야기가 장 단위로 위키 위에서 진행됩니다. 장마다 둘러보고 만들고 고친 문서가 다음 장 줄거리에 엮입니다. 이야기 길이는 아래에서 ${STORY_MIN}~${STORY_MAX}장 중에 고릅니다.` : "링크를 따라 자유롭게 문서를 늘려 가는 위키입니다."}</p>
       ${S.mode === "story" ? `<label class="lb">장 수 <span class="note" style="font-weight:400">이야기의 길이. 시작한 뒤에는 바꿀 수 없습니다. 장이 많을수록 생성 횟수와 시간이 늘어납니다</span></label>
       <div class="stabs-row" role="group" aria-label="장 수">${Array.from({ length: STORY_MAX - STORY_MIN + 1 }, (_, i) => STORY_MIN + i).map(n => `<button type="button" class="chip" data-chn="${n}" aria-pressed="${S.storyN === n}" ${S.creating ? "disabled" : ""}>${n}장</button>`).join("")}</div>` : ""}
-      <label class="lb" for="seedTa">원안</label>
+      <label class="lb" for="seedTa">원안 <span class="note" style="font-weight:400">2,000자까지</span></label>
       <div class="stabs" role="tablist" aria-label="원안 고르기">${ex}</div>
       ${S.seedTab === "dice" && S.dice ? `<div class="dice" aria-label="원안 주사위">
         ${diceKeys().map(k => `<div class="die"><span class="die-l">${DICE_LABEL[k]}</span><textarea class="die-v" rows="1" data-die="${k}" maxlength="80" aria-label="${DICE_LABEL[k]} (직접 고쳐 쓸 수 있습니다)" title="눌러서 직접 고쳐 쓸 수 있습니다" ${S.creating ? "disabled" : ""}>${esc(S.dice[k])}</textarea><button type="button" class="die-lock" data-lock="${k}" aria-pressed="${!!S.dice.locks[k]}" title="이 칸은 다시 굴려도 그대로 둡니다">${S.dice.locks[k] ? "고정됨" : "고정"}</button></div>`).join("")}
@@ -316,7 +316,7 @@ function homeHtml() {
         <p class="note" style="margin:0 0 8px">질문을 고르면 그 질문으로 바로 세계관을 만듭니다. 아래 첫 문서와 작가 지침 칸도 함께 반영됩니다.</p>
         <div class="wi-grid">${S.whatIfs.map(q => `<button type="button" class="wi" data-whatif="${esc(q)}" ${S.creating || !S.sample ? "disabled" : ""}><span>만약</span>${esc(q)}</button>`).join("")}</div>
         <div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="whatif-more" ${S.creating ? "disabled" : ""}>다른 질문 보기</button></div></div>` : ""}
-      <textarea id="seedTa" rows="7" ${S.creating ? "disabled" : ""} ${S.seedTab === "whatif" ? "hidden" : ""} placeholder="어떤 세계인지 몇 문장으로 적어 주세요. 무엇이 현실과 다른지, 언제 어디가 무대인지, 누가 무엇을 두고 다투는지가 있으면 좋습니다.&#10;&#10;예: 우주력 1388년, 위화도에서 회군한 기동갑주가 왕조를 갈아치웠고, 그 왕조가 500년을 버텨 온 콜로니 국가.">${esc(S.seed)}</textarea>
+      <textarea id="seedTa" rows="7" maxlength="2000" ${S.creating ? "disabled" : ""} ${S.seedTab === "whatif" ? "hidden" : ""} placeholder="어떤 세계인지 몇 문장으로 적어 주세요. 무엇이 현실과 다른지, 언제 어디가 무대인지, 누가 무엇을 두고 다투는지가 있으면 좋습니다.&#10;&#10;예: 우주력 1388년, 위화도에서 회군한 기동갑주가 왕조를 갈아치웠고, 그 왕조가 500년을 버텨 온 콜로니 국가.">${esc(S.seed)}</textarea>
       ${/^\d+$/.test(S.seedTab) ? `<p class="note" style="margin:6px 0 0">예시 원안입니다. 고쳐 쓰면 직접 작성 탭으로 옮겨집니다.</p>` : ""}
       ${S.mode === "story" ? `<label class="lb" for="firstIn">주인공 <span class="note" style="font-weight:400">선택 · 비워 두면 원안에 맞는 인물로 자동 선택</span></label>
       <input id="firstIn" class="txt" type="text" maxlength="60" value="${esc(S.first)}" placeholder="예: 이순신, 한서린" ${S.creating ? "disabled" : ""}>
@@ -330,7 +330,7 @@ function homeHtml() {
         <textarea rows="2" data-cast="${i}" data-cf="desc" maxlength="300" placeholder="특징 (예: 북관 출신 궁수. 말수가 적고 셈이 빠르다)" aria-label="등장인물 ${i + 1} 특징" ${S.creating ? "disabled" : ""}>${esc(c.desc)}</textarea></div>`).join("")}</div>` : ""}
       <button type="button" class="btn" data-act="cast-add" ${S.creating || S.cast.length >= 8 ? "disabled" : ""}>+ 등장인물 추가</button>` : `<label class="lb" for="firstIn">첫 문서 <span class="note" style="font-weight:400">비워 두면 세계관을 대표하는 항목으로 자동 선택</span></label>
       <input id="firstIn" class="txt" type="text" maxlength="60" value="${esc(S.first)}" placeholder="예: 위화도 회군, 태조 전용기, 한양 궤도 거주구" ${S.creating ? "disabled" : ""}>`}
-      <label class="lb" for="guideIn">작가 지침 <span class="note" style="font-weight:400">선택 · 세계관 전체에 걸쳐 지킬 방향. 모든 문서에 함께 전달됩니다</span></label>
+      <label class="lb" for="guideIn">작가 지침 <span class="note" style="font-weight:400">선택 · 문체 지침을 만들 때 반영할 방향. 문서 작성에는 문체 지침만 전달됩니다</span></label>
       <textarea id="guideIn" rows="3" maxlength="1000" placeholder="예: 일본 거대 로봇 메카닉 SF풍으로. 네임드 파일럿에게는 전용기를 준다. 양산기 바리에이션을 풍부하게. 잔혹한 묘사는 피한다." ${S.creating ? "disabled" : ""}>${esc(S.guideIn)}</textarea>
       <div class="row" ${S.seedTab === "whatif" && !S.creating && !S.createErr ? "hidden" : ""}>
         <button type="button" class="btn pri" data-act="create" ${S.creating || !S.sampleReady ? "disabled" : ""}>${S.creating ? "설정 노트를 만드는 중…" : S.regen ? (S.regen.keep ? "새 세계관으로 다시 만들기" : "지우고 다시 만들기") : S.mode === "story" ? "이야기 시작하기" : "세계관 만들기"}</button>

@@ -278,7 +278,8 @@ document.addEventListener("click", ev => {
       const w = S.world, label = norm($("#toneLabel")?.value || "");
       if (btn) { btn.disabled = true; btn.textContent = "만드는 중…"; }
       try {
-        const t = await detectTone(w, label);
+        const guide = $("#wGuide") ? $("#wGuide").value.replace(/\r/g, "").trim().slice(0, 1000) : w.guide;
+        const t = await detectTone({ ...w, guide }, label);
         if (!t) throw { code: "invalid_json" };
         if (S.world === w && $("#toneLabel")) { $("#toneLabel").value = t.label; $("#toneGuide").value = t.guide.join("\n"); $("#toneGuide").rows = Math.min(10, t.guide.length + 1); }
         toast("분위기 지침을 채웠습니다. '설정 저장'을 눌러야 반영됩니다.");

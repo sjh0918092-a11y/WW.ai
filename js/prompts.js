@@ -14,6 +14,7 @@ const TONE_SPEC = `분위기 지침(tone)은 이 세계관이 어떤 장르와 �
   - 수치 표현을 피한다면 크기와 정도를 대신 보여 줄 방법(지형 변화, 희생 규모, 비교 대상, 사람들의 반응)을 guide에 함께 쓴다. "제원을 표로 축적"과 "수치화 금지"처럼 서로 부딪히는 지침을 두지 않는다.
   - 주된 결과 대비되는 디테일을 어디서 쓸지 정한다. 장중한 세계라면 일상적·관료적 디테일(성문 옆 분실물 창구), 가벼운 세계라면 현실적인 무게(동네 꽃집의 임대료)를 문서의 결을 해치지 않는 곁가지 한두 군데로 한정한다.
   - 이 분위기에 어울리지 않아 피할 요소
+  - 작가 지침이 주어지면 문체뿐 아니라 소재·구성·묘사·금지 사항에 관한 요구도 빠뜨리지 않고 guide에 통합한다. 문서 집필자에게 작가 지침 원문은 별도로 전달되지 않으므로, 이 문체 지침만으로 그 요구를 따를 수 있게 구체적으로 쓴다.
   위키는 한국어로 쓴다는 점을 전제로 한다.`;
 function normTone(t, label) {
   if (!t || typeof t !== "object") return null;
@@ -24,7 +25,7 @@ function normTone(t, label) {
 function toneBlock(w) {
   if (!w.tone) return "";
   return `## 세계관의 분위기: ${w.tone.label}
-문서의 형식(백과사전 구조, 3인칭, '~이다'체)은 그대로 두고, 작명, 어휘, 문장의 결, 어떤 디테일을 다룰지, 인용의 말투를 아래 지침에 맞춘다. 이미 확정된 고유명사는 바꾸지 않는다.
+문서의 형식(백과사전 구조, 3인칭, '~이다'체)은 그대로 두고, 작명, 어휘, 문장의 결, 어떤 디테일을 다룰지, 인용의 말투를 아래 지침에 맞춘다. 이 지침은 공통 문체·구성·분량·기법 규칙보다 우선하되, 핵심 규칙·연표·사용자 확정 설정·다른 문서의 확정 사실을 따른다. 이미 확정된 고유명사는 바꾸지 않는다.
 ${w.tone.guide.map(g => "- " + g).join("\n")}
 
 `;
@@ -391,11 +392,7 @@ function pagePrompt(w, key, rewriteDir = null, guide = "", angle = null, angleMo
 
 ${canonBlock(w, [e.title, e.summary, ...e.facts.filter(live).map(f => f.t), ...e.mentions.filter(live).map(m => m.text)].join("\n"), inputs)}
 ${isStory(w) ? "\n" + storyBlock(w, key, true) + "\n" : ""}
-${toneBlock(w)}${w.guide ? `## 작가 지침 (사용자 지정)
-${w.guide}
-이 지침은 아래의 문체, 구성, 분량, 기법 규칙보다 우선한다. 다만 핵심 규칙, 연표, 사용자 확정 설정, 다른 문서가 확정한 사실과 부딪히면 그쪽을 따른다.
-
-` : ""}## 작성할 문서: 「${e.title}」
+${toneBlock(w)}## 작성할 문서: 「${e.title}」
 ${target}
 ${rewriteDir === null ? redirectBlock(w, key) : ""}
 ${(() => { const nbs = (inputs.nav ? navboxesFor(w, key).slice(0, inputs.navCount) : []).filter(([, nb]) => nb.src !== key); return nbs.length ? `\n이 항목은 아래 예전 틀에 실려 있다. 이름, 번호, 역할, 전·현직 여부와 다른 구성원과의 관계를 틀과 일치시킨다.\n${nbs.map(([, nb]) => navboxText(nb, inputs.navCount)).join("\n\n")}` : ""; })()}
