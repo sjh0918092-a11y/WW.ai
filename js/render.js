@@ -290,6 +290,7 @@ function homeHtml() {
         ${S.creating ? `<span class="genpill"><span class="dot"></span>${S.mode === "story" ? "핵심 규칙, 연표, 주인공과 1장을 정리하고 있습니다" : "핵심 규칙과 연표를 정리하고 있습니다"}</span>` : ""}
         ${!S.sampleReady ? `<span class="note">생성 기능을 준비하는 중…</span>` : (!S.sample ? `<span class="note">${esc(ERR.no_sample)}</span>` : "")}
       </div>
+      <div id="worldCostMount"></div>
       ${S.createErr ? `<div class="banner warn">${esc(S.createErr)}</div>` : ""}
       <ol class="how">
         <li><span>1</span>원안에서 핵심 규칙, 연표, 작중 기준 시점을 뽑아 설정 노트를 만듭니다.</li>

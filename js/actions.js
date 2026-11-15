@@ -5,12 +5,14 @@ async function createWorld() {
   const seed = S.seed.trim();
   if (seed.length < 10) { toast("원안을 한두 문장 이상 적어 주세요."); return; }
   if (!S.sample) { S.createErr = ERR.no_sample; renderMain(); return; }
+  const worldCost = typeof DocumentCost!=="undefined" ? DocumentCost.startWorld() : null;
+  let timelineWork;
   S.creating = true; S.createErr = null; renderMain();
   try {
     const first = norm(S.first).slice(0, 60), story = S.mode === "story";
     const guide = String(S.guideIn || "").replace(/\r/g, "").trim().slice(0, 1000);
     const user = story ? { total: Math.min(STORY_MAX, Math.max(STORY_MIN, +S.storyN || STORY_DEF)), desc: String(S.protoDesc || "").replace(/\r/g, "").trim().slice(0, 500), cast: (S.cast || []).map(c => ({ name: norm(c.name).slice(0, 40), desc: norm(c.desc).slice(0, 300), rel: norm(c.rel).slice(0, 120) })).filter(c => c.name).slice(0, 8) } : {};
-    const b = await callJson(story ? "storyBible" : "bible", biblePrompt(seed, first, guide, story, user), { modelTier: "default" }, { title: first });
+    const b = await callJson(story ? "storyBible" : "bible", biblePrompt(seed, first, guide, story, user), { modelTier: "default", costSession: worldCost }, { title: first });
     if (!b || !b.title) throw { code: "invalid_json" };
     if (story && !(b.chapter1 && b.chapter1.summary)) throw { code: "invalid_json" };
     const w = { kind: "world", id: "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
@@ -18,7 +20,7 @@ async function createWorld() {
       era: String(b.era || "미상").slice(0, 40), historical: b.historical === true || b.historical === "true", guide, tone: normTone(b.tone, ""), rules: (Array.isArray(b.rules) ? b.rules : []).map(r => stripMarks(asText(r))).filter(Boolean).slice(0, 10),
       calendars: cleanCalendars(b.calendars), ...(cleanCalendars(b.undatedCalendars).length ? { undatedCalendars: cleanCalendars(b.undatedCalendars) } : {}), timeline: [], userCanon: "", entities: {}, mainKey: null, createdAt: Date.now() };
     for (const t of (Array.isArray(b.timeline) ? b.timeline : [])) addTimeline(w, t, "seed");
-    afterTimeline(w);   // 월·일이 빠진 항목만 한 번 다시 묻는다
+    timelineWork = afterTimeline(w, { costSession: worldCost });   // 날짜 보완은 뒤에서 계속하고 같은 세계관 비용으로 집계한다
     const mt = first || norm(b.mainTitle || b.title);
     w.mainKey = keyOf(mt); w.entities[w.mainKey] = newEntity(mt, "", "");
     if (story) setupStory(w, b, user);
@@ -33,11 +35,18 @@ async function createWorld() {
       S.worlds = S.worlds.filter(x => x.id !== rg.id);
       if (S.world?.id === rg.id) { S.world = null; S.pages = {}; }
     }
+    if(worldCost)DocumentCost.bindWorld(worldCost,w.id);
     await Store.saveWorld(w);
     S.worlds.unshift(w); S.creating = false; S.regen = null;
     S.seed = S.ownSeed = S.first = S.guideIn = S.protoDesc = ""; S.cast = []; S.seedTab = "own"; S.dice = null; S.whatIfs = null;   // 만들고 나면 입력란을 모두 비운다
     await openWorld(w.id);
   } catch (e) { S.creating = false; S.createErr = errMsg(e); renderMain(); }
+  finally {
+    if(worldCost){
+      if(timelineWork)Promise.resolve(timelineWork).then(()=>DocumentCost.finish(worldCost),()=>DocumentCost.finish(worldCost));
+      else DocumentCost.finish(worldCost);
+    }
+  }
 }
 
 /* 스토리 모드 세계관 준비: 주인공(=첫 문서), 숨겨진 뼈대, 1장 */

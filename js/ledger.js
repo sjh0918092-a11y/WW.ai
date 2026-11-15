@@ -183,11 +183,11 @@ ${rows.join("\n")}
 
 JSON 객체 하나만 출력: {"dates":[{"i":1,"month":3,"day":14}]}`;
 }
-async function askTimelineDates(w) {
+async function askTimelineDates(w, opts = {}) {
   const items = (w.timeline || []).filter(t => t.dateAsk && !t.sup).slice(0, 40);
   if (!items.length || !S.sample) return 0;
   let r = null;
-  try { r = await callJson("timelineDate", timelineDatePrompt(w, items), { modelTier: "quick" }, { title: w.title + " · 연표 날짜" }); } catch {}
+  try { r = await callJson("timelineDate", timelineDatePrompt(w, items), { modelTier: "quick", ...opts }, { title: w.title + " · 연표 날짜" }); } catch {}
   let n = 0;
   for (const d of (Array.isArray(r?.dates) ? r.dates : [])) {
     const t = items[(parseInt(d?.i, 10) || 0) - 1], md = t && tlMD(d.month, d.day);
@@ -198,9 +198,9 @@ async function askTimelineDates(w) {
   return n || -1;   // 물어봤으면 0이 아니다(표시를 지웠으니 저장해야 한다)
 }
 /* 생성 흐름에서 연표를 받은 뒤 부른다. 뒤에서 돌고, 끝나면 저장한다 */
-function afterTimeline(w) {
+function afterTimeline(w, opts = {}) {
   if (!w || !(w.timeline || []).some(t => t.dateAsk) || !S.sample) return;
-  askTimelineDates(w).then(async n => {
+  return askTimelineDates(w, opts).then(async n => {
     if (!n) return;
     try { await Store.saveWorld(w); } catch {}
     if (S.world === w && S.view?.name === "canon") renderMain();

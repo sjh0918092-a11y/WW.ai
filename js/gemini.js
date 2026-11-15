@@ -262,7 +262,7 @@ async function callJson(kind, prompt, opts = {}, meta = {}) {
   const user = opts.onText;
   const rec = { at: Date.now(), kind, tier: opts.modelTier || "default", model: "", effort: "", in: prompt.length, ...meta };
   const target = opts.recoveryTarget || { wid: S.world?.id, key: S.gen?.key || S.checking || S.proseGen?.key || S.edit?.key || S.view?.key };
-  const costCall = typeof DocumentCost !== "undefined" ? DocumentCost.begin(target.wid,target.key,kind) : null;
+  const costCall = typeof DocumentCost !== "undefined" ? (opts.costSession ? DocumentCost.beginSession(opts.costSession,kind) : DocumentCost.begin(target.wid,target.key,kind)) : null;
   const recoveryMeta = typeof AIRecovery !== "undefined" && AIJobs.enabled("gemini") && S.world?.id === target.wid ? await AIRecovery.capture(kind, S.world, target.key, opts.recoveryMeta || (S.gen?.recovery ? { group: S.gen.recovery.group } : {})) : null;
   const jobMeta = { kind, title: meta.title || "", wid: target.wid || "", key: target.key || "", ...(recoveryMeta || {}), ...(opts.jobMeta || {}) };
   const o = { progressWatch: ["page", "check", "read", "prose", "section", "discovery"].includes(kind), ...opts, jobMeta,

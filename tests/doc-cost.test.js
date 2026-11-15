@@ -9,6 +9,7 @@ assert.equal(C.estimate({model:'unknown',usage:{promptTokenCount:5}},at),null);a
 const r=C.start('world','page');const job={steps:[{slot:'page:1',kind:'page',model:'claude-sonnet-4-5',status:'done',usage:{promptTokenCount:1000,candidatesTokenCount:100}},{slot:'check:1',kind:'check',model:'claude-haiku-4-5',status:'running'}]};
 C.server(r,job);const once=C.content(r);C.server(r,job);assert.equal(C.content(r),once);assert(once.includes('$0.0045'));assert(once.includes('미집계'));
 C.finish(r);assert.equal(r.rows[1].status,'unknown');assert(C.content(r).includes('사용량 집계 중/미제공'));assert(!JSON.stringify(r).includes('prompt"'));
+const world=C.startWorld(), original=world.storageKey;const call=C.beginSession(world,'bible');C.update(call,'gemini-3.8-flash',{promptTokenCount:1000,candidatesTokenCount:200},'done');C.bindWorld(world,'new-world');assert.equal(C.get('new-world','@world'),world);assert(!values.has(original));C.finish(world);assert(C.content(world).includes('세계관 초기 생성 비용'));
 const stale=C.start('world','stale');C.active.clear();assert.equal(C.begin('world','stale','check'),null);
 ctx.GS.relay='https://other.test';assert.equal(C.get('world','page'),undefined);
 console.log('✓ USD arithmetic, caches, thinking, date-based rates, unknown usage, polling deduplication, and server scope');

@@ -1,7 +1,7 @@
 "use strict";
 /* 문서별 토큰·비용. 제공자가 보고한 사용량만 계산하며 키·본문은 보관하지 않는다. */
 const DocumentCost = {
-  prefix: "wwiki:docCost:", records: new Map(), active: new Set(),
+  prefix: "wwiki:docCost:", records: new Map(), active: new Set(), creation: null,
   tokenKeys: ["promptTokenCount", "candidatesTokenCount", "thoughtsTokenCount", "cachedContentTokenCount", "cacheCreationInputTokenCount", "cacheCreation5mInputTokenCount", "cacheCreation1hInputTokenCount"],
   counts(raw) {
     if (!raw || !this.tokenKeys.some(k => Number.isFinite(raw[k]))) return null;
@@ -33,6 +33,17 @@ const DocumentCost = {
     const r = { id: crypto.randomUUID(), storageKey:this.key(wid,key), wid,key,at:Date.now(),finished:false,rows:[] };
     this.records.set(r.storageKey,r); this.active.add(r.id); this.save(r); return r;
   },
+  startWorld() {
+    const r=this.start("creating:"+crypto.randomUUID(),"@world");r.category="world";this.creation=r;this.save(r);return r;
+  },
+  bindWorld(r,wid) {
+    if(!r)return;
+    const previous=r.storageKey, scope=JSON.parse(previous.slice(this.prefix.length));scope[2]=wid;
+    r.wid=wid;r.storageKey=this.prefix+JSON.stringify(scope);
+    this.records.delete(previous);this.records.set(r.storageKey,r);
+    try{localStorage.removeItem(previous);}catch{}
+    this.save(r);this.render();
+  },
   save(r) {
     if (!r || this.records.get(r.storageKey) !== r) return;
     try {
@@ -43,7 +54,10 @@ const DocumentCost = {
     } catch {}
   },
   begin(wid,key,kind) {
-    const r=this.get(wid,key); if (!r || r.finished || !this.active.has(r.id)) return null;
+    return this.beginSession(this.get(wid,key),kind);
+  },
+  beginSession(r,kind) {
+    if (!r || r.finished || !this.active.has(r.id)) return null;
     const row={id:crypto.randomUUID(),kind,model:"",status:"running",usage:null}; r.rows.push(row); this.save(r);this.render();return {record:r,row};
   },
   update(call, model, usage, status) {
@@ -81,19 +95,30 @@ const DocumentCost = {
     }).join("");
     const amount=known?this.money(total):"산정 대기";
     const partial=missing || !r.finished;
-    return `<summary>문서 생성 비용 · ${amount}${partial&&known?" + 미집계":""} <span class="note">${r.finished?"완료된 요청 기준":"집계 중"}</span></summary><div class="cost-body"><p>${r.rows.some(row=>this.counts(row.usage))?`확인된 입력 ${input.toLocaleString()} · 출력·생각 ${(output+thought).toLocaleString()} 토큰`:"확인된 사용량이 아직 없습니다."}</p>${rows?`<ul>${rows}</ul>`:"<p>제공자 사용량을 기다리는 중입니다.</p>"}<p class="note">문서 작성·검사·수정 집계 · 이미지 비용 별도 · API 사용량 수신 시 갱신 · 유료 표준 단가의 USD 예상액입니다. 미수신·실패 요청, 세금·할인·저장 비용은 실제 청구와 다를 수 있습니다. Claude가 생각 토큰을 따로 보고하지 않으면 출력에 포함됩니다.</p><p class="note">단가 확인 2026-11-15 · <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener noreferrer">Gemini 요금</a> · <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noopener noreferrer">Claude 요금</a></p></div>`;
+    return `<summary>${r.category==="world"?"세계관 초기 생성 비용":"문서 생성 비용"} · ${amount}${partial&&known?" + 미집계":""} <span class="note">${r.finished?"완료된 요청 기준":"집계 중"}</span></summary><div class="cost-body"><p>${r.rows.some(row=>this.counts(row.usage))?`확인된 입력 ${input.toLocaleString()} · 출력·생각 ${(output+thought).toLocaleString()} 토큰`:"확인된 사용량이 아직 없습니다."}</p>${rows?`<ul>${rows}</ul>`:"<p>제공자 사용량을 기다리는 중입니다.</p>"}<p class="note">${r.category==="world"?"기본 설정·초기 연표·날짜 보완 집계 · 문서 생성 비용 별도":"문서 작성·검사·수정 집계 · 이미지 비용 별도"} · API 사용량 수신 시 갱신 · 유료 표준 단가의 USD 예상액입니다. 미수신·실패 요청, 세금·할인·저장 비용은 실제 청구와 다를 수 있습니다. Claude가 생각 토큰을 따로 보고하지 않으면 출력에 포함됩니다.</p><p class="note">단가 확인 2026-11-15 · <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener noreferrer">Gemini 요금</a> · <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noopener noreferrer">Claude 요금</a></p></div>`;
   },
-  render() {
-    if (typeof S === "undefined" || S.view.name!=="article" || !S.world) return;
-    const root=document.querySelector("#main .sheet"),r=this.get(S.world.id,S.view.key); if(!root||!r){document.getElementById("docCostPanel")?.remove();return;}
-    let panel=document.getElementById("docCostPanel");
-    if (!panel) {
-      panel=document.createElement("details");panel.id="docCostPanel";panel.className="doc-cost memo";
-      try {panel.open=localStorage.getItem("wwiki:costExpanded")==="true";}catch{}
-      let open=panel.open;panel.addEventListener("toggle",()=>{if(open===panel.open)return;open=panel.open;try{localStorage.setItem("wwiki:costExpanded",String(open));}catch{}});
+  mount(root,r,id) {
+    let panel=document.getElementById(id);
+    if(!root||!r){panel?.remove();return;}
+    if(!panel){
+      panel=document.createElement("details");panel.id=id;panel.className="doc-cost memo";
+      const pref=id==="worldCostPanel"?"wwiki:worldCostExpanded":"wwiki:costExpanded";
+      try{panel.open=localStorage.getItem(pref)==="true";}catch{}
+      let open=panel.open;panel.addEventListener("toggle",()=>{if(open===panel.open)return;open=panel.open;try{localStorage.setItem(pref,String(open));}catch{}});
       const heading=root.querySelector("h1,h2");if(heading)heading.after(panel);else root.prepend(panel);
     }
     const html=this.content(r);if(panel.innerHTML!==html)panel.innerHTML=html;
+  },
+  render() {
+    if(typeof S==="undefined")return;
+    if(S.view.name==="home"){
+      const r=this.creation, mine=r&&r.storageKey===this.key(r.wid,r.key);
+      this.mount(document.getElementById("worldCostMount"),mine?r:null,"worldCostPanel");return;
+    }
+    if(!["article","canon"].includes(S.view.name)||!S.world)return;
+    const root=document.querySelector("#main .sheet");
+    if(S.view.name==="article")this.mount(root,this.get(S.world.id,S.view.key),"docCostPanel");
+    this.mount(root,this.get(S.world.id,"@world"),"worldCostPanel");
   },
   jobHtml(receipt, report) {
     const steps=report?.steps||receipt?.steps;
