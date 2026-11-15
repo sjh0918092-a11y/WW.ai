@@ -105,8 +105,10 @@ function joinCont(a, b) {
 }
 const gemini = {
   async stream(model, body, opts, prefix) {
-    if (typeof AIJobs !== "undefined" && AIJobs.enabled("gemini")) {
-      const j = await AIJobs.run("gemini.generate", model, body, opts), c = j.candidates?.[0];
+    const provider = /^claude-/.test(model) ? "claude" : "gemini";
+    if (provider === "claude" && (typeof AIJobs === "undefined" || !AIJobs.enabled(provider))) throw { code: "job_unavailable", serverJob: true, message: "Claude는 중계 서버 연결·로그인·서버 AI 실행이 필요합니다." };
+    if (typeof AIJobs !== "undefined" && AIJobs.enabled(provider)) {
+      const j = await AIJobs.run(provider + ".generate", model, body, opts), c = j.candidates?.[0];
       const text = (c?.content?.parts || []).filter(p => typeof p.text === "string" && !p.thought).map(p => p.text).join("");
       if (text) opts.onText?.({ text: prefix ? joinCont(prefix, text) : text });
       return { text, finish: c?.finishReason || "", block: j.promptFeedback?.blockReason || "", usage: j.usageMetadata, serverJob: true };

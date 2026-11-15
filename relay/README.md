@@ -1,4 +1,39 @@
-# Gemini 중계 서버 (Cloudflare Worker)
+# AI 중계 서버 (Cloudflare Worker)
+
+## OpenAI·Claude 서버 키 (v7.07)
+
+기존 Worker `lucky-feather-d3e9` → **Settings → Variables and Secrets → Add**에서
+다음 두 항목을 **Secret**으로 등록하고 Deploy한다. 키 값은 채팅·소스 코드·일반 Text 변수에 넣지 않는다.
+기존 `GEMINI_KEY`, `PASSWORDS`, D1, Durable Object 설정은 유지한다.
+
+| 이름 | 종류 | 값 |
+|---|---|---|
+| `OPENAI_API_KEY` | Secret | OpenAI API 키 (이미지 생성) |
+| `ANTHROPIC_API_KEY` | Secret | Anthropic API 키 (Claude 문서 작성·검사) |
+
+CLI를 쓰는 경우 이 폴더에서 다음 명령으로 숨김 입력한다. 키를 명령줄 인수로 붙이지 않는다.
+
+```sh
+npx wrangler secret put OPENAI_API_KEY
+npx wrangler secret put ANTHROPIC_API_KEY
+```
+
+배포 후 Worker 루트 응답의 `openaiKeyConfigured`, `claudeKeyConfigured`가 각각 `true`인지 확인한다.
+이는 키의 존재만 확인하며, 유효성·결제·모델 접근 권한은 실제 요청으로 확인해야 한다.
+
+앱에서 **AI 연결 설정 → 중계 서버로 연결**을 선택하고 기존 접속 암호를 넣은 뒤 계정으로 로그인한다.
+**로그인한 동안 AI 요청을 서버에서 실행**을 켠다.
+
+- OpenAI: 브라우저의 OpenAI API 키 칸을 비워 두면 서버 키로 이미지 생성한다. 개인 키가 있으면
+  개인 키를 우선 사용하고, 서버 전송은 기존 개인 키 허용 설정을 따른다. OpenAI 텍스트 모델은 추가하지 않았다.
+- Claude: 기본·빠른·검사 모델에 Anthropic 계정에서 지원하는 정확한 `claude-` 모델 ID를 입력한다
+  (예: `claude-sonnet-4-5`). Gemini 모델과 섞어 쓸 수 있다. 검사 모델을 비우면 기본 모델을 따른다.
+  **문서 모델 연결 시험**으로 테스트할 수 있다. 이 시험은 유료 API 요청이다.
+- 문서 전체 서버 과정에서도 각 단계 모델에 맞는 키를 사용한다. Claude는 서버 키만 지원한다.
+  Claude 요청은 Messages API, 출력 상한 16,384 토큰, 모델 기본 생각 설정을 사용한다.
+  응답은 완료 후 한 번에 받으며, 모델·출력 상한은 계정의 API 지원 범위에 따라야 한다.
+- 공유 키 호출에는 계정 로그인과 기존 `PASSWORDS` 접속 암호가 모두 필요하다.
+  키는 브라우저나 작업 조회 응답에 반환하지 않고 공유 키를 작업 저장소에 복사하지 않는다.
 
 ## 서버 AI 작업 전환 (v6.90)
 
@@ -20,7 +55,7 @@ GitHub 연결 또는 이 폴더에서 `wrangler deploy`로 배포한다.
 
 - 기존 중계는 Workers 요청을 사용하며, 서버 AI 작업은 Durable Objects의 요청·실행·저장 사용량도 발생합니다. 실제 비용은 계정 플랜과 사용량에 따릅니다.
 - 접속 암호가 없거나 틀린 요청, 허용하지 않은 사이트에서 온 요청은 막습니다.
-- Gemini 생성과 모델 목록 조회 외의 요청은 모두 막습니다.
+- 기존 중계 경로는 Gemini 생성과 모델 목록 조회만 허용합니다. 로그인한 서버 AI 작업은 Gemini·OpenAI 이미지·Claude 문서를 지원합니다.
 
 ## 1. Worker 만들기
 

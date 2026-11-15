@@ -5,7 +5,8 @@ const AIJobs = {
   enabled(provider = "gemini") {
     if (GS.serverJobs === false || !Sync.acct?.token) return false;
     const personal = GS.serverKeys === true && GS.serverKeysFor === normRelay(GS.relay || DEFAULT_RELAY);
-    return provider === "openai" ? !!(personal && GS.openaiKey) : gRelay() ? !!GS.pass : !!(personal && GS.key);
+    if (provider === "claude") return gRelay() && !!GS.pass;
+    return provider === "openai" ? !!(GS.openaiKey ? personal : gRelay() && GS.pass) : gRelay() ? !!GS.pass : !!(personal && GS.key);
   },
   receipts() {
     const all = [];
@@ -57,10 +58,10 @@ const AIJobs = {
   },
   async run(type, model, input, opts = {}) {
     if (opts.signal?.aborted) throw { code: "cancelled", serverJob: true };
-    const provider = type.startsWith("openai.") ? "openai" : "gemini";
+    const provider = type.startsWith("openai.") ? "openai" : type.startsWith("claude.") ? "claude" : "gemini";
     if (!this.enabled(provider)) throw { code: "job_unavailable", serverJob: true, message: "로그인과 서버 AI 작업 설정을 확인해 주세요." };
     const ctx = { base: Sync.base(), owner: Sync.acct.id, token: Sync.acct.token, pass: GS.pass };
-    const key = provider === "openai" ? GS.openaiKey : gRelay() ? "" : GS.key;
+    const key = provider === "openai" ? GS.openaiKey : provider === "claude" ? "" : gRelay() ? "" : GS.key;
     const id = crypto.randomUUID(), body = { id, type, model, input, ...(opts.jobMeta ? { meta: opts.jobMeta } : {}), ...(key ? { credential: { type: "personal", key } } : {}) };
     const receipt = { id, type, model, owner: ctx.owner, base: ctx.base, createdAt: Date.now(), status: "submitting", meta: opts.jobMeta || {} };
     // 접수보다 먼저 저장한다. 저장할 수 없으면 AI를 시작하지 않는다. 키·입력은 이 기록에 넣지 않는다.

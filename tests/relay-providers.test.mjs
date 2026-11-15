@@ -52,7 +52,6 @@ try {
   ok("Gemini 이미지의 모달리티·해상도·참고 이미지·비율을 유지한다");
 
   for (const invalid of [
-    { ...openai("bad-missing-key01"), credential: undefined },
     { ...openai("bad-key-shape-001"), credential: { type: "personal", key: "x\nsecret" } },
     { ...openai("bad-provider-001"), model: "gemini-main" },
     { ...openai("bad-image-size01"), input: { ...openai("x").input, size: "99999x99999" } },

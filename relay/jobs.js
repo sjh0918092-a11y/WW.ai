@@ -3,7 +3,7 @@
  * 브라우저에 접수 응답이 도착하지 않아도 같은 id로 다시 접수하면 같은 작업이다.
  */
 import { processPipeline } from "./pipeline.js";
-import { validateJob, boundedText, runProvider } from "./providers.js";
+import { validateJob, boundedText, runProvider, serverKeyName } from "./providers.js";
 const MAX_INPUT = 2 * 1024 * 1024;
 const MAX_JOBS = 20;
 const MAX_HISTORY = 500;
@@ -50,7 +50,9 @@ export async function jobsApi(request, env, url, cors, fail, uid, passOk) {
     catch (e) { return fail(e?.code === "too_large" ? 413 : 400, "작업 요청을 확인해 주세요. 본문은 최대 2MiB입니다."); }
     const invalid = validateJob(body); if (invalid) return fail(400, invalid);
     if (!body.credential) {
-      if (!env.GEMINI_KEY || !env.PASSWORDS) return fail(503, "서버에 Gemini API 키 또는 접속 암호가 설정되지 않았습니다.");
+      const models = body.type === "document.pipeline" ? [body.input.settings.main || body.model, body.input.settings.quick || "gemini-3.5-flash-lite", body.input.settings.check || body.input.settings.main || body.model] : [body.model];
+      const missing = [...new Set(models.map(model => serverKeyName(body.type, model)))].filter(name => !env[name]);
+      if (missing.length || !env.PASSWORDS) return fail(503, "서버에 " + [...missing, ...(!env.PASSWORDS ? ["PASSWORDS"] : [])].join(", ") + " 설정이 필요합니다.");
       if (!(await passOk(request.headers.get("X-WW-Pass") || "", env.PASSWORDS))) return fail(403, "중계 서버 접속 암호가 올바르지 않습니다.");
     }
   }

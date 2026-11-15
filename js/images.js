@@ -106,8 +106,8 @@ const IMAGE_MODELS = [
 const IMAGE_STYLES = ["세계관 지침 따름", "실사", "애니메이션", "웹툰", "유화", "수채화", "픽셀아트", "3D 렌더"];
 const imageDocStamp = p => JSON.stringify([p.title, p.type, p.summary, p.infobox, p.sections]);
 const openAIImage = model => /^gpt-image-/.test(model || "");
-const imageReady = model => openAIImage(model) ? !!GS.openaiKey : gReady();
-const imageSetupHint = model => openAIImage(model) ? "AI 연결 설정에서 OpenAI API 키를 저장해 주세요. ChatGPT 구독과 별도로 API 사용료가 청구됩니다." : "AI 연결 설정에서 이미지 생성이 가능한 Gemini API 연결을 저장해 주세요.";
+const imageReady = model => openAIImage(model) ? !!GS.openaiKey || serverImageJob(model) : gReady();
+const imageSetupHint = model => openAIImage(model) ? "OpenAI API 키를 저장하거나, 중계 서버 연결·로그인·서버 AI 실행을 설정해 주세요. API 사용료는 별도입니다." : "AI 연결 설정에서 이미지 생성이 가능한 Gemini API 연결을 저장해 주세요.";
 const imageSizeFor = ratio => ({ "1:1": "1024x1024", "3:4": "1152x1536", "4:3": "1536x1152", "9:16": "864x1536", "16:9": "1536x864" })[ratio] || "1024x1024";
 const serverImageJob = model => typeof AIJobs !== "undefined" && AIJobs.enabled(openAIImage(model) ? "openai" : "gemini");
 async function openAIImageFetch(model, prompt, ref, o, signal) {
