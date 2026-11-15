@@ -1,6 +1,6 @@
 import { createDocumentEngine, ENGINE_SOURCE } from "./engine.generated.js";
 import { snapshotWorld, commitDocument, digest } from "./pipeline-store.js";
-import { runProvider } from "./providers.js";
+import { runProvider, usageCounts } from "./providers.js";
 const yieldError = () => ({ code: "pipeline_yield", serverJob: true });
 const phaseFor = kind => ["check","read","ageRule"].includes(kind) ? "check" : ["fix","analyze"].includes(kind) ? "fix" : "generate";
 const safeError = e => ({ code: e?.code || "pipeline_error", message: e?.safeMessage || "문서 작업을 끝내지 못해 원본을 유지했습니다. AI 작업에서 결과를 확인해 주세요.", ...(e?.status ? { httpStatus: e.status } : {}) });
@@ -12,7 +12,7 @@ const resultFor = (state, output, saved, error) => {
     version: 1, saved, wid: state.snapshot?.world.id, targetKey: output?.targetKey || state.input.key, checked: !!output?.checked,
     fixed: output?.fixed || 0, remaining: output?.remaining || 0, notFound: !!output?.notFound, redirectTo: output?.redirectTo || null,
     sceneUsed: output?.sceneUsed || "", angleRecorded: !!state.input.novel && saved,
-    steps: state.steps.map(({ kind, model, status, error }) => ({ kind, model, status, ...(error ? { error: safeError(error) } : {}) })), ...(error ? { error } : {}),
+    steps: state.steps.map(({ kind, model, status, error, response }) => ({ kind, model, status, usage:usageCounts(response?.usageMetadata), ...(error ? { error: safeError(error) } : {}) })), ...(error ? { error } : {}),
   } };
 };
 

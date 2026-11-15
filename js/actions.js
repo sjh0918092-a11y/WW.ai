@@ -319,6 +319,7 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
   const birthday = !rewrite && (!e.type || e.type === "인물") && !hasBirth(e) ? randomBirthday() : null;   // 랜덤 서핑·스토리 모드 인물도 모두 여기서 고른다
   if (!rewrite && (!e.type || e.type === "인물") && !e.persona) e.persona = rollPersona();   // 한 번 굴린 성격 경향은 항목에 남겨 다시 쓰거나 고칠 때도 그대로 쓴다
   const persona = !e.type || e.type === "인물" ? e.persona || null : null;
+  const costSession = typeof DocumentCost !== "undefined" ? DocumentCost.start(w.id,k) : null;
   S.gen = { key: k, wid: w.id, title: e.title, raw: "", t0: performance.now(), ctl, rewrite: !!rewrite, direction: direction || "", angle, recovery };
   S.genErr = null; S.confirmRewrite = null;
   if (!opts.queued) { S.view = { name: "article", key: k }; renderAll(); window.scrollTo({ top: 0 }); } else renderAll();   // 대기열에서 시작한 문서는 보던 화면을 바꾸지 않는다
@@ -407,7 +408,7 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
     else if (err?.code !== "cancelled") S.genErr = { key: k, msg: errMsg(err), guide: direction || "" };
     else S.genErr = { key: k, msg: ERR.cancelled, cancelled: true, guide: direction || "" };
     afterGen(k, false, opts.queued && err?.code !== "cancelled");
-  }
+  } finally { if(typeof DocumentCost!=="undefined")DocumentCost.finish(costSession); }
 }
 function afterGen(k, ok, failToast = false) {
   const here = S.view.name === "article" && S.view.key === k;

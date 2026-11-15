@@ -255,6 +255,7 @@ function jobsHtml() {
     return esc(label) + " " + esc(status);
   }).join(" · ") : "";
   const result = R.busy ? `<p class="note" role="status">결과를 불러오는 중…</p>` : d ? `<section class="job-detail"><h2>${esc(m.title || "작업 결과")}</h2><p class="note">${esc(labels[r.status] || "상태 확인 필요")} · ${esc(r.model || "")}</p>
+    ${typeof DocumentCost!=="undefined" ? DocumentCost.jobHtml(r,report) : ""}
     ${report ? `<p class="banner ${report.saved ? "" : "warn"}">${report.saved ? "서버에 저장된 결과입니다. 문서 열기는 AI를 다시 실행하지 않습니다." : d.text ? "초안을 보관했습니다. 문서는 자동 저장되지 않았습니다." : "문서가 저장되지 않았습니다."}</p>` : ""}
     ${d.error || failure?.message ? `<p class="banner warn" role="alert">${esc(d.error || failure.message)}</p>` : ""}
     ${failure?.code ? `<p class="note">오류 코드 <code>${esc(failure.code)}</code>${failure.httpStatus ? " · HTTP " + esc(failure.httpStatus) : ""}</p>` : ""}

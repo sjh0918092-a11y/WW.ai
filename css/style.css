@@ -390,3 +390,6 @@ details.ent li{margin-bottom:3px}
 .angles li .src{display:block;margin-top:4px}
 .angles li .row{margin-top:6px}
 .angles li.off .txt{opacity:.55}
+
+/* 문서 생성 사용량 */
+.doc-cost{margin:14px 0;font-size:13px}.doc-cost summary{cursor:pointer;line-height:1.6}.cost-body{padding:0 12px 10px;overflow-wrap:anywhere}.cost-body ul{padding:0;list-style:none}.cost-body li{display:flex;gap:12px;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line)}.cost-body li span:last-child{flex-shrink:0}.cost-body .note{line-height:1.6}@media(max-width:560px){.cost-body li{display:block}.cost-body li span{display:block}}

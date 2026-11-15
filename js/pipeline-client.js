@@ -38,16 +38,18 @@ const DocumentPipeline = {
       ...(pending ? { entity: { title: pending.title,type:pending.type || "",summary:pending.summary || "", ...(pending.src ? {src:pending.src}:{}), ...(pending.searched ? {searched:true}:{}) } } : {}),
       worldHash:await AIRecovery.hash(stored),pageHash:await AIRecovery.hash(this.sourcePage(page)) };
     const meta = await AIRecovery.capture(action === "check" ? "check" : "page",w,k,{rewrite:!!rewrite,direction:(direction || "").slice(0,300)});
+    const costSession = action === "generate" && typeof DocumentCost!=="undefined" ? DocumentCost.get(w.id,k) : null;
     let id;
     const result = await AIJobs.run("document.pipeline",GS.main,input,{signal:ctl?.signal,jobMeta:meta,
       onJob: j => { id = j.id; if (S.gen?.wid === w.id) S.gen.jobId = j.id; },
-      onStatus: j => { if (S.gen?.wid === w.id) { S.gen.phase = j.phase || "generate"; S.gen.serverPhase = j.phase; updateGenLive(); } },
+      onStatus: j => { if(typeof DocumentCost!=="undefined")DocumentCost.server(costSession,j); if (S.gen?.wid === w.id) { S.gen.phase = j.phase || "generate"; S.gen.serverPhase = j.phase; updateGenLive(); } },
     });
     await this.receive(result,w,ctx); await AIRecovery.handled(id);
     return result.pipeline;
   },
   async generate(k,rewrite,direction,novel,angle,opts = {}) {
     const w = S.world, e = w.entities[k], ctl = new AbortController();
+    const costSession = typeof DocumentCost!=="undefined" ? DocumentCost.start(w.id,k) : null;
     S.gen = {key:k,wid:w.id,title:e.title,raw:"",t0:performance.now(),ctl,rewrite:!!rewrite,direction:direction || "",phase:"generate",serverPipeline:true};
     S.genErr = null; S.confirmRewrite = null; if (!opts.queued) S.view = {name:"article",key:k}; renderAll();
     try {
@@ -66,7 +68,7 @@ const DocumentPipeline = {
       S.genErr = {key:k,msg:errMsg(err),guide:direction || "",cancelled:err?.code === "cancelled"};
       renderAll(); toast(opts.queued ? `「${e.title}」 문서를 만들지 못했습니다. ${err?.message || errMsg(err)}` : err?.message || errMsg(err));
       drainGenQ();
-    }
+    } finally { if(typeof DocumentCost!=="undefined")DocumentCost.finish(costSession); }
   },
   async check(k) {
     S.checking = k; S.checkT0 = performance.now(); renderMain();
@@ -76,6 +78,7 @@ const DocumentPipeline = {
   },
   async openSaved(r,result,ctx) {
     const {world,report} = await this.receive(result,S.world?.id === r.meta.wid ? S.world : null,ctx);
+    if(typeof DocumentCost!=="undefined")DocumentCost.restore(world.id,report.targetKey||r.meta.key,r,report);
     await this.handledOpen(r,world,report);
   },
   async handledOpen(r,world,report) {

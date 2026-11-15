@@ -233,6 +233,7 @@ function renderMain(force) {
   else if (S.view.name === "advance") m.innerHTML = advanceHtml();
   else if (S.view.name === "epilogue") m.innerHTML = epilogueHtml();
   else { refreshOnOpen(S.view.key); m.innerHTML = articleHtml(S.view.key); }
+  if(typeof DocumentCost!=="undefined")DocumentCost.render();
   document.querySelectorAll("textarea.die-v").forEach(fitDie);
   if (S.view.name === "canon" && S.focusEnt) { const d = document.getElementById("ent-" + S.focusEnt); if (d) { d.open = true; d.scrollIntoView({ block: "center" }); } S.focusEnt = null; }
 }

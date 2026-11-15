@@ -1,0 +1,14 @@
+const assert=require('node:assert/strict'),fs=require('fs'),vm=require('vm'),{randomUUID}=require('crypto');
+const values=new Map(),localStorage={getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k),key:i=>[...values.keys()][i],get length(){return values.size}};
+const ctx={localStorage,crypto:{randomUUID},GS:{relay:'https://relay.test'},Date,esc:s=>String(s).replaceAll('<','&lt;')};vm.createContext(ctx);vm.runInContext(fs.readFileSync('js/cost.js','utf8')+';globalThis.Cost=DocumentCost',ctx);const C=ctx.Cost,at=Date.UTC(2026,10,15);
+const near=(a,b)=>assert(Math.abs(a-b)<1e-10,`${a} != ${b}`);
+near(C.estimate({model:'claude-sonnet-4-5',usage:{promptTokenCount:1e6,candidatesTokenCount:8e5,thoughtsTokenCount:2e5,cachedContentTokenCount:2e5,cacheCreationInputTokenCount:1e5,cacheCreation1hInputTokenCount:4e4}},at),17.625);
+const gemini={model:'gemini-3.8-flash',usage:{promptTokenCount:1e6,candidatesTokenCount:9e5,thoughtsTokenCount:1e5,cachedContentTokenCount:1e5}};
+near(C.estimate(gemini,at),4.4325);near(C.estimate(gemini,Date.UTC(2027,0,1)),8.865);
+assert.equal(C.estimate({model:'unknown',usage:{promptTokenCount:5}},at),null);assert.equal(C.estimate({model:'claude-sonnet-4-5'},at),null);assert.equal(C.estimate({model:'claude-sonnet-4-5',usage:{promptTokenCount:1000}},at),null);
+const r=C.start('world','page');const job={steps:[{slot:'page:1',kind:'page',model:'claude-sonnet-4-5',status:'done',usage:{promptTokenCount:1000,candidatesTokenCount:100}},{slot:'check:1',kind:'check',model:'claude-haiku-4-5',status:'running'}]};
+C.server(r,job);const once=C.content(r);C.server(r,job);assert.equal(C.content(r),once);assert(once.includes('$0.0045'));assert(once.includes('미집계'));
+C.finish(r);assert.equal(r.rows[1].status,'unknown');assert(C.content(r).includes('사용량 집계 중/미제공'));assert(!JSON.stringify(r).includes('prompt"'));
+const stale=C.start('world','stale');C.active.clear();assert.equal(C.begin('world','stale','check'),null);
+ctx.GS.relay='https://other.test';assert.equal(C.get('world','page'),undefined);
+console.log('✓ USD arithmetic, caches, thinking, date-based rates, unknown usage, polling deduplication, and server scope');

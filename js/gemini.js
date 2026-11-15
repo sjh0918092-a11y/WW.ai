@@ -122,8 +122,9 @@ const gemini = {
     const provider = /^claude-/.test(model) ? "claude" : "gemini";
     if (provider === "claude" && (typeof AIJobs === "undefined" || !AIJobs.enabled(provider))) throw { code: "job_unavailable", serverJob: true, message: "Claude는 중계 서버 연결·로그인·서버 AI 실행이 필요합니다." };
     if (typeof AIJobs !== "undefined" && AIJobs.enabled(provider)) {
-      const j = await AIJobs.run(provider + ".generate", model, body, opts), c = j.candidates?.[0];
+      const j = await AIJobs.run(provider + ".generate", model, body, { ...opts, onStatus: j => { opts.onStatus?.(j); if(j.usage)opts.onUsage?.(j.usage); } }), c = j.candidates?.[0];
       const text = (c?.content?.parts || []).filter(p => typeof p.text === "string" && !p.thought).map(p => p.text).join("");
+      if (j.usageMetadata) opts.onUsage?.(j.usageMetadata);
       if (text) opts.onText?.({ text: prefix ? joinCont(prefix, text) : text });
       return { text, finish: c?.finishReason || "", block: j.promptFeedback?.blockReason || "", usage: j.usageMetadata, serverJob: true };
     }
@@ -148,7 +149,7 @@ const gemini = {
         let j; try { j = JSON.parse(raw); } catch { return; }
         if (j.error) throw { code: "upstream_error", message: [j.error.code, j.error.status, j.error.message].filter(Boolean).join(" ") };
         if (j.promptFeedback?.blockReason) block = j.promptFeedback.blockReason;
-        if (j.usageMetadata) usage = j.usageMetadata;
+        if (j.usageMetadata) { usage = j.usageMetadata; opts.onUsage?.(usage); }
         const c = j.candidates?.[0];
         if (opts.progressWatch) {
           const tokens = (usage?.candidatesTokenCount || 0) + (usage?.thoughtsTokenCount || 0);
@@ -198,11 +199,12 @@ const gemini = {
       if (opts.deadline && gActiveNow() >= opts.deadline) throw { code: "stage_timeout", message: "화면이 열린 동안의 최대 대기 시간(10분, 응답 복구 포함)을 넘었습니다. 잠시 뒤 다시 실행해 주세요." };
       const cont = acc.length >= 200;   // 받은 게 어느 정도 있으면 이어 받기, 아니면 처음부터
       const body = cont ? mk([...user, { role: "model", parts: [{ text: acc }] }, { role: "user", parts: [{ text: G_CONT }] }], false) : mk(user, true);
-      let serverJobUsed = false;
+      let serverJobUsed = false, attemptUsage = null;
       try {
         let r;
-        try { r = await this.stream(model, body, opts, cont ? acc : ""); }
+        try { r = await this.stream(model, body, { ...opts, onUsage: u => { attemptUsage=u; opts.onUsage?.(sumUsage(usage,u)); } }, cont ? acc : ""); }
         catch (e) {
+          if(attemptUsage){usage=sumUsage(usage,attemptUsage);opts.onMeta?.({model,think,usage,retries});}
           if (!/^claude-/.test(model) && e.code === "api_400" && think && /think/i.test(e.message || "")) { think = ""; opts.onMeta?.({ model, think }); continue; }   // 이 모델이 지원하지 않는 생각 깊이면 기본값으로 다시 보낸다
           throw e;
         }
@@ -233,7 +235,9 @@ const gemini = {
 };
 function sumUsage(a, b) {
   if (!a) return { ...b };
-  return { promptTokenCount: (a.promptTokenCount || 0) + (b.promptTokenCount || 0), candidatesTokenCount: (a.candidatesTokenCount || 0) + (b.candidatesTokenCount || 0), thoughtsTokenCount: (a.thoughtsTokenCount || 0) + (b.thoughtsTokenCount || 0) };
+  const out = { promptTokenCount: (a.promptTokenCount || 0) + (b.promptTokenCount || 0), candidatesTokenCount: (a.candidatesTokenCount || 0) + (b.candidatesTokenCount || 0), thoughtsTokenCount: (a.thoughtsTokenCount || 0) + (b.thoughtsTokenCount || 0) };
+  for(const key of ["cachedContentTokenCount","cacheCreationInputTokenCount","cacheCreation5mInputTokenCount","cacheCreation1hInputTokenCount"]) if(a[key]!==undefined||b[key]!==undefined)out[key]=(a[key]||0)+(b[key]||0);
+  return out;
 }
 async function listGeminiModels() {
   const res = await gFetch(`/models?pageSize=200`, { headers: gAuth() });
@@ -258,15 +262,17 @@ async function callJson(kind, prompt, opts = {}, meta = {}) {
   const user = opts.onText;
   const rec = { at: Date.now(), kind, tier: opts.modelTier || "default", model: "", effort: "", in: prompt.length, ...meta };
   const target = opts.recoveryTarget || { wid: S.world?.id, key: S.gen?.key || S.checking || S.proseGen?.key || S.edit?.key || S.view?.key };
+  const costCall = typeof DocumentCost !== "undefined" ? DocumentCost.begin(target.wid,target.key,kind) : null;
   const recoveryMeta = typeof AIRecovery !== "undefined" && AIJobs.enabled("gemini") && S.world?.id === target.wid ? await AIRecovery.capture(kind, S.world, target.key, opts.recoveryMeta || (S.gen?.recovery ? { group: S.gen.recovery.group } : {})) : null;
   const jobMeta = { kind, title: meta.title || "", wid: target.wid || "", key: target.key || "", ...(recoveryMeta || {}), ...(opts.jobMeta || {}) };
   const o = { progressWatch: ["page", "check", "read", "prose", "section", "discovery"].includes(kind), ...opts, jobMeta,
     onJob: j => { rec.transport = "server"; (rec.jobs ||= []).push(j.id); opts.onJob?.(j); }, onText: u => { if (first === null) first = performance.now(); chars = u.text.length; if (user) user(u); },
     onRetry: r => { rec.retry = r.n; (rec.retries ||= []).push(r.reason ? String(r.reason).slice(0, 120) : r.mode); opts.onRetry?.(r); },
-    onMeta: m => { rec.model = m.model; rec.effort = m.think || ""; if (m.retries) rec.retry = m.retries; if (m.usage) rec.tok = { i: m.usage.promptTokenCount || 0, o: m.usage.candidatesTokenCount || 0, t: m.usage.thoughtsTokenCount || 0 }; } };
+    onUsage: u => { if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,rec.model,u); opts.onUsage?.(u); },
+    onMeta: m => { if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,m.model,m.usage); rec.model = m.model; rec.effort = m.think || ""; if (m.retries) rec.retry = m.retries; if (m.usage) rec.tok = { i: m.usage.promptTokenCount || 0, o: m.usage.candidatesTokenCount || 0, t: m.usage.thoughtsTokenCount || 0 }; } };
   const done = () => { rec.first = first === null ? null : Math.round(first - t0); rec.total = Math.round(performance.now() - t0); rec.out = chars; };
-  try { const r = await S.sample.json(prompt, o); done(); rec.ok = true; pushLog(rec); if (typeof AIRecovery !== "undefined" && !["page", "check", "read", "prose", "section", "fix", "analyze"].includes(kind)) for (const id of rec.jobs || []) AIRecovery.handled(id); return r; }
-  catch (e) { if (!chars && typeof e?.text === "string") chars = e.text.length; done(); rec.ok = false; rec.err = e?.code || String(e?.message || e).slice(0, 80); if (e?.message) rec.msg = String(e.message).slice(0, 200); pushLog(rec); throw e; }
+  try { const r = await S.sample.json(prompt, o); done(); rec.ok = true; if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,rec.model,null,"done"); pushLog(rec); if (typeof AIRecovery !== "undefined" && !["page", "check", "read", "prose", "section", "fix", "analyze"].includes(kind)) for (const id of rec.jobs || []) AIRecovery.handled(id); return r; }
+  catch (e) { if (!chars && typeof e?.text === "string") chars = e.text.length; done(); rec.ok = false; if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,rec.model,null,"failed"); rec.err = e?.code || String(e?.message || e).slice(0, 80); if (e?.message) rec.msg = String(e.message).slice(0, 200); pushLog(rec); throw e; }
 }
 const secs = ms => ms == null ? "-" : (ms / 1000).toFixed(1) + "초";
 function logLine(r) {

@@ -15,12 +15,12 @@ const until=async(fn,ms=20000)=>{const t=Date.now();while(Date.now()-t<ms){if(aw
   const j=jobs().find(j=>j.status==='running');assert(j);const kind=j.steps.at(-1).kind;calls.push({id:j.id,kind,url});
   if(hold&&kind==='page')await new Promise(r=>{release=r});
   const out=kind==='page'?{title:j.meta.title,type:'인물',summary:'해양 탐험가',infobox:[{label:'성별',value:'남성'}],sections:[{heading:'개요',level:1,body:'서버가 끝까지 완성한 항해 기록이다.'}],categories:['소속:항구','유형:인물'],facts:[],newEntities:[],relations:[],timeline:[]}:kind==='fix'?{edits:[]}:kind==='analyze'?{facts:[],relations:[],timeline:[]}:{issues:[]};
-  return Response.json({candidates:[{content:{parts:[{text:JSON.stringify(out)}]},finishReason:'STOP'}]});
+  return Response.json({candidates:[{content:{parts:[{text:JSON.stringify(out)}]},finishReason:'STOP'}],usageMetadata:{promptTokenCount:1000,candidatesTokenCount:100,thoughtsTokenCount:20}});
  };
  try{
   browser=await chromium.launch();context=await browser.newContext();
   await context.addInitScript(()=>{
-   if(!localStorage.getItem('wwiki:gemini'))localStorage.setItem('wwiki:gemini',JSON.stringify({mode:'relay',relay:'https://relay.test',pass:'relay-pass',main:'custom-main',check:'custom-check',preCheck:true}));
+   if(!localStorage.getItem('wwiki:gemini'))localStorage.setItem('wwiki:gemini',JSON.stringify({mode:'relay',relay:'https://relay.test',pass:'relay-pass',main:'gemini-3.8-flash',check:'custom-check',preCheck:true}));
    if(!localStorage.getItem('wwiki:acct'))localStorage.setItem('wwiki:acct',JSON.stringify({id:'tester',token:'token',since:0}));
    window.testHidden=false;Object.defineProperty(document,'hidden',{configurable:true,get:()=>window.testHidden});
   });
@@ -35,11 +35,11 @@ const until=async(fn,ms=20000)=>{const t=Date.now();while(Date.now()-t<ms){if(aw
    const p={key:A,title:'항구',type:'지명',summary:'항구 도시',infobox:[],sections:[{heading:'개요',level:1,body:'거대한 항구이다.'}],links:[],createdAt:1};
    S.world=w;S.pages={[A]:p};S.worlds=[w];S.view={name:'article',key:B};await Store.saveWorld(w);await Store.savePage(w.id,p);await Sync.flush();renderAll();return B;
   },name);
-  const B=await fixture('선장');await page.evaluate(k=>{generatePage(k)},B);await until(()=>release);const id=jobs().at(-1).id;await page.close();hold=false;release();release=null;
+  const B=await fixture('선장');await page.evaluate(k=>{generatePage(k)},B);await until(()=>release);assert((await page.locator('#docCostPanel summary').innerText()).includes('산정 대기'));const id=jobs().at(-1).id;await page.close();hold=false;release();release=null;
   await until(()=>jobs().find(j=>j.id===id)?.status==='succeeded');assert.deepEqual(calls.filter(c=>c.id===id).map(c=>c.kind),['page','check','read']);
   const saved=JSON.parse(db.sqlite.prepare('SELECT data FROM pages WHERE pkey=?').get(B).data);assert(saved.check);pass('접수 뒤 탭을 닫아도 서버가 두 검사까지 끝내고 문서를 자동 저장한다');
 
-  page=await open();await page.click('#side [data-act="jobs"]');await page.waitForSelector('.jobs');await page.click('[data-job-preview="'+id+'"]');await page.waitForSelector('[data-job-apply]');assert.equal(await page.locator('[data-job-apply]').innerText(),'저장된 문서 열기');const before=calls.length;await page.click('[data-job-apply]');await page.waitForSelector('.article');assert.equal(calls.length,before);assert.equal(await page.evaluate(k=>S.pages[k].sections[0].body,B),'서버가 끝까지 완성한 항해 기록이다.');pass('다시 연 탭은 작업 센터에서 저장된 문서를 AI 재호출 없이 연다');
+  page=await open();await page.click('#side [data-act="jobs"]');await page.waitForSelector('.jobs');await page.click('[data-job-preview="'+id+'"]');await page.waitForSelector('[data-job-apply]');assert.equal(await page.locator('[data-job-apply]').innerText(),'저장된 문서 열기');assert((await page.locator('.job-detail .doc-cost summary').innerText()).includes('$0.0012'));const before=calls.length;await page.click('[data-job-apply]');await page.waitForSelector('.article');assert.equal(calls.length,before);assert((await page.locator('#docCostPanel').textContent()).includes('3,000'));assert((await page.locator('#docCostPanel summary').innerText()).includes('$0.0012'));assert.equal(await page.evaluate(k=>S.pages[k].sections[0].body,B),'서버가 끝까지 완성한 항해 기록이다.');pass('다시 연 탭은 작업 센터에서 저장된 문서를 AI 재호출 없이 연다');
 
   const C=await fixture('부선장');hold=true;await page.evaluate(k=>{generatePage(k)},C);await until(()=>release);const id2=jobs().at(-1).id;await page.evaluate(()=>{window.testHidden=true;document.dispatchEvent(new Event('visibilitychange'))});hold=false;release();release=null;
   await until(()=>jobs().find(j=>j.id===id2)?.status==='succeeded');assert(await page.evaluate(()=>!!S.gen));await page.evaluate(()=>{window.testHidden=false;document.dispatchEvent(new Event('visibilitychange'))});await page.waitForFunction(k=>!!S.pages[k]?.check&&!S.gen,C);pass('화면이 숨겨진 동안 서버가 저장하고 돌아온 탭이 완성된 결과를 동기화한다');

@@ -3,7 +3,7 @@
  * 브라우저에 접수 응답이 도착하지 않아도 같은 id로 다시 접수하면 같은 작업이다.
  */
 import { processPipeline } from "./pipeline.js";
-import { validateJob, boundedText, runProvider, serverKeyName } from "./providers.js";
+import { validateJob, boundedText, runProvider, serverKeyName, usageCounts } from "./providers.js";
 const MAX_INPUT = 2 * 1024 * 1024;
 const MAX_JOBS = 20;
 const MAX_HISTORY = 500;
@@ -190,7 +190,7 @@ export class AiJobs {
       const old = j.pipelineChunks || 0;
       j.pipelineChunks = await writeText(tx, "pipe:" + j.id + ":", text);
       for (let i = j.pipelineChunks; i < old; i++) await tx.delete("pipe:" + j.id + ":" + i);
-      j.phase = phase; j.steps = state.steps.map(({kind,status}) => ({kind,status}));
+      j.phase = phase; j.steps = state.steps.map(s => ({kind:s.kind,status:s.status,model:s.model,slot:s.slot,usage:usageCounts(s.response?.usageMetadata)}));
       if (queued) { j.status = "queued"; await tx.setAlarm(Date.now()+1000); }
       return true;
     });
@@ -248,7 +248,7 @@ export class AiJobs {
     await this.update(async (jobs, tx) => {
       const j = jobs.find(j => j.id === job.id); if (!j || j.status !== "running" || j.runId !== job.runId) return; // 중단한 작업의 늦은 응답은 버린다.
       if (failure) Object.assign(j, failure);
-      else { j.resultChunks = await writeText(tx, "out:" + j.id + ":", JSON.stringify(result)); j.status = "succeeded"; }
+      else { j.usage = usageCounts(result.usageMetadata); j.resultChunks = await writeText(tx, "out:" + j.id + ":", JSON.stringify(result)); j.status = "succeeded"; }
       await deleteText(tx, "in:" + j.id + ":", j.inputChunks); j.inputChunks = 0;
       await tx.delete("key:" + j.id);
       j.finishedAt = Date.now(); j.expiresAt = j.finishedAt + RETENTION;

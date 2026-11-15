@@ -38,7 +38,7 @@ globalThis.fetch=async(url,opts)=>{
  if(behavior==='reject'&&kind==='read') return Response.json({error:{message:'private-key'}},{status:429});
  if ((behavior==='timeout-page'&&kind==='page')||(behavior==='timeout-fix'&&kind==='fix')) return new Response('private-key',{status:524});
  if(behavior==='thinking'&&kind==='page'&&JSON.parse(opts.body).generationConfig.thinkingConfig) return Response.json({error:{message:'thinking unsupported'}},{status:400});
- return Response.json({candidates:[{content:{parts:[{text:'hidden',thought:true},{text:JSON.stringify(response(kind))}]},finishReason:'STOP'}]});
+ return Response.json({candidates:[{content:{parts:[{text:'hidden',thought:true},{text:JSON.stringify(response(kind))}]},finishReason:'STOP'}],usageMetadata:{promptTokenCount:1000,candidatesTokenCount:100,thoughtsTokenCount:20,cachedContentTokenCount:50}});
 };
 async function reset({rewrite=false,settings={}}={}) {
  calls=[];behavior='ok'; db.sqlite.exec('DELETE FROM worlds; DELETE FROM pages; DELETE FROM pipeline_commits;');
@@ -57,6 +57,7 @@ async function run(e,limit=45){for(let i=0;i<limit;i++){const r=await request(e,
 const storedPage=k=>JSON.parse(db.sqlite.prepare('SELECT data FROM pages WHERE uid=? AND pkey=? AND deleted=0').get('alice',k)?.data||'null');
 try {
  let e=await reset();let r=await request(e,'',e.body);assert.equal(r.status,202);await request(e,'',e.body);r=await run(e);
+ assert(r.job.steps.some(s=>s.usage?.promptTokenCount===1000));assert(r.result.pipeline.steps.some(s=>s.usage?.thoughtsTokenCount===20));assert(!JSON.stringify(r.job.steps).includes('private-server-key'));
  assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert(r.result.pipeline.saved);assert(r.result.pipeline.checked);assert(storedPage(B)?.check);assert.deepEqual(calls.map(c=>c.kind),['page','check','read']);assert(calls[0].url.includes('custom-main'));assert(calls[1].url.includes('custom-check'));assert.equal(calls[1].body.generationConfig.thinkingConfig.thinkingLevel,'high');
  assert(!JSON.stringify(r).includes('private-server-key'));assert(![...e.storage.data.keys()].some(k=>/^(key:|in:|pipe:)/.test(k)));pass('매 alarm마다 서버 객체를 재생성해도 생성·두 검사·D1 저장까지 완료하며 완료된 호출은 재실행하지 않는다');
 

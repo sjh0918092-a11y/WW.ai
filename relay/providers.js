@@ -41,6 +41,12 @@ export function validateJob(b) {
   return null;
 }
 
+export function usageCounts(raw) {
+  const keys = ["promptTokenCount", "candidatesTokenCount", "thoughtsTokenCount", "cachedContentTokenCount", "cacheCreationInputTokenCount", "cacheCreation5mInputTokenCount", "cacheCreation1hInputTokenCount"];
+  if (!raw || !keys.some(k => Number.isFinite(raw[k]))) return null;
+  return Object.fromEntries(keys.filter(k => Number.isFinite(raw[k])).map(k => [k, Math.max(0, raw[k])]));
+}
+
 export async function boundedText(stream, limit) {
   if (!stream) return "";
   const reader = stream.getReader(), dec = new TextDecoder(); let size = 0, text = "";
@@ -126,7 +132,15 @@ export async function runProvider(job, env, personalKey, signal) {
   if (claude) {
     if (!Array.isArray(result?.content) || !result.content.some(p => p.type === "text" && p.text)) throw { code: "empty_response", definite: true };
     if (!["end_turn", "max_tokens", "stop_sequence"].includes(result.stop_reason)) throw { code: "invalid_response", definite: true };
-    result = { candidates: [{ content: { parts: result.content.filter(p => p.type === "text").map(p => ({ text: p.text })) }, finishReason: result.stop_reason === "max_tokens" ? "MAX_TOKENS" : "STOP" }], usageMetadata: { promptTokenCount: result.usage?.input_tokens || 0, candidatesTokenCount: result.usage?.output_tokens || 0 } };
+    result = { candidates: [{ content: { parts: result.content.filter(p => p.type === "text").map(p => ({ text: p.text })) }, finishReason: result.stop_reason === "max_tokens" ? "MAX_TOKENS" : "STOP" }], usageMetadata: result.usage ? {
+      promptTokenCount: (result.usage.input_tokens || 0) + (result.usage.cache_read_input_tokens || 0) + (result.usage.cache_creation_input_tokens || 0),
+      candidatesTokenCount: Math.max(0, (result.usage.output_tokens || 0) - (result.usage.output_tokens_details?.thinking_tokens || 0)),
+      thoughtsTokenCount: result.usage.output_tokens_details?.thinking_tokens || 0,
+      cachedContentTokenCount: result.usage.cache_read_input_tokens || 0,
+      cacheCreationInputTokenCount: result.usage.cache_creation_input_tokens || 0,
+      cacheCreation5mInputTokenCount: result.usage.cache_creation?.ephemeral_5m_input_tokens || 0,
+      cacheCreation1hInputTokenCount: result.usage.cache_creation?.ephemeral_1h_input_tokens || 0,
+    } : undefined };
   }
   if (!result || (type === "openai.image" ? !Array.isArray(result.data) || !result.data.length : (!Array.isArray(result.candidates) || !result.candidates.length) && !result.promptFeedback?.blockReason)) throw { code: "empty_response", definite: true };
   return result;

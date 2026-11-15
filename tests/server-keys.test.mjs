@@ -28,14 +28,15 @@ assert(validateJob({...claude, input:{...claude.input, generationConfig:{thinkin
 const original = globalThis.fetch;
 let calls = [];
 try {
-  globalThis.fetch = async (url, options) => { calls.push({ url, options }); return Response.json({ content: [{ type: 'thinking', thinking: 'private' }, { type: 'text', text: '{"ok":true}' }], stop_reason: 'end_turn', usage: { input_tokens: 15, output_tokens: 7 } }); };
+  globalThis.fetch = async (url, options) => { calls.push({ url, options }); return Response.json({ content: [{ type: 'thinking', thinking: 'private' }, { type: 'text', text: '{"ok":true}' }], stop_reason: 'end_turn', usage: { input_tokens: 15, output_tokens: 7, cache_read_input_tokens: 3, cache_creation_input_tokens: 4, cache_creation: { ephemeral_1h_input_tokens: 4 }, output_tokens_details: { thinking_tokens: 2 } } }); };
   const storage = new JobStorage(), obj = new AiJobs({ storage }, env);
   assert.equal((await jobRequest(obj, '', claude)).status, 202);
   await fireAlarm(obj);
   const response = (await jobRequest(obj, claude.id)).json;
   assert.equal(response.job.status, 'succeeded');
   assert.equal(response.result.candidates[0].content.parts[0].text, '{"ok":true}');
-  assert.equal(response.result.usageMetadata.promptTokenCount, 15);
+  assert.equal(response.result.usageMetadata.promptTokenCount, 22);
+  assert.equal(response.result.usageMetadata.candidatesTokenCount, 5);assert.equal(response.result.usageMetadata.thoughtsTokenCount, 2);assert.equal(response.result.usageMetadata.cacheCreation1hInputTokenCount, 4);
   assert.equal(calls[0].url, 'https://api.anthropic.com/v1/messages');
   assert.equal(calls[0].options.headers['x-api-key'], env.ANTHROPIC_API_KEY);
   assert(!calls[0].options.headers.Authorization);
