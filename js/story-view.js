@@ -250,8 +250,8 @@ function canonHtml() {
       <label class="lb" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="exportWorldImages" data-world-export="images" ${ex.images ? "checked" : ""}>이미지 포함 (문서 이미지·단편 삽화)</label>
       <label class="lb" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="exportWorldStories" data-world-export="stories" ${ex.stories ? "checked" : ""}>단편 포함</label>
       <p class="note">단편을 제외하면 단편 삽화도 제외됩니다. 선택은 내보낼 파일에만 적용하며 원래 데이터는 지우지 않습니다. AI 연결 설정의 ‘가져오기’로 복원할 수 있습니다.</p>
-      <div class="row"><button type="button" class="btn pri" data-act="export-world">이 세계관 내보내기</button><button type="button" class="btn" data-act="export-world-ro">읽기 전용으로 내보내기</button></div>
-      <p class="note">읽기 전용은 문서·단편·이미지·연표만 담은 HTML 파일입니다. 세계관 원안·확정 설정·이미지 지침·작성 각도와 문서·단편·이미지를 만들 때 쓴 방향은 넣지 않으며, 가져오기로 복원할 수 없습니다. 위의 이미지·단편 선택을 따릅니다.</p>
+      <div class="row"><button type="button" class="btn pri" data-act="export-world">이 세계관 내보내기</button><button type="button" class="btn" data-act="export-world-ro">읽기 전용 HTML</button><button type="button" class="btn" data-act="export-world-ro-json">읽기 전용 JSON</button></div>
+      <p class="note">읽기 전용은 문서·단편·이미지·연표만 담은 HTML 또는 JSON 파일입니다. 세계관 원안·확정 설정·이미지 지침·작성 각도와 문서·단편·이미지를 만들 때 쓴 방향은 넣지 않으며, 가져오기로 복원할 수 없습니다. 위의 이미지·단편 선택을 따릅니다.</p>
     </section>
   </div>`;
 }

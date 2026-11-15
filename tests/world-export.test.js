@@ -42,6 +42,11 @@ let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
    assert.equal(html.includes('one의 단편 본문'),stories);assert.equal(html.includes('<img'),images);assert(html.includes('href="#d-person"'));}
   assert.deepStrictEqual(await read(page,'p:one:person'),original);assert.equal(ai,0);
   pass('읽기 전용 HTML은 문서·단편·이미지·연표만 담고 원안·지침·작성 방향을 뺀다');
+  for(const [images,stories] of [[true,true],[false,false]]){await page.locator('#exportWorldImages').setChecked(images);await page.locator('#exportWorldStories').setChecked(stories);const pending=page.waitForEvent('download');await page.click('[data-act="export-world-ro-json"]');const d=await pending;const raw=fs.readFileSync(await d.path(),'utf8'),j=JSON.parse(raw);
+   assert.equal(j.app,'worldwiki-readonly');assert.deepStrictEqual(j.world,{title:worlds[0].title,era:'1989년'});assert.deepStrictEqual(j.timeline,[{when:'1989년',event:'one의 사건'}]);assert.equal(j.documents[0].key,'person');assert.equal(j.documents[0].sections[0].body,'one 본문');assert.equal(j.documents.length,2);
+   for(const t of ['one의 원안','확정 설정','실사 지침','따뜻한 문체','direction','angle','rules','seed'])assert(!raw.includes(t),t);
+   assert.equal('stories'in j.documents[0],stories);if(stories)assert.deepStrictEqual(Object.keys(j.documents[0].stories[0]).sort(),images?['body','image','title']:['body','title']);assert.equal('image'in j.documents[0],images);assert(!('worlds'in j));}
+  pass('읽기 전용 JSON도 같은 범위만 담고 가져오기용 백업 형식과 구분된다');
   await open(worlds[0].title);await page.setViewportSize({width:390,height:844});await page.locator('#worldExport').scrollIntoViewIfNeeded();assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));if(process.env.SHOT_DIR){fs.mkdirSync(process.env.SHOT_DIR,{recursive:true});await page.locator('#toast').waitFor({state:'hidden'});await page.screenshot({path:path.join(process.env.SHOT_DIR,'world-export-mobile.png')});}assert.deepStrictEqual(errors,[]);assert.equal(ai,0);
   pass('모바일 화면과 API 연결 없는 내보내기를 확인한다');console.log(`\n모두 통과 (${n}개). 실제 API 호출 0회.`);
  }finally{await browser.close();await new Promise(r=>server.close(r));}

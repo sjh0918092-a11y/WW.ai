@@ -294,9 +294,27 @@ function exportWorld() {
   toast(`「${w.title}」 세계관을 내보냈습니다.`);
 }
 /* 읽기 전용 내보내기: 문서·단편·이미지·연표만 담은 HTML 한 장. 원안·지침·각도·작성 방향 같은 프롬프트는 넣지 않는다 */
+const readOnlyKeys = (w, pages) => Object.keys(pages).filter(k => pages[k] && Array.isArray(pages[k].sections))
+  .sort((a, b) => (b === w.mainKey) - (a === w.mainKey) || String(pages[a].title).localeCompare(String(pages[b].title), "ko"));
+/* JSON판: 같은 범위를 데이터로 담는다. 본문은 저장된 서식([[링크]]·[*각주]·**굵게**)을 그대로 둔다 */
+function readOnlyData(w, pages, opts) {
+  const img = src => opts.images && src ? { image: src } : {};
+  return {
+    app: "worldwiki-readonly", version: 1, exportedAt: new Date().toISOString(),
+    world: { title: w.title || "", era: w.era || "" },
+    timeline: timelineOrder(w.timeline || [], w).filter(t => !t.sup).map(t => ({ when: tlWhen(t), event: t.event })),
+    documents: readOnlyKeys(w, pages).map(k => { const p = pages[k]; return {
+      key: k, title: p.title, type: p.type || "", categories: pageCats(p, w), summary: p.summary || "",
+      ...(p.notices?.length ? { notices: [...p.notices] } : {}),
+      infobox: (p.infobox || []).map(r => ({ label: stripMarks(r.label), value: r.value })),
+      ...img(portraitSrc(p)),
+      sections: p.sections.map(s => ({ heading: s.heading, level: s.level || 1, body: s.body })),
+      ...(opts.stories ? { stories: shortStoriesOf(p).map(st => ({ title: st.title, body: st.body, ...img(portraitSrc({ portrait: st.illustration })) })) } : {}),
+    }; }),
+  };
+}
 function readOnlyHtml(w, pages, opts) {
-  const keys = Object.keys(pages).filter(k => pages[k] && Array.isArray(pages[k].sections))
-    .sort((a, b) => (b === w.mainKey) - (a === w.mainKey) || String(pages[a].title).localeCompare(String(pages[b].title), "ko"));
+  const keys = readOnlyKeys(w, pages);
   const has = new Set(keys);
   const links = html => html.replace(/<a class="wl[^"]*" href="#" data-k="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g, (m, k, label) => has.has(k) ? `<a href="#d-${k}">${label}</a>` : label);
   const body = (text, fns) => links(blocks(text, fns));
@@ -329,15 +347,15 @@ figure{margin:0;text-align:center}img{max-width:100%;height:auto}.story figure{m
 </style></head><body><main id="top"><header><h1 style="margin-top:.4em">${esc(w.title)}</h1>${w.era ? `<p class="meta">작중 기준 ${esc(w.era)}</p>` : ""}</header>
 <nav><h2>문서 ${keys.length}개</h2><ul class="toc">${toc || "<li>없음</li>"}</ul></nav>${tl ? `<section><h2>연표</h2><table class="tl">${tl}</table></section>` : ""}${docs}</main></body></html>`;
 }
-function exportWorldReadOnly() {
+function exportWorldReadOnly(format = "html") {
   const w = S.world; if (!w) return;
-  const opts = S.worldExports[w.id] || { images: true, stories: true };
-  const blob = new Blob([readOnlyHtml(w, S.pages, opts)], { type: "text/html" });
+  const opts = S.worldExports[w.id] || { images: true, stories: true }, json = format === "json";
+  const blob = json ? new Blob([JSON.stringify(readOnlyData(w, S.pages, opts), null, 2)], { type: "application/json" }) : new Blob([readOnlyHtml(w, S.pages, opts)], { type: "text/html" });
   const title = String(w.title || "world").replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").trim().slice(0, 60) || "world";
   const a = document.createElement("a"); const url = URL.createObjectURL(blob); a.href = url;
-  a.download = `worldwiki-${title}-읽기전용-${new Date().toISOString().slice(0, 10)}.html`;
+  a.download = `worldwiki-${title}-읽기전용-${new Date().toISOString().slice(0, 10)}.${json ? "json" : "html"}`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
-  toast(`「${w.title}」을(를) 읽기 전용 HTML로 내보냈습니다.`);
+  toast(`「${w.title}」을(를) 읽기 전용 ${json ? "JSON" : "HTML"}으로 내보냈습니다.`);
 }
 async function importAll(file) {
   let data; try { data = JSON.parse(await file.text()); } catch { toast("JSON 파일을 읽지 못했습니다."); return; }
