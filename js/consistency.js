@@ -730,11 +730,13 @@ function refreshNumeric(w, k) {
 async function runChecks(w, k, opts, label) {
   const p = S.pages[k];
   const timelinePairs = timelineMatchPairs(w, k);
+  const batches = checkSourceBatches(w, k);
   if (typeof AIRecovery !== "undefined" && AIJobs.enabled("gemini")) opts = { ...opts, recoveryTarget: { wid: w.id, key: k }, recoveryMeta: { group: opts.recoveryMeta?.group || S.gen?.recovery?.group || crypto.randomUUID() } };
   const [ar, ...rs] = await Promise.allSettled([
     ensureAgeRules(w, opts),   // 핵심 규칙이 바뀌었을 때만 AI를 부른다. 실패하면 나이 검사만 건너뛴다
-    callJson("check", checkPrompt(w, k, timelinePairs), { modelTier: "check", ...opts }, { title: label }),
-    callJson("read", readPrompt(w, k), { modelTier: "check", ...opts }, { title: label })]);
+    callJson("check", checkPrompt(w, k, timelinePairs, batches[0]), { modelTier: "check", ...opts }, { title: label }),
+    callJson("read", readPrompt(w, k), { modelTier: "check", ...opts }, { title: label }),
+    ...batches.slice(1).map((text, i) => callJson("check", checkPrompt(w, k, [], text), { modelTier: "check", ...opts }, { title: label + ` · 연결 문서 ${i + 2}/${batches.length}` }))]);
   if ([ar, ...rs].some(r => r.status === "rejected" && r.reason?.code === "cancelled")) throw { code: "cancelled" };
   if (S.world === w && S.pages[k] === p && !p.editedAt && !opts?.signal?.aborted && rs[0].status === "fulfilled") applyTimelineMatches(w, timelinePairs, rs[0].value);
   const num = detIssues(w, k);
@@ -781,6 +783,7 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
     }
     if (!applied) return res;
     const out = sourceToOut(nf); if (!out.sections.some(x => x.body.trim())) return res;
+    autoLink(w, k, out);
     const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], events: w.events || [], glossary: w.glossary || [] });
     let np;
     try {
@@ -789,10 +792,23 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
       np = integrate(w, k, out);
     } catch { restoreRewrite(w, backup); return res; }
     for (const x of PAGE_KEEP) if (page[x] !== undefined) np[x] = page[x];
-    const keep = [...high.filter((_, i) => !fixedMemo.has(i + 1)), ...issues.filter(i => !high.includes(i))];
-    np.check = { at: Date.now(), issues: keep, auto: true, numV: numStamp(w) }; np.autoFixed = { at: Date.now(), n: fixedMemo.size };
     cleanupOrphans(w, k);
-    S.pages[k] = np; Object.assign(res, { page: np, fixed: fixedMemo.size, keep });
+    S.pages[k] = np;
+    np.check = { at: Date.now(), issues, auto: true, numV: numStamp(w) };
+    Object.assign(res, { page: np, keep: issues, patched: true });
+    g.phase = "check"; show();
+    const verified = await runChecks(w, k, { signal: g.ctl.signal }, np.title + " · 자동 수정 확인");
+    if (S.world !== w || S.pages[k] !== np) return res;
+    const text = pageTexts(np).map(stripMarks).join("\n");
+    const keep = verified.filter(i => i.target || text.includes(stripMarks(i.claim)));
+    const fixed = [...fixedMemo].filter(n => {
+      const original = high[n - 1];
+      return original && !text.includes(stripMarks(original.claim)) && !keep.some(i => i.conflict === original.conflict);
+    }).length;
+    np.check = { ...np.check, issues: keep, numV: numStamp(w) };
+    if (fixed) np.autoFixed = { at: Date.now(), n: fixed };
+    saveRouted(w, routeAutoConflicts(w, k, keep));
+    Object.assign(res, { fixed, keep });
   } catch (err) { /* 건너뛰었거나 실패: 작성된 문서를 그대로 보여 주며 자동 재검사를 예약하지 않는다 */ }
   return res;
 }

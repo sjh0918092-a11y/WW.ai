@@ -1,16 +1,44 @@
 "use strict";
 /* 교정: 코드 교정, 충돌 부분 고치기, 교정 페이지 */
 /* ---------- 코드로 하는 교정 ---------- */
+function documentNameOwners(w) {
+  const names = new Map();
+  const add = (name, k) => {
+    const id = identityName(name);
+    if (!id) return;
+    if (!names.has(id)) names.set(id, new Map());
+    names.get(id).set(k, name);
+  };
+  for (const [k, p] of Object.entries(S.pages)) {
+    if (!w.entities[k]) continue;
+    for (const n of [...namesOf(p.title), ...infoboxNames(p)]) add(n, k);
+    for (const text of [...(p.infobox || []).map(r => r.value), ...(p.sections || []).map(s => s.body)]) {
+      for (const m of String(text).matchAll(LINK_RE)) {
+        const label = m[2] || m[1], owner = w.aliases?.[keyOf(label)];
+        if (owner && S.pages[owner]) add(label, owner);
+      }
+    }
+  }
+  return names;
+}
 /* 본문에 이름만 나오고 링크가 빠진 기존 항목을 첫 등장 위치에서 링크한다 (생성 직후, 조용히) */
 function autoLink(w, key, out) {
   if (!Array.isArray(out?.sections)) return 0;
   const linked = new Set();
-  for (const t of [...out.sections.map(s => String(s?.body || "")), ...(Array.isArray(out.infobox) ? out.infobox : []).map(r => String(r?.value || ""))])
-    for (const m of t.matchAll(LINK_RE)) linked.add(kOf(w, m[1]));
+  const fields = [...out.sections.filter(s => typeof s?.body === "string").map(s => [s, "body"]),
+    ...(Array.isArray(out.infobox) ? out.infobox : []).filter(r => typeof r?.value === "string").map(r => [r, "value"])];
+  for (const [row, field] of fields) for (const m of row[field].matchAll(LINK_RE)) linked.add(kOf(w, m[1]));
+  const owners = documentNameOwners(w);
   const cands = [];
   for (const [k, o] of Object.entries(w.entities)) {
     if (k === key || linked.has(k)) continue;
-    for (const n of namesOf(o.title)) if (!/^[㐀-鿿]+$/.test(n)) cands.push({ k, n, title: o.title });
+    for (const n of namesOf(o.title)) if (n === o.title || !/^[㐀-鿿]+$/.test(n)) {
+      if ((owners.get(identityName(n))?.size || 0) <= 1 || n === o.title) cands.push({ k, n, title: o.title, existing: !!S.pages[k] });
+    }
+  }
+  for (const group of owners.values()) if (group.size === 1) {
+    const [[k, n]] = group;
+    if (k !== key && !linked.has(k)) cands.push({ k, n, title: w.entities[k].title, existing: true });
   }
   /* 이 문서가 관계·사실·사건 참가자·새 항목으로 이름을 댄 새 대상(아직 항목이 없는 것)도, 본문에 링크 없이 나오면 처음 나온 곳에 링크한다 */
   const self = w.entities[key]?.title, named = new Set();
@@ -22,17 +50,27 @@ function autoLink(w, key, out) {
   for (const t of named) { const k = kOf(w, t); if (k === key || linked.has(k) || w.entities[k] || cands.some(c => c.k === k)) continue; cands.push({ k, n: t, title: t }); }
   cands.sort((a, b) => b.n.length - a.n.length || (b.n === b.title) - (a.n === a.title));
   const inLink = (t, i) => t.lastIndexOf("[[", i) > t.lastIndexOf("]]", i);
+  const insideWord = /[\p{L}\p{N}_]/u;
+  const particles = /^(?:(?:으로|에서|에게|한테|께서|까지|부터|보다|처럼|마저|조차|하고|이며|이라고|라는|이란|이나|라도|로|에|의|은|는|이|가|을|를|과|와|도|만|께|랑|라고)(?:는|도|만)?)(?![\p{L}\p{N}_])/u;
   let added = 0;
+  let newLinks = 0;
   for (const c of cands) {
-    if (linked.has(c.k) || added >= 20) continue;
-    for (const sec of out.sections) {
-      if (!sec || typeof sec.body !== "string") continue;
-      let i = sec.body.indexOf(c.n);
-      while (i >= 0 && (inLink(sec.body, i) || /[가-힣A-Za-z0-9]/.test(sec.body[i - 1] || ""))) i = sec.body.indexOf(c.n, i + 1);
+    if (linked.has(c.k) || (!c.existing && newLinks >= 20)) continue;
+    for (const [row, field] of fields) {
+      const value = row[field];
+      let i = value.indexOf(c.n);
+      while (i >= 0) {
+        const end = i + c.n.length;
+        if (!inLink(value, i) && !insideWord.test(value[i - 1] || "") &&
+            (!insideWord.test(value[end] || "") || particles.test(value.slice(end)))) break;
+        i = value.indexOf(c.n, i + 1);
+      }
       if (i < 0) continue;
       const tag = c.n === c.title ? `[[${c.title}]]` : `[[${c.title}|${c.n}]]`;
-      sec.body = sec.body.slice(0, i) + tag + sec.body.slice(i + c.n.length);
-      linked.add(c.k); added++; break;
+      row[field] = value.slice(0, i) + tag + value.slice(i + c.n.length);
+      linked.add(c.k); added++;
+      if (!c.existing) newLinks++;
+      break;
     }
   }
   return added;

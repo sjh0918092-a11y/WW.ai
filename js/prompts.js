@@ -228,11 +228,55 @@ ${CAT_AXIS_RULES}
 ${have.length ? `이 세계관에 이미 있는 분류(축별, 괄호는 붙은 문서 수, 많이 쓰인 순):
 ${have.map(([ax, t]) => `- ${ax}: ${t}`).join("\n")}` : "이 세계관에는 아직 분류가 없다. 다른 문서에도 두루 쓰일 넓은 분류로 만든다."}`;
 }
+/* 링크로 이어진 문서는 문맥을 보존하도록 전문을 사용한다. 큰 묶음만 문서 경계에서 나눈다. */
+const SOURCE_TEXT_BUDGET = 48000;
+function sourceBatches(w, key, focus, outgoing = [], eligible = () => true) {
+  const links = new Set(outgoing);
+  let owners;
+  for (const m of focus.matchAll(LINK_RE)) {
+    links.add(kOf(w, m[1]));
+    if (m[2]) {
+      owners ||= documentNameOwners(w);
+      for (const k of owners.get(identityName(m[2]))?.keys() || []) links.add(k);
+    }
+  }
+  const mentions = new Set(w.entities[key].mentions.filter(live).map(m => m.from));
+  const names = new Set();
+  for (const [k, p] of Object.entries(S.pages)) if ((p.links || []).includes(key) || mentions.has(k)) names.add(k);
+  for (const k of Object.keys(S.pages)) if (w.entities[k] && hasName(focus, w.entities[k].title)) names.add(k);
+  const batches = [[]];
+  let size = 0;
+  for (const k of new Set([...links, ...names])) {
+    const p = S.pages[k];
+    if (k === key || !p || !eligible(k)) continue;
+    if (isStory(w) && (p.syncedTo || p.baseAsOf || 1) > (S.pages[key]?.syncedTo || w.story.chapter)) continue;
+    const label = `문서 「${p.title}」${p.editedAt ? " [사용자 수정]" : ""}`;
+    const text = label + "\n" + docForCheck(p, t => t);
+    const pieces = text.length <= SOURCE_TEXT_BUDGET ? [text] : [
+      label + "\n" + docForCheck({ ...p, sections: [] }, t => t),
+      ...p.sections.map(s => `${label} / 「${s.heading}」\n${s.body}`),
+    ];
+    for (const piece of pieces) {
+      if (size && size + piece.length > SOURCE_TEXT_BUDGET) { batches.push([]); size = 0; }
+      batches.at(-1).push(piece);
+      size += piece.length + 2;
+    }
+  }
+  return batches.map(batch => batch.join("\n\n"));
+}
+function sourceBlock(text) {
+  return text ? `## 연결된 문서 원문
+${text}
+
+` : "";
+}
 function pagePrompt(w, key, rewriteDir = null, guide = "", angle = null, angleMode = "section", birthday = null, persona = null) {   // angleMode: section(대상이 정해진 문서에 얹기) · novel(랜덤 서핑이 방향에 넣어 보낸 각도)
   const e = w.entities[key];
   const ty = TYPES.includes(e.type) ? e.type : "";
   const staged = !!w.stage && !isStory(w);
   const rel = related(w, key);
+  const focus = [e.title, e.summary, guide, rewriteDir, ...e.facts.filter(live).map(f => f.t), ...e.mentions.filter(live).map(m => m.text)].filter(Boolean).join("\n");
+  const sources = sourceBlock(sourceBatches(w, key, focus, S.pages[key]?.links)[0]);
   const relText = rel.map(k => entityBrief(w, k, null)).join("\n\n") || "(아직 없음)";
   const idx = Object.entries(w.entities).filter(([k]) => k !== key && !rel.includes(k))
     .sort((a, b) => (b[1].page ? 1 : 0) - (a[1].page ? 1 : 0)).slice(0, 60)
@@ -281,7 +325,9 @@ ${qi}
 ${staged ? "아래는 모순을 피하기 위한 참고 자료다. 이 항목이 새로 더하는 사실과 장면을 중심으로 쓰고, 이미 기록된 경위는 연결에 필요한 만큼만 쓴다." : "아래는 모순을 피하기 위한 참고 자료다. 여기 있는 항목과 사실을 본문에 모두 언급할 필요는 없고, 같은 사고, 같은 절차, 같은 규정을 이 문서에서 되풀이하지 않는다. 다만 세계의 큰 사건을 이 항목의 자리에서 보여 주는 것은 되풀이가 아니다."}
 ${relText}
 
-## 이미 존재하는 다른 항목 (링크할 때 제목을 정확히 그대로 쓴다)
+${sources}${sources ? `원문과 같은 대상이나 사건을 다룰 때는 그 대상의 식별 정보, 해당 시점의 상태, 사건의 날짜·장소·당사자·원인·결과를 맞춘다. 같은 명칭을 공유해도 대상이 다를 수 있고, 같은 사건에서도 전체와 일부의 수치는 구분한다. 인과관계나 직접 경험을 서술할 때는 시간 순서와 당사자의 현장 참석 여부를 확인한다. 원문끼리 값이 엇갈리고 사용자 확정 설정으로 결정할 수 없으면, 이 문서에서는 그 값을 새로 단정하지 않는다.
+
+` : ""}## 이미 존재하는 다른 항목 (링크할 때 제목을 정확히 그대로 쓴다)
 이 목록은 이름이 겹치거나 엇갈리지 않게 하려는 색인이다. 목록에 있다는 이유로 본문에 끌어오지 않는다. 각 줄의 "—" 앞까지가 제목이며, 뒤의 유형과 정의는 제목이 아니다. 제목에 "(인물)" 같은 유형을 붙이지 않는다.
 ${idx}
 
@@ -414,14 +460,18 @@ function crossRefs(w, p) {
   return out.slice(0, 30).map(x => `- ${x.label}: ${x.where.map(n => `「${n}」`).join(", ")}`).join("\n");
 }
 /* 검사할 문서의 텍스트 (한 줄 정의, 분류, 인포박스, 본문) */
-function docForCheck(p) {
-  return [`# ${p.title}`, p.summary ? `한 줄 정의: ${p.summary}` : "", p.categories?.length ? `분류: ${p.categories.join(" | ")}` : "", "[인포박스]", ...(p.infobox || []).map(r => `${r.label}: ${stripMarks(r.value)}`), "[본문]", ...p.sections.map(s => `${(s.level || 1) === 2 ? "###" : "##"} ${s.ch && (s.level || 1) === 1 ? `[${s.ch}장] ` : ""}${s.heading}\n${stripMarks(s.body)}`)].filter(Boolean).join("\n");
+function docForCheck(p, marks = stripMarks) {
+  return [`# ${p.title}`, p.summary ? `한 줄 정의: ${p.summary}` : "", p.categories?.length ? `분류: ${p.categories.join(" | ")}` : "", "[인포박스]", ...(p.infobox || []).map(r => `${r.label}: ${marks(r.value)}`), "[본문]", ...p.sections.map(s => `${(s.level || 1) === 2 ? "###" : "##"} ${s.ch && (s.level || 1) === 1 ? `[${s.ch}장] ` : ""}${s.heading}\n${marks(s.body)}`)].filter(Boolean).join("\n");
 }
 const NUMBER_CHECK_RULE = "숫자는 주체·속성·사건·단위·시점·범위가 같은지 먼저 확인한다. 한 문장에 이름이 언급됐다는 이유만으로 다른 주체의 숫자를 연결하지 않는다. 예: 약제 A의 최초 도입 연도와 그 약제를 사용하는 부대 B의 창설 연도는 다른 대상의 다른 사건이므로 모순이 아니다. 같은 대상이어도 개발·도입·창설·제정·시행은 서로 다른 속성이다. 1960년대 같은 범위·대략적인 시기는 특정 연도와 같아야 하는 값이 아니다. 귀속 대상이나 범위가 불명확하면 숫자를 맞추라는 지적을 하지 않는다.";
 const ISSUE_JSON = `JSON 객체 하나만 출력: {"issues":[{"claim":"문서의 해당 서술(문서에서 글자 그대로)","evidence":"근거가 된 확정 설정이나 문서 안의 다른 서술(글자 그대로)","conflict":"둘이 왜 동시에 참일 수 없는지 한 문장","severity":"high 또는 low"}]}
 문제가 없으면 issues는 빈 배열.`;
+function checkSourceBatches(w, key) {
+  const p = S.pages[key];
+  return sourceBatches(w, key, docForCheck(p, t => t), p.links, src => refOK(src, p));
+}
 /* 검사 1: 설정 대조. 문서가 세계관의 확정 설정과 어긋나는지만 엄격하게 본다 */
-function checkPrompt(w, key, timelinePairs = timelineMatchPairs(w, key)) {
+function checkPrompt(w, key, timelinePairs = timelineMatchPairs(w, key), sourceText = null) {
   const p = S.pages[key];
   const base = [...new Set([...related(w, key), ...(p.links || [])])].filter(k => k !== key && w.entities[k]).slice(0, 10);
   const plain = [...(p.infobox || []).map(r => stripMarks(r.value)), ...p.sections.map(s => stripMarks(s.body))].join("\n");
@@ -431,6 +481,7 @@ function checkPrompt(w, key, timelinePairs = timelineMatchPairs(w, key)) {
   const focus = docForCheck(p);   // 검사할 문서와 관련된 사실부터 넣는다. 최신순으로 자르면 기준이 되는 오래된 사실이 먼저 빠진다
   const ctx = keys.map(k => checkBrief(w, k, key, focus)).join("\n\n");
   const ok = src => refOK(src, p);
+  const sources = sourceBlock(sourceText ?? checkSourceBatches(w, key)[0]);
   const own = [...promptFacts(w, key, w.entities[key].facts.filter(f => f.src !== key && live(f) && ok(f.src)), focus).map(f => "- " + factLine(f)), ...promptMentions(w, key, w.entities[key].mentions.filter(m => m.from !== key && live(m) && ok(m.from)), focus).map(m => `- 「${w.entities[m.from]?.title || "?"}」의 서술: ${m.text}`), ...relationsOf(w, key).filter(x => x.src !== key && live(x) && ok(x.src)).map(x => "- 관계: " + relLine(w, x))].join("\n");
   return `다음 위키 문서가 세계관의 확정 설정과 어긋나는지 검사하라. 문서 안의 앞뒤 모순은 다른 검사가 따로 보므로 여기서는 보지 않는다. 단순히 새로 추가된 정보나 해석의 차이는 문제 삼지 마라. 문체, 어투, 표현 방식은 지적하지 않는다.
 
@@ -438,8 +489,11 @@ function checkPrompt(w, key, timelinePairs = timelineMatchPairs(w, key)) {
 - 근거가 될 확정 설정이 아래 목록에 실제로 있고, 그 문장을 글자 그대로 evidence에 옮길 수 있다. 기억이나 짐작, 일반 상식, 현실 역사에 기댄 지적은 하지 않는다.
 - 문서의 서술과 확정 설정이 같은 대상, 같은 시점에 관한 것이다. 이름이 비슷한 다른 대상이거나 다른 시점의 일이면 모순이 아니다.
 - ${NUMBER_CHECK_RULE}
+- [[대상|표시명]]에서는 대상과 표시명을 각각 확인한다. 같은 대상의 상태는 같은 시점에서 비교한다. 사건의 원인과 결과는 선후 관계를, 직접 경험은 해당 시점의 현장 참석을 확인한다. 전체와 일부의 수치가 양립할 수 있으면 충돌로 보지 않는다.
+- 연결된 문서는 원문 근거다. 원문끼리 엇갈리면 사용자 확정 설정과 사용자 수정 기록을 먼저 따르고, 어느 쪽이 기준인지 정할 수 없는 경우 확정 충돌로 처리하지 않는다.
 - 둘이 동시에 참일 수 없다. 한쪽이 다른 쪽을 자세히 풀거나 덧붙인 것, 확정 설정이 말하지 않은 빈칸을 채운 것은 모순이 아니다.
 - 지적할 것이 없는 것이 정상이다. 개수를 채우려고 지적하지 않는다.
+- 생년월일·나이·시점의 관계는 표현이 달라도 문맥으로 읽고 달력을 기준으로 확인한다. 날짜가 범위로만 주어졌으면 그 범위 안에서 성립할 수 있는지도 확인한다.
 이 조건을 모두 갖춘 충돌의 severity는 high다.
 
 ${canonBlock({ ...w, timeline: (w.timeline || []).filter(t => t.src !== key && ok(t.src)) }, focus)}
@@ -450,9 +504,9 @@ ${own || "(없음)"}
 ## 관련 항목의 확정 설정
 ${ctx || "(없음)"}
 
-${eventCheckBlock(w, key, ok)}
+${sources}${eventCheckBlock(w, key, ok)}
 ## 검사할 문서
-${docForCheck(p)}
+${docForCheck(p, t => t)}
 
 ${timelinePairs.length ? `## 연표 대조
 다음 각 쌍이 같은 한 번의 발생을 가리키는지 판단한다. 동일 사건의 다른 표현·관점이면 쌍 번호를 timelineSame에 넣는다. 별개 행위나 후속 사건이거나 확신할 수 없으면 넣지 않는다. 중복 자체는 모순 지적(issues)이 아니다. timelineSame에는 번호를 숫자로 쓰고, 없으면 빈 배열로 둔다.

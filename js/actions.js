@@ -390,7 +390,8 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
     afterGen(k, true);
     maybeAutoAngles(w);   // 기다리지 않는다. 실패하면 다음 문서 생성 뒤 다시 시도한다
     if (S.world === w && S.pages[k] === fin) {
-      if (pre?.fixed) { toast(`설정과 어긋난 ${pre.fixed}곳을 고쳐서 보여 드립니다.`); bgSync(k); }   // 확정 사실만 정리하며 검사는 다시 하지 않는다
+      if (pre?.patched) bgSync(k);   // 바뀐 본문에 맞춰 확정 사실을 정리한다
+      if (pre?.fixed) toast(`설정과 어긋난 ${pre.fixed}곳을 고쳐서 보여 드립니다.`);
       else if (named?.twins.length) toast("인포박스 이름이 다른 인물 문서의 제목과 같습니다. 설정 노트의 '같은 인물일 수 있는 두 문서'에서 확인해 주세요.");
     }
     return { sceneUsed };

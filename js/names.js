@@ -11,11 +11,12 @@ function infoboxNames(p, real = false) {
   const out = [];
   for (const r of p?.infobox || []) {
     const label = stripMarks(r.label).replace(/\s/g, "");
-    if (!(real ? REAL_NAME_LABEL : IDENTITY_LABEL).test(label)) continue;
+    if (!(real ? REAL_NAME_LABEL.test(label) : IDENTITY_LABEL.test(label) || CODE_NAME_LABEL.test(label))) continue;
     const text = stripMarks(String(r.value || "").replace(LINK_RE, ","));
-    for (const part of text.split(/\s*(?:[,，、;/／]|\s또는\s|\s혹은\s)\s*/)) {
+    const separator = /\s*(?:[,，、;/／]|\s또는\s|\s혹은\s)\s*/;
+    for (const part of text.split(/\s*(?:[,，、;/／]|\s또는\s|\s혹은\s)\s*(?![^()（）]*[)）])/)) {
       const pm = /^(.*?)\s*[(（]([^)）]*)[)）]\s*$/.exec(part);
-      for (let x of pm ? [pm[1], pm[2]] : [part]) {
+      for (let x of pm ? [pm[1], ...pm[2].split(separator)] : [part]) {
         x = norm(x).replace(/^(?:본명|코드명|별칭)\s*[:：]\s*/, "").replace(/^['"‘’“”「」『』]+|['"‘’“”「」『』]+$/g, "").trim();
         if (x.length >= 2 && x.length <= 40 && !NAME_JUNK.test(x)) out.push(x);
       }

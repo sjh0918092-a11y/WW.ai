@@ -9,7 +9,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} },
   window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,parseAgeRules,ageRuleIssues,numericIssues,sameKindEvents,sameKindBlock,pagePrompt,acceptTimeline,openWorld,Store});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,parseAgeRules,ageRuleIssues,numericIssues,sameKindEvents,sameKindBlock,pagePrompt,checkPrompt,checkSourceBatches,autoLink,acceptTimeline,openWorld,Store});', c);
 const person = (title, birth, body = '', extra = {}) => ({ title, type: '인물', summary: '전략 소녀', categories: ['전략 소녀'], infobox: birth ? [{ label: '출생', value: birth }] : [], sections: [{ heading: '생애', body }], links: [], createdAt: 1, ...extra });
 const doc = (title, body, extra = {}) => person(title, '', body, { type: '사건', summary: '', categories: [], createdAt: 2, ...extra });
 const rule = '전략 소녀는 만 14세~19세에만 발현한다.';
@@ -246,6 +246,51 @@ test('기존 중복은 세계를 열 때 한 번 정리하고 원안·직접 수
     await c.openWorld(w.id); assert.equal(w.timeline.length, 2); assert(w.timeline.some(t => t.event === first)); assert.equal(saves, 1);
     await c.openWorld(w.id); assert.equal(w.timeline.length, 2); assert.equal(saves, 1);
   }
+});
+test('새 문서는 역방향 링크의 원문을 읽고, 검사는 초안이 가리키는 문서 전문과 링크의 양쪽 이름을 읽는다', () => {
+  const city = c.keyOf('유리 도시'), river = c.keyOf('은빛 강'), port = c.keyOf('검은 항구'), far = c.keyOf('먼 섬');
+  const pages = {
+    [river]: doc('은빛 강', '첫 절에는 관문이 있다.', { createdAt: 1, links: [city] }),
+    [port]: doc('검은 항구', '폐문은 다음 날 이루어졌다.', { createdAt: 1 }),
+    [far]: doc('먼 섬', '관련 없는 섬의 원문이다.', { createdAt: 1 }),
+  };
+  pages[river].sections.push({ heading: '두 번째 절', body: '앞 절의 기록은 우기에만 적용된다.' });
+  const w = world(pages);
+  w.entities[city] = c.newEntity('유리 도시', '지명', '');
+  const generation = c.pagePrompt(w, city);
+  assert(generation.includes('앞 절의 기록은 우기에만 적용된다.'));
+  assert(!generation.split('## 연결된 문서 원문')[1].split('## 이미 존재하는 다른 항목')[0].includes(pages[far].sections[0].body));
+  c.S.pages[city] = doc('유리 도시', '[[검은 항구|밤의 관문]]에서 출발했다.', { links: [port] });
+  const check = c.checkPrompt(w, city, []);
+  assert(check.includes('폐문은 다음 날 이루어졌다.'));
+  assert(check.includes('[[검은 항구|밤의 관문]]'));
+  assert(!check.includes(pages[far].sections[0].body));
+  pages[far].infobox = [{ label: '이명', value: '밤의 관문 (Night Gate / Nachtpforte)' }];
+  assert(c.checkPrompt(w, city, []).includes(pages[far].sections[0].body), '표시명이 다른 문서의 별칭이면 그 원문도 비교한다');
+});
+test('기존 문서의 빠진 링크를 인포박스와 본문에 붙이고 이름이 겹치는 별칭은 추정하지 않는다', () => {
+  const river = c.keyOf('은빛 강'), port = c.keyOf('검은 항구'), street = c.keyOf('비단 거리'), key = c.keyOf('도시 안내');
+  const pages = {
+    [river]: doc('은빛 강', '', { infobox: [{ label: '별칭', value: '빛줄기' }] }),
+    [port]: doc('검은 항구', '', { infobox: [{ label: '별칭', value: '관문' }] }),
+    [street]: doc('비단 거리', '', { infobox: [{ label: '별칭', value: '관문' }] }),
+  };
+  const w = world(pages);
+  w.entities[key] = c.newEntity('도시 안내', '개념', '');
+  const out = doc('도시 안내', '은빛 강철을 지나 빛줄기를 건넌다. 관문에서 쉰다.', { infobox: [{ label: '목적지', value: '검은 항구' }] });
+  assert.equal(c.autoLink(w, key, out), 2);
+  assert.equal(out.sections[0].body, '은빛 강철을 지나 [[은빛 강|빛줄기]]를 건넌다. 관문에서 쉰다.');
+  assert.equal(out.infobox[0].value, '[[검은 항구]]');
+  assert.equal(c.autoLink(w, key, out), 0);
+});
+test('연결 문서가 많으면 검사 입력을 문서 경계에서 나눈다', () => {
+  const key = c.keyOf('도시 안내'), a = c.keyOf('은빛 강'), b = c.keyOf('검은 항구');
+  const first = '강의 기록'.repeat(6000), second = '항구의 기록'.repeat(5500);
+  const w = world({ [key]: doc('도시 안내', '출발했다.', { links: [a, b] }),
+    [a]: doc('은빛 강', first, { createdAt: 1 }), [b]: doc('검은 항구', second, { createdAt: 1 }) });
+  const batches = c.checkSourceBatches(w, key);
+  assert.equal(batches.length, 2);
+  assert(batches[0].includes(first) && batches[1].includes(second));
 });
 (async () => {
   for (const [name, fn] of tests) try { await fn(); console.log(`  ✓ ${++n}. ${name}`); } catch (e) { failed++; console.error(`  ✗ ${name}\n${e.stack}`); }
