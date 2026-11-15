@@ -209,7 +209,11 @@ document.addEventListener("click", ev => {
     case "export": exportAll().catch(e => toast("내보내지 못했습니다. " + errMsg(e))); break;
     case "import": $("#importFile")?.click(); break;
     case "log-back": S.view = S.world ? { name: "article", key: (S.recent.find(x => S.world.entities[x]) || S.world.mainKey) } : { name: "home" }; renderAll(); break;
-    case "log-clear": LOG.length = 0; try { localStorage.removeItem(LOGK); } catch {} renderAll(); break;
+    case "log-clear": LOG.length = 0; saveLogs(); renderAll(); break;
+    case "log-download": {
+      const blob = new Blob([logText()], { type: "text/plain;charset=utf-8" }), url = URL.createObjectURL(blob), a = document.createElement("a");
+      a.href = url; a.download = "worldwiki-input-log-" + new Date().toISOString().slice(0, 10) + ".txt"; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); break;
+    }
     case "prompt-copy": {
       if (!LASTP) break;
       const pick = () => { const d = $("#promptPre")?.closest("details"); if (d) d.open = true; const pre = $("#promptPre"); if (!pre) return; const r = document.createRange(); r.selectNodeContents(pre); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); };
@@ -219,7 +223,7 @@ document.addEventListener("click", ev => {
     }
     case "log-copy": {
       const txt = logText();
-      const pick = () => { const pre = $("#logPre"); if (!pre) return; const r = document.createRange(); r.selectNodeContents(pre); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); };
+      const pick = () => { const pre = $("#logPre"); if (!pre) return; pre.textContent = txt; const r = document.createRange(); r.selectNodeContents(pre); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); };
       try { navigator.clipboard.writeText(txt).then(() => toast("로그를 복사했습니다."), () => { pick(); toast("자동 복사가 막혀 있어 로그를 선택해 두었습니다. 직접 복사해 주세요."); }); }
       catch { pick(); toast("자동 복사가 막혀 있어 로그를 선택해 두었습니다. 직접 복사해 주세요."); }
       break;

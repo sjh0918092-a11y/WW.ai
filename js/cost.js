@@ -79,7 +79,7 @@ const DocumentCost = {
   restore(wid,key,receipt,report) {
     const previous=this.get(wid,key);
     if(previous && previous.at>(receipt.createdAt||0))return;
-    const r={id:receipt.id,storageKey:this.key(wid,key),wid,key,at:receipt.createdAt||Date.now(),finished:true,rows:(report.steps||[]).map((s,i)=>({...s,id:String(i),usage:this.counts(s.usage)}))};
+    const r={id:receipt.id,storageKey:this.key(wid,key),wid,key,at:receipt.createdAt||Date.now(),finished:true,rows:(report.steps||[]).map((s,i)=>({id:s.slot||String(i),kind:s.kind,model:s.model,status:s.status,usage:this.counts(s.usage)}))};
     this.records.set(r.storageKey,r);this.save(r);this.render();
   },
   finish(r) {

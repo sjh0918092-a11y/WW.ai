@@ -32,6 +32,7 @@ const AIJobs = {
     } finally { clearTimeout(timer); }
   },
   async cache(receipt, result) {
+    if (typeof importPipelineLogs === "function") importPipelineLogs(receipt, result);
     const record = { receipt, result }, key = "job:" + receipt.id;
     let cached = false;
     try {

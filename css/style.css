@@ -402,3 +402,8 @@ details.ent li{margin-bottom:3px}
 .ai-input > label:first-child { flex:1; }
 .ai-input > label:last-child:not(:first-child) { display:flex;align-items:center;gap:4px;white-space:nowrap; }
 @media(max-width:480px) { .ai-input { flex-wrap:wrap; } .ai-input > label:first-child { min-width:65%; } }
+
+/* 진단 로그 입력 구간 */
+.input-log-table{width:100%;border-collapse:collapse;font-size:13px}
+.input-log-table th,.input-log-table td{padding:6px 12px;text-align:left;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+.input-log-table th:not(:first-child),.input-log-table td:not(:first-child){text-align:right;white-space:nowrap}
