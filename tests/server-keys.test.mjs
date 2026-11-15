@@ -57,5 +57,7 @@ try {
   assert.equal(calls.at(-1).options.headers.Authorization, 'Bearer personal-openai');
   globalThis.fetch = async () => Response.json({ error: { message: 'shared-claude' } }, { status: 401 });
   await assert.rejects(runProvider({ keyMode: 'relay', input: claude }, env), error => error.code === 'bad_key' && !JSON.stringify(error).includes('shared-claude'));
+  globalThis.fetch = async () => Response.json({error:{message:'shared-claude must not be echoed'}},{status:404});
+  await assert.rejects(runProvider({keyMode:'relay',input:claude},env), e => e.code==='model_not_found' && e.model===claude.model && !JSON.stringify(e).includes('shared-claude'));
   console.log('✓ OpenAI shared/personal separation and sanitized provider errors; no paid calls');
 } finally { globalThis.fetch = original; }

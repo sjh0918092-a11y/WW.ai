@@ -61,7 +61,7 @@ export async function boundedText(stream, limit) {
   } finally { reader.releaseLock(); }
 }
 
-async function providerError(res) {
+async function providerError(res, model) {
   let message = "";
   try { message = JSON.parse(await boundedText(res.body, 16384))?.error?.message || ""; } catch {}
   const status = res.status;
@@ -74,7 +74,7 @@ async function providerError(res) {
   else if (status === 524) safeMessage = "AI 서버의 응답 시간이 초과되었습니다.";
   else if (status === 413 || /token count|too long|exceeds the maximum/i.test(message)) code = "prompt_too_large";
   else if (status === 400 && /think/i.test(message)) safeMessage = "선택한 thinking 설정을 지원하지 않습니다.";
-  return { code, safeMessage, definite: true, status };
+  return { code, safeMessage, definite: true, status, ...(code === "model_not_found" && typeof model === "string" && MODEL.test(model) ? {model} : {}) };
 }
 
 export function serverKeyName(type, model) {
@@ -125,7 +125,7 @@ export async function runProvider(job, env, personalKey, signal) {
     headers = { "Content-Type": "application/json", "x-goog-api-key": key }; body = JSON.stringify(input);
   }
   const res = await fetch(url, { method: "POST", headers, body, signal });
-  if (!res.ok) throw await providerError(res);
+  if (!res.ok) throw await providerError(res, model);
   const text = await boundedText(res.body, type.endsWith(".image") ? 20 * 1024 * 1024 : 4 * 1024 * 1024);
   let result;
   try { result = JSON.parse(text); } catch { throw { code: "invalid_response" }; }

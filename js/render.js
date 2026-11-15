@@ -121,10 +121,17 @@ function updateThinkingOptions() {
   }
 }
 
+function updateModelIds() {
+  for(const id of ["gMain","gQuick","gCheck","gImage"]) {
+    const note=$("#"+id+"Id");if(note)note.textContent="API ID: "+($("#"+id)?.value || $("#gMain")?.value || "");
+  }
+}
+
 function gsetHtml() {
   const modelOptions = (value, image = false, inherit = false) => {
-    const models = new Map((image ? IMAGE_MODELS : [...TEXT_MODELS, ...(S.gmodels || [])]).map(m => [m.id, m.label || m.id]));
-    if (value && !models.has(value)) models.set(value, value + " (기존 설정)");
+    const listed = Array.isArray(S.gmodels);
+    const models = new Map((image ? IMAGE_MODELS : [...TEXT_MODELS.filter(m=>!listed || !/^gemini-/.test(m.id)), ...(S.gmodels || [])]).map(m => [m.id, m.label || m.id]));
+    if (value && !models.has(value)) models.set(value, value + (listed && /^gemini-/.test(value) ? " (서버 목록에 없음)" : " (기존 설정)"));
     const groups = [["Gemini", id => /^gemini-/.test(id)], [image ? "OpenAI" : "Claude", id => image ? /^gpt-image-/.test(id) : /^claude-/.test(id)], ["기존 모델", id => !/^(gemini-|claude-|gpt-image-)/.test(id)]];
     return (inherit ? `<option value="" ${!value ? "selected" : ""}>기본 모델과 같게</option>` : "") + groups.map(([label, match]) => {
       const entries = [...models].filter(([id]) => match(id));
@@ -144,11 +151,11 @@ function gsetHtml() {
     </div>
     <h2 class="nf-h">문서 모델</h2>
     <p class="note">용도별로 Gemini 또는 Claude를 선택하세요. Claude는 로그인과 서버 AI 실행이 필요합니다. 생각 깊이는 아래 실행·검사 옵션에서 조정하세요.</p>
-    <div><label class="lb" for="gMain">기본 모델 <span class="note" style="font-weight:400">세계관 생성, 문서 작성, 랜덤 서핑, 충돌 고치기</span></label><select id="gMain">${modelOptions(GS.main)}</select></div>
-    <div><label class="lb" for="gQuick">빠른 모델 <span class="note" style="font-weight:400">분위기 판별</span></label><select id="gQuick">${modelOptions(GS.quick)}</select></div>
-    <div><label class="lb" for="gCheck">검사 모델 <span class="note" style="font-weight:400">설정 검사, 수정 대조</span></label><select id="gCheck">${modelOptions(GS.check || "", false, true)}</select></div>
+    <div><label class="lb" for="gMain">기본 모델 <span class="note" style="font-weight:400">세계관 생성, 문서 작성, 랜덤 서핑, 충돌 고치기</span></label><select id="gMain">${modelOptions(GS.main)}</select><p class="note" id="gMainId">API ID: ${esc(GS.main)}</p></div>
+    <div><label class="lb" for="gQuick">빠른 모델 <span class="note" style="font-weight:400">분위기 판별</span></label><select id="gQuick">${modelOptions(GS.quick)}</select><p class="note" id="gQuickId">API ID: ${esc(GS.quick)}</p></div>
+    <div><label class="lb" for="gCheck">검사 모델 <span class="note" style="font-weight:400">설정 검사, 수정 대조</span></label><select id="gCheck">${modelOptions(GS.check || "", false, true)}</select><p class="note" id="gCheckId">API ID: ${esc(GS.check || GS.main)}</p></div>
     <h2 class="nf-h">이미지 생성</h2>
-    <label class="lb" for="gImage">기본 이미지 모델</label><select id="gImage">${modelOptions(GS.imageModel || GDEF.imageModel, true)}</select>
+    <label class="lb" for="gImage">기본 이미지 모델</label><select id="gImage">${modelOptions(GS.imageModel || GDEF.imageModel, true)}</select><p class="note" id="gImageId">API ID: ${esc(GS.imageModel || GDEF.imageModel)}</p>
     <p class="note">이미지는 서버 키로 생성합니다. OpenAI 이미지를 사용하려면 로그인과 서버 AI 실행이 필요합니다.</p>
     <details class="memo" id="gAdvanced" style="margin-top:20px"><summary>실행·검사 옵션</summary><div style="padding:0 12px 12px">
     <div class="two"><div><label class="lb" for="gMainT">기본 모델 생각 깊이</label><select id="gMainT">${thinkOptions(GS.main, GS.mainThink)}</select></div><div><label class="lb" for="gQuickT">빠른 모델 생각 깊이</label><select id="gQuickT">${thinkOptions(GS.quick, GS.quickThink)}</select></div></div>

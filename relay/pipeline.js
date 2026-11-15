@@ -3,7 +3,7 @@ import { snapshotWorld, commitDocument, digest } from "./pipeline-store.js";
 import { runProvider, usageCounts } from "./providers.js";
 const yieldError = () => ({ code: "pipeline_yield", serverJob: true });
 const phaseFor = kind => ["check","read","ageRule"].includes(kind) ? "check" : ["fix","analyze"].includes(kind) ? "fix" : "generate";
-const safeError = e => ({ code: e?.code || "pipeline_error", message: e?.safeMessage || "문서 작업을 끝내지 못해 원본을 유지했습니다. AI 작업에서 결과를 확인해 주세요.", ...(e?.status ? { httpStatus: e.status } : {}) });
+const safeError = e => ({ code: e?.code || "pipeline_error", message: e?.safeMessage || "문서 작업을 끝내지 못해 원본을 유지했습니다. AI 작업에서 결과를 확인해 주세요.", ...(e?.status ? { httpStatus: e.status } : {}), ...(e?.code === "model_not_found" && e.model ? {model:e.model,phase:e.phase} : {}) });
 const resultFor = (state, output, saved, error) => {
   const pageStep = state.steps.find(s => s.kind === "page" && s.response);
   const parts = pageStep?.response?.candidates?.[0]?.content?.parts || [];
@@ -71,7 +71,7 @@ export async function processPipeline(host, job, signal) {
     if (!await host.savePipeline(job, state, phaseFor(step.kind), false)) return;
     let response, failure;
     try { response = await runProvider({ keyMode: job.keyMode, input: { type: "gemini.generate", model: step.model, input: body } }, host.env, job.personalKey, signal); }
-    catch (e) { failure = { code: e?.code || "outcome_unknown", safeMessage: safeError(e).message, serverJob: true, definite: !!e?.definite, ...(e?.status ? { status: e.status } : {}) }; }
+    catch (e) { failure = { code: e?.code || "outcome_unknown", safeMessage: safeError(e).message, serverJob: true, definite: !!e?.definite, ...(e?.code === "model_not_found" ? {model:step.model,phase:step.kind} : {}), ...(e?.status ? { status: e.status } : {}) }; }
     if (failure) { step.error = failure; step.status = failure.definite ? "failed" : "unknown"; }
     else { step.response = response; step.status = "done"; }
     // 완료 기록과 다음 예약을 함께 저장한다. 응답이 불명확한 호출은 재전송하지 않는다.

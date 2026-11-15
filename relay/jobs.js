@@ -243,6 +243,7 @@ export class AiJobs {
         code: e?.code || "outcome_unknown",
         message: e?.safeMessage || (e?.definite ? "AI 서버가 요청을 완료하지 못했습니다. 설정과 사용 한도를 확인해 주세요." : "AI 요청의 완료 여부를 확인하지 못했습니다. 중복 실행을 피하려고 자동으로 재요청하지 않았습니다."),
         ...(e?.status ? { httpStatus: e.status } : {}),
+        ...(e?.code === "model_not_found" && e.model ? {model:e.model} : {}),
       } };
     } finally { clearTimeout(timeout); job.personalKey = null; if (this.active?.id === job.id) this.active = null; }
     await this.update(async (jobs, tx) => {

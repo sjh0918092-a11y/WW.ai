@@ -109,6 +109,7 @@ const AIJobs = {
             receipt.error = r.job.error; this.save(receipt);
             if (r.result === undefined || cached) this.ack(ctx, receipt);
             throw { code: r.job.status === "cancelled" ? "cancelled" : r.job.error?.code || "job_failed", serverJob: true,
+              ...(r.job.error?.code === "model_not_found" ? {model:r.job.error.model,phase:r.job.error.phase} : {}),
               result: r.result, message: r.job.error?.message || "서버 작업이 중단되었습니다.", httpStatus: r.job.error?.httpStatus };
           }
         } catch (e) {

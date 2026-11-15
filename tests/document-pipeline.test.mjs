@@ -35,6 +35,7 @@ globalThis.fetch=async(url,opts)=>{
  assert.equal(opts.headers['x-goog-api-key'],'private-server-key');
  if(behavior==='hold'&&kind==='page') { gate?.(); await new Promise(r=>{release=r}); }
  if(behavior==='unknown'&&kind==='check') throw new Error('private-key must not leak');
+ if(behavior==='missing-model'&&kind==='check') return Response.json({error:{message:'private-key'}},{status:404});
  if(behavior==='reject'&&kind==='read') return Response.json({error:{message:'private-key'}},{status:429});
  if ((behavior==='timeout-page'&&kind==='page')||(behavior==='timeout-fix'&&kind==='fix')) return new Response('private-key',{status:524});
  if(behavior==='thinking'&&kind==='page'&&JSON.parse(opts.body).generationConfig.thinkingConfig) return Response.json({error:{message:'thinking unsupported'}},{status:400});
@@ -119,6 +120,10 @@ try {
  for(const c of calls.filter(c=>['check','read'].includes(c.kind))) assert.equal(c.body.thinking.budget_tokens,2048);
  assert(r.result.pipeline.saved);assert(!JSON.stringify(r.result).includes('private reasoning'));
  pass('Claude 문서 작성·검사가 각 단계의 확장 사고 예산으로 실행되고 저장된다');
+
+ e=await reset();behavior='missing-model';await request(e,'',e.body);r=await run(e);
+ assert.equal(r.job.error.code,'model_not_found');assert.equal(r.job.error.model,'custom-check');assert.equal(r.job.error.phase,'check');assert.equal(r.result.pipeline.error.model,'custom-check');assert(!JSON.stringify(r).includes('private-key'));
+ pass('모델 404 오류에 실제 실패한 검사 모델과 단계를 보존하며 제공자 원문은 숨긴다');
 
  // D1 성공 직후 DO 기록 실패를 모사한다. 같은 job gate가 이후 수동 수정을 덮어쓰지 않는다.
  e=await reset();const snap=await snapshotWorld(db,'alice',e.input);const out={world:e.w,pages:{[B]:{...page(),key:B}},removed:[]};assert(await commitDocument(db,'alice',e.id,snap,out));db.sqlite.prepare("UPDATE pages SET data=json_set(data,'$.summary','후속 편집') WHERE pkey=?").run(B);assert(await commitDocument(db,'alice',e.id,snap,out));assert.equal(storedPage(B).summary,'후속 편집');pass('D1 저장 직후 재시작해도 작업 번호로 중복 저장을 막아 후속 편집을 보존한다');

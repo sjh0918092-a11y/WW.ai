@@ -177,7 +177,9 @@ document.addEventListener("click", ev => {
     case "gset-models": (async () => {
       readGsetForm(); if (!gReady()) { setGres("서버 접속 암호를 먼저 저장해 주세요."); return; }
       setGres("모델 목록을 불러오는 중…");
-      try { S.gmodels = await listGeminiModels(); S.gres = `텍스트 생성 모델 ${S.gmodels.length}개를 불러왔습니다. 드롭다운에서 선택할 수 있습니다.`; renderMain(); }
+      try { S.gmodels = await listGeminiModels(); const ids=new Set(S.gmodels.map(m=>m.id));
+        const missing=[['기본',GS.main],['빠른',GS.quick],['검사',GS.check]].filter(([,id])=>/^gemini-/.test(id||"")&&!ids.has(id)).map(([role,id])=>`${role}: ${id}`);
+        S.gres = `서버 모델 ${S.gmodels.length}개를 불러왔습니다.`+(missing.length?` 서버 목록에 없는 선택값: ${missing.join(" / ")}. 드롭다운에서 다시 선택해 주세요.`:" 드롭다운에서 선택할 수 있습니다."); renderMain(); }
       catch (e) { setGres("불러오지 못했습니다. " + errMsg(e)); }
     })(); break;
     case "export-world": try { exportWorld(); } catch (e) { toast("내보내지 못했습니다. " + errMsg(e)); } break;
@@ -305,7 +307,7 @@ $("#searchForm").addEventListener("submit", ev => {
   if (hit) { $("#q").value = ""; $("#sugg").hidden = true; openEntity(hit[0]); } else goSearch(q);
 });
 document.addEventListener("change", ev => {
-  if (["gMain", "gQuick", "gCheck"].includes(ev.target.id)) updateThinkingOptions();
+  if (["gMain", "gQuick", "gCheck", "gImage"].includes(ev.target.id)) { updateThinkingOptions(); updateModelIds(); }
   if (ev.target.dataset?.wcExtra) { wcToggleExtra(ev.target.dataset.wcExtra, ev.target.dataset.wcDoc, ev.target.checked); return; }
   if (ev.target.dataset?.worldExport && S.world) { const field = ev.target.dataset.worldExport; if (["images", "stories"].includes(field)) (S.worldExports[S.world.id] ||= { images: true, stories: true })[field] = ev.target.checked; return; }
   if (ev.target.dataset?.proseImage === "model" && S.proseGen?.illustration && !S.proseGen.busy) { S.proseGen.illustration.opts.model = ev.target.value; renderMain(); return; }
