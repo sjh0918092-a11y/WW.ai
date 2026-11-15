@@ -16,7 +16,13 @@ const TEXT_MODELS = [
   { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
   { id: "claude-opus-4-5", label: "Claude Opus 4.5" },
   { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
-  { id: "claude-opus-4-6", label: "Claude Opus 4.6" }
+  { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
+  { id: "gpt-6-luna", label: "GPT-6 Luna" },
+  { id: "gpt-6.1-terra", label: "GPT-6.1 Terra" },
+  { id: "gpt-6.1-sol", label: "GPT-6.1 Sol" },
+  { id: "gpt-6-astra", label: "GPT-6 Astra" },
+  { id: "gpt-5.4-mini", label: "GPT-5.4 Mini" },
+  { id: "gpt-5.5", label: "GPT-5.5" }
 ];
 const THINKS = [["", "모델 기본값"], ["minimal", "minimal"], ["low", "low"], ["medium", "medium"], ["high", "high"]];
 let GS = (() => {
@@ -122,8 +128,8 @@ function joinCont(a, b) {
 }
 const gemini = {
   async stream(model, body, opts, prefix) {
-    const provider = /^claude-/.test(model) ? "claude" : "gemini";
-    if (provider === "claude" && (typeof AIJobs === "undefined" || !AIJobs.enabled(provider))) throw { code: "job_unavailable", serverJob: true, message: "Claude는 중계 서버 연결·로그인·서버 AI 실행이 필요합니다." };
+    const provider = /^claude-/.test(model) ? "claude" : isOpenAITextModel(model) ? "openai" : "gemini";
+    if (provider !== "gemini" && (typeof AIJobs === "undefined" || !AIJobs.enabled(provider))) throw { code: "job_unavailable", serverJob: true, message: "Claude·OpenAI는 중계 서버 연결·로그인·서버 AI 실행이 필요합니다." };
     if (typeof AIJobs !== "undefined" && AIJobs.enabled(provider)) {
       const j = await AIJobs.run(provider + ".generate", model, body, { ...opts, onStatus: j => { opts.onStatus?.(j); if(j.usage)opts.onUsage?.(j.usage); } }), c = j.candidates?.[0];
       const text = (c?.content?.parts || []).filter(p => typeof p.text === "string" && !p.thought).map(p => p.text).join("");
@@ -210,7 +216,7 @@ const gemini = {
         catch (e) {
           if(e?.code === "model_not_found" && !e.model)e={...e,model};
           if(attemptUsage){usage=sumUsage(usage,attemptUsage);opts.onMeta?.({model,think,usage,retries});}
-          if (!/^claude-/.test(model) && e.code === "api_400" && think && /think/i.test(e.message || "")) { think = ""; opts.onMeta?.({ model, think }); continue; }   // 이 모델이 지원하지 않는 생각 깊이면 기본값으로 다시 보낸다
+          if (!/^claude-/.test(model) && !isOpenAITextModel(model) && e.code === "api_400" && think && /think/i.test(e.message || "")) { think = ""; opts.onMeta?.({ model, think }); continue; }   // 이 모델이 지원하지 않는 생각 깊이면 기본값으로 다시 보낸다
           throw e;
         }
         serverJobUsed = !!r.serverJob;
@@ -241,7 +247,8 @@ const gemini = {
 function sumUsage(a, b) {
   if (!a) return { ...b };
   const out = { promptTokenCount: (a.promptTokenCount || 0) + (b.promptTokenCount || 0), candidatesTokenCount: (a.candidatesTokenCount || 0) + (b.candidatesTokenCount || 0), thoughtsTokenCount: (a.thoughtsTokenCount || 0) + (b.thoughtsTokenCount || 0) };
-  for(const key of ["cachedContentTokenCount","cacheCreationInputTokenCount","cacheCreation5mInputTokenCount","cacheCreation1hInputTokenCount"]) if(a[key]!==undefined||b[key]!==undefined)out[key]=(a[key]||0)+(b[key]||0);
+  for(const key of ["cachedContentTokenCount","cacheCreationInputTokenCount","cacheCreation5mInputTokenCount","cacheCreation1hInputTokenCount","cacheCreation30mInputTokenCount","cacheCreation12hInputTokenCount"]) if(a[key]!==undefined||b[key]!==undefined)out[key]=(a[key]||0)+(b[key]||0);
+  if(a.complete===false||b.complete===false)out.complete=false;
   return out;
 }
 async function listGeminiModels() {
@@ -275,6 +282,16 @@ async function listClaudeModels() {
     if(!Array.isArray(j.models))throw{message:"Claude 모델 목록 형식을 확인하지 못했습니다."};
     return j;
   }finally{clearTimeout(timer)}
+}
+async function listOpenAIModels(){
+ if(!Sync.acct?.token)throw{message:"OpenAI 목록 조회는 로그인이 필요합니다."};
+ const ctx={base:Sync.base(),owner:Sync.acct.id,token:Sync.acct.token},ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),25000);
+ try{const res=await fetch(ctx.base+"/models/openai",{headers:{Authorization:"Bearer "+ctx.token,"X-WW-Pass":GS.pass},signal:ctl.signal});let j;
+  try{j=await res.json()}catch{throw{message:"OpenAI 목록 응답을 확인하지 못했습니다. Worker 배포를 확인해 주세요."}}
+  if(!res.ok)throw{message:j.error?.message||"OpenAI 목록을 조회하지 못했습니다."};
+  if(!AIJobs.current(ctx))throw{message:"서버나 계정이 바뀌어 목록을 적용하지 않았습니다."};
+  if(!Array.isArray(j.models))throw{message:"OpenAI 모델 목록 형식을 확인하지 못했습니다."};return j.models;
+ }finally{clearTimeout(timer)}
 }
 const LOGK = "wwiki:log";
 const LOG = (() => { try { const v = JSON.parse(localStorage.getItem(LOGK) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })();

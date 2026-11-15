@@ -16,13 +16,17 @@ exports.serverRelay = async (context, handler) => {
   }
  } };
  globalThis.fetch = async (url, options) => {
-  const request = new Request(url, options), bytes = Buffer.from(await request.arrayBuffer());
+  const request = new Request(url, options);
+  if(request.method==='GET'&&String(url)==='https://api.openai.com/v1/models')return Response.json({data:[{id:'gpt-6-luna'}]});
+  const bytes = Buffer.from(await request.arrayBuffer());
   let response;
   await handler({ request: () => ({ url: () => String(url), postData: () => bytes.toString(), postDataBuffer: () => bytes, allHeaders: async () => Object.fromEntries(request.headers) }), fulfill: async ({ status = 200, json, body, contentType }) => {
    response = json === undefined ? new Response(body, { status, headers: { 'Content-Type': contentType || 'application/json' } }) : Response.json(json, { status });
   } });
   return response;
  };
+ // 모델 목록 조회는 이미지 생성 호출 수에 포함하지 않는다.
+ await context.route('**/v1beta/models?*',route=>route.fulfill({json:{models:[]}}));
  await context.route('**/api/**', async route => {
   const r = route.request(), req = new Request(r.url(), { method: r.method(), headers: await r.allHeaders(), ...(['GET','HEAD'].includes(r.method()) ? {} : { body: r.postData() }) });
   const res = await worker.fetch(req, { ...env, ALLOWED_ORIGINS: req.headers.get('Origin') || '' });

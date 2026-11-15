@@ -6,6 +6,8 @@ near(C.estimate({model:'claude-sonnet-4-5',usage:{promptTokenCount:1e6,candidate
 const gemini={model:'gemini-3.8-flash',usage:{promptTokenCount:1e6,candidatesTokenCount:9e5,thoughtsTokenCount:1e5,cachedContentTokenCount:1e5}};
 near(C.estimate(gemini,at),4.4325);near(C.estimate(gemini,Date.UTC(2027,0,1)),8.865);
 assert.equal(C.estimate({model:'unknown',usage:{promptTokenCount:5}},at),null);assert.equal(C.estimate({model:'claude-sonnet-4-5'},at),null);assert.equal(C.estimate({model:'claude-sonnet-4-5',usage:{promptTokenCount:1000}},at),null);
+near(C.estimate({model:'gpt-6-luna',usage:{promptTokenCount:1000,candidatesTokenCount:20,thoughtsTokenCount:100,cachedContentTokenCount:200,cacheCreationInputTokenCount:300,cacheCreation30mInputTokenCount:200,cacheCreation12hInputTokenCount:100}},at),.000162);
+near(C.rate('gpt-5.4-mini',at)[0],.75);near(C.rate('gpt-5.5',at,300000)[1],45);assert.equal(C.estimate({model:'gpt-6-luna',usage:{promptTokenCount:100,candidatesTokenCount:10,complete:false}},at),null);
 const r=C.start('world','page');const job={steps:[{slot:'page:1',kind:'page',model:'claude-sonnet-4-5',status:'done',usage:{promptTokenCount:1000,candidatesTokenCount:100}},{slot:'check:1',kind:'check',model:'claude-haiku-4-5',status:'running'}]};
 C.server(r,job);const once=C.content(r);C.server(r,job);assert.equal(C.content(r),once);assert(once.includes('$0.0045'));assert(once.includes('미집계'));
 const cacheRecord={at,finished:true,rows:[{kind:'page',model:'gemini-3.8-flash',usage:{promptTokenCount:28782,candidatesTokenCount:3686,cachedContentTokenCount:10000}}]};

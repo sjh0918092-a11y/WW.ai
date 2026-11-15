@@ -4,5 +4,5 @@ const FLAGS=['seed','rules','canon','stage','timeline','fixedTimeline','facts','
 const COUNTS=['timelineCount','factsCount','mentionsCount','relatedCount','relatedFactsCount','indexCount','relationsCount','eventsCount','quotesCount','glossaryCount','navCount','categoriesCount','sameEventsCount','lifeCount','traitsCount'];
 const plain=x=>x&&typeof x==='object'&&!Array.isArray(x);
 const model=x=>x===''||typeof x==='string'&&/^[A-Za-z0-9._-]{1,100}$/.test(x)&&!/image|tts|live|audio|embedding|transcribe|robotics/i.test(x);
-export function validTaskModels(raw){return raw===undefined||plain(raw)&&Object.entries(raw).every(([k,v])=>TASKS.includes(k)&&plain(v)&&Object.keys(v).every(f=>['model','think'].includes(f))&&model(v.model)&&['inherit','','minimal','low','medium','high'].includes(v.think))}
+export function validTaskModels(raw){return raw===undefined||plain(raw)&&Object.entries(raw).every(([k,v])=>TASKS.includes(k)&&plain(v)&&Object.keys(v).every(f=>['model','think'].includes(f))&&model(v.model)&&['inherit','','none','minimal','low','medium','high','xhigh','max'].includes(v.think))}
 export function validPromptOptions(raw){return raw===undefined||plain(raw)&&Object.entries(raw).every(([k,v])=>FLAGS.includes(k)?typeof v==='boolean':COUNTS.includes(k)&&Number.isInteger(v)&&v>=0&&v<=500)}

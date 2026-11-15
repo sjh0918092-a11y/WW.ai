@@ -1,5 +1,6 @@
-/* 서버 키의 Claude 모델 목록만 조회한다. 생성·키 노출·제공자 원문 반환은 하지 않는다. */
+/* 서버 키의 Claude·OpenAI 모델 목록만 조회한다. 생성·키 노출·제공자 원문 반환은 하지 않는다. */
 import { boundedText } from './providers.js';
+import { isOpenAITextModel } from './openai.js';
 const ID=/^claude-[A-Za-z0-9._-]{1,92}$/;
 const supported=id=>/^claude-(?:(?:sonnet|opus)-4-[56]|haiku-4-5)(?:-\d{8})?$/.test(id);
 const entry=m=>m&&typeof m.id==='string'&&ID.test(m.id)?{id:m.id,label:typeof m.display_name==='string'?m.display_name.slice(0,100):m.id}:null;
@@ -33,4 +34,19 @@ export async function claudeModels(request,env,url,passOk){
   const status=e.status===401||e.status===403?e.status:502;
   return json({error:{message:status===401||status===403?'Anthropic이 서버 키를 거절했습니다. ANTHROPIC_API_KEY와 계정 권한을 확인해 주세요.':`Claude 모델 목록을 조회하지 못했습니다${e.status?' (HTTP '+e.status+')':''}. 서버의 Anthropic 연결 상태를 확인해 주세요.`}},status);
  }finally{clearTimeout(timer)}
+}
+
+export async function openAIModels(request,env,passOk){
+ const json=(value,status=200)=>Response.json(value,{status});
+ if(!env.PASSWORDS||!await passOk(request.headers.get('X-WW-Pass')||'',env.PASSWORDS))return json({error:{message:'서버 접속 암호를 확인해 주세요.'}},403);
+ if(!env.OPENAI_API_KEY)return json({error:{message:'서버에 OPENAI_API_KEY가 등록되지 않았습니다.'}},503);
+ const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),20000);
+ try{
+  const response=await fetch('https://api.openai.com/v1/models',{headers:{Authorization:'Bearer '+env.OPENAI_API_KEY},signal:ctl.signal});
+  if(!response.ok){await response.body?.cancel();throw{status:response.status}}
+  const result=JSON.parse(await boundedText(response.body,1024*1024));if(!Array.isArray(result.data)||result.has_more)throw{status:502};
+  const models=[...new Set(result.data.map(m=>m?.id).filter(isOpenAITextModel))].map(id=>({id,label:id}));
+  return json({models,total:models.length});
+ }catch(e){const status=[401,403].includes(e.status)?e.status:502;return json({error:{message:status===401||status===403?'OpenAI가 서버 키를 거절했습니다. OPENAI_API_KEY와 계정 권한을 확인해 주세요.':'OpenAI 모델 목록을 조회하지 못했습니다. 서버 연결 상태를 확인해 주세요.'}},status)}
+ finally{clearTimeout(timer)}
 }

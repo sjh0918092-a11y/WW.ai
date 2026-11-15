@@ -23,7 +23,17 @@ const AI_PROMPT_FIELDS = [
  ["nav","안내 틀 자료 (틀별 항목 수)",true,"navCount",40],["categories","기존 분류 목록",true,"categoriesCount",30],["life","인물 생애 흐름",true,"lifeCount",3],
  ["traits","다른 인물 특징 참고",true,"traitsCount",30],["gaps","세계의 빈자리 참고",true],["guidelines","공통 작성 지침",true]
 ];
-const AI_THINK_VALUES=["inherit","","minimal","low","medium","high"];
+function isOpenAITextModel(id){return typeof id==="string"&&/^(?:gpt-(?:4(?:\.1|o)(?:-[A-Za-z0-9._-]+)?|[5-9][A-Za-z0-9._-]*)|o[3-9](?:-[A-Za-z0-9._-]+)?)$/.test(id)&&!/image|audio|realtime|transcribe|tts|search|deep-research/i.test(id)}
+function openAIThinkingLevels(model){
+ if(!isOpenAITextModel(model)||/^gpt-4/.test(model))return [];
+ const levels=["low","medium","high"];
+ if(/^gpt-5(?:-(?:mini|nano))?(?:-\d{4}-\d{2}-\d{2})?$/.test(model))levels.unshift("minimal");
+ else if(/^gpt-(?:5\.[1-9]|[6-9])/.test(model)&&!/^gpt-(?:6-astra|6\.1-sol)/.test(model))levels.unshift("none");
+ if(/^gpt-(?:5\.[2-9]|[6-9])/.test(model))levels.push("xhigh");if(/^gpt-[6-9]/.test(model))levels.push("max");
+ if(/^gpt-5-pro(?:-|$)/.test(model))return ["high"];
+ return /-pro(?:-|$)/.test(model)?levels.filter(x=>["medium","high","xhigh","max"].includes(x)):levels;
+}
+const AI_THINK_VALUES=["inherit","","none","minimal","low","medium","high","xhigh","max"];
 function normalizeTaskModels(raw={}) {
  const out={};for(const [kind]of AI_TASKS){const v=raw?.[kind];if(!v||typeof v!=="object")continue;
   const model=typeof v.model==="string"&&/^[A-Za-z0-9._-]{1,100}$/.test(v.model)&&!/image|tts|live|audio|embedding|transcribe|robotics/i.test(v.model)?v.model:"";
@@ -43,8 +53,8 @@ function taskSelection(kind,tier="main",settings=GS){
  return {model:task.model||(tier==="check"?settings.check||settings.main||GDEF.main:settings[tier]||GDEF[tier]),think:task.think&&task.think!=="inherit"?task.think:task.think===""?"":(tier==="check"?settings.checkThink??GDEF.checkThink:settings[tier+"Think"])||""};
 }
 function normalizeModelCatalog(raw={}) {
- const out={};for(const provider of ["gemini","claude"]){if(!Array.isArray(raw?.[provider]))continue;
-  const ids=new Map();for(const m of raw[provider])if(m&&typeof m.id==="string"&&(provider==="gemini"?/^gemini-[A-Za-z0-9._-]{1,100}$/:/^claude-[A-Za-z0-9._-]{1,100}$/).test(m.id))ids.set(m.id,{id:m.id,label:typeof m.label==="string"?m.label.slice(0,150):m.id});
+ const out={};for(const provider of ["gemini","claude","openai"]){if(!Array.isArray(raw?.[provider]))continue;
+  const ids=new Map();for(const m of raw[provider])if(m&&typeof m.id==="string"&&(provider==="openai"?isOpenAITextModel(m.id):(provider==="gemini"?/^gemini-[A-Za-z0-9._-]{1,100}$/:/^claude-[A-Za-z0-9._-]{1,100}$/).test(m.id)))ids.set(m.id,{id:m.id,label:typeof m.label==="string"?m.label.slice(0,150):m.id});
   out[provider]=[...ids.values()].slice(0,500);
  }return out;
 }
@@ -62,7 +72,7 @@ function parseAISettingsFile(value){
  }
  if(raw.taskModels!==undefined){if(!plain(raw.taskModels)||Object.entries(raw.taskModels).some(([k,v])=>!AI_TASKS.some(([id])=>id===k)||!plain(v)||Object.keys(v).some(f=>!["model","think"].includes(f))||typeof v.model!=="string"||v.model!==""&&(!/^[A-Za-z0-9._-]{1,100}$/.test(v.model)||/image|tts|live|audio|embedding|transcribe|robotics/i.test(v.model))||!AI_THINK_VALUES.includes(v.think)))throw new Error("작업별 모델 설정을 확인해 주세요.");out.taskModels=normalizeTaskModels(raw.taskModels)}
  if(raw.prompt!==undefined){const defs=normalizePromptOptions();if(!plain(raw.prompt)||Object.entries(raw.prompt).some(([k,v])=>!Object.hasOwn(defs,k)||(typeof defs[k]==="boolean"?typeof v!=="boolean":!Number.isInteger(v)||v<0||v>500)))throw new Error("작성 입력 설정을 확인해 주세요.");out.prompt=normalizePromptOptions(raw.prompt)}
- if(raw.modelCatalog!==undefined){const c=raw.modelCatalog;if(!plain(c)||Object.keys(c).some(k=>!["gemini","claude"].includes(k))||Object.entries(c).some(([provider,rows])=>!Array.isArray(rows)||rows.length>500||rows.some(m=>!plain(m)||Object.keys(m).some(k=>!["id","label"].includes(k))||typeof m.label!=="string"||m.label.length>150||typeof m.id!=="string"||!(provider==="gemini"?/^gemini-[A-Za-z0-9._-]{1,100}$/:/^claude-[A-Za-z0-9._-]{1,100}$/).test(m.id))))throw new Error("모델 목록을 확인해 주세요.");}
+ if(raw.modelCatalog!==undefined){const c=raw.modelCatalog;if(!plain(c)||Object.keys(c).some(k=>!["gemini","claude","openai"].includes(k))||Object.entries(c).some(([provider,rows])=>!Array.isArray(rows)||rows.length>500||rows.some(m=>!plain(m)||Object.keys(m).some(k=>!["id","label"].includes(k))||typeof m.label!=="string"||m.label.length>150||typeof m.id!=="string"||!(provider==="openai"?isOpenAITextModel(m.id):(provider==="gemini"?/^gemini-[A-Za-z0-9._-]{1,100}$/:/^claude-[A-Za-z0-9._-]{1,100}$/).test(m.id)))))throw new Error("모델 목록을 확인해 주세요.");}
  out.modelCatalog=normalizeModelCatalog(raw.modelCatalog);
  return out;
 }

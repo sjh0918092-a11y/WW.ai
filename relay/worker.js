@@ -19,7 +19,7 @@
  */
 import { pipelineSchema } from "./pipeline-store.js";
 import { jobsApi } from "./jobs.js";
-import { claudeModels } from "./models.js";
+import { claudeModels, openAIModels } from "./models.js";
 import { accountSettings } from "./account-settings.js";
 export { AiJobs } from "./jobs.js";
 
@@ -167,6 +167,10 @@ async function api(request, env, url, cors, fail) {
       return new Response(response.body,{status:response.status,headers:{...cors,"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}});
     }
     if (path === "/api/jobs" || path.startsWith("/api/jobs/")) return jobsApi(request, env, url, cors, fail, uid, passOk);
+    if(path === "/api/models/openai" && m === "GET") {
+      const response=await openAIModels(request,env,passOk);
+      return new Response(response.body,{status:response.status,headers:{...cors,"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}});
+    }
     if (path === "/api/models/claude" && m === "GET") {
       const response=await claudeModels(request,env,url,passOk);
       return new Response(response.body,{status:response.status,headers:{...cors,"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}});

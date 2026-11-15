@@ -12,7 +12,7 @@ import {digest,sourcePage,commitDocument,snapshotWorld} from '../relay/pipeline-
 import {D1} from './helpers/d1.mjs';
 import {JobStorage,fireAlarm} from './helpers/jobs.mjs';
 execFileSync(process.execPath,['relay/build-engine.cjs','--check']);
-const db=new D1(), origin='https://sjh0918092-a11y.github.io', env={DB:db,GEMINI_KEY:'private-server-key',ANTHROPIC_API_KEY:'private-claude-key',PASSWORDS:'relay-pass'};
+const db=new D1(), origin='https://sjh0918092-a11y.github.io', env={DB:db,GEMINI_KEY:'private-server-key',ANTHROPIC_API_KEY:'private-claude-key',OPENAI_API_KEY:'private-openai-key',PASSWORDS:'relay-pass'};
 await worker.fetch(new Request(origin+'/api/sync',{headers:{Origin:origin}}),env);
 db.sqlite.exec("INSERT INTO users VALUES('alice','s','h',1); INSERT INTO sessions VALUES('alice-token','alice',1)");
 const ent=(title,type,page=false)=>({title,type,summary:'',facts:[],mentions:[],page,box:''});
@@ -30,6 +30,7 @@ globalThis.fetch=async(url,opts)=>{
  const job=activeEntry.storage.data.get('jobs').find(j=>j.status==='running');
  const step=job.steps.at(-1), kind=step.kind;
  calls.push({kind,url,body:JSON.parse(opts.body)});
+ if (url==='https://api.openai.com/v1/responses') {assert.equal(opts.headers.Authorization,'Bearer private-openai-key');return Response.json({model:step.model,status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(response(kind))}]}],usage:{input_tokens:1000,output_tokens:120,input_tokens_details:{cached_tokens:200,cache_write_tokens:100},output_tokens_details:{reasoning_tokens:20}}});}
  if (url.includes('anthropic.com')) {
   assert.equal(opts.headers['x-api-key'], 'private-claude-key');
   return Response.json({content:[{type:'thinking',thinking:'private reasoning'},{type:'text',text:JSON.stringify(response(kind))}],stop_reason:'end_turn'});
@@ -83,6 +84,8 @@ try {
  const writer=calls.find(c=>c.kind==='page');assert(!JSON.stringify(writer.body).includes('항구 세계'));assert(!JSON.stringify(writer.body).includes('## 절제'));assert(calls.find(c=>c.kind==='check').body.messages[0].content[0].text.includes('항구 세계'));
  assert.equal(calls.find(c=>c.kind==='read').body.thinking.budget_tokens,2048);assert.equal(calls.find(c=>c.kind==='factSync').body.generationConfig.thinkingConfig.thinkingLevel,'minimal');
  pass('작업별 모델·생각 수준과 작성 입력 스위치를 서버에서도 반영하며 설정 검사 자료는 유지한다');
+
+ e=await reset({rewrite:true,settings:{taskModels:{page:{model:'gpt-6.1-terra',think:'low'},check:{model:'claude-sonnet-4-6',think:'high'},read:{model:'gpt-6-luna',think:'none'},fix:{model:'gemini-3.8-flash',think:''},factSync:{model:'gpt-6-luna',think:'low'}}}});behavior='fix';await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert(storedPage(B).sections[0].body.includes('붉은'));for(const kind of ['page','read','factSync'])assert.equal(calls.find(c=>c.kind===kind).url,'https://api.openai.com/v1/responses');assert.equal(calls.find(c=>c.kind==='page').body.reasoning.effort,'low');assert.equal(calls.find(c=>c.kind==='read').body.reasoning.effort,'none');assert.equal(r.job.steps.find(s=>s.kind==='factSync').usage.thoughtsTokenCount,20);pass('OpenAI 작성·읽기·추출을 Claude 검사·Gemini 수정과 섞어 실행하고 비용 사용량과 문서를 저장한다');
 
  for(const mutation of ['edit','pageEdit','delete','aba']){
   e=await reset();await request(e,'',e.body);await fireAlarm(e.obj);assert.equal(calls.length,1);

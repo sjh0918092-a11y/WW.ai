@@ -10,10 +10,10 @@ const initial={main:'gemini-3.8-flash',quick:'gemini-3.5-flash-lite',check:'clau
 assert.equal((await(await call('a1')).json()).settings,null);
 let r=await call('a1',initial,true);assert.equal(r.status,200);assert.equal(r.headers.get('Cache-Control'),'no-store');assert.equal((await r.json()).revision,1);
 assert.deepEqual((await(await call('a2')).json()).settings,initial);assert.equal((await(await call('b')).json()).settings,null);
-const newer={...initial,checkThink:'low',prompt:{...initial.prompt,factsCount:4},modelCatalog:{gemini:[{id:'gemini-2.5-pro',label:'Gemini 2.5 Pro'}],claude:[{id:'claude-sonnet-4-6',label:'Claude Sonnet 4.6'}]}};
+const newer={...initial,checkThink:'low',prompt:{...initial.prompt,factsCount:4},modelCatalog:{gemini:[{id:'gemini-2.5-pro',label:'Gemini 2.5 Pro'}],claude:[{id:'claude-sonnet-4-6',label:'Claude Sonnet 4.6'}],openai:[{id:'gpt-6-luna',label:'GPT-6 Luna'}]}};
 assert.equal((await(await call('a2',newer)).json()).revision,2);
 assert.deepEqual((await(await call('a1',initial,true)).json()).settings,newer,'first-device migration cannot overwrite existing settings');
-for(const bad of [{...initial,key:'must-not-store'},{...initial,relay:'https://other.test'},{...initial,main:'gpt-image-1'},{...initial,modelCatalog:{openai:[]}},{...initial,modelCatalog:{gemini:[{id:'invalid-id',label:'bad'}]}},{...initial,prompt:{factsCount:-1}},{...initial,taskModels:{page:{model:'gemini',think:'invalid'}}}])assert.equal((await call('a1',bad)).status,400);
+for(const bad of [{...initial,key:'must-not-store'},{...initial,relay:'https://other.test'},{...initial,main:'gpt-image-1'},{...initial,modelCatalog:{unsupported:[]}},{...initial,modelCatalog:{gemini:[{id:'invalid-id',label:'bad'}]}},{...initial,prompt:{factsCount:-1}},{...initial,taskModels:{page:{model:'gemini',think:'invalid'}}}])assert.equal((await call('a1',bad)).status,400);
 assert.equal((await call('a1',{...initial,pass:'x'.repeat(1100000)})).status,413);
 const forbidden=await worker.fetch(new Request('https://relay.test/api/settings',{headers:{Origin:'https://evil.example',Authorization:'Bearer a1'}}),env);assert.equal(forbidden.status,403);
 assert.deepEqual((await(await call('a1')).json()).settings,newer);

@@ -1,3 +1,4 @@
+import {isOpenAITextModel} from './openai.js';
 import {validTaskModels,validPromptOptions} from './ai-settings.js';
 import {boundedText} from './providers.js';
 const FIELDS=['main','quick','check','mainThink','quickThink','checkThink','preCheck','imageModel','serverJobs','documentPipeline','taskModels','prompt','pass','modelCatalog'];
@@ -7,10 +8,10 @@ export function validAccountSettings(value){
   const v=value[k];
   if(k==='taskModels')return v!==undefined&&validTaskModels(v);
   if(k==='prompt')return v!==undefined&&validPromptOptions(v);
-  if(k==='modelCatalog')return v===undefined||v&&typeof v==='object'&&!Array.isArray(v)&&Object.entries(v).every(([provider,rows])=>['gemini','claude'].includes(provider)&&Array.isArray(rows)&&rows.length<=500&&rows.every(m=>m&&typeof m==='object'&&!Array.isArray(m)&&Object.keys(m).every(k=>['id','label'].includes(k))&&typeof m.label==='string'&&m.label.length<=150&&typeof m.id==='string'&&(provider==='gemini'?/^gemini-[A-Za-z0-9._-]{1,100}$/:/^claude-[A-Za-z0-9._-]{1,100}$/).test(m.id)));
+  if(k==='modelCatalog')return v===undefined||v&&typeof v==='object'&&!Array.isArray(v)&&Object.entries(v).every(([provider,rows])=>['gemini','claude','openai'].includes(provider)&&Array.isArray(rows)&&rows.length<=500&&rows.every(m=>m&&typeof m==='object'&&!Array.isArray(m)&&Object.keys(m).every(k=>['id','label'].includes(k))&&typeof m.label==='string'&&m.label.length<=150&&typeof m.id==='string'&&(provider==='openai'?isOpenAITextModel(m.id):(provider==='gemini'?/^gemini-[A-Za-z0-9._-]{1,100}$/:/^claude-[A-Za-z0-9._-]{1,100}$/).test(m.id))));
   if(k==='pass')return typeof v==='string'&&v.length<=1024;
   if(['preCheck','serverJobs','documentPipeline'].includes(k))return typeof v==='boolean';
-  if(k.endsWith('Think'))return ['','minimal','low','medium','high'].includes(v);
+  if(k.endsWith('Think'))return ['','none','minimal','low','medium','high','xhigh','max'].includes(v);
   return typeof v==='string'&&(k==='check'&&v===''||/^[A-Za-z0-9._-]{1,100}$/.test(v))&&!(k==='imageModel'?/tts|live|audio|embedding|transcribe|robotics/i:/image|tts|live|audio|embedding|transcribe|robotics/i).test(v);
  });
 }

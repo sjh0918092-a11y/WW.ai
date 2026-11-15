@@ -1,7 +1,8 @@
+import { isOpenAITextModel, openAIRequest, normalizeOpenAI } from './openai.js';
 import { validTaskModels, validPromptOptions } from './ai-settings.js';
 /* 제공자별 허용 입력과 요청. 키는 URL·오류 메시지·결과에 포함하지 않는다. */
 const MODEL = /^[A-Za-z0-9._-]{1,100}$/;
-const TYPES = ["gemini.generate", "claude.generate", "gemini.image", "openai.image", "document.pipeline"];
+const TYPES = ["gemini.generate", "claude.generate", "openai.generate", "gemini.image", "openai.image", "document.pipeline"];
 const MIMES = ["image/png", "image/jpeg", "image/webp"];
 const SIZES = ["1024x1024", "1152x1536", "1536x1152", "864x1536", "1536x864"];
 const only = (o, keys) => o && typeof o === "object" && !Array.isArray(o) && Object.keys(o).every(k => keys.includes(k));
@@ -22,16 +23,18 @@ export function validateJob(b) {
   if (b.meta !== undefined && !validMeta(b.meta)) return "작업 복구 정보를 확인해 주세요.";
   if (b.credential !== undefined && (!only(b.credential, ["type", "key"]) || b.credential.type !== "personal" || typeof b.credential.key !== "string" || !/^[\x21-\x7e]{8,512}$/.test(b.credential.key))) return "개인 API 키 형식을 확인해 주세요.";
   const i = b.input;
-  if (b.type === "document.pipeline") return validPipeline(i) && !(b.credential && [b.model, i?.settings?.main, i?.settings?.quick, i?.settings?.check, ...Object.values(i?.settings?.taskModels || {}).map(v => v?.model)].some(m => /^claude-/.test(m || ""))) ? null : "서버 문서 작업의 대상·원본·모델 설정을 확인해 주세요.";
+  if (b.type === "document.pipeline") return validPipeline(i) && !(b.credential && [b.model, i?.settings?.main, i?.settings?.quick, i?.settings?.check, ...Object.values(i?.settings?.taskModels || {}).map(v => v?.model)].some(m => /^claude-/.test(m || "") || isOpenAITextModel(m))) ? null : "서버 문서 작업의 대상·원본·모델 설정을 확인해 주세요.";
   if (b.type === "openai.image") {
     if (!/^gpt-image-/.test(b.model) || !only(i, ["prompt", "size", "quality", "reference"]) || typeof i.prompt !== "string" || !i.prompt.trim() || i.prompt.length > 200000 || !SIZES.includes(i.size) || !["low", "medium", "high", "auto"].includes(i.quality) || (i.reference !== undefined && !reference(i.reference))) return "OpenAI 이미지 요청·참고 이미지를 확인해 주세요.";
     return null;
   }
+  if (b.type === "openai.generate" && (!isOpenAITextModel(b.model) || b.credential)) return "OpenAI 텍스트는 서버 키와 지원하는 텍스트 모델을 사용해 주세요.";
+  if (b.type !== "openai.generate" && isOpenAITextModel(b.model)) return "OpenAI 작업 종류를 확인해 주세요.";
   if (b.type === "claude.generate" && (!/^claude-/.test(b.model) || b.credential)) return "Claude는 서버 키와 claude- 모델 이름을 사용해 주세요.";
   if (b.type !== "claude.generate" && /^claude-/.test(b.model)) return "Claude 작업 종류를 확인해 주세요.";
   const image = b.type === "gemini.image", config = i?.generationConfig;
-  if (b.type === "claude.generate" && config?.thinkingConfig !== undefined &&
-    (!only(config.thinkingConfig, ["thinkingLevel"]) || !["", "minimal", "low", "medium", "high"].includes(config.thinkingConfig.thinkingLevel))) return "Claude 생각 깊이를 확인해 주세요.";
+  if (["claude.generate","openai.generate"].includes(b.type) && config?.thinkingConfig !== undefined &&
+    (!only(config.thinkingConfig, ["thinkingLevel"]) || !["", "none", "minimal", "low", "medium", "high", "xhigh", "max"].includes(config.thinkingConfig.thinkingLevel))) return "생각 수준을 확인해 주세요.";
   if (!only(i, ["contents", "generationConfig", "systemInstruction", "safetySettings"]) || !Array.isArray(i.contents) || !i.contents.length ||
     !i.contents.every(c => parts(c, image) && ["user", "model", undefined].includes(c.role)) ||
     (i.systemInstruction !== undefined && !parts(i.systemInstruction)) ||
@@ -43,9 +46,9 @@ export function validateJob(b) {
 }
 
 export function usageCounts(raw) {
-  const keys = ["promptTokenCount", "candidatesTokenCount", "thoughtsTokenCount", "cachedContentTokenCount", "cacheCreationInputTokenCount", "cacheCreation5mInputTokenCount", "cacheCreation1hInputTokenCount"];
+  const keys = ["promptTokenCount", "candidatesTokenCount", "thoughtsTokenCount", "cachedContentTokenCount", "cacheCreationInputTokenCount", "cacheCreation5mInputTokenCount", "cacheCreation1hInputTokenCount", "cacheCreation30mInputTokenCount", "cacheCreation12hInputTokenCount"];
   if (!raw || !keys.some(k => Number.isFinite(raw[k]))) return null;
-  return Object.fromEntries(keys.filter(k => Number.isFinite(raw[k])).map(k => [k, Math.max(0, raw[k])]));
+  return {...Object.fromEntries(keys.filter(k => Number.isFinite(raw[k])).map(k => [k, Math.max(0, raw[k])])), ...(raw.complete === false ? {complete:false} : {})};
 }
 
 export async function boundedText(stream, limit) {
@@ -79,7 +82,7 @@ async function providerError(res, model) {
 }
 
 export function serverKeyName(type, model) {
-  return type === "openai.image" ? "OPENAI_API_KEY" : type === "claude.generate" || /^claude-/.test(model) ? "ANTHROPIC_API_KEY" : "GEMINI_KEY";
+  return type === "openai.image" || type === "openai.generate" || isOpenAITextModel(model) ? "OPENAI_API_KEY" : type === "claude.generate" || /^claude-/.test(model) ? "ANTHROPIC_API_KEY" : "GEMINI_KEY";
 }
 
 // 현재 모델 선택 목록의 Claude 4.5는 수동 예산, 기존 4.6 설정은 adaptive를 사용한다.
@@ -100,7 +103,8 @@ export function claudeThinking(model, level = "") {
 export async function runProvider(job, env, personalKey, signal) {
   const { type = "gemini.generate", model, input } = job.input;
   const claude = type === "claude.generate" || type === "gemini.generate" && /^claude-/.test(model);
-  if (claude && job.keyMode === "personal") throw { code: "server_key_missing", definite: true };
+  const openai = type === "openai.generate" || type === "gemini.generate" && isOpenAITextModel(model);
+  if ((claude || openai) && job.keyMode === "personal") throw { code: "server_key_missing", definite: true };
   const key = job.keyMode === "personal" ? personalKey : env[serverKeyName(type, model)];
   if (!key) throw { code: "server_key_missing", definite: true };
   let url, headers, body;
@@ -114,6 +118,10 @@ export async function runProvider(job, env, personalKey, signal) {
       for (const [k, v] of Object.entries(fields)) body.append(k, String(v));
       body.append("image[]", new Blob([Uint8Array.from(atob(ref.data), c => c.charCodeAt(0))], { type: ref.mimeType }), "reference." + ref.mimeType.split("/")[1]);
     } else { body = JSON.stringify(fields); headers["Content-Type"] = "application/json"; }
+  } else if (openai) {
+    url = "https://api.openai.com/v1/responses";
+    headers = { "Content-Type":"application/json", Authorization:"Bearer "+key };
+    body = JSON.stringify(openAIRequest(model,input));
   } else if (claude) {
     url = "https://api.anthropic.com/v1/messages";
     headers = { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" };
@@ -130,6 +138,7 @@ export async function runProvider(job, env, personalKey, signal) {
   const text = await boundedText(res.body, type.endsWith(".image") ? 20 * 1024 * 1024 : 4 * 1024 * 1024);
   let result;
   try { result = JSON.parse(text); } catch { throw { code: "invalid_response" }; }
+  if (openai) result = normalizeOpenAI(result);
   if (claude) {
     if (!Array.isArray(result?.content) || !result.content.some(p => p.type === "text" && p.text)) throw { code: "empty_response", definite: true };
     if (!["end_turn", "max_tokens", "stop_sequence"].includes(result.stop_reason)) throw { code: "invalid_response", definite: true };
@@ -155,5 +164,5 @@ function validPipeline(i) {
     ["rewrite","novel"].every(k => i[k] === undefined || typeof i[k] === "boolean") &&
     (i.direction === undefined || typeof i.direction === "string" && i.direction.length <= 10000) && (i.angleId === undefined || str(i.angleId,200)) &&
     (i.entity === undefined || only(i.entity,["title","type","summary","src","searched"]) && str(i.entity.title,300) && typeof i.entity.type === "string" && i.entity.type.length <= 100 && typeof i.entity.summary === "string" && i.entity.summary.length <= 2000 && (i.entity.src === undefined || i.entity.src === "search" || i.entity.src === "discovery") && (i.entity.searched === undefined || typeof i.entity.searched === "boolean")) &&
-    only(i.settings,settings) && settings.every(k => i.settings[k] === undefined || (k === "taskModels" ? validTaskModels(i.settings[k]) : k === "prompt" ? validPromptOptions(i.settings[k]) : k === "preCheck" ? typeof i.settings[k] === "boolean" : k.endsWith("Think") ? ["", "minimal", "low", "medium", "high"].includes(i.settings[k]) : i.settings[k] === "" || MODEL.test(i.settings[k]) && !/image|tts|live|audio|embedding|transcribe|robotics/i.test(i.settings[k])));
+    only(i.settings,settings) && settings.every(k => i.settings[k] === undefined || (k === "taskModels" ? validTaskModels(i.settings[k]) : k === "prompt" ? validPromptOptions(i.settings[k]) : k === "preCheck" ? typeof i.settings[k] === "boolean" : k.endsWith("Think") ? ["", "none", "minimal", "low", "medium", "high", "xhigh", "max"].includes(i.settings[k]) : i.settings[k] === "" || MODEL.test(i.settings[k]) && !/image|tts|live|audio|embedding|transcribe|robotics/i.test(i.settings[k])));
 }

@@ -109,6 +109,13 @@ function recentGenHtml(w) {
 const storeLabel = () => Sync.acct ? `서버에 저장 (${Sync.acct.id}${Sync.pending() ? ` · 올릴 변경 ${Sync.pending()}건` : ""}) + 이 브라우저` : ({ idb: "이 브라우저 IndexedDB (다른 기기와 공유되지 않음)", local: "이 브라우저 localStorage (용량 약 5MB)", memory: "임시 (새로고침하면 사라짐)" }[Store.mode]);
 
 function thinkOptions(model, value) {
+  if(isOpenAITextModel(model)){
+    const supported=openAIThinkingLevels(model),levels=["",...supported];
+    if(supported.includes("low")&&!supported.includes("minimal"))levels.splice(levels.indexOf("low"),0,"minimal");
+    if(value!==undefined&&!levels.includes(value))levels.push(value);
+    const labels={"":"모델 기본값",none:"사고 끔",minimal:supported.includes("minimal")?"최소":"최소 (low)",low:"낮음",medium:"보통",high:"높음",xhigh:"매우 높음",max:"최대"};
+    return levels.map(id=>`<option value="${esc(id)}" ${value===id?"selected":""}>${esc(labels[id]||id)}${id&&!supported.includes(id)&&!(id==="minimal"&&supported.includes("low"))?" (지원하지 않음)":""}</option>`).join("");
+  }
   const claude = /^claude-/.test(model || ""), manual = /^claude-(sonnet|opus|haiku)-4-5(?:-|$)/.test(model || "");
   const labels = manual ? ["기본 · 확장 사고 끔", "최소 · 1,024 토큰", "낮음 · 2,048 토큰", "보통 · 4,096 토큰", "높음 · 8,192 토큰"] : claude ? ["모델 기본값", "최소 (low)", "낮음 (low)", "보통 (medium)", "높음 (high)"] : THINKS.map(([, label]) => label);
   return THINKS.map(([id], i) => `<option value="${id}" ${value === id ? "selected" : ""}>${esc(labels[i])}</option>`).join("");
@@ -140,10 +147,10 @@ function updateModelIds() {
 }
 
 function gModelOptions(value, image = false, inherit = false) {
-    const listed = Array.isArray(S.gmodels), clisted=Array.isArray(S.cmodels);
-    const models = new Map((image ? IMAGE_MODELS : [...TEXT_MODELS.filter(m=>(!listed || !/^gemini-/.test(m.id)) && (!clisted || !/^claude-/.test(m.id))), ...(S.gmodels || []), ...(S.cmodels || [])]).map(m => [m.id, m.label || m.id]));
-    if (value && !models.has(value)) models.set(value, value + ((listed && /^gemini-/.test(value) || clisted && /^claude-/.test(value)) ? " (서버 목록에 없음)" : " (기존 설정)"));
-    const groups = [["Gemini", id => /^gemini-/.test(id)], [image ? "OpenAI" : "Claude", id => image ? /^gpt-image-/.test(id) : /^claude-/.test(id)], ["기존 모델", id => !/^(gemini-|claude-|gpt-image-)/.test(id)]];
+    const listed = Array.isArray(S.gmodels), clisted=Array.isArray(S.cmodels), olisted=Array.isArray(S.omodels);
+    const models = new Map((image ? IMAGE_MODELS : [...TEXT_MODELS.filter(m=>(!listed || !/^gemini-/.test(m.id)) && (!clisted || !/^claude-/.test(m.id)) && (!olisted || !isOpenAITextModel(m.id))), ...(S.gmodels || []), ...(S.cmodels || []), ...(S.omodels || [])]).map(m => [m.id, m.label || m.id]));
+    if (value && !models.has(value)) models.set(value, value + ((listed && /^gemini-/.test(value) || clisted && /^claude-/.test(value) || olisted && isOpenAITextModel(value)) ? " (서버 목록에 없음)" : " (기존 설정)"));
+    const groups = [["Gemini", id => /^gemini-/.test(id)], ["Claude", id => /^claude-/.test(id)], ["OpenAI",id=>image?/^gpt-image-/.test(id):isOpenAITextModel(id)], ["기존 모델", id => !/^(gemini-|claude-|gpt-image-)/.test(id)&&!isOpenAITextModel(id)]];
     return (inherit ? `<option value="" ${!value ? "selected" : ""}>기본 모델과 같게</option>` : "") + groups.map(([label, match]) => {
       const entries = [...models].filter(([id]) => match(id));
       return entries.length ? `<optgroup label="${label}">${entries.map(([id, name]) => `<option value="${esc(id)}" ${value === id ? "selected" : ""}>${esc(name)}</option>`).join("")}</optgroup>` : "";
@@ -173,7 +180,7 @@ function gsetHtml() {
     </div>
     <h2 class="nf-h">공통 모델</h2>
     <p class="note" id="gCatalogStatus">${esc(ModelCatalog.message())}</p>
-    <p class="note">용도별로 Gemini 또는 Claude를 선택하세요. Claude는 로그인과 서버 AI 실행이 필요합니다. 공통 생각 깊이는 실행·검사 옵션에서, 작업별 값은 아래에서 조정하세요.</p>
+    <p class="note">용도별로 Gemini·Claude·OpenAI를 선택하세요. Claude와 OpenAI는 로그인과 서버 AI 실행이 필요합니다. 공통 생각 깊이는 실행·검사 옵션에서, 작업별 값은 아래에서 조정하세요.</p>
     <div><label class="lb" for="gMain">기본 모델 <span class="note" style="font-weight:400">세계관 생성, 문서 작성, 랜덤 서핑, 충돌 고치기</span></label><select id="gMain">${modelOptions(GS.main)}</select><p class="note" id="gMainId">API ID: ${esc(GS.main)}</p></div>
     <div><label class="lb" for="gQuick">빠른 모델 <span class="note" style="font-weight:400">분위기 판별</span></label><select id="gQuick">${modelOptions(GS.quick)}</select><p class="note" id="gQuickId">API ID: ${esc(GS.quick)}</p></div>
     <div><label class="lb" for="gCheck">검사 모델 <span class="note" style="font-weight:400">작업별로 지정하지 않은 검사·추출 작업</span></label><select id="gCheck">${modelOptions(GS.check || "", false, true)}</select><p class="note" id="gCheckId">API ID: ${esc(GS.check || GS.main)}</p></div>
@@ -195,7 +202,7 @@ function gsetHtml() {
     <p class="note" style="margin-top:6px">자동 검사는 작성 직후 한 번 실행합니다. 이후에는 문서의 설정 검사 버튼을 사용하세요.</p>
     <p class="note" style="margin-top:8px">Gemini가 선택한 깊이를 지원하지 않으면 기본값으로 다시 요청합니다. Claude의 설정 오류는 알림으로 표시합니다.</p>
     </div></details>
-    <div class="row"><button type="button" class="btn pri" data-act="gset-save">저장</button><button type="button" class="btn" data-act="gset-test">문서 모델 연결 시험</button><button type="button" class="btn" data-act="gset-models">Gemini 모델 새로고침</button><button type="button" class="btn" data-act="gset-claude-models">Claude 모델 새로고침</button></div>
+    <div class="row"><button type="button" class="btn pri" data-act="gset-save">저장</button><button type="button" class="btn" data-act="gset-test">문서 모델 연결 시험</button><button type="button" class="btn" data-act="gset-models">Gemini 모델 새로고침</button><button type="button" class="btn" data-act="gset-claude-models">Claude 모델 새로고침</button><button type="button" class="btn" data-act="gset-openai-models">OpenAI 모델 새로고침</button></div>
     <p class="res" id="gRes">${esc(S.gres || "")}</p>
     <h2 class="nf-h">계정 (서버에 세계관 저장)</h2>
     ${acctHtml()}
@@ -234,7 +241,7 @@ async function acctAction(kind) {
 function readGsetForm() {
   const v = id => ($("#" + id)?.value ?? "").trim();
   const relay = normRelay(v("gRelay")) || DEFAULT_RELAY;
-  if(relay!==normRelay(GS.relay || DEFAULT_RELAY)){delete S.gmodels;delete S.cmodels;}
+  if(relay!==normRelay(GS.relay || DEFAULT_RELAY)){delete S.gmodels;delete S.cmodels;delete S.omodels;}
   GS = { ...GS, mode: "relay", relay, pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT"), check: v("gCheck"), checkThink: v("gCheckT"), preCheck: !!$("#gPre")?.checked, imageModel: v("gImage") || GDEF.imageModel, serverJobs: !!$("#gServerJobs")?.checked, documentPipeline: !!$("#gDocumentPipeline")?.checked };
   const taskModels={};
   document.querySelectorAll("[data-task-model]").forEach(el=>{const kind=el.dataset.taskModel;taskModels[kind]={model:el.value,think:$("#gTaskThink-"+kind)?.value||""}});

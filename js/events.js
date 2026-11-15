@@ -179,6 +179,11 @@ document.addEventListener("click", ev => {
       }
       setGres(out.join(" / "));
     })(); break;
+    case "gset-openai-models": (async()=>{
+      readGsetForm();setGres("서버 키로 OpenAI 모델 목록을 확인하는 중…");
+      try{const models=await listOpenAIModels();ModelCatalog.remember("openai",models);S.gres=`OpenAI 텍스트 모델 ${models.length}개를 불러와 저장했습니다.`;renderMain()}
+      catch(e){setGres("불러오지 못했습니다. "+errMsg(e))}
+    })();break;
     case "gset-models": (async () => {
       readGsetForm(); if (!gReady()) { setGres("서버 접속 암호를 먼저 저장해 주세요."); return; }
       setGres("모델 목록을 불러오는 중…");
