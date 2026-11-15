@@ -129,9 +129,9 @@ function updateModelIds() {
 
 function gsetHtml() {
   const modelOptions = (value, image = false, inherit = false) => {
-    const listed = Array.isArray(S.gmodels);
-    const models = new Map((image ? IMAGE_MODELS : [...TEXT_MODELS.filter(m=>!listed || !/^gemini-/.test(m.id)), ...(S.gmodels || [])]).map(m => [m.id, m.label || m.id]));
-    if (value && !models.has(value)) models.set(value, value + (listed && /^gemini-/.test(value) ? " (서버 목록에 없음)" : " (기존 설정)"));
+    const listed = Array.isArray(S.gmodels), clisted=Array.isArray(S.cmodels);
+    const models = new Map((image ? IMAGE_MODELS : [...TEXT_MODELS.filter(m=>(!listed || !/^gemini-/.test(m.id)) && (!clisted || !/^claude-/.test(m.id))), ...(S.gmodels || []), ...(S.cmodels || [])]).map(m => [m.id, m.label || m.id]));
+    if (value && !models.has(value)) models.set(value, value + ((listed && /^gemini-/.test(value) || clisted && /^claude-/.test(value)) ? " (서버 목록에 없음)" : " (기존 설정)"));
     const groups = [["Gemini", id => /^gemini-/.test(id)], [image ? "OpenAI" : "Claude", id => image ? /^gpt-image-/.test(id) : /^claude-/.test(id)], ["기존 모델", id => !/^(gemini-|claude-|gpt-image-)/.test(id)]];
     return (inherit ? `<option value="" ${!value ? "selected" : ""}>기본 모델과 같게</option>` : "") + groups.map(([label, match]) => {
       const entries = [...models].filter(([id]) => match(id));
@@ -169,7 +169,7 @@ function gsetHtml() {
     <p class="note" style="margin-top:6px">자동 검사는 작성 직후 한 번 실행합니다. 이후에는 문서의 설정 검사 버튼을 사용하세요.</p>
     <p class="note" style="margin-top:8px">Gemini가 선택한 깊이를 지원하지 않으면 기본값으로 다시 요청합니다. Claude의 설정 오류는 알림으로 표시합니다.</p>
     </div></details>
-    <div class="row"><button type="button" class="btn pri" data-act="gset-save">저장</button><button type="button" class="btn" data-act="gset-test">문서 모델 연결 시험</button><button type="button" class="btn" data-act="gset-models">Gemini 모델 새로고침</button></div>
+    <div class="row"><button type="button" class="btn pri" data-act="gset-save">저장</button><button type="button" class="btn" data-act="gset-test">문서 모델 연결 시험</button><button type="button" class="btn" data-act="gset-models">Gemini 모델 새로고침</button><button type="button" class="btn" data-act="gset-claude-models">Claude 모델 새로고침</button></div>
     <p class="res" id="gRes">${esc(S.gres || "")}</p>
     <h2 class="nf-h">계정 (서버에 세계관 저장)</h2>
     ${acctHtml()}
@@ -208,6 +208,7 @@ async function acctAction(kind) {
 function readGsetForm() {
   const v = id => ($("#" + id)?.value ?? "").trim();
   const relay = normRelay(v("gRelay")) || DEFAULT_RELAY;
+  if(relay!==normRelay(GS.relay || DEFAULT_RELAY)){delete S.gmodels;delete S.cmodels;}
   GS = { ...GS, mode: "relay", relay, pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT"), check: v("gCheck"), checkThink: v("gCheckT"), preCheck: !!$("#gPre")?.checked, imageModel: v("gImage") || GDEF.imageModel, serverJobs: !!$("#gServerJobs")?.checked, documentPipeline: !!$("#gDocumentPipeline")?.checked };
   saveGS(); S.sample = gReady() ? gemini : null;
   AIRecovery.authChanged();

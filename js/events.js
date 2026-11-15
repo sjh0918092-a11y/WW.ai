@@ -182,6 +182,17 @@ document.addEventListener("click", ev => {
         S.gres = `서버 모델 ${S.gmodels.length}개를 불러왔습니다.`+(missing.length?` 서버 목록에 없는 선택값: ${missing.join(" / ")}. 드롭다운에서 다시 선택해 주세요.`:" 드롭다운에서 선택할 수 있습니다."); renderMain(); }
       catch (e) { setGres("불러오지 못했습니다. " + errMsg(e)); }
     })(); break;
+    case "gset-claude-models": (async()=>{
+      readGsetForm();setGres("서버 키로 Claude 모델과 선택한 별칭을 확인하는 중…");
+      try{
+        const result=await listClaudeModels();S.cmodels=result.models;
+        const resolved=[];
+        for(const role of ["main","quick","check"]){const id=result.aliases?.[GS[role]];if(id&&S.cmodels.some(m=>m.id===id)){resolved.push(GS[role]+" → "+id);GS[role]=id}}
+        if(resolved.length)saveGS();
+        S.gres=`Claude ${result.total}개 중 앱 지원 모델 ${S.cmodels.length}개를 불러왔습니다 (4.5/4.6).`+(resolved.length?` 별칭을 실제 ID로 확인했습니다: ${resolved.join(' / ')}.`:"")+(result.unavailable?.length?` 서버 키로 확인할 수 없는 선택값: ${result.unavailable.join(', ')}. 목록에서 다시 선택해 주세요.`:"");
+        renderMain();
+      }catch(e){setGres(errMsg(e))}
+    })(); break;
     case "export-world": try { exportWorld(); } catch (e) { toast("내보내지 못했습니다. " + errMsg(e)); } break;
     case "export-world-ro": case "export-world-ro-json": try { exportWorldReadOnly(d.act === "export-world-ro-json" ? "json" : "html"); } catch (e) { toast("내보내지 못했습니다. " + errMsg(e)); } break;
     case "export": exportAll().catch(e => toast("내보내지 못했습니다. " + errMsg(e))); break;

@@ -19,6 +19,7 @@
  */
 import { pipelineSchema } from "./pipeline-store.js";
 import { jobsApi } from "./jobs.js";
+import { claudeModels } from "./models.js";
 export { AiJobs } from "./jobs.js";
 
 const UPSTREAM = "https://generativelanguage.googleapis.com";
@@ -160,6 +161,10 @@ async function api(request, env, url, cors, fail) {
     if (!ses) return fail(401, "로그인이 만료되었습니다. 다시 로그인해 주세요.");
     const uid = ses.uid;
     if (path === "/api/jobs" || path.startsWith("/api/jobs/")) return jobsApi(request, env, url, cors, fail, uid, passOk);
+    if (path === "/api/models/claude" && m === "GET") {
+      const response=await claudeModels(request,env,url,passOk);
+      return new Response(response.body,{status:response.status,headers:{...cors,"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}});
+    }
     if (path === "/api/logout" && m === "POST") { await db.prepare("DELETE FROM sessions WHERE token = ?").bind(tok).run(); return json({ ok: true }); }
     if (path === "/api/sync" && m === "GET") {
       const since = Number(url.searchParams.get("since") || 0) || 0;

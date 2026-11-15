@@ -14,7 +14,9 @@ const TEXT_MODELS = [
   { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash Lite" },
   { id: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
   { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
-  { id: "claude-opus-4-5", label: "Claude Opus 4.5" }
+  { id: "claude-opus-4-5", label: "Claude Opus 4.5" },
+  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+  { id: "claude-opus-4-6", label: "Claude Opus 4.6" }
 ];
 const THINKS = [["", "모델 기본값"], ["minimal", "minimal"], ["low", "low"], ["medium", "medium"], ["high", "high"]];
 let GS = (() => {
@@ -256,6 +258,19 @@ async function listGeminiModels() {
   throw {message:"모델 목록을 끝까지 확인하지 못했습니다. 잠시 뒤 다시 새로고침해 주세요."};
 }
 
+async function listClaudeModels() {
+  if(!Sync.acct?.token)throw{message:"Claude 목록 조회는 로그인이 필요합니다."};
+  const ctx={base:Sync.base(),owner:Sync.acct.id,token:Sync.acct.token},selected=[...new Set([GS.main,GS.quick,GS.check].filter(id=>/^claude-/.test(id||"")))];
+  const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),25000);
+  try{
+    const res=await fetch(ctx.base+"/models/claude?selected="+encodeURIComponent(selected.join(',')),{headers:{Authorization:"Bearer "+ctx.token,"X-WW-Pass":GS.pass},signal:ctl.signal});
+    let j;try{j=await res.json()}catch{throw{message:"Claude 모델 조회 응답을 확인하지 못했습니다. Worker 최신 버전 배포를 확인해 주세요."}}
+    if(!res.ok)throw{message:j.error?.message||"Claude 목록 조회가 실패했습니다. Worker 배포와 서버 키를 확인해 주세요."};
+    if(!AIJobs.current(ctx))throw{message:"서버나 계정이 바뀌어 목록을 적용하지 않았습니다."};
+    if(!Array.isArray(j.models))throw{message:"Claude 모델 목록 형식을 확인하지 못했습니다."};
+    return j;
+  }finally{clearTimeout(timer)}
+}
 const LOGK = "wwiki:log";
 const LOG = (() => { try { const v = JSON.parse(localStorage.getItem(LOGK) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })();
 const KIND = { discovery: "새 대상 탐색", angles: "각도 목록", section: "문단 다시 쓰기", prose: "단편 쓰기", image: "이미지 생성", choices: "행동 후보", read: "문서 읽기 검사", ageRule: "나이 규칙 해석", bible: "세계관 생성", storyBible: "스토리 세계관 생성", chapterPlan: "장 계획", chapterBlock: "장 섹션", page: "문서 작성", tone: "분위기 판별", check: "설정 검사", analyze: "수정 대조", fix: "충돌 고치기", worldCheck: "세계 전체 점검", relMigrate: "인물 관계 정리", timelineDate: "연표 날짜", cats: "분류 다시 받기" };
