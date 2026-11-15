@@ -108,8 +108,20 @@ function recentGenHtml(w) {
 }
 const storeLabel = () => Sync.acct ? `서버에 저장 (${Sync.acct.id}${Sync.pending() ? ` · 올릴 변경 ${Sync.pending()}건` : ""}) + 이 브라우저` : ({ idb: "이 브라우저 IndexedDB (다른 기기와 공유되지 않음)", local: "이 브라우저 localStorage (용량 약 5MB)", memory: "임시 (새로고침하면 사라짐)" }[Store.mode]);
 
+function thinkOptions(model, value) {
+  const claude = /^claude-/.test(model || ""), manual = /^claude-(sonnet|opus|haiku)-4-5(?:-|$)/.test(model || "");
+  const labels = manual ? ["기본 · 확장 사고 끔", "최소 · 1,024 토큰", "낮음 · 2,048 토큰", "보통 · 4,096 토큰", "높음 · 8,192 토큰"] : claude ? ["모델 기본값", "최소 (low)", "낮음 (low)", "보통 (medium)", "높음 (high)"] : THINKS.map(([, label]) => label);
+  return THINKS.map(([id], i) => `<option value="${id}" ${value === id ? "selected" : ""}>${esc(labels[i])}</option>`).join("");
+}
+function updateThinkingOptions() {
+  const main = $("#gMain")?.value || GS.main;
+  for (const [modelId, thinkId] of [["gMain", "gMainT"], ["gQuick", "gQuickT"], ["gCheck", "gCheckT"]]) {
+    const select = $("#" + thinkId); if (!select) continue;
+    select.innerHTML = thinkOptions($("#" + modelId)?.value || main, select.value);
+  }
+}
+
 function gsetHtml() {
-  const opt = v => THINKS.map(([x, l]) => `<option value="${x}" ${v === x ? "selected" : ""}>${esc(l)}</option>`).join("");
   const modelOptions = (value, image = false, inherit = false) => {
     const models = new Map((image ? IMAGE_MODELS : [...TEXT_MODELS, ...(S.gmodels || [])]).map(m => [m.id, m.label || m.id]));
     if (value && !models.has(value)) models.set(value, value + " (기존 설정)");
@@ -131,7 +143,7 @@ function gsetHtml() {
       <div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="relay-invite">사이트 링크 복사</button><span class="note">친구에게 링크를 보내고, 접속 암호는 따로 알려 주세요.</span></div>
     </div>
     <h2 class="nf-h">문서 모델</h2>
-    <p class="note">용도별로 Gemini 또는 Claude를 선택하세요. Claude는 로그인과 서버 AI 실행이 필요하며 생각 깊이는 모델 기본값을 사용합니다.</p>
+    <p class="note">용도별로 Gemini 또는 Claude를 선택하세요. Claude는 로그인과 서버 AI 실행이 필요합니다. 생각 깊이는 아래 실행·검사 옵션에서 조정하세요.</p>
     <div><label class="lb" for="gMain">기본 모델 <span class="note" style="font-weight:400">세계관 생성, 문서 작성, 랜덤 서핑, 충돌 고치기</span></label><select id="gMain">${modelOptions(GS.main)}</select></div>
     <div><label class="lb" for="gQuick">빠른 모델 <span class="note" style="font-weight:400">분위기 판별</span></label><select id="gQuick">${modelOptions(GS.quick)}</select></div>
     <div><label class="lb" for="gCheck">검사 모델 <span class="note" style="font-weight:400">설정 검사, 수정 대조</span></label><select id="gCheck">${modelOptions(GS.check || "", false, true)}</select></div>
@@ -139,16 +151,16 @@ function gsetHtml() {
     <label class="lb" for="gImage">기본 이미지 모델</label><select id="gImage">${modelOptions(GS.imageModel || GDEF.imageModel, true)}</select>
     <p class="note">이미지는 서버 키로 생성합니다. OpenAI 이미지를 사용하려면 로그인과 서버 AI 실행이 필요합니다.</p>
     <details class="memo" id="gAdvanced" style="margin-top:20px"><summary>실행·검사 옵션</summary><div style="padding:0 12px 12px">
-    <div class="two"><div><label class="lb" for="gMainT">기본 모델 생각 깊이</label><select id="gMainT">${opt(GS.mainThink)}</select></div><div><label class="lb" for="gQuickT">빠른 모델 생각 깊이</label><select id="gQuickT">${opt(GS.quickThink)}</select></div></div>
-    <label class="lb" for="gCheckT">검사 모델 생각 깊이</label><select id="gCheckT">${opt(GS.checkThink ?? GDEF.checkThink)}</select>
-    <p class="note">Claude는 모델 기본 생각 설정을 사용합니다.</p>
+    <div class="two"><div><label class="lb" for="gMainT">기본 모델 생각 깊이</label><select id="gMainT">${thinkOptions(GS.main, GS.mainThink)}</select></div><div><label class="lb" for="gQuickT">빠른 모델 생각 깊이</label><select id="gQuickT">${thinkOptions(GS.quick, GS.quickThink)}</select></div></div>
+    <label class="lb" for="gCheckT">검사 모델 생각 깊이</label><select id="gCheckT">${thinkOptions(GS.check || GS.main, GS.checkThink ?? GDEF.checkThink)}</select>
+    <p class="note">Claude 4.5는 선택한 토큰 예산으로 확장 사고를 실행합니다. 높일수록 시간과 사용량이 늘어날 수 있습니다.</p>
     <label class="lb" style="font-weight:400"><input type="checkbox" id="gServerJobs" ${GS.serverJobs !== false ? "checked" : ""}>로그인한 동안 AI 요청을 서버에서 실행</label>
     <p class="note">접수한 작업은 화면을 닫아도 계속되며, 도구 → AI 작업에서 결과를 확인할 수 있습니다.</p>
     <label class="lb" style="font-weight:400"><input type="checkbox" id="gDocumentPipeline" ${GS.documentPipeline !== false ? "checked" : ""}>문서 작성·검사·자동 수정을 서버에서 끝내고 저장</label>
     <p class="note">화면을 닫아도 접수한 문서를 완성합니다. 진행 중 원본이 바뀌면 덮어쓰지 않고 AI 작업에 초안을 보관합니다.</p>
     <label class="lb" for="gPre" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="gPre" ${GS.preCheck !== false ? "checked" : ""}>문서 작성 직후 한 번 자동 검사하고, 어긋난 곳은 고쳐서 보여 주기 <span class="note">끄면 자동 검사하지 않습니다. 이후 검사는 문서의 설정 검사 버튼으로 실행합니다</span></label>
     <p class="note" style="margin-top:6px">자동 검사는 작성 직후 한 번 실행합니다. 이후에는 문서의 설정 검사 버튼을 사용하세요.</p>
-    <p class="note" style="margin-top:8px">모델이 지원하지 않는 생각 깊이를 고르면 그 요청은 모델 기본값으로 다시 보냅니다. 응답은 JSON 모드로 받습니다.</p>
+    <p class="note" style="margin-top:8px">Gemini가 선택한 깊이를 지원하지 않으면 기본값으로 다시 요청합니다. Claude의 설정 오류는 알림으로 표시합니다.</p>
     </div></details>
     <div class="row"><button type="button" class="btn pri" data-act="gset-save">저장</button><button type="button" class="btn" data-act="gset-test">문서 모델 연결 시험</button><button type="button" class="btn" data-act="gset-models">Gemini 모델 새로고침</button></div>
     <p class="res" id="gRes">${esc(S.gres || "")}</p>

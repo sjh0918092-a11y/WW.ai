@@ -51,12 +51,19 @@ const until = async fn => { for (let i = 0; i < 400; i++) { if (await fn()) retu
    await context.route("https://api.openai.com/**", () => { throw new Error("복구 중 직접 이미지 호출 금지"); });
    const errors = [];
    const open = async () => { const p = await context.newPage(); p.on("pageerror", e => errors.push(e.message)); await p.goto(origin); await p.waitForFunction(() => S.ready); return p; };
+   const recover = async () => {
+     const id = await page.evaluate(() => AIRecovery.focus());
+     await page.click('#side [data-act="jobs"]');
+     if (id) await page.click('[data-job-preview="' + id + '"]');
+   };
    page = await open();
    await page.evaluate(async png => {
      const ent = (title, page) => ({ title, type: "인물", summary: "정의", facts: [], mentions: [], page, box: "" });
      const w = { kind: "world", id: "recovery-world", title: "복구 검증 세계", seed: "원래 세계관", era: "1989년", rules: [], timeline: [], relations: [], navboxes: {}, entities: { person: ent("기존 인물", true), new: ent("새 문서", false) }, mainKey: "person", tone: { label: "기록", guide: [] }, relMigrated: true, createdAt: 1 };
      const p = { key: "person", title: "기존 인물", type: "인물", summary: "원본 정의", categories: [], notices: [], infobox: [], sections: [{ heading: "개요", level: 1, body: "원래 문서 본문이다." }], links: [], portrait: "data:image/png;base64," + png, shortStories: [{ id: "s1", title: "기존 단편", body: "지켜야 할 단편", createdAt: 1 }], createdAt: 1 };
-     await Store.saveWorld(w); await Store.savePage(w.id, p); S.worlds = await Store.listWorlds(); S.world = w; S.pages = await Store.listPages(w.id); S.view = { name: "article", key: "person" }; renderAll();
+     await Store.saveWorld(w); await Store.savePage(w.id, p); S.worlds = await Store.listWorlds();
+     // 실제 앱처럼 먼저 세계관을 열어 구형 데이터 정리를 마친 뒤 복구 스냅샷을 만든다.
+     await openWorld(w.id, "person");
    }, png);
    const target = async (key = "person") => page.evaluate(async key => { S.world = await Store.getWorld("recovery-world"); S.pages = await Store.listPages(S.world.id); S.view = { name: "article", key }; renderAll(); }, key);
    const select = async id => { await page.evaluate(id => AIRecovery.open(id), id); await page.waitForSelector(".job-detail"); };
@@ -65,19 +72,19 @@ const until = async fn => { for (let i = 0; i < 400; i++) { if (await fn()) retu
 
    await page.evaluate(() => { generatePage("new"); }); await until(() => gates.size === 1);
    let id = jobs().at(-1).id, before = calls.length, count = posts();
-   await page.reload(); await page.waitForSelector(".jobs"); assert.equal(await page.evaluate(() => S.gen), null);
+   await page.reload(); await page.waitForFunction(() => S.ready); await recover(); await page.waitForSelector(".jobs"); assert.equal(await page.evaluate(() => S.gen), null);
    assert((await page.locator(".jobs").innerText()).includes("실행 중"));
    release(); await terminal(id); await page.click('[data-act="jobs-refresh"]'); await page.waitForSelector("[data-job-apply]");
    assert((await page.locator(".job-detail").innerText()).includes("복구 본문")); assert(!(await page.locator(".job-detail").innerText()).includes("비공개 사고"));
-   await page.click("[data-job-apply]"); await page.waitForSelector(".article");
+   await page.click("[data-job-apply]"); await page.waitForFunction(() => S.view.name === "article" || AIRecovery.error); assert.equal(await page.evaluate(() => AIRecovery.error), ""); await page.waitForSelector(".article");
    assert((await page.locator(".article").innerText()).includes("복구 본문")); assert.equal(calls.length, before); assert.equal(posts(), count);
    assert(await page.evaluate(async () => (await Store.getPage("recovery-world", "new")).recoveryJobs.length === 1));
-   pass("작성 도중 새로고침하면 작업 화면을 복원하고 원래 결과를 추가 AI 호출 없이 저장한다");
+   pass("작성 도중 새로고침한 뒤 도구에서 작업을 열어 원래 결과를 추가 AI 호출 없이 저장한다");
 
    await target(); mode = "hold";
    await page.evaluate(() => { AIJobs.save({ id: "legacy-page-0001", type: "gemini.generate", owner: Sync.acct.id, base: Sync.base(), createdAt: Date.now() - 1000, status: "succeeded", meta: { kind: "page", title: "기존 인물", wid: S.world.id, key: "person" } }); generatePage("person", true, "다시 쓰기"); });
    await until(() => gates.size === 1); await page.evaluate(() => LS.del(AIJobs.prefix + "legacy-page-0001"));
-   id = jobs().at(-1).id; await page.reload(); await page.waitForSelector(".jobs"); release(); await terminal(id);
+   id = jobs().at(-1).id; await page.reload(); await page.waitForFunction(() => S.ready); await recover(); await page.waitForSelector(".jobs"); release(); await terminal(id);
    await page.evaluate(async () => { const p = await Store.getPage("recovery-world", "person"); p.sections[0].body = "사용자가 나중에 수정한 본문"; await Store.savePage("recovery-world", p); });
    await page.click('[data-act="jobs-refresh"]'); await page.waitForSelector("[data-job-apply]"); await page.click("[data-job-apply]");
    await page.waitForFunction(() => AIRecovery.error.includes("수정·삭제"));
@@ -90,7 +97,7 @@ const until = async fn => { for (let i = 0; i < 400; i++) { if (await fn()) retu
    await target(); mode = "hold";
    const kept = await page.evaluate(async () => { const p = await Store.getPage("recovery-world", "person"); p.editedAt = 1; await Store.savePage("recovery-world", p); S.pages.person = p; generatePage("person", true); return { portrait: p.portrait, stories: p.shortStories }; });
    await until(() => gates.size === 1); id = jobs().at(-1).id; before = calls.length;
-   await page.reload(); await page.waitForSelector(".jobs"); release(); await terminal(id);
+   await page.reload(); await page.waitForFunction(() => S.ready); await recover(); await page.waitForSelector(".jobs"); release(); await terminal(id);
    await page.click('[data-act="jobs-refresh"]'); await page.waitForSelector("[data-job-apply]"); await page.click("[data-job-apply]"); await page.waitForSelector(".article");
    const rewritten = await page.evaluate(() => Store.getPage("recovery-world", "person"));
    assert.equal(rewritten.portrait, kept.portrait); assert.deepEqual(rewritten.shortStories, kept.stories);
@@ -100,7 +107,7 @@ const until = async fn => { for (let i = 0; i < 400; i++) { if (await fn()) retu
    await target(); mode = "hold"; await page.evaluate(() => { checkPage("person"); }); await until(() => gates.size === 1 && jobs().filter(j => j.meta?.kind === "read").length > 0);
    const checkJobs = jobs().filter(j => ["check", "read"].includes(j.meta?.kind));
    assert.equal(checkJobs.length, 2); assert.equal(checkJobs[0].meta.group, checkJobs[1].meta.group);
-   before = calls.length; await page.reload(); await page.waitForSelector(".jobs"); release(); await terminal(checkJobs[1].id);
+   before = calls.length; await page.reload(); await page.waitForFunction(() => S.ready); await recover(); await page.waitForSelector(".jobs"); release(); await terminal(checkJobs[1].id);
    await page.evaluate(async () => { const w = await Store.getWorld("recovery-world"); w.ageRules = { text: "", rules: [] }; await Store.saveWorld(w); });
    await page.click('[data-act="jobs-refresh"]'); await page.waitForSelector("[data-job-apply]"); await page.click("[data-job-apply]"); await page.waitForSelector(".article");
    const issues = await page.evaluate(async () => (await Store.getPage("recovery-world", "person")).check.issues.map(i => i.claim));
@@ -110,7 +117,7 @@ const until = async fn => { for (let i = 0; i < 400; i++) { if (await fn()) retu
    await target(); mode = "hold";
    await page.evaluate(() => { callJson("check", "참고 문서 검사", { modelTier: "check", recoveryTarget: { wid: "recovery-world", key: "person" } }, { title: "기존 인물" }); });
    await until(() => gates.size === 1); id = jobs().at(-1).id;
-   await page.reload(); await page.waitForSelector(".jobs"); release(); await terminal(id);
+   await page.reload(); await page.waitForFunction(() => S.ready); await recover(); await page.waitForSelector(".jobs"); release(); await terminal(id);
    await page.evaluate(async () => { const p = await Store.getPage("recovery-world", "new"); p.sections[0].body = "검사 뒤 다른 참고 문서가 수정되었다."; await Store.savePage("recovery-world", p); });
    await page.click('[data-act="jobs-refresh"]'); await page.waitForSelector("[data-job-apply]"); await page.click("[data-job-apply]");
    await page.waitForFunction(() => AIRecovery.error.includes("참고 문서"));
@@ -119,7 +126,7 @@ const until = async fn => { for (let i = 0; i < 400; i++) { if (await fn()) retu
 
    await target(); mode = "hold"; await page.evaluate(() => { openImageGen("person"); generateDocImage(); }); await until(() => gates.size === 1);
    id = jobs().at(-1).id; before = calls.length;
-   await page.close(); page = await open(); await page.waitForSelector(".jobs"); release(); await terminal(id);
+   await page.close(); page = await open(); await recover(); await page.waitForSelector(".jobs"); release(); await terminal(id);
    await page.click('[data-act="jobs-refresh"]'); await page.waitForSelector(".job-detail .preview");
    await page.click(".job-detail .preview"); await page.waitForSelector(".image-viewer[open]"); await page.click("[data-viewer-close]");
    offline = true; await page.reload(); await page.waitForSelector(".job-detail .preview");
@@ -131,7 +138,7 @@ const until = async fn => { for (let i = 0; i < 400; i++) { if (await fn()) retu
 
    await target(); mode = "hold";
    await page.evaluate(() => { openProse("person"); generateProse(); }); await until(() => gates.size === 1);
-   id = jobs().at(-1).id; before = calls.length; await page.reload(); await page.waitForSelector(".jobs"); release(); await terminal(id);
+   id = jobs().at(-1).id; before = calls.length; await page.reload(); await page.waitForFunction(() => S.ready); await recover(); await page.waitForSelector(".jobs"); release(); await terminal(id);
    await page.click('[data-act="jobs-refresh"]'); await page.waitForSelector("[data-job-apply]"); await page.click("[data-job-apply]"); await page.waitForSelector(".article");
    assert(await page.evaluate(async () => (await Store.getPage("recovery-world", "person")).shortStories.some(s => s.title === "복구한 단편")));
    assert.equal(calls.length, before);
@@ -141,20 +148,20 @@ const until = async fn => { for (let i = 0; i < 400; i++) { if (await fn()) retu
    id = jobs().at(-1).id; before = calls.length;
    await page.evaluate(id => { LS.del(AIJobs.prefix + id); }, id);
    await page.close(); page = await open();
-   await page.click('#side [data-act="jobs"]'); await page.waitForSelector(`[data-job-preview="${id}"]`);
+   await recover(); await page.waitForSelector(`[data-job-preview="${id}"]`);
    release(); await terminal(id); await page.click(`[data-job-preview="${id}"]`); await page.waitForSelector(".job-detail .preview");
    assert.equal(await page.evaluate(id => AIJobs.receipts().find(r => r.id === id).meta.recoveryV, id), 1); assert.equal(calls.length, before);
    await page.click("[data-job-dismiss]");
    pass("로컬 접수 기록이 없어도 로그인한 서버의 대상 정보로 결과를 찾아 복구한다");
 
    await target(); mode = "hold"; await page.evaluate(() => { openImageGen("person"); generateDocImage(); }); await until(() => gates.size === 1);
-   id = jobs().at(-1).id; await page.reload(); await page.waitForSelector(".jobs");
+   id = jobs().at(-1).id; await page.reload(); await page.waitForFunction(() => S.ready); await recover(); await page.waitForSelector(".jobs");
    await page.click("[data-job-cancel]"); await until(() => jobs().find(j => j.id === id).status === "cancelled");
    assert(!entries.get("account:account-a").storage.data.has("key:" + id));
    pass("재실행한 탭에서 대기·실행 중 작업을 중단하고 서버의 임시 키를 지운다");
 
    mode = "hold"; await target(); await page.evaluate(() => { openImageGen("person"); generateDocImage(); }); await until(() => gates.size === 1);
-   id = jobs().at(-1).id; await page.reload(); await page.waitForSelector(".jobs"); release(); await terminal(id);
+   id = jobs().at(-1).id; await page.reload(); await page.waitForFunction(() => S.ready); await recover(); await page.waitForSelector(".jobs"); release(); await terminal(id);
    await page.click('[data-act="jobs-refresh"]'); await page.waitForSelector("[data-job-apply]");
    await page.evaluate(() => {
      const commit = Store.commitRecovery;

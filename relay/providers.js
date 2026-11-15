@@ -29,6 +29,8 @@ export function validateJob(b) {
   if (b.type === "claude.generate" && (!/^claude-/.test(b.model) || b.credential)) return "Claude는 서버 키와 claude- 모델 이름을 사용해 주세요.";
   if (b.type !== "claude.generate" && /^claude-/.test(b.model)) return "Claude 작업 종류를 확인해 주세요.";
   const image = b.type === "gemini.image", config = i?.generationConfig;
+  if (b.type === "claude.generate" && config?.thinkingConfig !== undefined &&
+    (!only(config.thinkingConfig, ["thinkingLevel"]) || !["", "minimal", "low", "medium", "high"].includes(config.thinkingConfig.thinkingLevel))) return "Claude 생각 깊이를 확인해 주세요.";
   if (!only(i, ["contents", "generationConfig", "systemInstruction", "safetySettings"]) || !Array.isArray(i.contents) || !i.contents.length ||
     !i.contents.every(c => parts(c, image) && ["user", "model", undefined].includes(c.role)) ||
     (i.systemInstruction !== undefined && !parts(i.systemInstruction)) ||
@@ -73,6 +75,21 @@ export function serverKeyName(type, model) {
   return type === "openai.image" ? "OPENAI_API_KEY" : type === "claude.generate" || /^claude-/.test(model) ? "ANTHROPIC_API_KEY" : "GEMINI_KEY";
 }
 
+// 현재 모델 선택 목록의 Claude 4.5는 수동 예산, 기존 4.6 설정은 adaptive를 사용한다.
+export function claudeThinking(model, level = "") {
+  if (!level) return {};
+  const budgets = { minimal: 1024, low: 2048, medium: 4096, high: 8192 };
+  if (!Object.hasOwn(budgets, level)) throw { code: "invalid_thinking", definite: true, safeMessage: "Claude 생각 깊이를 확인해 주세요." };
+  if (/^claude-(sonnet|opus|haiku)-4-5(?:-|$)/.test(model)) return {
+    thinking: { type: "enabled", budget_tokens: budgets[level] },
+    ...(/^claude-opus-/.test(model) ? { output_config: { effort: level === "minimal" ? "low" : level } } : {}),
+  };
+  if (/^claude-(sonnet|opus)-4-6(?:-|$)/.test(model)) return {
+    thinking: { type: "adaptive" }, output_config: { effort: level === "minimal" ? "low" : level },
+  };
+  throw { code: "unsupported_thinking", definite: true, safeMessage: "이 모델의 생각 깊이 설정은 아직 지원하지 않습니다. 기본값이나 Claude 4.5 모델을 선택해 주세요." };
+}
+
 export async function runProvider(job, env, personalKey, signal) {
   const { type = "gemini.generate", model, input } = job.input;
   const claude = type === "claude.generate" || type === "gemini.generate" && /^claude-/.test(model);
@@ -96,7 +113,7 @@ export async function runProvider(job, env, personalKey, signal) {
     const messages = input.contents.map(c => ({ role: c.role === "model" ? "assistant" : "user", content: c.parts.map(p => ({ type: "text", text: p.text })) }));
     const system = (input.systemInstruction?.parts || []).map(p => p.text).join("\n");
     const json = input.generationConfig?.responseMimeType === "application/json";
-    body = JSON.stringify({ model, max_tokens: 16384, messages, ...(system || json ? { system: [system, json ? "Return only a valid JSON value. Do not wrap it in Markdown fences." : ""].filter(Boolean).join("\n\n") } : {}) });
+    body = JSON.stringify({ model, max_tokens: 16384, ...claudeThinking(model, input.generationConfig?.thinkingConfig?.thinkingLevel), messages, ...(system || json ? { system: [system, json ? "Return only a valid JSON value. Do not wrap it in Markdown fences." : ""].filter(Boolean).join("\n\n") } : {}) });
   } else {
     url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent";
     headers = { "Content-Type": "application/json", "x-goog-api-key": key }; body = JSON.stringify(input);

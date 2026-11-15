@@ -37,13 +37,38 @@ const { appServer } = require('./helpers/app');
   assert.equal(await page.locator('#gAdvanced').getAttribute('open'), null);
   assert.equal(await page.locator('.gset #gQuick, .gset #gCheck, .gset #gImage, .gset #acctBox').count(), 4);
   await page.selectOption('#gMain', 'claude-opus-4-5');
+  await page.locator('#gAdvanced summary').click();
+  assert((await page.locator('#gMainT option[value="high"]').innerText()).includes('8,192'));
+  await page.selectOption('#gMainT', 'high');
+  await page.selectOption('#gCheck', '');
+  assert((await page.locator('#gCheckT option[value="medium"]').innerText()).includes('4,096'));
+  await page.selectOption('#gCheckT', 'medium');
   await page.selectOption('#gQuick', 'gemini-3.5-flash-lite');
+  assert.equal(await page.locator('#gQuickT option[value="high"]').innerText(), 'high');
   await page.selectOption('#gCheck', '');
   await page.selectOption('#gImage', 'gemini-3-pro-image');
   await page.click('[data-act="gset-save"]');
   await page.reload(); await page.waitForSelector('#gMain');
   assert.equal(await page.inputValue('#gMain'), 'claude-opus-4-5');
   assert.equal(await page.inputValue('#gCheck'), '');
+  assert.equal(await page.inputValue('#gMainT'), 'high');
+  assert.equal(await page.inputValue('#gCheckT'), 'medium');
+  const thinkingCalls = await page.evaluate(async () => {
+    const calls = [], original = AIJobs.run;
+    AIJobs.run = async (type, model, input) => { calls.push({type,model,input}); return {candidates:[{content:{parts:[{text:'{"ok":true}'}]},finishReason:'STOP'}]}; };
+    try { await gemini.json('test'); await gemini.json('test', {modelTier:'check'}); return calls; }
+    finally { AIJobs.run = original; }
+  });
+  assert.equal(thinkingCalls[0].input.generationConfig.thinkingConfig.thinkingLevel, 'high');
+  assert.equal(thinkingCalls[1].input.generationConfig.thinkingConfig.thinkingLevel, 'medium');
+  const failure = await page.evaluate(async () => {
+    const original = AIJobs.run; let calls = 0;
+    AIJobs.run = async () => { calls++; throw {code:'api_400',message:'thinking unsupported',serverJob:true}; };
+    try { await gemini.json('test'); return {calls}; }
+    catch (error) { return {calls, code:error.code}; }
+    finally { AIJobs.run = original; }
+  });
+  assert.deepEqual(failure, {calls:1,code:'api_400'});
   const saved = await page.evaluate(() => localStorage.getItem('wwiki:gemini'));
   assert(!saved.includes('old-gemini-secret') && !saved.includes('old-openai-secret'));
   assert(!saved.includes('serverKeys') && !saved.includes('openaiKey'));

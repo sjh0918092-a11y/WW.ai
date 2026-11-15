@@ -203,7 +203,7 @@ const gemini = {
         let r;
         try { r = await this.stream(model, body, opts, cont ? acc : ""); }
         catch (e) {
-          if (e.code === "api_400" && think && /think/i.test(e.message || "")) { think = ""; opts.onMeta?.({ model, think }); continue; }   // 이 모델이 지원하지 않는 생각 깊이면 기본값으로 다시 보낸다
+          if (!/^claude-/.test(model) && e.code === "api_400" && think && /think/i.test(e.message || "")) { think = ""; opts.onMeta?.({ model, think }); continue; }   // 이 모델이 지원하지 않는 생각 깊이면 기본값으로 다시 보낸다
           throw e;
         }
         serverJobUsed = !!r.serverJob;

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { runProvider, validateJob } from '../relay/providers.js';
+import { runProvider, validateJob, claudeThinking } from '../relay/providers.js';
 import { AiJobs, jobsApi } from '../relay/jobs.js';
 import { JobStorage, jobRequest, fireAlarm } from './helpers/jobs.mjs';
 const env = { OPENAI_API_KEY: 'shared-openai', ANTHROPIC_API_KEY: 'shared-claude', PASSWORDS: 'invitation', AI_JOBS: { idFromName: x => x, get: () => ({ fetch: async () => Response.json({ accepted: true }, { status: 202 }) }) } };
@@ -15,6 +15,16 @@ assert(validateJob({ ...claude, credential: { type: 'personal', key: 'gemini-sec
 assert(validateJob({ ...claude, model: 'gemini-main' }));
 assert(validateJob({ ...claude, type: 'gemini.generate' }));
 console.log('✓ Provider-specific secrets, password protection, and Claude credential isolation');
+for (const family of ['sonnet', 'haiku', 'opus']) for (const [level, budget] of Object.entries({minimal:1024,low:2048,medium:4096,high:8192})) {
+ const config = claudeThinking(`claude-${family}-4-5`, level);
+ assert.equal(config.thinking.budget_tokens, budget); assert(16384 > budget);
+ assert.equal(config.output_config?.effort, family === "opus" ? (level === "minimal" ? "low" : level) : undefined);
+}
+assert.deepEqual(claudeThinking('claude-sonnet-4-5', ''), {});
+assert.deepEqual(claudeThinking('claude-opus-4-6', 'high'), {thinking:{type:'adaptive'}, output_config:{effort:'high'}});
+assert.throws(() => claudeThinking('claude-unknown', 'high'));
+assert.throws(() => claudeThinking('claude-sonnet-4-5', 'invalid'));
+assert(validateJob({...claude, input:{...claude.input, generationConfig:{thinkingConfig:{thinkingLevel:'invalid'}}}}));
 const original = globalThis.fetch;
 let calls = [];
 try {
@@ -31,7 +41,7 @@ try {
   assert(!calls[0].options.headers.Authorization);
   const payload = JSON.parse(calls[0].options.body);
   assert.equal(payload.messages[1].role, 'assistant'); assert(payload.system.includes('valid JSON'));
-  assert(!payload.thinking); assert.equal(payload.max_tokens, 16384);
+  assert.deepEqual(payload.thinking, { type: "enabled", budget_tokens: 8192 }); assert.equal(payload.max_tokens, 16384);
   assert(!JSON.stringify([...storage.data]).includes(env.ANTHROPIC_API_KEY));
   assert(!JSON.stringify(response).includes('private'));
   // Pipeline steps also choose a provider from their individual model IDs.

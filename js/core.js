@@ -1,7 +1,7 @@
 "use strict";
 /* 기본 도구: 버전, 이스케이프, 키 생성, 원안 주사위, 예시·문서 종류·오류 문구 */
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜). index.html의 ?v= 값도 같은 번호로 함께 올린다 (tests/assets.test.js가 확인) */
-const APP_VERSION = "v7.08 · 2026-11-15";
+const APP_VERSION = "v7.09 · 2026-11-15";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -93,6 +93,6 @@ const ERR = {
   no_sample: "서버 연결 설정이 없습니다. 왼쪽 'AI 연결 설정'에서 접속 암호를 저장해 주세요.",
   region: "AI 제공자가 서버의 실행 지역을 지원하지 않습니다. 서버 관리자에게 알려 주세요.",
   bad_key: "접속 암호를 확인해 주세요. 암호가 맞으면 서버 관리자에게 API 키와 사용 권한 확인을 요청해 주세요.",
-  model_not_found: "지정한 Gemini 모델을 찾을 수 없습니다. 'AI 연결 설정'에서 모델 이름을 확인해 주세요.",
+  model_not_found: "지정한 AI 모델을 찾을 수 없습니다. 'AI 연결 설정'에서 모델 이름을 확인해 주세요.",
   network: "Gemini 서버에 연결하지 못했습니다. 인터넷 연결을 확인하고, 파일을 직접 열었다면 로컬 서버(예: python -m http.server)로 열어 보세요."
 };

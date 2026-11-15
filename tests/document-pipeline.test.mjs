@@ -12,7 +12,7 @@ import {digest,sourcePage,commitDocument,snapshotWorld} from '../relay/pipeline-
 import {D1} from './helpers/d1.mjs';
 import {JobStorage,fireAlarm} from './helpers/jobs.mjs';
 execFileSync(process.execPath,['relay/build-engine.cjs','--check']);
-const db=new D1(), origin='https://sjh0918092-a11y.github.io', env={DB:db,GEMINI_KEY:'private-server-key',PASSWORDS:'relay-pass'};
+const db=new D1(), origin='https://sjh0918092-a11y.github.io', env={DB:db,GEMINI_KEY:'private-server-key',ANTHROPIC_API_KEY:'private-claude-key',PASSWORDS:'relay-pass'};
 await worker.fetch(new Request(origin+'/api/sync',{headers:{Origin:origin}}),env);
 db.sqlite.exec("INSERT INTO users VALUES('alice','s','h',1); INSERT INTO sessions VALUES('alice-token','alice',1)");
 const ent=(title,type,page=false)=>({title,type,summary:'',facts:[],mentions:[],page,box:''});
@@ -28,6 +28,10 @@ globalThis.fetch=async(url,opts)=>{
  const job=activeEntry.storage.data.get('jobs').find(j=>j.status==='running');
  const step=job.steps.at(-1), kind=step.kind;
  calls.push({kind,url,body:JSON.parse(opts.body)});
+ if (url.includes('anthropic.com')) {
+  assert.equal(opts.headers['x-api-key'], 'private-claude-key');
+  return Response.json({content:[{type:'thinking',thinking:'private reasoning'},{type:'text',text:JSON.stringify(response(kind))}],stop_reason:'end_turn'});
+ }
  assert.equal(opts.headers['x-goog-api-key'],'private-server-key');
  if(behavior==='hold'&&kind==='page') { gate?.(); await new Promise(r=>{release=r}); }
  if(behavior==='unknown'&&kind==='check') throw new Error('private-key must not leak');
@@ -106,6 +110,14 @@ try {
  e=await reset();await request(e,'',e.body);behavior='hold';let started;const start=new Promise(r=>started=r);gate=started;const running=e.obj.alarm();await start;await request(e,e.id+'/cancel',{});release();await running;assert.equal((await request(e,e.id)).job.status,'cancelled');assert.equal(storedPage(B),null);pass('실행 중 취소 뒤 늦게 도착한 제공자 응답도 저장하지 않는다');
 
  e=await reset();behavior='thinking';await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert.equal(calls.filter(c=>c.kind==='page').length,2);pass('생각 설정 미지원의 명확한 400 응답만 설정을 빼고 다시 요청한다');
+
+ // 같은 공유 엔진이 Claude의 단계별 생각 설정을 실제 요청에 전달한다.
+ e=await reset({settings:{main:'claude-sonnet-4-5',quick:'claude-haiku-4-5',check:'claude-opus-4-5',mainThink:'high',checkThink:'low'}});
+ await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));
+ assert.equal(calls.find(c=>c.kind==='page').body.thinking.budget_tokens,8192);
+ for(const c of calls.filter(c=>['check','read'].includes(c.kind))) assert.equal(c.body.thinking.budget_tokens,2048);
+ assert(r.result.pipeline.saved);assert(!JSON.stringify(r.result).includes('private reasoning'));
+ pass('Claude 문서 작성·검사가 각 단계의 확장 사고 예산으로 실행되고 저장된다');
 
  // D1 성공 직후 DO 기록 실패를 모사한다. 같은 job gate가 이후 수동 수정을 덮어쓰지 않는다.
  e=await reset();const snap=await snapshotWorld(db,'alice',e.input);const out={world:e.w,pages:{[B]:{...page(),key:B}},removed:[]};assert(await commitDocument(db,'alice',e.id,snap,out));db.sqlite.prepare("UPDATE pages SET data=json_set(data,'$.summary','후속 편집') WHERE pkey=?").run(B);assert(await commitDocument(db,'alice',e.id,snap,out));assert.equal(storedPage(B).summary,'후속 편집');pass('D1 저장 직후 재시작해도 작업 번호로 중복 저장을 막아 후속 편집을 보존한다');

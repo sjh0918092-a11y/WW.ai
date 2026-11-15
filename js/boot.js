@@ -17,9 +17,8 @@
   Nav.active = true;
   if ("scrollRestoration" in history) history.scrollRestoration = "manual";
   const route = Nav.read();
-  const recovery = AIRecovery.focus();
-  if (recovery && !invited && route?.view !== "gset") { S.view = { name: "jobs", job: recovery }; renderAll(); Nav.write(true); }
-  else if (route && !invited) await Nav.restore(route, history.state?.wwNav);
+  // 복구 기록은 작업 수 배지로 알린다. 첫 화면이나 명시한 문서 주소를 덮어쓰지 않는다.
+  if (route && !invited) await Nav.restore(route, history.state?.wwNav);
   else { renderAll(); Nav.write(true); }
   AIRecovery.start();
 })();
