@@ -110,48 +110,47 @@ const storeLabel = () => Sync.acct ? `서버에 저장 (${Sync.acct.id}${Sync.pe
 
 function gsetHtml() {
   const opt = v => THINKS.map(([x, l]) => `<option value="${x}" ${v === x ? "selected" : ""}>${esc(l)}</option>`).join("");
-  const dl = `<datalist id="gmodels">${(S.gmodels || []).map(m => `<option value="${esc(m.id)}">${esc(m.label)}</option>`).join("")}</datalist>`;
+  const modelOptions = (value, image = false, inherit = false) => {
+    const models = new Map((image ? IMAGE_MODELS : [...TEXT_MODELS, ...(S.gmodels || [])]).map(m => [m.id, m.label || m.id]));
+    if (value && !models.has(value)) models.set(value, value + " (기존 설정)");
+    const groups = [["Gemini", id => /^gemini-/.test(id)], [image ? "OpenAI" : "Claude", id => image ? /^gpt-image-/.test(id) : /^claude-/.test(id)], ["기존 모델", id => !/^(gemini-|claude-|gpt-image-)/.test(id)]];
+    return (inherit ? `<option value="" ${!value ? "selected" : ""}>기본 모델과 같게</option>` : "") + groups.map(([label, match]) => {
+      const entries = [...models].filter(([id]) => match(id));
+      return entries.length ? `<optgroup label="${label}">${entries.map(([id, name]) => `<option value="${esc(id)}" ${value === id ? "selected" : ""}>${esc(name)}</option>`).join("")}</optgroup>` : "";
+    }).join("");
+  };
   return `<div class="sheet gset"><div class="crumb"><span>도구</span></div><h1 class="t">AI 연결 설정</h1>
-    <p class="note">연결 설정은 이 브라우저의 localStorage에 평문으로 저장됩니다. 공용 컴퓨터에서는 쓰지 마세요.</p>
-    <h2 class="nf-h">Gemini 연결 방식</h2>
-    <select id="gMode" class="txt"><option value="key" ${gRelay() ? "" : "selected"}>내 API 키로 바로 연결</option><option value="relay" ${gRelay() ? "selected" : ""}>중계 서버로 연결 (초대받은 경우)</option></select>
-    <div id="gKeyBox" ${gRelay() ? "hidden" : ""}>
-      <label class="lb" for="gKey">Gemini API 키 <span class="note" style="font-weight:400">Google AI Studio에서 발급 · 기본은 Google 직접 연결이며, 아래에서 서버 실행을 허용할 수 있습니다</span></label>
-      <div class="keyrow"><input id="gKey" class="txt" type="password" autocomplete="off" spellcheck="false" value="${esc(GS.key)}" placeholder="AIza…"><button type="button" class="btn" data-act="gkey-show" data-for="gKey">보기</button></div>
-    </div>
-    <div id="gRelayBox" ${gRelay() ? "" : "hidden"}>
-      <label class="lb" for="gPass">접속 암호 <span class="note" style="font-weight:400">API 키는 중계 서버에 있으니 받은 접속 암호만 넣으면 됩니다</span></label>
+    <p class="note">접속 암호와 모델만 설정하세요. API 키는 서버에서 관리합니다.</p>
+    <h2 class="nf-h">서버 연결</h2>
+    <div id="gRelayBox">
+      <label class="lb" for="gPass">접속 암호</label>
       <div class="keyrow"><input id="gPass" class="txt" type="password" autocomplete="off" spellcheck="false" value="${esc(GS.pass)}"><button type="button" class="btn" data-act="gkey-show" data-for="gPass">보기</button></div>
       <details class="memo" style="margin-top:10px" ${GS.relay !== DEFAULT_RELAY ? "open" : ""}><summary>중계 서버 주소 바꾸기</summary>
         <input id="gRelay" class="txt" type="url" autocomplete="off" spellcheck="false" value="${esc(GS.relay)}" placeholder="${esc(DEFAULT_RELAY)}" aria-label="중계 서버 주소">
         <p class="note" style="margin:6px 0 0">비워 두면 기본 서버를 씁니다.</p></details>
       <div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="relay-invite">사이트 링크 복사</button><span class="note">친구에게 링크를 보내고, 접속 암호는 따로 알려 주세요.</span></div>
     </div>
-    <h2 class="nf-h">문서 모델 · Gemini / Claude</h2>
-    <p class="note">Claude는 중계 서버 연결과 로그인이 필요합니다. 기본·빠른·검사 모델에 Anthropic 계정에서 사용할 수 있는 정확한 claude- 모델 ID(예: claude-sonnet-4-5)를 입력하세요. Gemini와 섞어 쓸 수 있습니다. Claude의 생각 깊이는 모델 기본값을 사용합니다.</p>
-    <div class="two"><div><label class="lb" for="gMain">기본 모델 <span class="note" style="font-weight:400">세계관 생성, 문서 작성, 랜덤 서핑, 충돌 고치기</span></label><input id="gMain" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.main)}"></div>
-      <div><label class="lb" for="gMainT">생각 깊이</label><select id="gMainT">${opt(GS.mainThink)}</select></div></div>
-    <div class="two"><div><label class="lb" for="gQuick">빠른 모델 <span class="note" style="font-weight:400">분위기 판별</span></label><input id="gQuick" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.quick)}"></div>
-      <div><label class="lb" for="gQuickT">생각 깊이</label><select id="gQuickT">${opt(GS.quickThink)}</select></div></div>
-    <div class="two"><div><label class="lb" for="gCheck">검사 모델 <span class="note" style="font-weight:400">설정 검사, 수정 대조 · 비워 두면 기본 모델</span></label><input id="gCheck" class="txt" list="gmodels" spellcheck="false" value="${esc(GS.check || "")}" placeholder="${esc(GS.main || GDEF.main)} (기본 모델)"></div>
-      <div><label class="lb" for="gCheckT">생각 깊이</label><select id="gCheckT">${opt(GS.checkThink ?? GDEF.checkThink)}</select></div></div>
+    <h2 class="nf-h">문서 모델</h2>
+    <p class="note">용도별로 Gemini 또는 Claude를 선택하세요. Claude는 로그인과 서버 AI 실행이 필요하며 생각 깊이는 모델 기본값을 사용합니다.</p>
+    <div><label class="lb" for="gMain">기본 모델 <span class="note" style="font-weight:400">세계관 생성, 문서 작성, 랜덤 서핑, 충돌 고치기</span></label><select id="gMain">${modelOptions(GS.main)}</select></div>
+    <div><label class="lb" for="gQuick">빠른 모델 <span class="note" style="font-weight:400">분위기 판별</span></label><select id="gQuick">${modelOptions(GS.quick)}</select></div>
+    <div><label class="lb" for="gCheck">검사 모델 <span class="note" style="font-weight:400">설정 검사, 수정 대조</span></label><select id="gCheck">${modelOptions(GS.check || "", false, true)}</select></div>
     <h2 class="nf-h">이미지 생성</h2>
-    <label class="lb" for="gImage">기본 이미지 모델</label><input id="gImage" class="txt" list="gImageModels" value="${esc(GS.imageModel || GDEF.imageModel)}"><datalist id="gImageModels">${IMAGE_MODELS.map(m => `<option value="${m.id}">${m.label}</option>`).join("")}</datalist>
-    <label class="lb" for="gOpenAI">OpenAI API 키 (이미지 생성용)</label>
-    <div class="keyrow"><input id="gOpenAI" class="txt" type="password" autocomplete="off" spellcheck="false" value="${esc(GS.openaiKey || "")}" placeholder="sk-…"><button type="button" class="btn" data-act="gkey-show" data-for="gOpenAI">보기</button></div>
-    <p class="note">선택 사항입니다. 비워 두면 중계 서버 연결·로그인·서버 AI 실행을 통해 서버의 OpenAI 키를 사용합니다. 개인 키를 넣으면 기본은 OpenAI 직접 연결이며, 아래에서 서버 실행을 허용할 수 있습니다. <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">API 키 발급</a> · ChatGPT 구독과 별도 과금되며, 계정에 따라 조직 인증이 필요할 수 있습니다. 개인 키는 세계관 백업·동기화에 포함되지 않습니다.</p>
-    <h2 class="nf-h">화면을 꺼도 AI 요청 계속하기</h2>
+    <label class="lb" for="gImage">기본 이미지 모델</label><select id="gImage">${modelOptions(GS.imageModel || GDEF.imageModel, true)}</select>
+    <p class="note">이미지는 서버 키로 생성합니다. OpenAI 이미지를 사용하려면 로그인과 서버 AI 실행이 필요합니다.</p>
+    <details class="memo" id="gAdvanced" style="margin-top:20px"><summary>실행·검사 옵션</summary><div style="padding:0 12px 12px">
+    <div class="two"><div><label class="lb" for="gMainT">기본 모델 생각 깊이</label><select id="gMainT">${opt(GS.mainThink)}</select></div><div><label class="lb" for="gQuickT">빠른 모델 생각 깊이</label><select id="gQuickT">${opt(GS.quickThink)}</select></div></div>
+    <label class="lb" for="gCheckT">검사 모델 생각 깊이</label><select id="gCheckT">${opt(GS.checkThink ?? GDEF.checkThink)}</select>
+    <p class="note">Claude는 모델 기본 생각 설정을 사용합니다.</p>
     <label class="lb" style="font-weight:400"><input type="checkbox" id="gServerJobs" ${GS.serverJobs !== false ? "checked" : ""}>로그인한 동안 AI 요청을 서버에서 실행</label>
-    <p class="note">중계 서버 Gemini 연결은 아래 계정으로 로그인하면 이 설정을 사용합니다. 서버에 접수된 AI 요청은 화면이 꺼져도 계속됩니다. 새로고침하거나 탭을 다시 연 뒤에는 도구의 AI 작업에서 결과를 복구할 수 있습니다. 완료 결과를 한 번에 받습니다. 문서 전체 과정을 켜면 브라우저가 없어도 검사·자동 수정·저장까지 서버가 진행합니다.</p>
+    <p class="note">접수한 작업은 화면을 닫아도 계속되며, 도구 → AI 작업에서 결과를 확인할 수 있습니다.</p>
     <label class="lb" style="font-weight:400"><input type="checkbox" id="gDocumentPipeline" ${GS.documentPipeline !== false ? "checked" : ""}>문서 작성·검사·자동 수정을 서버에서 끝내고 저장</label>
     <p class="note">화면을 닫아도 접수한 문서를 완성합니다. 진행 중 원본이 바뀌면 덮어쓰지 않고 AI 작업에 초안을 보관합니다.</p>
-    <label class="lb" style="font-weight:400"><input type="checkbox" id="gServerKeys" ${GS.serverKeys === true ? "checked" : ""}>내 Gemini·OpenAI 키도 서버 작업에 사용하도록 허용</label>
-    <p class="note">허용하면 개인 키를 선택한 서버(${esc(GS.relay || DEFAULT_RELAY)})에 전송하고, 대기·실행 동안 서버 작업 저장소에 임시 보관합니다. 키는 작업 종료·취소 때 지우며 작업 조회 응답에는 포함하지 않습니다. 허용하지 않으면 개인 키 요청은 기존처럼 직접 연결합니다. 서버 주소를 바꾸면 이 허용은 해제됩니다.</p>
     <label class="lb" for="gPre" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="gPre" ${GS.preCheck !== false ? "checked" : ""}>문서 작성 직후 한 번 자동 검사하고, 어긋난 곳은 고쳐서 보여 주기 <span class="note">끄면 자동 검사하지 않습니다. 이후 검사는 문서의 설정 검사 버튼으로 실행합니다</span></label>
-    <p class="note" style="margin-top:6px">자동 검사는 새 문서를 작성하거나 다시 쓸 때 한 번만 돕니다. 이후에는 설정 검사 버튼을 눌렀을 때만 검사합니다. 검사 모델을 높이거나 생각 깊이를 올리면 헛짚는 지적이 줄지만, 검사가 느려지고 사용량이 늘어납니다.</p>
-    ${dl}
+    <p class="note" style="margin-top:6px">자동 검사는 작성 직후 한 번 실행합니다. 이후에는 문서의 설정 검사 버튼을 사용하세요.</p>
     <p class="note" style="margin-top:8px">모델이 지원하지 않는 생각 깊이를 고르면 그 요청은 모델 기본값으로 다시 보냅니다. 응답은 JSON 모드로 받습니다.</p>
-    <div class="row"><button type="button" class="btn pri" data-act="gset-save">저장</button><button type="button" class="btn" data-act="gset-test">문서 모델 연결 시험</button><button type="button" class="btn" data-act="gset-models">Gemini 모델 목록 불러오기</button></div>
+    </div></details>
+    <div class="row"><button type="button" class="btn pri" data-act="gset-save">저장</button><button type="button" class="btn" data-act="gset-test">문서 모델 연결 시험</button><button type="button" class="btn" data-act="gset-models">Gemini 모델 새로고침</button></div>
     <p class="res" id="gRes">${esc(S.gres || "")}</p>
     <h2 class="nf-h">계정 (서버에 세계관 저장)</h2>
     ${acctHtml()}
@@ -189,8 +188,8 @@ async function acctAction(kind) {
 }
 function readGsetForm() {
   const v = id => ($("#" + id)?.value ?? "").trim();
-  const relay = normRelay(v("gRelay")) || DEFAULT_RELAY, sameServer = relay === normRelay(GS.relay || DEFAULT_RELAY);
-  GS = { ...GS, mode: v("gMode") === "relay" ? "relay" : "key", key: v("gKey"), relay, pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT"), check: v("gCheck"), checkThink: v("gCheckT"), preCheck: !!$("#gPre")?.checked, imageModel: v("gImage") || GDEF.imageModel, openaiKey: v("gOpenAI"), serverJobs: !!$("#gServerJobs")?.checked, documentPipeline: !!$("#gDocumentPipeline")?.checked, serverKeys: sameServer && !!$("#gServerKeys")?.checked, serverKeysFor: sameServer && $("#gServerKeys")?.checked ? relay : "" };
+  const relay = normRelay(v("gRelay")) || DEFAULT_RELAY;
+  GS = { ...GS, mode: "relay", relay, pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT"), check: v("gCheck"), checkThink: v("gCheckT"), preCheck: !!$("#gPre")?.checked, imageModel: v("gImage") || GDEF.imageModel, serverJobs: !!$("#gServerJobs")?.checked, documentPipeline: !!$("#gDocumentPipeline")?.checked };
   saveGS(); S.sample = gReady() ? gemini : null;
   AIRecovery.authChanged();
 }

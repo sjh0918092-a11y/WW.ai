@@ -21,7 +21,7 @@ const removeImage = async page => { await page.locator(".portrait-menu summary")
 const waitSaved = page => page.waitForFunction(() => document.querySelector("#toast")?.textContent.includes("프로필 이미지를 저장했습니다.") && !document.querySelector("[data-portrait]")?.disabled);
 const open = async page => { await page.click('.wcard button.open:has-text("이미지 테스트 세계")'); await page.waitForSelector(".article h2"); };
 const reopen = async page => {
-  await page.reload(); await page.waitForSelector("#gMode, .wcard, .article h2");
+  await page.reload(); await page.waitForSelector("#gPass, .wcard, .article h2");
   await page.click('#side [data-act="home"]');
   await open(page);
 };
@@ -43,7 +43,7 @@ let n = 0; const pass = msg => console.log(`  ✓ ${++n}. ${msg}`);
   await ctx.route("https://fonts.googleapis.com/**", r => r.abort());
   await ctx.route("https://fonts.gstatic.com/**", r => r.abort());
   try {
-    await page.goto(url); await page.waitForSelector("#gMode");
+    await page.goto(url); await page.waitForSelector("#gPass");
     await importBackup(page, backup); await open(page);
     assert.strictEqual(await page.locator(".infobox .ih").innerText(), "테스트 인물");
     assert.strictEqual(await page.locator("[data-portrait]").count(), 1);
@@ -115,7 +115,7 @@ let n = 0; const pass = msg => console.log(`  ✓ ${++n}. ${msg}`);
 
     const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
     await mobile.route("https://fonts.googleapis.com/**", r => r.abort());
-    const mp = await mobile.newPage(); await mp.goto(url); await mp.waitForSelector("#gMode");
+    const mp = await mobile.newPage(); await mp.goto(url); await mp.waitForSelector("#gPass");
     await importBackup(mp, backup); await open(mp); await pick(mp, png); await waitSaved(mp);
     await mp.waitForFunction(() => document.querySelector(".portrait img")?.naturalWidth > 0);
     assert.deepStrictEqual(await image(mp).evaluate(i => [i.naturalWidth, i.naturalHeight]), [1536, 2048]);
@@ -173,7 +173,7 @@ let n = 0; const pass = msg => console.log(`  ✓ ${++n}. ${msg}`);
     assert.strictEqual(exported.pages["portrait-world"].person.portrait, nextSrc);
     const other = await browser.newContext(), otherPage = await other.newPage();
     await other.route("https://fonts.googleapis.com/**", r => r.abort());
-    await otherPage.goto(url); await otherPage.waitForSelector("#gMode");
+    await otherPage.goto(url); await otherPage.waitForSelector("#gPass");
     await importBackup(otherPage, exported); await open(otherPage);
     assert.strictEqual(await image(otherPage).getAttribute("src"), nextSrc); await other.close();
     pass("이미지를 교체하고 백업을 다른 브라우저에서 가져와도 그대로 복원된다");
@@ -189,7 +189,7 @@ let n = 0; const pass = msg => console.log(`  ✓ ${++n}. ${msg}`);
       const sse = `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(answer) }] }, finishReason: "STOP" }] })}\n\n`;
       await route.fulfill({ status: 200, contentType: "text/event-stream", body: sse });
     });
-    await page.selectOption("#gMode", "key"); await page.fill("#gKey", "test-key"); await page.click('[data-act="gset-save"]');
+    await page.fill("#gPass", "test-pass"); await page.click('[data-act="gset-save"]');
     await page.click('#side [data-act="home"]'); await open(page);
     await page.locator("[data-rw]").first().click(); await page.click("[data-rw-yes]");
     await page.waitForFunction(() => document.querySelector(".article")?.textContent.includes("AI가 다시 쓴 본문이다."));

@@ -38,7 +38,7 @@ const until = async (fn, msg, ms = 15000) => { const t0 = Date.now(); while (Dat
     });
     const page = await ctx.newPage();
     page.on("pageerror", e => { console.error("페이지 오류:", e); process.exitCode = 1; });
-    await page.goto(URL_); await page.waitForSelector("#gMode");   // Gemini 연결이 없으니 설정 화면에서 시작한다
+    await page.goto(URL_); await page.waitForSelector("#gPass");   // Gemini 연결이 없으니 설정 화면에서 시작한다
     return { ctx, page };
   };
   const listTitles = page => page.locator(".wcard button.open").allInnerTexts();

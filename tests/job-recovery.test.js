@@ -16,7 +16,7 @@ const until = async fn => { for (let i = 0; i < 400; i++) { if (await fn()) retu
    if (e.timer || e.executing || e.obj.active || !(e.storage.data.get("jobs") || []).some(j => j.status === "queued")) return;
    e.timer = setTimeout(async () => { e.timer = null; e.executing = true; try { await fireAlarm(e.obj); } finally { e.executing = false; schedule(e); } }, 5);
  };
- const env = { DB: db, GEMINI_KEY: "server-key", PASSWORDS: "relay-pass", ALLOWED_ORIGINS: origin, AI_JOBS: {
+ const env = { DB: db, GEMINI_KEY: "server-key", OPENAI_API_KEY: "sk-server-test", PASSWORDS: "relay-pass", ALLOWED_ORIGINS: origin, AI_JOBS: {
    idFromName: n => n, get: name => {
      if (!entries.has(name)) { const storage = new JobStorage(); entries.set(name, { storage, obj: new AiJobs({ storage }, env) }); }
      const e = entries.get(name); return { fetch: async req => { const response = await e.obj.fetch(req); schedule(e); return response; } };
@@ -37,7 +37,7 @@ const until = async fn => { for (let i = 0; i < 400; i++) { if (await fn()) retu
  try {
    browser = await chromium.launch(); context = await browser.newContext({ acceptDownloads: true });
    await context.addInitScript(() => {
-     if (!localStorage.getItem("wwiki:gemini")) localStorage.setItem("wwiki:gemini", JSON.stringify({ mode: "relay", relay: "https://relay.test", pass: "relay-pass", main: "main-test", check: "check-test", preCheck: false, documentPipeline: false, openaiKey: "sk-test-personal", serverKeys: true, serverKeysFor: "https://relay.test" }));
+     if (!localStorage.getItem("wwiki:gemini")) localStorage.setItem("wwiki:gemini", JSON.stringify({ mode: "relay", relay: "https://relay.test", pass: "relay-pass", main: "main-test", check: "check-test", preCheck: false, documentPipeline: false }));
      if (!localStorage.getItem("wwiki:acct")) localStorage.setItem("wwiki:acct", JSON.stringify({ id: "account-a", token: "token-a", since: 0 }));
    });
    await context.route("https://fonts.googleapis.com/**", r => r.abort()); await context.route("https://fonts.gstatic.com/**", r => r.abort());

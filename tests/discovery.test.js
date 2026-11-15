@@ -8,7 +8,7 @@ const read=(p,k)=>p.evaluate(k=>new Promise(resolve=>{const r=indexedDB.open('wo
 let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch(),ctx=await browser.newContext({acceptDownloads:true});
- const init=()=>{if(!localStorage.getItem('wwiki:gemini'))localStorage.setItem('wwiki:gemini',JSON.stringify({mode:'key',key:'test-key',main:'test-main',quick:'test-quick',mainThink:'high',quickThink:'low',preCheck:false}));};await ctx.addInitScript(init);await ctx.route('https://fonts.googleapis.com/**',r=>r.abort());await ctx.route('https://fonts.gstatic.com/**',r=>r.abort());
+ const init=()=>{if(!localStorage.getItem('wwiki:gemini'))localStorage.setItem('wwiki:gemini',JSON.stringify({mode:'relay',pass:'test-key',main:'test-main',quick:'test-quick',mainThink:'high',quickThink:'low',preCheck:false}));};await ctx.addInitScript(init);await ctx.route('https://fonts.googleapis.com/**',r=>r.abort());await ctx.route('https://fonts.gstatic.com/**',r=>r.abort());
  const person=key('저우란'),stub=key('붉은 격납고'),alias="Type-12 '비천'";
  const original={key:person,title:'저우란',type:'인물',summary:'60m급 거인 병사',infobox:[{label:'성별',value:'여성'},{label:'제식명',value:alias}],sections:[{heading:'개요',level:1,body:'거인 병사는 정비와 검진을 거쳐 출동한다.'}],links:[],createdAt:1};
  const ent=(title,page,summary)=>({title,type:page?'인물':'지명',summary,facts:[],mentions:[],page,box:''});

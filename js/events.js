@@ -155,7 +155,7 @@ document.addEventListener("click", ev => {
     case "jobs-refresh": AIRecovery.detail = null; AIRecovery.refresh(); break;
     case "jobs-filter": AIRecovery.all = !AIRecovery.all; renderMain(); break;
     case "gset": S.view = { name: "gset" }; S.gres = ""; renderAll(); window.scrollTo({ top: 0 }); break;
-    case "gkey-show": { const i = $("#" + (d.for || "gKey")); if (i) i.type = i.type === "password" ? "text" : "password"; break; }
+    case "gkey-show": { const i = $("#" + (d.for || "gPass")); if (i) i.type = i.type === "password" ? "text" : "password"; break; }
     case "gset-save": readGsetForm(); setGres(""); renderSide(); toast("AI 연결 설정을 저장했습니다."); renderMain(); break;
     case "relay-invite": {
       readGsetForm();
@@ -164,7 +164,7 @@ document.addEventListener("click", ev => {
       break;
     }
     case "gset-test": (async () => {
-      readGsetForm(); renderSide(); if (!gReady()) { setGres(gRelay() ? "중계 서버 주소와 접속 암호를 먼저 넣어 주세요." : "키를 먼저 넣어 주세요."); return; }
+      readGsetForm(); renderSide(); if (!gReady()) { setGres("서버 접속 암호를 먼저 저장해 주세요."); return; }
       const out = [];
       for (const tier of ["main", "quick"]) {
         setGres([...out, `${GS[tier]} 시험 중…`].join(" / "));
@@ -175,9 +175,9 @@ document.addEventListener("click", ev => {
       setGres(out.join(" / "));
     })(); break;
     case "gset-models": (async () => {
-      readGsetForm(); if (!gReady()) { setGres(gRelay() ? "중계 서버 주소와 접속 암호를 먼저 넣어 주세요." : "키를 먼저 넣어 주세요."); return; }
+      readGsetForm(); if (!gReady()) { setGres("서버 접속 암호를 먼저 저장해 주세요."); return; }
       setGres("모델 목록을 불러오는 중…");
-      try { S.gmodels = await listGeminiModels(); S.gres = `텍스트 생성 모델 ${S.gmodels.length}개를 불러왔습니다. 모델 칸을 누르면 고를 수 있습니다.`; renderMain(); }
+      try { S.gmodels = await listGeminiModels(); S.gres = `텍스트 생성 모델 ${S.gmodels.length}개를 불러왔습니다. 드롭다운에서 선택할 수 있습니다.`; renderMain(); }
       catch (e) { setGres("불러오지 못했습니다. " + errMsg(e)); }
     })(); break;
     case "export-world": try { exportWorld(); } catch (e) { toast("내보내지 못했습니다. " + errMsg(e)); } break;
@@ -313,7 +313,6 @@ document.addEventListener("change", ev => {
   if (ev.target.dataset?.igf && S.imageGen && !S.imageGen.busy) { const f = ev.target.dataset.igf; S.imageGen.opts[f] = f === "useRef" ? ev.target.checked : ev.target.value; if (f === "model") renderMain(); }
   if (ev.target.dataset?.portraitFile && ev.target.files?.[0]) { const f = ev.target.files[0]; ev.target.value = ""; setPortrait(ev.target.dataset.portraitFile, f); }
   if (ev.target.id === "cpType" && S.compose) S.compose.type = ev.target.value;
-  if (ev.target.id === "gMode") { const r = ev.target.value === "relay"; $("#gKeyBox").hidden = r; $("#gRelayBox").hidden = !r; }
   if (ev.target.dataset?.angleOff !== undefined && S.world && !S.discovery?.busy) { const w = S.world; w.angleOff = ev.target.checked; Store.saveWorld(w).catch(err => toast("저장하지 못했습니다. " + errMsg(err))); document.querySelectorAll("[data-angle-off]").forEach(x => { x.checked = w.angleOff; }); return; }
   if (ev.target.id === "importFile" && ev.target.files?.[0]) { const f = ev.target.files[0]; ev.target.value = ""; importAll(f); }
 });

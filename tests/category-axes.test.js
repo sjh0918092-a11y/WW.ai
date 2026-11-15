@@ -9,7 +9,7 @@ const K = t => key(t);
 const ax = (o) => Object.entries(o).flatMap(([axis, xs]) => xs.map(name => ({ name, axis })));
 (async () => {
   await new Promise(r => server.listen(0, '127.0.0.1', r)); const browser = await chromium.launch(), ctx = await browser.newContext();
-  await ctx.addInitScript(() => { if (!localStorage.getItem('wwiki:gemini')) localStorage.setItem('wwiki:gemini', JSON.stringify({ mode: 'key', key: 'test-key', main: 'test-main', quick: 'test-quick', preCheck: false })); });
+  await ctx.addInitScript(() => { if (!localStorage.getItem('wwiki:gemini')) localStorage.setItem('wwiki:gemini', JSON.stringify({ mode: 'relay', pass: 'test-key', main: 'test-main', quick: 'test-quick', preCheck: false })); });
   await ctx.route('https://fonts.googleapis.com/**', r => r.abort()); await ctx.route('https://fonts.gstatic.com/**', r => r.abort());
   const ent = (title, type, page, extra = {}) => ({ title, type, summary: title + ' 요약', facts: [], mentions: [], page, box: '', ...extra });
   const pg = (title, type, cats, axes, infobox = []) => ({ key: K(title), title, type, summary: title + ' 요약', categories: cats, ...(axes ? { catAxes: axes } : {}), infobox, sections: [{ heading: '개요', level: 1, body: title + '의 기록.' }], links: [], createdAt: 1 });

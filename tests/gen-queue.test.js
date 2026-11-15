@@ -8,7 +8,7 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
 (async () => {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const browser = await chromium.launch(), ctx = await browser.newContext();
-  await ctx.addInitScript(() => { if (!localStorage.getItem("wwiki:gemini")) localStorage.setItem("wwiki:gemini", JSON.stringify({ mode: "key", key: "test-key", preCheck: false })); });
+  await ctx.addInitScript(() => { if (!localStorage.getItem("wwiki:gemini")) localStorage.setItem("wwiki:gemini", JSON.stringify({ mode: "relay", pass: "test-key", preCheck: false })); });
   await ctx.route("https://fonts.googleapis.com/**", r => r.abort()); await ctx.route("https://fonts.gstatic.com/**", r => r.abort()); await ctx.route("**/v1beta/**", r => r.abort());
   const page = await ctx.newPage(), errors = []; page.on("pageerror", e => errors.push(e.message));
   const a = key("주인공"), titles = ["붉은 격납고", "푸른 함선", "검은 탑", "흰 등대"], ks = titles.map(key);

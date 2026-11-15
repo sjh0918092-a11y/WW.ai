@@ -8,27 +8,41 @@ const PAGE_MODEL = {};   // 모델과 생각 깊이는 'AI 연결 설정'에서 
 const GKEY = "wwiki:gemini";
 const GBASE = "https://generativelanguage.googleapis.com/v1beta";
 const DEFAULT_RELAY = "https://lucky-feather-d3e9.sjh0918092.workers.dev";   // 기본 중계 서버. 주소는 공개돼도 되고, 접속 암호가 있어야 쓸 수 있다
-const GDEF = { mode: "key", relay: DEFAULT_RELAY, pass: "", key: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "", check: "", checkThink: "medium", preCheck: true, imageModel: "gpt-image-2.5-flare", imageDefaultVersion: 1, openaiKey: "", serverJobs: true, documentPipeline: true, serverKeys: false, serverKeysFor: "" };   // check: 설정 검사·수정 대조. 비우면 기본 모델
+const GDEF = { mode: "relay", relay: DEFAULT_RELAY, pass: "", main: "gemini-3.8-flash", mainThink: "", quick: "gemini-3.5-flash-lite", quickThink: "", check: "", checkThink: "medium", preCheck: true, imageModel: "gpt-image-2.5-flare", imageDefaultVersion: 1, serverJobs: true, documentPipeline: true };   // check: 설정 검사·수정 대조. 비우면 기본 모델
+const TEXT_MODELS = [
+  { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash" },
+  { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash Lite" },
+  { id: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
+  { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
+  { id: "claude-opus-4-5", label: "Claude Opus 4.5" }
+];
 const THINKS = [["", "모델 기본값"], ["minimal", "minimal"], ["low", "low"], ["medium", "medium"], ["high", "high"]];
 let GS = (() => {
   let st = {}; try { st = JSON.parse(localStorage.getItem(GKEY) || "{}") || {}; } catch {}
   const g = { ...GDEF, ...st };
-  if (!st.mode) g.mode = st.key ? "key" : "relay";   // 처음 온 사람(친구)은 중계 서버 연결로 시작하고, 키를 쓰던 사람은 그대로 둔다
+  // 서버 연결로 이전하면서 브라우저에 저장했던 개인 키와 전송 허용을 제거한다.
+  g.mode = "relay";
+  for (const key of ["key", "openaiKey", "serverKeys", "serverKeysFor"]) delete g[key];
   if (!g.relay) g.relay = DEFAULT_RELAY;
   if (!st.imageDefaultVersion) {
     if (!st.imageModel || st.imageModel === "gemini-nano-banana-2.1") g.imageModel = GDEF.imageModel;
     g.imageDefaultVersion = 1;
     try { localStorage.setItem(GKEY, JSON.stringify(g)); } catch {}
   }
+  try { localStorage.setItem(GKEY, JSON.stringify(g)); } catch {}
   return g;
 })();
-/* 연결 방식: 내 API 키로 Google에 바로 요청하거나(key), 중계 서버를 거친다(relay) */
+/* 연결 방식: 브라우저는 서버 연결을 사용한다. key 모드는 격리된 문서 엔진의 메모리 설정이다. */
 const gRelay = () => GS.mode === "relay";
 const gReady = () => gRelay() ? !!(GS.relay && GS.pass) : !!GS.key;
 const gBase = () => gRelay() ? GS.relay.replace(/\/+$/, "") + "/v1beta" : GBASE;
 const gAuth = () => gRelay() ? { "X-WW-Pass": GS.pass } : { "x-goog-api-key": GS.key };
 const normRelay = u => { u = String(u || "").trim().replace(/\/+$/, "").replace(/\/v1beta$/, ""); if (u && !/^https?:\/\//i.test(u)) u = "https://" + u; return u; };
-const saveGS = () => { try { localStorage.setItem(GKEY, JSON.stringify(GS)); } catch {} };
+const saveGS = () => {
+  GS.mode = "relay";
+  for (const key of ["key", "openaiKey", "serverKeys", "serverKeysFor"]) delete GS[key];
+  try { localStorage.setItem(GKEY, JSON.stringify(GS)); } catch {}
+};
 function parseJsonLoose(t) {
   const tries = [t, t.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "")];
   const a = t.indexOf("{"), b = t.lastIndexOf("}"); if (a >= 0 && b > a) tries.push(t.slice(a, b + 1));

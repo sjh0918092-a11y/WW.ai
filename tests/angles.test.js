@@ -8,7 +8,7 @@ const read=(p,k)=>p.evaluate(k=>new Promise(resolve=>{const r=indexedDB.open('wo
 let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch(),ctx=await browser.newContext({acceptDownloads:true});
- await ctx.addInitScript(()=>{if(!localStorage.getItem('wwiki:gemini'))localStorage.setItem('wwiki:gemini',JSON.stringify({mode:'key',key:'test-key',main:'test-main',quick:'test-quick',preCheck:false}));});
+ await ctx.addInitScript(()=>{if(!localStorage.getItem('wwiki:gemini'))localStorage.setItem('wwiki:gemini',JSON.stringify({mode:'relay',pass:'test-key',main:'test-main',quick:'test-quick',preCheck:false}));});
  await ctx.route('https://fonts.googleapis.com/**',r=>r.abort());await ctx.route('https://fonts.gstatic.com/**',r=>r.abort());
  const hero=key('마법 학교'),pupil=key('리나 하르트'),guild=key('마법 길드 본부'),examTitles=['입학 시험','중간 시험','졸업 시험'],exams=examTitles.map(key);
  const ent=(title,page,summary,type='지명')=>({title,type,summary,facts:[],mentions:[],page,box:''});

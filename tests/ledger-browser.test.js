@@ -9,7 +9,7 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
 const read = (p, k) => p.evaluate(k => new Promise(resolve => { const r = indexedDB.open("worldwiki-gemini", 1); r.onsuccess = () => { const d = r.result, t = d.transaction("kv"), q = t.objectStore("kv").get(k); q.onsuccess = () => resolve(q.result); t.oncomplete = () => d.close(); }; }), k);
 (async () => {
   await new Promise(r => server.listen(0, "127.0.0.1", r)); const browser = await chromium.launch(), ctx = await browser.newContext();
-  await ctx.addInitScript(() => { if (!localStorage.getItem("wwiki:gemini")) localStorage.setItem("wwiki:gemini", JSON.stringify({ mode: "key", key: "test-key", main: "test-main", quick: "test-quick", preCheck: false })); });
+  await ctx.addInitScript(() => { if (!localStorage.getItem("wwiki:gemini")) localStorage.setItem("wwiki:gemini", JSON.stringify({ mode: "relay", pass: "test-key", main: "test-main", quick: "test-quick", preCheck: false })); });
   await ctx.route("https://fonts.googleapis.com/**", r => r.abort()); await ctx.route("https://fonts.gstatic.com/**", r => r.abort());
   const duel = key("해저 결투"), hero = key("한서진"), rival = key("카이 마루"), stub = key("북해 기지");
   const ent = (title, page, type = "인물") => ({ title, type, summary: title + " 요약", facts: [], mentions: [], page, box: "" });

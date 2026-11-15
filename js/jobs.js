@@ -3,10 +3,7 @@
 const AIJobs = {
   prefix: "wwiki:job:", active: new Set(),
   enabled(provider = "gemini") {
-    if (GS.serverJobs === false || !Sync.acct?.token) return false;
-    const personal = GS.serverKeys === true && GS.serverKeysFor === normRelay(GS.relay || DEFAULT_RELAY);
-    if (provider === "claude") return gRelay() && !!GS.pass;
-    return provider === "openai" ? !!(GS.openaiKey ? personal : gRelay() && GS.pass) : gRelay() ? !!GS.pass : !!(personal && GS.key);
+    return GS.serverJobs !== false && !!Sync.acct?.token && gRelay() && !!GS.pass;
   },
   receipts() {
     const all = [];
@@ -61,8 +58,7 @@ const AIJobs = {
     const provider = type.startsWith("openai.") ? "openai" : type.startsWith("claude.") ? "claude" : "gemini";
     if (!this.enabled(provider)) throw { code: "job_unavailable", serverJob: true, message: "로그인과 서버 AI 작업 설정을 확인해 주세요." };
     const ctx = { base: Sync.base(), owner: Sync.acct.id, token: Sync.acct.token, pass: GS.pass };
-    const key = provider === "openai" ? GS.openaiKey : provider === "claude" ? "" : gRelay() ? "" : GS.key;
-    const id = crypto.randomUUID(), body = { id, type, model, input, ...(opts.jobMeta ? { meta: opts.jobMeta } : {}), ...(key ? { credential: { type: "personal", key } } : {}) };
+    const id = crypto.randomUUID(), body = { id, type, model, input, ...(opts.jobMeta ? { meta: opts.jobMeta } : {}) };
     const receipt = { id, type, model, owner: ctx.owner, base: ctx.base, createdAt: Date.now(), status: "submitting", meta: opts.jobMeta || {} };
     // 접수보다 먼저 저장한다. 저장할 수 없으면 AI를 시작하지 않는다. 키·입력은 이 기록에 넣지 않는다.
     if (!this.save(receipt)) throw { code: "job_storage", serverJob: true, message: "작업 번호를 이 브라우저에 저장하지 못해 시작하지 않았습니다." };

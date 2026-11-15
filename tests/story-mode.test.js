@@ -87,7 +87,7 @@ async function route(r) {
 /* ---------- 도우미 ---------- */
 async function newPage(browser) {
   const ctx = await browser.newContext({ acceptDownloads: true });
-  await ctx.addInitScript(() => { if (!localStorage.getItem("wwiki:gemini")) localStorage.setItem("wwiki:gemini", JSON.stringify({ mode: "key", key: "test-key" })); });
+  await ctx.addInitScript(() => { if (!localStorage.getItem("wwiki:gemini")) localStorage.setItem("wwiki:gemini", JSON.stringify({ mode: "relay", pass: "test-key" })); });
   await ctx.route("**/v1beta/models/**", route);
   const page = await ctx.newPage();
   page.on("pageerror", e => { console.error("페이지 오류:", e); process.exitCode = 1; });
@@ -147,7 +147,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert.strictEqual(await page.locator(".chb").count(), 0);
     let bw = await worldOf(page, "기본 세계");
     assert(bw && !bw.mode && !bw.story, "기본 모드 world에는 story 필드가 없어야 한다");
-    await page.reload(); await page.waitForSelector('#main h1, #main .wcard, #gMode'); await page.click('#side [data-act="home"]'); await page.waitForSelector('.wcard');
+    await page.reload(); await page.waitForSelector('#main h1, #main .wcard, #gPass'); await page.click('#side [data-act="home"]'); await page.waitForSelector('.wcard');
     await page.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(page, "대문 항목");
     const bp = calls.filter(c => c.kind === "page").pop().prompt;
     assert(!bp.includes("열린 질문") && bp.includes("해석이 엇갈린다, 평가가 갈린다, 논쟁을 낳고 있다는 식의 섹션"), "문서 프롬프트가 해석·논쟁 섹션을 막는다");
@@ -158,14 +158,14 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
       assert(ck.prompt.includes("글자 그대로 evidence에 옮길 수 있다") && ck.prompt.includes('"evidence"'), "근거 인용을 요구한다");
       assert.strictEqual(calls.filter(c => c.kind === "tone").every(c => c.model === "gemini-3.5-flash-lite"), true); }
     await page.click('#side [data-act="gset"]');
-    await page.fill("#gCheck", "gemini-test-pro"); await page.selectOption("#gCheckT", "high"); await page.click('[data-act="gset-save"]');
+    await page.evaluate(() => { S.gmodels = [{id:"gemini-test-pro",label:"테스트 모델"}]; renderMain(); }); await page.selectOption("#gCheck", "gemini-test-pro"); await page.locator("#gAdvanced").evaluate(e => e.open = true); await page.selectOption("#gCheckT", "high"); await page.click('[data-act="gset-save"]');
     await page.click('#side [data-act="home"]'); await page.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(page, "대문 항목");
     ctl.checkIssues = [{ claim: "근거 있는 지적", evidence: "확정된 규칙 문장", conflict: "동시에 참일 수 없다", severity: "high" }, { claim: "근거 없는 지적", severity: "high" }];
     await page.click('[data-check]'); await page.waitForSelector("details.memo", { timeout: 15000 }); ctl.checkIssues = null;
     { const ck = calls.filter(c => c.kind === "check").pop(); assert.strictEqual(ck.model, "gemini-test-pro"); assert.strictEqual(ck.think, "high", "설정에서 고른 검사 모델과 생각 깊이를 쓴다"); }
     const memo = await page.locator("details.memo").innerText();
     assert(memo.includes("근거 있는 지적") && memo.includes("근거: 확정된 규칙 문장") && !memo.includes("근거 없는 지적"), "근거를 대지 못한 지적은 버린다");
-    await page.click('#side [data-act="gset"]'); await page.fill("#gCheck", ""); await page.selectOption("#gCheckT", "medium"); await page.click('[data-act="gset-save"]');
+    await page.click('#side [data-act="gset"]'); await page.selectOption("#gCheck", ""); await page.locator("#gAdvanced").evaluate(e => e.open = true); await page.selectOption("#gCheckT", "medium"); await page.click('[data-act="gset-save"]');
     await page.click('#side [data-act="home"]');
     assert(bp.includes("기준 시점에 1학년(신입생)인 인물은 그 전 해들에는 아직 입학 전"), "문서 프롬프트에 학년·연도 역산 규칙");
     assert(bp.includes("인물의 속마음, 생각, 느낌은 위키 작성자가 알 수 있는 방식으로만 쓴다"), "속마음은 증언·기록·행동으로 (기본 모드도)");
@@ -242,7 +242,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
       assert(pp.includes("서로 다른 인물의 성격이나 성향이 겹쳐도 된다") && pp.includes("특징은 기벽이나 집착이 아니어도 된다") && pp.includes("차별화하려고 억지 기벽이나 집착을 붙이지 않는다"), "성격 중복을 허용하고 억지 기벽을 막는다");
       assert(pp.includes("## 다른 인물의 특징 (표현 반복 참고)") && pp.includes("- 이일: 아날로그 무전기 집착") && pp.includes("같은 문구와 일화를 기계적으로 되풀이하거나") && !pp.includes("겹치지 않는") && !pp.includes("같은 소재나 같은 버릇을 쓰지 않고"), "기존 특징은 표현 반복 참고로만 넘긴다"); }
     await page.waitForTimeout(1300);
-    await page.reload(); await page.waitForSelector('#main h1, #main .wcard, #gMode'); await page.click('#side [data-act="home"]'); await page.waitForSelector('.wcard');
+    await page.reload(); await page.waitForSelector('#main h1, #main .wcard, #gPass'); await page.click('#side [data-act="home"]'); await page.waitForSelector('.wcard');
     await page.click('.wcard button.open:has-text("녹둔도 연대기")'); await waitArticle(page, "한서린");
     assert((await sideText(page)).includes("이번 장 탐험 3곳"), "새로고침 후에도 탐험 기록 유지");
     let sw = await worldOf(page, "녹둔도 연대기");
@@ -818,7 +818,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert.strictEqual(audits(), n34 + 2, "작성 직후 두 검사로 구성된 한 번의 자동 검사를 한다");
     assert(calls.filter(c => c.kind === "page").pop().prompt.includes(direction), "작성 방향은 생성 프롬프트에 적용한다");
     assert(!(await page.locator("#main").innerText()).includes(direction) && !(await page.locator("#main").innerText()).includes("작성 방향:"), "결과에는 작성 방향을 노출하지 않는다");
-    await page.reload(); await page.waitForSelector('#main h1, #main .wcard, #gMode'); await page.click('#side [data-act="home"]'); await page.waitForSelector('.wcard');
+    await page.reload(); await page.waitForSelector('#main h1, #main .wcard, #gPass'); await page.click('#side [data-act="home"]'); await page.waitForSelector('.wcard');
     await page.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(page, "대문 항목");
     await page.fill("#q", "방향 문서"); await page.press("#q", "Enter"); await waitArticle(page, "방향 문서");
     assert.strictEqual(audits(), n34 + 2, "새로고침하거나 다시 열어도 자동 재검사하지 않는다");
@@ -845,7 +845,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     ok("최초 검사 실패 뒤에도 자동으로 재시도하지 않고 수동 검사는 유지한다");
 
     /* 36. 자동 검사 설정을 꺼도 뒤에서 검사를 실행하지 않는다 */
-    await page.click('#side [data-act="gset"]'); await page.uncheck("#gPre"); await page.click('[data-act="gset-save"]');
+    await page.click('#side [data-act="gset"]'); await page.locator("#gAdvanced").evaluate(e => e.open = true); await page.uncheck("#gPre"); await page.click('[data-act="gset-save"]');
     assert((await page.locator('label[for="gPre"]').innerText()).includes("끄면 자동 검사하지 않습니다"));
     await page.click('#side [data-act="home"]'); await page.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(page, "대문 항목");
     const n36 = audits();
@@ -856,7 +856,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     ok("자동 검사 설정을 끄면 수동으로 요청할 때만 검사한다");
 
     /* 37. 본명과 코드명이 같은 대상이면 생성 응답으로 기존 문서에 넘긴다 */
-    await page.click('#side [data-act="gset"]'); await page.check("#gPre"); await page.click('[data-act="gset-save"]');
+    await page.click('#side [data-act="gset"]'); await page.locator("#gAdvanced").evaluate(e => e.open = true); await page.check("#gPre"); await page.click('[data-act="gset-save"]');
     await page.click('#side [data-act="home"]'); await page.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(page, "대문 항목");
     ctl.pageOverride["이도현"] = { type: "인물", summary: "코드명 적비로 활동하는 통신원이다.", infobox: [{ label: "성별", value: "남성" }, { label: "본명", value: "이도현" }, { label: "통신 식별", value: "적비" }], sections: [{ heading: "개요", level: 1, body: "이도현은 적비라는 코드명으로 활동하는 통신원이다." }] };
     await page.fill("#q", "이도현"); await page.press("#q", "Enter"); await waitArticle(page, "이도현");
@@ -884,7 +884,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     assert.strictEqual(await page.locator("[data-scompose]").count(), 0, "알려진 별칭은 새 문서 작성 후보로 표시하지 않는다");
     await page.locator(`[data-sk="${canonicalKey}"]`).click(); await waitArticle(page, "이도현");
     assert.strictEqual(count("page"), redirCalls + 1, "별칭 검색과 검색 후보는 기존 문서로 바로 이동한다");
-    await page.reload(); await page.waitForSelector('#main h1, #main .wcard, #gMode'); await page.click('#side [data-act="home"]'); await page.waitForSelector('.wcard'); await page.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(page, "대문 항목");
+    await page.reload(); await page.waitForSelector('#main h1, #main .wcard, #gPass'); await page.click('#side [data-act="home"]'); await page.waitForSelector('.wcard'); await page.click('.wcard button.open:has-text("기본 세계")'); await waitArticle(page, "대문 항목");
     await page.fill("#q", "적비"); await page.press("#q", "Enter"); await waitArticle(page, "이도현");
     assert.strictEqual(count("page"), redirCalls + 1, "넘겨주기는 새로고침 후에도 유지된다");
     ok("본명·코드명은 생성 단계에서 기존 문서로 넘기고 별칭·링크·이미지를 보존한다");

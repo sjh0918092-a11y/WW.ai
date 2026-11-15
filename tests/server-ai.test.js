@@ -22,7 +22,7 @@ const until = async fn => { for (let i = 0; i < 300; i++) { if (await fn()) retu
    if (e.timer || e.executing || e.obj.active || !(e.storage.data.get("jobs") || []).some(j => j.status === "queued")) return;
    e.timer = setTimeout(async () => { e.timer = null; e.executing = true; try { await fireAlarm(e.obj); } finally { e.executing = false; schedule(e); } }, 5);
  };
- const env = { DB: db, GEMINI_KEY: "server-gemini-key", PASSWORDS: "relay-pass", ALLOWED_ORIGINS: origin, AI_JOBS: {
+ const env = { DB: db, GEMINI_KEY: "server-gemini-key", OPENAI_API_KEY: "sk-server-openai", PASSWORDS: "relay-pass", ALLOWED_ORIGINS: origin, AI_JOBS: {
    idFromName: name => name, get: name => {
      if (!entries.has(name)) { const storage = new JobStorage(); entries.set(name, { storage, obj: new AiJobs({ storage }, env) }); }
      const e = entries.get(name);
@@ -109,8 +109,7 @@ const until = async fn => { for (let i = 0; i < 300; i++) { if (await fn()) retu
    assert(await page.evaluate(async () => !!(await Store.getPage("server-test", "new"))));
    pass("검색으로 시작한 실제 문서 작성이 서버 응답을 받아 기존 저장 과정까지 완료된다");
 
-   await page.click('#side [data-act="gset"]'); await page.check("#gServerKeys"); await page.click('[data-act="gset-save"]');
-   assert.equal(await page.evaluate(() => GS.serverKeysFor), "https://relay.test");
+   assert.equal(await page.locator("#gKey, #gOpenAI, #gServerKeys").count(), 0);
    await page.evaluate(() => openWorld("server-test", "person")); await page.waitForSelector(".article h2");
    await page.locator(".portrait-menu summary").click(); await page.click("[data-image-open]");
    await page.selectOption("#imageRatio", "16:9"); await page.selectOption("#imageQuality", "medium");
@@ -121,10 +120,10 @@ const until = async fn => { for (let i = 0; i < 300; i++) { if (await fn()) retu
    await page.evaluate(() => { window.testHidden = false; document.dispatchEvent(new Event("visibilitychange")); });
    await page.waitForSelector(".image-gen .preview"); mode = "ok";
    assert.equal(providerCalls.length, before + 1); call = providerCalls.at(-1);
-   assert(call.url.endsWith("/images/edits")); assert.equal(call.options.headers.Authorization, "Bearer sk-private-openai");
+   assert(call.url.endsWith("/images/edits")); assert.equal(call.options.headers.Authorization, "Bearer sk-server-openai");
    assert.equal(call.options.body.get("quality"), "medium"); assert.equal(call.options.body.get("size"), "1536x864");
    assert.equal(directCalls.length, 0);
-   pass("허용한 개인 OpenAI 키로 참고 이미지·비율·품질을 유지하며 복귀 뒤 미리보기를 받는다");
+   pass("서버 OpenAI 키로 참고 이미지·비율·품질을 유지하며 복귀 뒤 미리보기를 받는다");
 
    await page.click('[data-act="image-discard"]'); mode = "hold"; release = null;
    await page.click('[data-act="image-generate"]'); await until(() => release);
@@ -162,13 +161,11 @@ const until = async fn => { for (let i = 0; i < 300; i++) { if (await fn()) retu
    assert.equal(r, "job_storage");
    pass("작업 번호를 저장할 수 없으면 서버 생성을 시작하지 않는다");
 
-   await page.click('#side [data-act="gset"]'); await page.selectOption("#gMode", "key"); await page.fill("#gKey", "private-gemini-key"); await page.uncheck("#gServerKeys"); await page.click('[data-act="gset-save"]');
-   before = providerCalls.length; await json("check"); assert.equal(providerCalls.length, before); assert.equal(directCalls.length, 1);
-   await page.check("#gServerKeys"); await page.click('[data-act="gset-save"]'); await json("check");
-   assert.equal(providerCalls.at(-1).options.headers["x-goog-api-key"], "private-gemini-key"); assert.equal(await page.inputValue("#gMode"), "key");
-   await page.selectOption("#gMode", "relay"); await page.fill("#gRelay", "https://changed-relay.test"); await page.selectOption("#gMode", "key"); await page.click('[data-act="gset-save"]');
-   assert.equal(await page.evaluate(() => GS.serverKeys), false); assert.equal(await page.evaluate(() => AIJobs.enabled("gemini")), false);
-   pass("개인 키는 허용 전 직접 연결하고, 허용 뒤 같은 키를 쓰며 서버 주소 변경 시 허용을 해제한다");
+   await page.click('#side [data-act="gset"]');
+   assert.equal(await page.locator("#gKey, #gOpenAI, #gServerKeys, #gMode").count(), 0);
+   assert.equal(await page.evaluate(() => GS.mode), "relay");
+   assert.equal(await page.evaluate(() => Object.hasOwn(GS, "openaiKey")), false);
+   pass("브라우저 개인 키를 제거하고 서버 연결만 제공한다");
    assert.deepEqual(errors, []);
    console.log(`\n모두 통과 (${n}개). 유료 API 호출 0회.`);
  } finally {

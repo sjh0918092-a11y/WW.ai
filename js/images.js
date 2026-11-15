@@ -106,23 +106,11 @@ const IMAGE_MODELS = [
 const IMAGE_STYLES = ["세계관 지침 따름", "실사", "애니메이션", "웹툰", "유화", "수채화", "픽셀아트", "3D 렌더"];
 const imageDocStamp = p => JSON.stringify([p.title, p.type, p.summary, p.infobox, p.sections]);
 const openAIImage = model => /^gpt-image-/.test(model || "");
-const imageReady = model => openAIImage(model) ? !!GS.openaiKey || serverImageJob(model) : gReady();
-const imageSetupHint = model => openAIImage(model) ? "OpenAI API 키를 저장하거나, 중계 서버 연결·로그인·서버 AI 실행을 설정해 주세요. API 사용료는 별도입니다." : "AI 연결 설정에서 이미지 생성이 가능한 Gemini API 연결을 저장해 주세요.";
+const imageReady = model => openAIImage(model) ? serverImageJob(model) : gReady();
+const imageSetupHint = model => openAIImage(model) ? "서버 접속 암호를 저장하고 로그인해 주세요. 이미지 생성에는 서버 AI 실행이 필요합니다." : "AI 연결 설정에서 이미지 생성이 가능한 Gemini API 연결을 저장해 주세요.";
 const imageSizeFor = ratio => ({ "1:1": "1024x1024", "3:4": "1152x1536", "4:3": "1536x1152", "9:16": "864x1536", "16:9": "1536x864" })[ratio] || "1024x1024";
 const serverImageJob = model => typeof AIJobs !== "undefined" && AIJobs.enabled(openAIImage(model) ? "openai" : "gemini");
-async function openAIImageFetch(model, prompt, ref, o, signal) {
-  const size = imageSizeFor(o.ratio);
-  const values = { model, prompt, n: 1, size, quality: o.quality || "high", output_format: "png" };
-  let body, endpoint = "generations", headers = { Authorization: "Bearer " + GS.openaiKey };
-  if (ref) {
-    endpoint = "edits"; body = new FormData();
-    for (const [k, v] of Object.entries(values)) body.append(k, String(v));
-    const [meta, data] = ref.split(","), mime = /^data:([^;]+)/.exec(meta)[1];
-    body.append("image[]", new Blob([Uint8Array.from(atob(data), c => c.charCodeAt(0))], { type: mime }), "reference." + mime.split("/")[1]);
-  } else { headers["Content-Type"] = "application/json"; body = JSON.stringify(values); }
-  try { return await fetch("https://api.openai.com/v1/images/" + endpoint, { method: "POST", headers, body, signal }); }
-  catch (e) { if (e?.name === "AbortError") throw { code: "cancelled" }; throw { code: "network", message: "OpenAI에 연결하지 못했습니다. 네트워크 연결을 확인해 주세요." }; }
-}
+
 function imagePrompt(w, p, o) {
   return `위키 문서 「${p.title}」(${p.type})에 넣을 이미지 한 장을 생성한다. 문서에 나온 대상의 외모, 복장, 특징, 시대와 크기 관계를 따른다. 정해지지 않은 외모나 배경은 이 세계관에 맞게 구성한다. 인물이면 해당 인물, 장소면 장소, 물건이면 해당 물건을 중심으로 한다. 그림에 문서 제목이나 설명문을 쓰지 않는다.
 ## 세계관
@@ -159,7 +147,7 @@ async function requestDocImage(w, p, o, signal, customPrompt = "") {
   const m = /^data:(image\/[a-z]+);base64,(.+)$/.exec(ref);
   const parts = [{ text: prompt }, ...(m ? [{ inlineData: { mimeType: m[1], data: m[2] } }] : [])];
   const geminiBody = { contents: [{ role: "user", parts }], generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: o.ratio, ...(model === "gemini-3.1-flash-lite-image" ? {} : { imageSize: "1K" }) } } };
-  const send = () => openAIImage(model) ? openAIImageFetch(model, prompt, ref, o, signal) : gFetch(`/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", ...gAuth() }, body: JSON.stringify(geminiBody), signal });
+  const send = () => gFetch(`/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", ...gAuth() }, body: JSON.stringify(geminiBody), signal });
   const t0 = performance.now();
   try {
     let j;
@@ -168,6 +156,7 @@ async function requestDocImage(w, p, o, signal, customPrompt = "") {
       const jobMeta = await AIRecovery.capture(customPrompt ? "illustration" : "image", w, p.key, o.recoveryMeta || {});
       j = await AIJobs.run(openAIImage(model) ? "openai.image" : "gemini.image", model, input, { signal, onJob: o.onJob, jobMeta });
     } else {
+      if (openAIImage(model)) throw { code: "job_unavailable", message: imageSetupHint(model) };
       const res = await send();   // 공급자에 맞는 API로 한 번만 요청한다.
       if (!res.ok) throw await gError(res, model);
       j = await res.json();

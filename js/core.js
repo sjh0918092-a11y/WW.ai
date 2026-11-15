@@ -1,7 +1,7 @@
 "use strict";
 /* 기본 도구: 버전, 이스케이프, 키 생성, 원안 주사위, 예시·문서 종류·오류 문구 */
 /* 버전: 수정할 때마다 올린다 (형식: 번호 · 날짜). index.html의 ?v= 값도 같은 번호로 함께 올린다 (tests/assets.test.js가 확인) */
-const APP_VERSION = "v7.07 · 2026-11-15";
+const APP_VERSION = "v7.08 · 2026-11-15";
 const $ = (s, r = document) => r.querySelector(s);
 { const v = document.getElementById("appVer"); if (v) { v.textContent = APP_VERSION; v.title = "WorldWiki.ai " + APP_VERSION; } }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -90,9 +90,9 @@ const ERR = {
   local_full: "브라우저 저장 공간이 가득 찼습니다.",
   quota_exceeded: "저장 공간 한도에 도달했습니다. 쓰지 않는 세계관을 삭제해 주세요.",
   timeout: "저장소가 응답하지 않습니다. 잠시 후 다시 열어 주세요.",
-  no_sample: "Gemini 연결 설정이 없습니다. 왼쪽 'AI 연결 설정'에서 API 키나 중계 서버 주소와 접속 암호를 넣어 주세요.",
-  region: "Gemini가 지금 요청이 나간 지역을 지원하지 않습니다. 중계 서버를 쓰는 중이라면 서버 관리자에게 알려 주세요(중계 서버의 실행 지역 설정 필요). 직접 연결 중이라면 VPN을 끄거나 다른 네트워크에서 시도해 주세요.",
-  bad_key: "API 키나 중계 서버 접속 암호가 올바르지 않거나 권한이 없습니다. 'AI 연결 설정'에서 확인해 주세요.",
+  no_sample: "서버 연결 설정이 없습니다. 왼쪽 'AI 연결 설정'에서 접속 암호를 저장해 주세요.",
+  region: "AI 제공자가 서버의 실행 지역을 지원하지 않습니다. 서버 관리자에게 알려 주세요.",
+  bad_key: "접속 암호를 확인해 주세요. 암호가 맞으면 서버 관리자에게 API 키와 사용 권한 확인을 요청해 주세요.",
   model_not_found: "지정한 Gemini 모델을 찾을 수 없습니다. 'AI 연결 설정'에서 모델 이름을 확인해 주세요.",
   network: "Gemini 서버에 연결하지 못했습니다. 인터넷 연결을 확인하고, 파일을 직접 열었다면 로컬 서버(예: python -m http.server)로 열어 보세요."
 };

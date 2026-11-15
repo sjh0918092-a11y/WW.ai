@@ -8,7 +8,7 @@ const read = (p, k) => p.evaluate(k => new Promise(resolve => { const r = indexe
 let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
 (async () => {
   await new Promise(r => server.listen(0, '127.0.0.1', r)); const browser = await chromium.launch(), ctx = await browser.newContext();
-  await ctx.addInitScript(() => { if (!localStorage.getItem('wwiki:gemini')) localStorage.setItem('wwiki:gemini', JSON.stringify({ mode: 'key', key: 'test-key', main: 'test-main', quick: 'test-quick', preCheck: false })); });
+  await ctx.addInitScript(() => { if (!localStorage.getItem('wwiki:gemini')) localStorage.setItem('wwiki:gemini', JSON.stringify({ mode: 'relay', pass: 'test-key', main: 'test-main', quick: 'test-quick', preCheck: false })); });
   await ctx.route('https://fonts.googleapis.com/**', r => r.abort()); await ctx.route('https://fonts.gstatic.com/**', r => r.abort());
   const town = key('항구 도시'), old = key('옛 선장');
   const ent = (title, type, page) => ({ title, type, summary: title + ' 요약', facts: [], mentions: [], page, box: '' });
