@@ -8,6 +8,9 @@ near(C.estimate(gemini,at),4.4325);near(C.estimate(gemini,Date.UTC(2027,0,1)),8.
 assert.equal(C.estimate({model:'unknown',usage:{promptTokenCount:5}},at),null);assert.equal(C.estimate({model:'claude-sonnet-4-5'},at),null);assert.equal(C.estimate({model:'claude-sonnet-4-5',usage:{promptTokenCount:1000}},at),null);
 const r=C.start('world','page');const job={steps:[{slot:'page:1',kind:'page',model:'claude-sonnet-4-5',status:'done',usage:{promptTokenCount:1000,candidatesTokenCount:100}},{slot:'check:1',kind:'check',model:'claude-haiku-4-5',status:'running'}]};
 C.server(r,job);const once=C.content(r);C.server(r,job);assert.equal(C.content(r),once);assert(once.includes('$0.0045'));assert(once.includes('미집계'));
+const cacheRecord={at,finished:true,rows:[{kind:'page',model:'gemini-3.8-flash',usage:{promptTokenCount:28782,candidatesTokenCount:3686,cachedContentTokenCount:10000}}]};
+const cacheHtml=C.content(cacheRecord);assert(cacheHtml.includes('캐시 재사용 10,000 토큰'));assert(cacheHtml.includes('$0.0067 절감'));assert(cacheHtml.includes('합계에 반영됨'));near(C.estimate(cacheRecord.rows[0],at),0.028659);
+assert(C.content({...cacheRecord,rows:[{...cacheRecord.rows[0],usage:{promptTokenCount:1,candidatesTokenCount:1}}]}).includes('확인된 캐시 할인 없음'));
 C.finish(r);assert.equal(r.rows[1].status,'unknown');assert(C.content(r).includes('사용량 집계 중/미제공'));assert(!JSON.stringify(r).includes('prompt"'));
 const world=C.startWorld(), original=world.storageKey;const call=C.beginSession(world,'bible');C.update(call,'gemini-3.8-flash',{promptTokenCount:1000,candidatesTokenCount:200},'done');C.bindWorld(world,'new-world');assert.equal(C.get('new-world','@world'),world);assert(!values.has(original));C.finish(world);assert(C.content(world).includes('세계관 초기 생성 비용'));
 const stale=C.start('world','stale');C.active.clear();assert.equal(C.begin('world','stale','check'),null);

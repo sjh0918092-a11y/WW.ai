@@ -85,17 +85,19 @@ const DocumentCost = {
   },
   money(n) { return n === null ? "산정 대기" : n === 0 ? "$0.000000" : "$" + n.toFixed(n<.001?6:4); },
   content(r) {
-    let total=0, known=0, input=0, output=0, thought=0, missing=0;
+    let total=0, known=0, input=0, output=0, thought=0, missing=0, cached=0, saved=0;
     const rows=r.rows.map(row=>{
       const u=this.counts(row.usage), cost=this.estimate(row,r.at);
       if (u) {input+=u.promptTokenCount; output+=u.candidatesTokenCount; thought+=u.thoughtsTokenCount;}
+      const read=u?Math.min(u.promptTokenCount,u.cachedContentTokenCount):0, rate=this.rate(row.model,r.at);
+      cached+=read;if(rate)saved+=read*(rate[0]-rate[2])/1e6;
       if(cost!==null){total+=cost;known++;} else missing++;
       const label=typeof KIND!=="undefined" ? KIND[row.kind]||row.kind : row.kind;
       return `<li><span>${esc(label)} · ${esc(row.model||"모델 확인 중")}${u?`<br><small class="note">입력 ${u.promptTokenCount.toLocaleString()} · 출력·생각 ${(u.candidatesTokenCount+u.thoughtsTokenCount).toLocaleString()} 토큰</small>`:""}</span><span>${cost===null ? u ? u.complete ? "요금 미등록" : "사용량 일부 미제공" : "사용량 집계 중/미제공" : this.money(cost)}</span></li>`;
     }).join("");
     const amount=known?this.money(total):"산정 대기";
     const partial=missing || !r.finished;
-    return `<summary>${r.category==="world"?"세계관 초기 생성 비용":"문서 생성 비용"} · ${amount}${partial&&known?" + 미집계":""} <span class="note">${r.finished?"완료된 요청 기준":"집계 중"}</span></summary><div class="cost-body"><p>${r.rows.some(row=>this.counts(row.usage))?`확인된 입력 ${input.toLocaleString()} · 출력·생각 ${(output+thought).toLocaleString()} 토큰`:"확인된 사용량이 아직 없습니다."}</p>${rows?`<ul>${rows}</ul>`:"<p>제공자 사용량을 기다리는 중입니다.</p>"}<p class="note">${r.category==="world"?"기본 설정·초기 연표·날짜 보완 집계 · 문서 생성 비용 별도":"문서 작성·검사·수정 집계 · 이미지 비용 별도"} · API 사용량 수신 시 갱신 · 유료 표준 단가의 USD 예상액입니다. 미수신·실패 요청, 세금·할인·저장 비용은 실제 청구와 다를 수 있습니다. Claude가 생각 토큰을 따로 보고하지 않으면 출력에 포함됩니다.</p><p class="note">단가 확인 2026-11-15 · <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener noreferrer">Gemini 요금</a> · <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noopener noreferrer">Claude 요금</a></p></div>`;
+    return `<summary>${r.category==="world"?"세계관 초기 생성 비용":"문서 생성 비용"} · ${amount}${partial&&known?" + 미집계":""} <span class="note">${r.finished?"완료된 요청 기준":"집계 중"}</span></summary><div class="cost-body"><p>${r.rows.some(row=>this.counts(row.usage))?`확인된 입력 ${input.toLocaleString()} · 출력·생각 ${(output+thought).toLocaleString()} 토큰`:"확인된 사용량이 아직 없습니다."}</p><p class="note">캐시 재사용 ${cached.toLocaleString()} 토큰${saved?` · 일반 입력 요금 대비 ${this.money(saved)} 절감 (합계에 반영됨)`:" · 확인된 캐시 할인 없음"}</p>${rows?`<ul>${rows}</ul>`:"<p>제공자 사용량을 기다리는 중입니다.</p>"}<p class="note">${r.category==="world"?"기본 설정·초기 연표·날짜 보완 집계 · 문서 생성 비용 별도":"문서 작성·검사·수정 집계 · 이미지 비용 별도"} · API 사용량 수신 시 갱신 · 유료 표준 단가의 USD 예상액입니다. 미수신·실패 요청, 세금·할인·저장 비용은 실제 청구와 다를 수 있습니다. Claude가 생각 토큰을 따로 보고하지 않으면 출력에 포함됩니다.</p><p class="note">단가 확인 2026-11-15 · <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener noreferrer">Gemini 요금</a> · <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noopener noreferrer">Claude 요금</a></p></div>`;
   },
   mount(root,r,id) {
     let panel=document.getElementById(id);
