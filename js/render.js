@@ -85,6 +85,7 @@ function renderSide() {
     </ul></section>
     <section class="stat"><h4>문서 현황</h4><span>작성된 문서 <em>${done}</em></span><span>미작성 항목 <em>${ents.length - done}</em></span><span>연표 사건 <em>${w.timeline.length}</em></span></section>
     ${genQueueHtml(w)}
+    ${recentGenHtml(w)}
     <section><h4>도구</h4><ul><li><button type="button" data-act="gset" class="${S.view.name === "gset" ? "cur" : ""}">AI 연결 설정${gReady() ? "" : " ⚠"}</button></li>${jobTool()}<li><button type="button" data-act="log" class="${S.view.name === "log" ? "cur" : ""}">로그 보기 (${LOG.length})</button></li></ul></section>
     ${S.syncing ? `<section><h4>장 반영 중</h4><div class="genpill"><span class="dot"></span><button type="button" class="btn" data-k="${S.syncing}" style="padding:2px 8px">${esc(w.entities[S.syncing]?.title || "")}</button></div></section>` : ""}
     ${rec.length ? `<section class="rec"><h4>최근 본 문서</h4><ul>${rec.map(k => `<li><button type="button" data-k="${k}" class="${k === cur ? "cur" : ""}" ${isStory(w) && missingChs(w, k).length ? `title="이번 장의 변화가 아직 반영되지 않았습니다. 열면 반영합니다"` : ""}>${esc(w.entities[k].title)}${isStory(w) && missingChs(w, k).length ? " •" : ""}</button></li>`).join("")}</ul></section>` : ""}`;
@@ -97,6 +98,13 @@ function genQueueHtml(w) {
   const cur = S.gen ? `<li class="genpill"><span class="dot"></span><span class="gq-st">작성 중</span><button type="button" class="btn gq-t" data-k="${S.gen.key}">${esc(S.gen.title)}</button><button type="button" class="btn gq-x" data-act="stop" title="${checking ? "검사를 건너뛰고 지금까지 쓴 문서를 보여 줍니다" : "이 문서 작성을 멈춥니다"}">${checking ? "검사 건너뛰기" : "취소"}</button></li>` : "";
   const wait = q.map((x, i) => `<li class="genpill"><span class="gq-n">${i + 1}</span><span class="gq-st">대기</span><button type="button" class="btn gq-t" data-k="${x.key}">${esc(w.entities[x.key].title)}</button><button type="button" class="btn gq-x" data-unq="${x.key}" title="대기열에서 뺍니다">취소</button></li>`).join("");
   return `<section class="genq"><h4>작성 대기열${q.length ? ` · 대기 ${q.length}` : ""}</h4><ul>${cur}${wait}</ul></section>`;
+}
+/* 최근 생성: 작성(다시 쓰기 포함) 시각이 최근인 문서 */
+function recentGenHtml(w) {
+  const ks = Object.keys(S.pages).filter(k => w.entities[k] && S.pages[k]?.createdAt).sort((a, b) => S.pages[b].createdAt - S.pages[a].createdAt).slice(0, 6);
+  if (!ks.length) return "";
+  const cur = S.view.name === "article" ? S.view.key : null;
+  return `<section class="genr"><h4>최근 생성</h4><ul>${ks.map(k => `<li><button type="button" class="gq-t${k === cur ? " cur" : ""}" data-k="${k}" title="${esc(fmtDate(S.pages[k].createdAt))}">${esc(w.entities[k].title)}</button></li>`).join("")}</ul></section>`;
 }
 const storeLabel = () => Sync.acct ? `서버에 저장 (${Sync.acct.id}${Sync.pending() ? ` · 올릴 변경 ${Sync.pending()}건` : ""}) + 이 브라우저` : ({ idb: "이 브라우저 IndexedDB (다른 기기와 공유되지 않음)", local: "이 브라우저 localStorage (용량 약 5MB)", memory: "임시 (새로고침하면 사라짐)" }[Store.mode]);
 
