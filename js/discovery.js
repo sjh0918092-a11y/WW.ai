@@ -420,6 +420,7 @@ async function discoverWorld(direction = "") {
     if (S.world === w && S.discovery === v) { S.genErr = null; S.view = { name: "discovery" }; renderAll(); }
   } finally {
     v.busy = false;
+    drainGenQ();   // 탐색 중에 쌓인 작성 대기열을 이어서 처리한다
     // 완성된 문서는 discovery가 끝나기 전에 그려지므로(이미지·편집 버튼이 잠긴 채) 끝난 뒤 다시 그린다
     if (S.discovery === v) { renderTop(); if (S.world === w && (S.view.name === "discovery" || (S.view.name === "article" && S.view.key === v.target))) renderMain(); }
   }

@@ -3,7 +3,7 @@
 /* ---------- state ---------- */
 const S = {
   ready: false, worlds: [], world: null, pages: {}, view: { name: "home" }, recent: [],
-  gen: null, genErr: null, checking: null, sample: null, sampleReady: false,
+  gen: null, genQ: [], genErr: null, checking: null, sample: null, sampleReady: false,
   creating: false, createErr: null, seed: "", seedTab: "own", ownSeed: "", dice: null, whatIfs: null, first: "", guideIn: "",
   discovery: null, worldExports: Object.create(null), confirmDel: null, confirmRewrite: null, canonFilter: "all", focusEnt: null, nf: new Set(),
   edit: null, refreshing: null, confirmDelPage: null, confirmMerge: null, compose: null, portraitJob: null, imageGen: null, proseGen: null,

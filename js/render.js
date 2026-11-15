@@ -84,10 +84,19 @@ function renderSide() {
       <li><button type="button" data-act="home">다른 세계관</button></li>
     </ul></section>
     <section class="stat"><h4>문서 현황</h4><span>작성된 문서 <em>${done}</em></span><span>미작성 항목 <em>${ents.length - done}</em></span><span>연표 사건 <em>${w.timeline.length}</em></span></section>
-    ${S.gen ? `<section><h4>작성 중</h4><div class="genpill"><span class="dot"></span><button type="button" class="btn" data-k="${S.gen.key}" style="padding:2px 8px">${esc(S.gen.title)}</button></div></section>` : ""}
+    ${genQueueHtml(w)}
     <section><h4>도구</h4><ul><li><button type="button" data-act="gset" class="${S.view.name === "gset" ? "cur" : ""}">AI 연결 설정${gReady() ? "" : " ⚠"}</button></li>${jobTool()}<li><button type="button" data-act="log" class="${S.view.name === "log" ? "cur" : ""}">로그 보기 (${LOG.length})</button></li></ul></section>
     ${S.syncing ? `<section><h4>장 반영 중</h4><div class="genpill"><span class="dot"></span><button type="button" class="btn" data-k="${S.syncing}" style="padding:2px 8px">${esc(w.entities[S.syncing]?.title || "")}</button></div></section>` : ""}
     ${rec.length ? `<section class="rec"><h4>최근 본 문서</h4><ul>${rec.map(k => `<li><button type="button" data-k="${k}" class="${k === cur ? "cur" : ""}" ${isStory(w) && missingChs(w, k).length ? `title="이번 장의 변화가 아직 반영되지 않았습니다. 열면 반영합니다"` : ""}>${esc(w.entities[k].title)}${isStory(w) && missingChs(w, k).length ? " •" : ""}</button></li>`).join("")}</ul></section>` : ""}`;
+}
+/* 작성 대기열: 지금 작성 중인 문서와 기다리는 문서. 작성 중인 문서는 검사·수정 단계면 검사를 건너뛰고, 그 전이면 작성을 멈춘다 */
+function genQueueHtml(w) {
+  const q = S.genQ.filter(x => x.wid === w.id && w.entities[x.key]);
+  if (!S.gen && !q.length) return "";
+  const checking = S.gen && !S.gen.serverPipeline && !!S.gen.phase;   // 문서 화면의 중단 버튼과 같은 기준: 검사 단계에서 멈추면 쓴 문서를 그대로 보여 준다
+  const cur = S.gen ? `<li class="genpill"><span class="dot"></span><span class="gq-st">작성 중</span><button type="button" class="btn gq-t" data-k="${S.gen.key}">${esc(S.gen.title)}</button><button type="button" class="btn gq-x" data-act="stop" title="${checking ? "검사를 건너뛰고 지금까지 쓴 문서를 보여 줍니다" : "이 문서 작성을 멈춥니다"}">${checking ? "검사 건너뛰기" : "취소"}</button></li>` : "";
+  const wait = q.map((x, i) => `<li class="genpill"><span class="gq-n">${i + 1}</span><span class="gq-st">대기</span><button type="button" class="btn gq-t" data-k="${x.key}">${esc(w.entities[x.key].title)}</button><button type="button" class="btn gq-x" data-unq="${x.key}" title="대기열에서 뺍니다">취소</button></li>`).join("");
+  return `<section class="genq"><h4>작성 대기열${q.length ? ` · 대기 ${q.length}` : ""}</h4><ul>${cur}${wait}</ul></section>`;
 }
 const storeLabel = () => Sync.acct ? `서버에 저장 (${Sync.acct.id}${Sync.pending() ? ` · 올릴 변경 ${Sync.pending()}건` : ""}) + 이 브라우저` : ({ idb: "이 브라우저 IndexedDB (다른 기기와 공유되지 않음)", local: "이 브라우저 localStorage (용량 약 5MB)", memory: "임시 (새로고침하면 사라짐)" }[Store.mode]);
 
@@ -283,11 +292,11 @@ function articleHtml(k) {
       <div style="margin-top:14px"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div></div>`;
   }
   if (!p) {
-    const er = S.genErr && S.genErr.key === k ? S.genErr : null;
+    const er = S.genErr && S.genErr.key === k ? S.genErr : null, qi = S.genQ.findIndex(x => x.key === k);
     return `<div class="sheet">${crumb}<h1 class="t">${esc(e.title)}</h1>
-      ${er ? `<div class="banner warn">${esc(er.msg)}</div>` : `<p class="note">아직 작성되지 않은 문서입니다.</p>`}
+      ${er ? `<div class="banner warn">${esc(er.msg)}</div>` : qi >= 0 ? `<div class="banner ok">작성 대기열 ${qi + 1}번째입니다. 「${esc(S.gen?.title || "")}」 문서가 끝나면 차례로 작성합니다.</div>` : `<p class="note">아직 작성되지 않은 문서입니다.</p>`}
       ${promiseHtml(w, e, "이미 확정된 내용")}
-      <div class="tools"><button type="button" class="btn pri" data-gen="${k}" ${S.gen || !S.sample ? "disabled" : ""}>이 문서 작성하기</button><button type="button" class="btn" data-compose="${k}">방향을 정해 작성</button></div></div>`;
+      <div class="tools">${qi >= 0 ? `<button type="button" class="btn" data-unq="${k}">대기 취소</button>` : `<button type="button" class="btn pri" data-gen="${k}" ${S.gen || !S.sample ? "disabled" : ""}>이 문서 작성하기</button>`}<button type="button" class="btn" data-compose="${k}">방향을 정해 작성</button></div></div>`;
   }
   const fns = [];
   const box = p.infobox?.length || p.type === "인물" || portraitSrc(p) ? `<aside class="infobox"><div class="ih">${esc(p.title)}</div>${portraitHtml(p)}<div class="ity">${esc(p.type)}</div><table>${(p.infobox || []).map((r, i) => `<tr><th>${esc(r.label)}</th><td class="secb" data-ib="${i}">${blocks(r.value, fns).replace(/^<p>|<\/p>$/g, "")}</td></tr>`).join("")}</table></aside>` : "";

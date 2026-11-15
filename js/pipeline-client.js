@@ -46,10 +46,10 @@ const DocumentPipeline = {
     await this.receive(result,w,ctx); await AIRecovery.handled(id);
     return result.pipeline;
   },
-  async generate(k,rewrite,direction,novel,angle) {
+  async generate(k,rewrite,direction,novel,angle,opts = {}) {
     const w = S.world, e = w.entities[k], ctl = new AbortController();
     S.gen = {key:k,wid:w.id,title:e.title,raw:"",t0:performance.now(),ctl,rewrite:!!rewrite,direction:direction || "",phase:"generate",serverPipeline:true};
-    S.genErr = null; S.confirmRewrite = null; S.view = {name:"article",key:k}; renderAll();
+    S.genErr = null; S.confirmRewrite = null; if (!opts.queued) S.view = {name:"article",key:k}; renderAll();
     try {
       const r = await this.request("generate",k,{rewrite,direction,novel,angle,ctl});
       S.gen = null;
@@ -57,13 +57,15 @@ const DocumentPipeline = {
         if (r.notFound) S.view = {name:"notfound",title:e.title}; else S.view.key = r.targetKey;
       }
       if (S.world === w) { maybeAutoAngles(w); if (!novel) maybeRefillAngles(w); }
-      renderAll(); toast(r.fixed ? `서버에서 ${r.fixed}곳을 고쳐 문서를 저장했습니다.` : "서버에서 문서를 완성해 저장했습니다.");
+      renderAll(); toast(r.fixed ? `서버에서 「${e.title}」 문서의 ${r.fixed}곳을 고쳐 저장했습니다.` : `서버에서 「${e.title}」 문서를 완성해 저장했습니다.`);
+      drainGenQ();
       return {sceneUsed:r.sceneUsed,angleRecorded:r.angleRecorded};
     } catch (err) {
       S.gen = null;
       if (novel) throw err;
       S.genErr = {key:k,msg:errMsg(err),guide:direction || "",cancelled:err?.code === "cancelled"};
-      renderAll(); toast(err?.message || errMsg(err));
+      renderAll(); toast(opts.queued ? `「${e.title}」 문서를 만들지 못했습니다. ${err?.message || errMsg(err)}` : err?.message || errMsg(err));
+      drainGenQ();
     }
   },
   async check(k) {

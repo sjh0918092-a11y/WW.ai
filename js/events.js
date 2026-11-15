@@ -58,6 +58,7 @@ document.addEventListener("click", ev => {
     clearTimeout(lp.clickT); lp.clickT = setTimeout(() => { lp.clickT = null; openEntity(k); }, 260);
     return;
   }
+  if (d.unq) { unqueueGen(d.unq); return; }
   if (el.matches("a.wl") || (el.tagName === "BUTTON" && d.k)) { ev.preventDefault(); const w = S.world; if (!w) return; let k = d.k; if (!w.entities[k] && d.t) w.entities[k] = newEntity(d.t, "", ""); openEntity(k); return; }
   if (d.fn) { ev.preventDefault(); const li = document.getElementById("fn-" + d.fn); if (li) { li.scrollIntoView({ block: "center", behavior: "smooth" }); li.classList.add("flash"); setTimeout(() => li.classList.remove("flash"), 1600); } return; }
   if (d.sec) { document.getElementById("s-" + d.sec)?.scrollIntoView({ behavior: "smooth" }); return; }
