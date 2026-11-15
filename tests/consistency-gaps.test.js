@@ -247,21 +247,29 @@ test('기존 중복은 세계를 열 때 한 번 정리하고 원안·직접 수
     await c.openWorld(w.id); assert.equal(w.timeline.length, 2); assert.equal(saves, 1);
   }
 });
-test('새 문서는 역방향 링크의 원문을 읽고, 검사는 초안이 가리키는 문서 전문과 링크의 양쪽 이름을 읽는다', () => {
+test('집필에는 확정 사실과 언급을 주고, 설정 대조에서는 양방향 연결 문서의 전문을 읽는다', () => {
   const city = c.keyOf('유리 도시'), river = c.keyOf('은빛 강'), port = c.keyOf('검은 항구'), far = c.keyOf('먼 섬');
   const pages = {
     [river]: doc('은빛 강', '첫 절에는 관문이 있다.', { createdAt: 1, links: [city] }),
-    [port]: doc('검은 항구', '폐문은 다음 날 이루어졌다.', { createdAt: 1 }),
+    [port]: doc('검은 항구', '검은 항구는 강어귀에 있다.', { createdAt: 1 }),
     [far]: doc('먼 섬', '관련 없는 섬의 원문이다.', { createdAt: 1 }),
   };
   pages[river].sections.push({ heading: '두 번째 절', body: '앞 절의 기록은 우기에만 적용된다.' });
+  pages[port].sections.push({ heading: '폐문', body: '폐문은 다음 날 이루어졌다.' });
   const w = world(pages);
   w.entities[city] = c.newEntity('유리 도시', '지명', '');
-  const generation = c.pagePrompt(w, city);
-  assert(generation.includes('앞 절의 기록은 우기에만 적용된다.'));
-  assert(!generation.split('## 연결된 문서 원문')[1].split('## 이미 존재하는 다른 항목')[0].includes(pages[far].sections[0].body));
+  w.entities[city].facts.push({ t: '유리 도시는 둑 안쪽에 있다.', src: river });
+  w.entities[city].mentions.push({ text: '유리 도시는 은빛 강을 끼고 있다.', from: river });
+  const generation = c.pagePrompt(w, city, null, '검은 항구로 가는 길을 다룬다.');
+  assert(generation.includes('유리 도시는 둑 안쪽에 있다.'));
+  assert(generation.includes('유리 도시는 은빛 강을 끼고 있다.'));
+  assert(!generation.includes('## 연결된 문서 원문'));
+  assert(!generation.includes('앞 절의 기록은 우기에만 적용된다.'));
+  assert(!generation.includes('폐문은 다음 날 이루어졌다.'));
   c.S.pages[city] = doc('유리 도시', '[[검은 항구|밤의 관문]]에서 출발했다.', { links: [port] });
   const check = c.checkPrompt(w, city, []);
+  assert(check.includes('첫 절에는 관문이 있다.'));
+  assert(check.includes('앞 절의 기록은 우기에만 적용된다.'));
   assert(check.includes('폐문은 다음 날 이루어졌다.'));
   assert(check.includes('[[검은 항구|밤의 관문]]'));
   assert(!check.includes(pages[far].sections[0].body));

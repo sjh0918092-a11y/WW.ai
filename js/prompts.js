@@ -228,7 +228,7 @@ ${CAT_AXIS_RULES}
 ${have.length ? `이 세계관에 이미 있는 분류(축별, 괄호는 붙은 문서 수, 많이 쓰인 순):
 ${have.map(([ax, t]) => `- ${ax}: ${t}`).join("\n")}` : "이 세계관에는 아직 분류가 없다. 다른 문서에도 두루 쓰일 넓은 분류로 만든다."}`;
 }
-/* 링크로 이어진 문서는 문맥을 보존하도록 전문을 사용한다. 큰 묶음만 문서 경계에서 나눈다. */
+/* 설정 대조에서 링크로 이어진 문서의 전문을 읽는다. 큰 묶음만 문서 경계에서 나눈다. */
 const SOURCE_TEXT_BUDGET = 48000;
 function sourceBatches(w, key, focus, outgoing = [], eligible = () => true) {
   const links = new Set(outgoing);
@@ -275,8 +275,6 @@ function pagePrompt(w, key, rewriteDir = null, guide = "", angle = null, angleMo
   const ty = TYPES.includes(e.type) ? e.type : "";
   const staged = !!w.stage && !isStory(w);
   const rel = related(w, key);
-  const focus = [e.title, e.summary, guide, rewriteDir, ...e.facts.filter(live).map(f => f.t), ...e.mentions.filter(live).map(m => m.text)].filter(Boolean).join("\n");
-  const sources = sourceBlock(sourceBatches(w, key, focus, S.pages[key]?.links)[0]);
   const relText = rel.map(k => entityBrief(w, k, null)).join("\n\n") || "(아직 없음)";
   const idx = Object.entries(w.entities).filter(([k]) => k !== key && !rel.includes(k))
     .sort((a, b) => (b[1].page ? 1 : 0) - (a[1].page ? 1 : 0)).slice(0, 60)
@@ -325,9 +323,7 @@ ${qi}
 ${staged ? "아래는 모순을 피하기 위한 참고 자료다. 이 항목이 새로 더하는 사실과 장면을 중심으로 쓰고, 이미 기록된 경위는 연결에 필요한 만큼만 쓴다." : "아래는 모순을 피하기 위한 참고 자료다. 여기 있는 항목과 사실을 본문에 모두 언급할 필요는 없고, 같은 사고, 같은 절차, 같은 규정을 이 문서에서 되풀이하지 않는다. 다만 세계의 큰 사건을 이 항목의 자리에서 보여 주는 것은 되풀이가 아니다."}
 ${relText}
 
-${sources}${sources ? `원문과 같은 대상이나 사건을 다룰 때는 그 대상의 식별 정보, 해당 시점의 상태, 사건의 날짜·장소·당사자·원인·결과를 맞춘다. 같은 명칭을 공유해도 대상이 다를 수 있고, 같은 사건에서도 전체와 일부의 수치는 구분한다. 인과관계나 직접 경험을 서술할 때는 시간 순서와 당사자의 현장 참석 여부를 확인한다. 원문끼리 값이 엇갈리고 사용자 확정 설정으로 결정할 수 없으면, 이 문서에서는 그 값을 새로 단정하지 않는다.
-
-` : ""}## 이미 존재하는 다른 항목 (링크할 때 제목을 정확히 그대로 쓴다)
+## 이미 존재하는 다른 항목 (링크할 때 제목을 정확히 그대로 쓴다)
 이 목록은 이름이 겹치거나 엇갈리지 않게 하려는 색인이다. 목록에 있다는 이유로 본문에 끌어오지 않는다. 각 줄의 "—" 앞까지가 제목이며, 뒤의 유형과 정의는 제목이 아니다. 제목에 "(인물)" 같은 유형을 붙이지 않는다.
 ${idx}
 

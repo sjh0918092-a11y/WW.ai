@@ -67,7 +67,7 @@ try {
  }
  pass('무대 세계관 연표 중복은 기존 검사 응답으로 저장하고 검사 끄기 설정에서도 호출을 늘리지 않는다');
 
- e=await reset({rewrite:true});behavior='fix';await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert.equal(r.result.pipeline.fixed,1);assert(storedPage(B).sections[0].body.includes('붉은'));assert.deepEqual(storedPage(B).portrait,{src:'original-image'});assert.equal(storedPage(B).shortStories[0].body,'소중한 원문');assert(calls.some(c=>c.kind==='analyze'));const savedWorld=JSON.parse(db.sqlite.prepare('SELECT data FROM worlds WHERE uid=?').get('alice').data);assert(savedWorld.entities[B].facts.some(f=>f.t.includes('붉은')));pass('재작성·자동 수정 뒤 확정 사실까지 마치고, 원래 이미지·단편을 보존한다');
+ e=await reset({rewrite:true});behavior='fix';await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert.equal(r.result.pipeline.fixed,1);assert(storedPage(B).sections[0].body.includes('붉은'));assert.deepEqual(storedPage(B).portrait,{src:'original-image'});assert.equal(storedPage(B).shortStories[0].body,'소중한 원문');assert.deepEqual(calls.map(c=>c.kind),['page','check','read','fix','analyze']);const savedWorld=JSON.parse(db.sqlite.prepare('SELECT data FROM worlds WHERE uid=?').get('alice').data);assert(savedWorld.entities[B].facts.some(f=>f.t.includes('붉은')));pass('자동 수정 뒤 AI 검사를 반복하지 않고 확정 사실을 정리하며 원래 이미지·단편을 보존한다');
 
  for(const mutation of ['edit','pageEdit','delete','aba']){
   e=await reset();await request(e,'',e.body);await fireAlarm(e.obj);assert.equal(calls.length,1);

@@ -796,15 +796,18 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
     S.pages[k] = np;
     np.check = { at: Date.now(), issues, auto: true, numV: numStamp(w) };
     Object.assign(res, { page: np, keep: issues, patched: true });
-    g.phase = "check"; show();
-    const verified = await runChecks(w, k, { signal: g.ctl.signal }, np.title + " · 자동 수정 확인");
-    if (S.world !== w || S.pages[k] !== np) return res;
-    const text = pageTexts(np).map(stripMarks).join("\n");
-    const keep = verified.filter(i => i.target || text.includes(stripMarks(i.claim)));
-    const fixed = [...fixedMemo].filter(n => {
-      const original = high[n - 1];
-      return original && !text.includes(stripMarks(original.claim)) && !keep.some(i => i.conflict === original.conflict);
-    }).length;
+    // 수정 뒤에는 로컬 대조만 갱신한다. 실제로 바뀐 원문에 해당하는 메모만 닫는다.
+    const before = docForCheck(page), after = docForCheck(np);
+    const beforeRaw = docForCheck(page, t => t), afterRaw = docForCheck(np, t => t);
+    const verified = detIssues(w, k);
+    const edited = new Set([...fixedMemo].map(n => high[n - 1]).filter(i => {
+      const links = i.claim.includes("[[");
+      const claim = links ? i.claim : stripMarks(i.claim);
+      return claim && (links ? beforeRaw : before).includes(claim) && !(links ? afterRaw : after).includes(claim)
+        && !verified.some(x => x.conflict === i.conflict);
+    }));
+    const keep = mergeIssues([...verified, ...issues.filter(i => !edited.has(i) && !isNumIssue(i))]);
+    const fixed = edited.size;
     np.check = { ...np.check, issues: keep, numV: numStamp(w) };
     if (fixed) np.autoFixed = { at: Date.now(), n: fixed };
     saveRouted(w, routeAutoConflicts(w, k, keep));
