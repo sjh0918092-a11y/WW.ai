@@ -20,8 +20,10 @@ const world=()=>({kind:'world',id:'test-world',title:'항구',seed:'항구 세�
 const page=()=>({key:A,title:'항구',type:'지명',summary:'항구 도시',infobox:[],sections:[{heading:'개요',level:1,body:'거대한 항구이다.'}],links:[],savedAt:100,createdAt:1});
 let calls=[],behavior='ok',gate,release,n=0;
 const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
+// 두 검사는 병렬로 준비하므로 둘 사이의 접수 순서만 정규화한다.
+const orderedChecks=rows=>{const out=[...rows];for(let i=0;i<out.length-1;i++)if(out[i].kind==='read'&&out[i+1].kind==='check')[out[i],out[i+1]]=[out[i+1],out[i]];return out;};
 const originalFetch=globalThis.fetch;
-const response=(kind)=> kind==='page'?{title:'선장',type:'인물',summary:'해양 탐험가',infobox:[{label:'성별',value:'남성'}],sections:[{heading:'개요',level:1,body:'선장은 푸른 바다를 항해한다.'}],categories:['소속:항구','유형:인물'],facts:[],newEntities:[],relations:[],timeline:behavior==='dedupe'?[{year:'1900',month:1,day:1,about:'선장',event:'선장이 참여한 항구 항해법 공표가 이루어지다.'}]:[]}:kind==='check'&&behavior==='dedupe'?{issues:[],timelineSame:[1]}:kind==='fix'?{edits:[{field:'body',old:'푸른',new:'붉은',memo:1}]}:kind==='analyze'?{facts:[{about:'선장',fact:'붉은 바다를 항해한다.'}],relations:[],timeline:[]}:kind==='check'&&['fix','timeout-fix'].includes(behavior)?{issues:[{claim:'푸른 바다를 항해한다.',evidence:'세계의 바다는 붉다.',conflict:'붉은 바다여야 한다.',severity:'high'}]}:{issues:[]};
+const response=(kind)=> kind==='page'?{title:'선장',type:'인물',summary:'해양 탐험가',infobox:[{label:'성별',value:'남성'}],sections:[{heading:'개요',level:1,body:'선장은 푸른 바다를 항해한다.'}],categories:['소속:항구','유형:인물'],facts:[],newEntities:[],relations:[],timeline:behavior==='dedupe'?[{year:'1900',month:1,day:1,about:'선장',event:'선장이 참여한 항구 항해법 공표가 이루어지다.'}]:[]}:kind==='check'&&behavior==='dedupe'?{issues:[],timelineSame:[1]}:kind==='fix'?{edits:[{field:'body',old:'푸른',new:'붉은',memo:1}]}:kind==='factSync'?{facts:[{about:'선장',fact:'붉은 바다를 항해한다.'}],relations:[],timeline:[]}:kind==='check'&&['fix','timeout-fix'].includes(behavior)?{issues:[{claim:'푸른 바다를 항해한다.',evidence:'세계의 바다는 붉다.',conflict:'붉은 바다여야 한다.',severity:'high'}]}:{issues:[]};
 // 스텝 종류는 큐의 공개 상태로 확인한다. 프롬프트 문구 변경에 테스트가 의존하지 않는다.
 let activeEntry;
 globalThis.fetch=async(url,opts)=>{
@@ -59,7 +61,7 @@ const storedPage=k=>JSON.parse(db.sqlite.prepare('SELECT data FROM pages WHERE u
 try {
  let e=await reset();let r=await request(e,'',e.body);assert.equal(r.status,202);await request(e,'',e.body);r=await run(e);
  assert(r.job.steps.some(s=>s.usage?.promptTokenCount===1000));assert(r.result.pipeline.steps.some(s=>s.usage?.thoughtsTokenCount===20));assert(!JSON.stringify(r.job.steps).includes('private-server-key'));
- assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert(r.result.pipeline.saved);assert(r.result.pipeline.checked);assert(storedPage(B)?.check);assert.deepEqual(calls.map(c=>c.kind),['page','check','read']);assert(calls[0].url.includes('custom-main'));assert(calls[1].url.includes('custom-check'));assert.equal(calls[1].body.generationConfig.thinkingConfig.thinkingLevel,'high');
+ assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert(r.result.pipeline.saved);assert(r.result.pipeline.checked);assert(storedPage(B)?.check);assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page','check','read']);assert(calls[0].url.includes('custom-main'));assert(calls[1].url.includes('custom-check'));assert.equal(calls[1].body.generationConfig.thinkingConfig.thinkingLevel,'high');
  assert(!JSON.stringify(r).includes('private-server-key'));assert(![...e.storage.data.keys()].some(k=>/^(key:|in:|pipe:)/.test(k)));pass('매 alarm마다 서버 객체를 재생성해도 생성·두 검사·D1 저장까지 완료하며 완료된 호출은 재실행하지 않는다');
 
  for(const preCheck of [true,false]) {
@@ -68,13 +70,19 @@ try {
   e.w.timeline=[{year:'1900',month:1,day:1,event:'항구 항해법이 공표되다.',src:'seed',k:A}];
   db.sqlite.prepare('UPDATE worlds SET data=? WHERE uid=?').run(JSON.stringify(e.w),'alice');e.input.worldHash=await digest(e.w);
   await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));
-  assert.deepEqual(calls.map(c=>c.kind),preCheck?['page','check','read']:['page']);
+  assert.deepEqual(orderedChecks(calls).map(c=>c.kind),preCheck?['page','check','read']:['page']);
   const timeline=JSON.parse(db.sqlite.prepare('SELECT data FROM worlds WHERE uid=?').get('alice').data).timeline;
   assert.equal(timeline.length,preCheck?1:2);assert.equal(timeline[0].src,'seed');
  }
  pass('무대 세계관 연표 중복은 기존 검사 응답으로 저장하고 검사 끄기 설정에서도 호출을 늘리지 않는다');
 
- e=await reset({rewrite:true});behavior='fix';await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert.equal(r.result.pipeline.fixed,1);assert(storedPage(B).sections[0].body.includes('붉은'));assert.deepEqual(storedPage(B).portrait,{src:'original-image'});assert.equal(storedPage(B).shortStories[0].body,'소중한 원문');assert.deepEqual(calls.map(c=>c.kind),['page','check','read','fix','analyze']);const savedWorld=JSON.parse(db.sqlite.prepare('SELECT data FROM worlds WHERE uid=?').get('alice').data);assert(savedWorld.entities[B].facts.some(f=>f.t.includes('붉은')));pass('자동 수정 뒤 AI 검사를 반복하지 않고 확정 사실을 정리하며 원래 이미지·단편을 보존한다');
+ e=await reset({rewrite:true});behavior='fix';await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert.equal(r.result.pipeline.fixed,1);assert(storedPage(B).sections[0].body.includes('붉은'));assert.deepEqual(storedPage(B).portrait,{src:'original-image'});assert.equal(storedPage(B).shortStories[0].body,'소중한 원문');assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page','check','read','fix','factSync']);const savedWorld=JSON.parse(db.sqlite.prepare('SELECT data FROM worlds WHERE uid=?').get('alice').data);assert(savedWorld.entities[B].facts.some(f=>f.t.includes('붉은')));pass('자동 수정 뒤 AI 검사를 반복하지 않고 확정 사실을 정리하며 원래 이미지·단편을 보존한다');
+
+ e=await reset({rewrite:true,settings:{taskModels:{page:{model:'gemini-writer',think:'minimal'},check:{model:'claude-sonnet-4-6',think:'high'},read:{model:'claude-haiku-4-5',think:'low'},fix:{model:'gemini-fixer',think:''},factSync:{model:'gemini-extractor',think:'minimal'}},prompt:{seed:false,guidelines:false}}});behavior='fix';await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));
+ assert.deepEqual(orderedChecks(r.job.steps).map(s=>[s.kind,s.model]),[['page','gemini-writer'],['check','claude-sonnet-4-6'],['read','claude-haiku-4-5'],['fix','gemini-fixer'],['factSync','gemini-extractor']]);
+ const writer=calls.find(c=>c.kind==='page');assert(!JSON.stringify(writer.body).includes('항구 세계'));assert(!JSON.stringify(writer.body).includes('## 절제'));assert(calls.find(c=>c.kind==='check').body.messages[0].content[0].text.includes('항구 세계'));
+ assert.equal(calls.find(c=>c.kind==='read').body.thinking.budget_tokens,2048);assert.equal(calls.find(c=>c.kind==='factSync').body.generationConfig.thinkingConfig.thinkingLevel,'minimal');
+ pass('작업별 모델·생각 수준과 작성 입력 스위치를 서버에서도 반영하며 설정 검사 자료는 유지한다');
 
  for(const mutation of ['edit','pageEdit','delete','aba']){
   e=await reset();await request(e,'',e.body);await fireAlarm(e.obj);assert.equal(calls.length,1);
@@ -130,11 +138,11 @@ try {
 
  e=await reset();const snap2=await snapshotWorld(db,'alice',e.input);const bad={world:{...e.w,title:'덮어쓰기 금지'},pages:{[B]:{...page(),key:B}},removed:[]};const originalBatch=db.batch.bind(db);db.batch=async statements=>originalBatch([...statements.slice(0,-1),db.prepare('INSERT INTO missing_table VALUES(1)'),...statements.slice(-1)]);await assert.rejects(()=>commitDocument(db,'alice',e.id,snap2,bad));db.batch=originalBatch;assert.equal(storedPage(B),null);assert.equal(JSON.parse(db.sqlite.prepare('SELECT data FROM worlds').get().data).title,e.w.title);assert.equal(db.sqlite.prepare('SELECT count(*) AS n FROM pipeline_commits').get().n,0);pass('저장 중 SQL 오류는 세계관·문서·완료 표시를 모두 롤백한다');
 
- e=await reset();e.body.input.action='check';e.body.input.key=A;e.body.input.pageHash=await digest(sourcePage(e.pages[A]));await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert.deepEqual(calls.map(c=>c.kind),['check','read']);assert(storedPage(A).check);pass('단독 설정 검사도 두 검사와 결과 저장을 서버에서 완료한다');
+ e=await reset();e.body.input.action='check';e.body.input.key=A;e.body.input.pageHash=await digest(sourcePage(e.pages[A]));await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['check','read']);assert(storedPage(A).check);pass('단독 설정 검사도 두 검사와 결과 저장을 서버에서 완료한다');
 
  e=await reset();delete e.w.entities[B];e.w.angles=[{id:'angle-1',label:'고독한 항해',area:'해양',uses:0}];db.sqlite.prepare('UPDATE worlds SET data=? WHERE uid=?').run(JSON.stringify(e.w),'alice');e.body.input={...e.input,novel:true,entity:{title:'선장',type:'인물',summary:'새 탐험가',src:'discovery'},angleId:'angle-1',worldHash:await digest(e.w)};await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert(r.result.pipeline.angleRecorded);const novelWorld=JSON.parse(db.sqlite.prepare('SELECT data FROM worlds WHERE uid=?').get('alice').data);assert.equal(novelWorld.angles[0].uses,1);assert(novelWorld.entities[B].page);pass('탐색에서 고른 새 후보도 저장하고 각도 사용은 한 번만 기록한다');
 
- e=await reset({settings:{preCheck:false}});await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded');assert(!r.result.pipeline.checked);assert.deepEqual(calls.map(c=>c.kind),['page']);pass('자동 검사 끄기 설정은 유지하며 수행하지 않은 검사를 완료로 표시하지 않는다');
+ e=await reset({settings:{preCheck:false}});await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded');assert(!r.result.pipeline.checked);assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page']);pass('자동 검사 끄기 설정은 유지하며 수행하지 않은 검사를 완료로 표시하지 않는다');
 
  db.sqlite.exec("INSERT INTO users VALUES('한글계정','s','h',1);INSERT INTO sessions VALUES('korean-token','한글계정',1)");
  let forwarded;

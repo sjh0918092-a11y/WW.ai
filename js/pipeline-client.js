@@ -32,7 +32,7 @@ const DocumentPipeline = {
     const compare = JSON.parse(JSON.stringify(w));
     if (pending) delete compare.entities[k];
     if (await AIRecovery.hash(compare) !== await AIRecovery.hash(stored)) throw new Error("화면의 설정과 저장된 원본이 다릅니다. 세계관을 다시 열고 시작해 주세요.");
-    const settings = Object.fromEntries(["main","mainThink","quick","quickThink","check","checkThink","preCheck"].map(key => [key,GS[key]]));
+    const settings = Object.fromEntries(["main","mainThink","quick","quickThink","check","checkThink","preCheck","taskModels","prompt"].map(key => [key,GS[key]]));
     const input = { action,wid:w.id,key:k,rewrite:!!rewrite,direction:direction || "",novel:!!novel,settings,
       ...(angle?.id ? { angleId: angle.id } : {}),
       ...(pending ? { entity: { title: pending.title,type:pending.type || "",summary:pending.summary || "", ...(pending.src ? {src:pending.src}:{}), ...(pending.searched ? {searched:true}:{}) } } : {}),

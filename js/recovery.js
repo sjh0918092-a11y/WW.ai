@@ -250,7 +250,7 @@ function jobsHtml() {
   const supported = r?.type === "document.pipeline" ? !!d.result?.pipeline?.saved : r && (r.type?.endsWith(".image") || ["page", "check", "read", "prose"].includes(m.kind));
   const body = d?.src ? imageZoomHtml(d.src, (m.title || "복구") + " 이미지", true) : Array.isArray(parsed?.sections) ? parsed.sections.filter(s => typeof s?.body === "string").map(s => `<h3>${esc(s.heading || "본문")}</h3><div class="job-text">${esc(s.body)}</div>`).join("") : Array.isArray(parsed?.issues) ? `<p>${parseIssues(parsed).length ? "복구한 검사 지적입니다." : "이 검사 응답에는 지적이 없습니다."}</p>${parseIssues(parsed).map(i => `<article class="job-issue"><b>${esc(i.claim)}</b><p>${esc(i.conflict)}</p></article>`).join("")}` : `<div class="job-text">${esc((typeof parsed?.body === "string" ? parsed.body : d?.text || "").slice(0, 120000))}</div>`;
   const steps = failure && Array.isArray(report?.steps) ? report.steps.map(s => {
-    const label = { page: "초안 생성", check: "설정 대조", read: "문서 내부 검사", fix: "자동 수정", analyze: "확정 사실 정리", ageRule: "나이 규칙 해석" }[s.kind] || KIND[s.kind] || s.kind;
+    const label = { page: "초안 생성", check: "설정 대조", read: "문서 내부 검사", fix: "자동 수정", analyze: "직접 편집 설정 대조", factSync: "수정 후 사실 정리", ageRule: "나이 규칙 해석" }[s.kind] || KIND[s.kind] || s.kind;
     const status = { done: "완료", failed: "실패", unknown: "결과 확인 불가", running: "실행 중" }[s.status] || s.status;
     return esc(label) + " " + esc(status);
   }).join(" · ") : "";

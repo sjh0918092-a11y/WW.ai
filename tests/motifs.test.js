@@ -52,7 +52,8 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
     g = await write('등대지기', '인물', ['배급럼', '동물']);
     assert.deepStrictEqual(g.saved.motifs, ['배급럼', '동물']); assert(g.prompt.includes('- 바다 상인: 바다 상인의 버릇 (소재: 배급 럼, 규칙 위반, 음악)'));
     g = await write('세관원', '인물', ['장부']);
-    const ti = g.prompt.slice(g.prompt.indexOf('## 다른 인물의 특징'), g.prompt.indexOf('## 인물 문서'));
+    const start = g.prompt.indexOf('## 다른 인물의 특징'), end = g.prompt.indexOf('\n## ', start + 1);
+    const ti = g.prompt.slice(start, end < 0 ? undefined : end);
     for (const t of ['- 등대지기: 등대지기의 버릇 (소재: 배급럼, 동물)', '- 바다 상인: 바다 상인의 버릇 (소재: 배급 럼, 규칙 위반, 음악)', '- 옛 서기: 장부 정리\n', '- 이미 많이 쓰인 소재: 배급 럼(2명)\n',
       '이미 많이 쓰인 소재로 이 인물의 성격을 보여 주지 않는다. 확정 사실이 그 소재를 요구할 때만 예외다.']) assert(ti.includes(t), t + '\n' + ti);
     assert(!/이미 많이 쓰인 소재:.*(규칙 위반|동물|음악)/.test(ti));

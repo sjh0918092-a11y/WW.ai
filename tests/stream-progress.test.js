@@ -2,7 +2,7 @@
 const fs=require('fs'),vm=require('vm'),assert=require('assert'),path=require('path');
 const { appSource } = require("./helpers/app");
 const html=appSource();
-const code=html.slice(html.indexOf('const G_RETRY ='),html.indexOf('async function listGeminiModels()'))+'\nglobalThis.subject=gemini;';
+const code=fs.readFileSync(path.join(__dirname,'../js/ai-settings.js'),'utf8')+'\n'+html.slice(html.indexOf('const G_RETRY ='),html.indexOf('async function listGeminiModels()'))+'\nglobalThis.subject=gemini;';
 const chunk=(text,thought=false)=>'data: '+JSON.stringify({candidates:[{content:{parts:[{text,thought}]}}]})+'\n\n';
 let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
 async function scenario(plans,opts={},setup){

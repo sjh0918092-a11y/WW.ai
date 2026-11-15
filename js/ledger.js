@@ -321,18 +321,18 @@ function eventKeysFor(w, key, rel = [], okSrc = null) {
   const near = new Set([key, ...rel]), all = (w.events || []).filter(x => x.src !== key && (!okSrc || okSrc(x.src)));
   return [...new Set(all.filter(x => near.has(x.k) || x.parts.includes(key)).map(x => x.k))];
 }
-function eventLedgerFor(w, key, rel = [], okSrc = null) {
+function eventLedgerFor(w, key, rel = [], okSrc = null, max = 40) {
   const all = (w.events || []).filter(x => x.src !== key && (!okSrc || okSrc(x.src))), ks = eventKeysFor(w, key, rel, okSrc);
   const rows = [];
   for (const ek of ks) {
     const list = all.filter(x => x.k === ek).sort(eventRank);
     list.forEach((x, i) => rows.push(eventRow(w, x, (i === 0 ? " (기준)" : "") + (eventEdited(x) ? " [사용자 확정]" : ""))));
   }
-  return rows.slice(0, 40);
+  return rows.slice(0, max);
 }
-function eventBlock(w, key, rel) {
-  const rows = eventLedgerFor(w, key, rel); if (!rows.length) return "";
-  const ks = eventKeysFor(w, key, rel), beats = ks.map(ek => eventBeats(w, ek)).filter(Boolean);
+function eventBlock(w, key, rel, max = null) {
+  const rows = max === null ? eventLedgerFor(w, key, rel) : eventLedgerFor(w, key, rel, null, max); if (!rows.length) return "";
+  const ks = max === null ? eventKeysFor(w, key, rel) : eventKeysFor(w, key, rel).slice(0, max), beats = ks.map(ek => eventBeats(w, ek)).filter(Boolean);
   const det = ks.map(ek => [ek, eventDetailIn(w, ek)]).filter(([, d]) => d && d !== key && w.entities[d]);
   const evName = ek => (w.events || []).filter(x => x.k === ek).sort(eventRank)[0]?.name || w.entities[ek]?.title || "?";
   return `## 사건 장부 (이 문서가 다룰 수 있는 사건의 확정 기록)
@@ -380,7 +380,8 @@ function evKind(w, t) {
 }
 /* 이 문서가 다룰 만한 유형의 기존 사건. 유형은 이 항목·관련 항목의 사건 유형과 항목 설명에 이름이 나온 유형.
    그런 유형이 없으면 모든 유형에서 고른다. 관련도: 참가자가 겹침 > 관련 유형 > 여러 번 되풀이된 유형 > 먼저 쓴 문서 */
-function sameKindEvents(w, key, rel = [], text = "") {
+function sameKindEvents(w, key, rel = [], text = "", max = EVENT_SAME_KIND_N) {
+  if (max <= 0) return [];
   const near = new Set([key, ...rel]), all = (w.events || []).filter(e => e.kind && S.pages[e.src]);
   if (!all.length) return [];
   const ent = w.entities[key];
@@ -398,13 +399,13 @@ function sameKindEvents(w, key, rel = [], text = "") {
   const seen = new Set(), out = [];
   for (const e of pool.sort((a, b) => peerFirst(b) - peerFirst(a) || score(b) - score(a) || eventRank(a, b))) {
     const id = e.k + "|" + e.src; if (seen.has(id)) continue; seen.add(id);
-    out.push(e); if (out.length >= EVENT_SAME_KIND_N) break;
+    out.push(e); if (out.length >= max) break;
   }
   return out;
 }
 const SAME_KIND_HEAD = "| 유형 | 사건 | 날짜 | 장소 | 참가 | 결과 | 출처 문서 |\n|---|---|---|---|---|---|---|";
 /* 기존 인물 문서의 생애 하위 제목만 보여 준다. 문서가 없는 항목은 대상이 아니다. */
-function lifeFlowBlock(w, key, rel = []) {
+function lifeFlowBlock(w, key, rel = [], max = 3) {
   const cats = k => S.pages[k]?.categories || (w.entities[k]?.cats || []).map(c => c.name);
   const mine = new Set(cats(key)), near = new Set(rel);
   const list = Object.entries(S.pages).filter(([k, p]) => k !== key && w.entities[k] && (p.type || w.entities[k].type) === "인물")
@@ -415,7 +416,7 @@ function lifeFlowBlock(w, key, rel = []) {
         else if (s.level === 2 && life && s.heading) headings.push(s.heading);
       }
       return { k, p, headings, score: (near.has(k) ? 2 : 0) + (cats(k).some(c => mine.has(c)) ? 1 : 0) };
-    }).filter(x => x.headings.length).sort((a, b) => b.score - a.score || (b.p.createdAt || 0) - (a.p.createdAt || 0)).slice(0, 3);
+    }).filter(x => x.headings.length).sort((a, b) => b.score - a.score || (b.p.createdAt || 0) - (a.p.createdAt || 0)).slice(0, max);
   if (!list.length) return "";
   return `## 기존 인물들의 생애 흐름
 ${list.map(x => `- 「${x.p.title}」: ${x.headings.slice(0, 12).join(" → ")}`).join("\n")}
@@ -423,8 +424,8 @@ ${list.map(x => `- 「${x.p.title}」: ${x.headings.slice(0, 12).join(" → ")}`
 
 `;
 }
-function sameKindBlock(w, key, rel = [], text = "") {
-  const list = sameKindEvents(w, key, rel, text); if (!list.length) return "";
+function sameKindBlock(w, key, rel = [], text = "", max = EVENT_SAME_KIND_N) {
+  const list = sameKindEvents(w, key, rel, text, max); if (!list.length) return "";
   return `## 같은 유형의 기존 사건 (다른 문서가 이미 기록한 것)
 ${SAME_KIND_HEAD}
 ${list.map(e => `| ${cell(e.kind)} | ${cell(e.name)} | ${cell(e.date)} | ${cell(e.place)} | ${cell(e.parts.map(p => w.entities[p]?.title).filter(Boolean).join(", "))} | ${cell(e.result)} | 「${cell(S.pages[e.src]?.title || "?")}」 |`).join("\n")}
@@ -495,11 +496,12 @@ function pickTerm(w, i, alt) {
   return true;
 }
 const termLine = (w, g) => `- ${g.term}: ${g.definition}${g.confirmed ? " [사용자 확정]" : ""}`;
-function glossaryBlock(w, text = null) {
+function glossaryBlock(w, text = null, max = GLOSSARY_PROMPT_N) {
+  if (max <= 0) return "";
   let list = (w.glossary || []).filter(g => g.definition);
   if (text !== null) list = list.filter(g => text.includes(g.term));   // 검사할 문서에 나온 용어만
   if (!list.length) return "";
-  list = [...list.filter(g => g.confirmed), ...list.filter(g => !g.confirmed)].slice(0, GLOSSARY_PROMPT_N);
+  list = [...list.filter(g => g.confirmed), ...list.filter(g => !g.confirmed)].slice(0, max);
   return `## 용어 정의 (이 세계의 용어는 이 뜻으로만 쓴다)\n${list.map(g => termLine(w, g)).join("\n")}`;
 }
 const TERMS_SPEC = `terms에는 이 문서가 처음 정한 명명 체계, 번호 체계, 이 세계의 핵심 개념만 0~3개 넣는다(예: 제식 번호가 개인의 이름인지 대대로 물려받는 칭호인지, 번호를 나라마다 매기는지 전 세계 일련번호인지). definition은 무엇을 가리키고 어떻게 붙는지 한두 문장으로 쓴다. '용어 정의'에 이미 있는 용어는 넣지 않고, 그 정의와 다른 뜻으로 쓰지 않는다. 처음 정한 것이 없으면 빈 배열.`;

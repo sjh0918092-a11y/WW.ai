@@ -1,3 +1,4 @@
+import { validTaskModels, validPromptOptions } from './ai-settings.js';
 /* 제공자별 허용 입력과 요청. 키는 URL·오류 메시지·결과에 포함하지 않는다. */
 const MODEL = /^[A-Za-z0-9._-]{1,100}$/;
 const TYPES = ["gemini.generate", "claude.generate", "gemini.image", "openai.image", "document.pipeline"];
@@ -21,7 +22,7 @@ export function validateJob(b) {
   if (b.meta !== undefined && !validMeta(b.meta)) return "작업 복구 정보를 확인해 주세요.";
   if (b.credential !== undefined && (!only(b.credential, ["type", "key"]) || b.credential.type !== "personal" || typeof b.credential.key !== "string" || !/^[\x21-\x7e]{8,512}$/.test(b.credential.key))) return "개인 API 키 형식을 확인해 주세요.";
   const i = b.input;
-  if (b.type === "document.pipeline") return validPipeline(i) && !(b.credential && [b.model, i?.settings?.main, i?.settings?.quick, i?.settings?.check].some(m => /^claude-/.test(m || ""))) ? null : "서버 문서 작업의 대상·원본·모델 설정을 확인해 주세요.";
+  if (b.type === "document.pipeline") return validPipeline(i) && !(b.credential && [b.model, i?.settings?.main, i?.settings?.quick, i?.settings?.check, ...Object.values(i?.settings?.taskModels || {}).map(v => v?.model)].some(m => /^claude-/.test(m || ""))) ? null : "서버 문서 작업의 대상·원본·모델 설정을 확인해 주세요.";
   if (b.type === "openai.image") {
     if (!/^gpt-image-/.test(b.model) || !only(i, ["prompt", "size", "quality", "reference"]) || typeof i.prompt !== "string" || !i.prompt.trim() || i.prompt.length > 200000 || !SIZES.includes(i.size) || !["low", "medium", "high", "auto"].includes(i.quality) || (i.reference !== undefined && !reference(i.reference))) return "OpenAI 이미지 요청·참고 이미지를 확인해 주세요.";
     return null;
@@ -148,11 +149,11 @@ export async function runProvider(job, env, personalKey, signal) {
 
 function validPipeline(i) {
   const str = (v, max) => typeof v === "string" && v.length > 0 && v.length <= max;
-  const settings = ["main", "quick", "check", "mainThink", "quickThink", "checkThink", "preCheck"];
+  const settings = ["main", "quick", "check", "mainThink", "quickThink", "checkThink", "preCheck", "taskModels", "prompt"];
   return only(i, ["action", "wid", "key", "rewrite", "direction", "novel", "angleId", "entity", "settings", "worldHash", "pageHash"]) &&
     ["generate", "check"].includes(i.action) && str(i.wid,200) && str(i.key,200) && [i.worldHash,i.pageHash].every(h => /^[a-f0-9]{64}$/.test(h)) &&
     ["rewrite","novel"].every(k => i[k] === undefined || typeof i[k] === "boolean") &&
     (i.direction === undefined || typeof i.direction === "string" && i.direction.length <= 10000) && (i.angleId === undefined || str(i.angleId,200)) &&
     (i.entity === undefined || only(i.entity,["title","type","summary","src","searched"]) && str(i.entity.title,300) && typeof i.entity.type === "string" && i.entity.type.length <= 100 && typeof i.entity.summary === "string" && i.entity.summary.length <= 2000 && (i.entity.src === undefined || i.entity.src === "search" || i.entity.src === "discovery") && (i.entity.searched === undefined || typeof i.entity.searched === "boolean")) &&
-    only(i.settings,settings) && settings.every(k => i.settings[k] === undefined || (k === "preCheck" ? typeof i.settings[k] === "boolean" : k.endsWith("Think") ? ["", "minimal", "low", "medium", "high"].includes(i.settings[k]) : i.settings[k] === "" || MODEL.test(i.settings[k]) && !/image|tts|live|audio|embedding|transcribe|robotics/i.test(i.settings[k])));
+    only(i.settings,settings) && settings.every(k => i.settings[k] === undefined || (k === "taskModels" ? validTaskModels(i.settings[k]) : k === "prompt" ? validPromptOptions(i.settings[k]) : k === "preCheck" ? typeof i.settings[k] === "boolean" : k.endsWith("Think") ? ["", "minimal", "low", "medium", "high"].includes(i.settings[k]) : i.settings[k] === "" || MODEL.test(i.settings[k]) && !/image|tts|live|audio|embedding|transcribe|robotics/i.test(i.settings[k])));
 }

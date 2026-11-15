@@ -59,7 +59,7 @@ const server = appServer();
         assert(e); assert.equal(e.type, p.kind);
         if (!b.stage.units.some(u => u.name === p.name)) assert.equal(e.summary, p.want);
       }
-      assert(made[i].prompt.indexOf('## 이 위키의 첫 문서') < made[i].prompt.indexOf('## 세계 넓히기'));
+      assert(made[i].prompt.includes('## 이 위키의 첫 문서') && made[i].prompt.includes('## 세계 넓히기')); // 공통 지침은 캐시를 위해 앞에 둔다.
       assert(made[i].canon.includes('## 주요 단위') && made[i].canon.includes('## 지금 진행 중인 일'));
     }
     assert(!made[1].gaps.some(s => s.includes('국가가 비었다')));

@@ -160,7 +160,7 @@ test("AI 연결이 없거나 옮기기에 실패하면 데이터를 그대로 �
 test("관계를 받는 모든 생성 경로가 같은 형식(번호 목록 + same/next)을 쓰고, 세계관을 열 때 옮기기를 한 번 부른다", () => {
   const fs = require("fs"), path = require("path"), src = f => fs.readFileSync(path.join(__dirname, "..", "js", f), "utf8");
   const pr = src("prompts.js"), es = src("edit-source.js"), sm = src("story-model.js"), ac = src("actions.js");
-  assert(pr.includes("${relRefBlock(w, [key, ...rel], key, key, 24)}") && pr.includes("${REL_JSON}") && pr.includes("${REL_SPEC}"));
+  assert(pr.includes('${inputs.relations ? relRefBlock(w, [key, ...rel], key, key, inputs.relationsCount) : ""}') && pr.includes("${REL_JSON}") && pr.includes("${REL_SPEC}"));
   assert.equal((es.match(/\$\{REL_JSON\}/g) || []).length, 2); assert.equal((es.match(/\$\{REL_SPEC\}/g) || []).length, 2); assert.equal((es.match(/relRefBlock\(/g) || []).length, 2);
   assert.equal((sm.match(/\$\{REL_JSON\}/g) || []).length, 2); assert.equal((sm.match(/relRefBlock\(/g) || []).length, 2); assert(sm.includes("${REL_SPEC}"));
   for (const s of [pr, es, sm]) assert(!/"relations":\[\{"a":"인물 제목","b":"인물 제목","rel"/.test(s), "옛 출력 형식이 남아 있다");

@@ -290,7 +290,7 @@ async function bgSync(k) {
     const out = sourceToOut(pageToSource(w, p));
     const linkKeys = linksOfOut(w, out, k);
     const temp = { key: k, title: p.title, summary: out.summary, infobox: out.infobox, sections: out.sections, navboxes: out.navboxes };
-    const r = await callJson("analyze", factSyncPrompt(w, temp, linkKeys), { modelTier: "check" }, { title: p.title + " · 확정 사실 정리" });
+    const r = await callJson("factSync", factSyncPrompt(w, temp, linkKeys), { modelTier: "check" }, { title: p.title + " · 확정 사실 정리" });
     if (S.world !== w || S.pages[k] !== p) { S.bgSync = null; return; }
     // AI가 고친 본문은 다른 문서를 대체하는 기준이 되지 않는다. 사용자가 직접 수정한 문서라면 그 수정이 세운 대체 표시는 그대로 두고,
     // 직접 수정한 적 없는 문서라면 (예전 버전이 AI 수정으로 붙였던) 대체 표시와 다른 문서의 경고를 걷어낸다.

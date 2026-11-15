@@ -33,7 +33,7 @@
       const result = await call(kind, ...args);
       if (["check", "read"].includes(kind) && !Array.isArray(result?.issues)) throw { code: "invalid_check", message: "검사 응답 형식이 올바르지 않습니다." };
       if (kind === "fix" && !Array.isArray(result?.edits)) throw { code: "invalid_fix", message: "수정 응답 형식이 올바르지 않습니다." };
-      if (kind === "analyze" && !Array.isArray(result?.facts)) throw { code: "invalid_facts", message: "확정 사실 응답 형식이 올바르지 않습니다." };
+      if (["analyze","factSync"].includes(kind) && !Array.isArray(result?.facts)) throw { code: "invalid_facts", message: "확정 사실 응답 형식이 올바르지 않습니다." };
       return result;
     } catch (e) { if (e?.code !== "pipeline_yield") runtime.failures.push({ kind, code: e?.code || "engine_error" }); throw e; }
   };
@@ -52,7 +52,7 @@
       const w = S.world, pages = Store.mem.pages[baseWorld.id] || {};
       const redirect = w?.aliases?.[k], targetKey = pages[k] ? k : redirect && pages[redirect] ? redirect : k;
       const page = pages[targetKey];
-      const required = runtime.failures.filter(f => ["page", "check", "read", "fix", "analyze"].includes(f.kind));
+      const required = runtime.failures.filter(f => ["page", "check", "read", "fix", "analyze", "factSync"].includes(f.kind));
       const error = S.genErr || (!page && !S.nf.has(k) ? { msg: "문서 결과를 완성하지 못했습니다." } : null);
       const changed = Object.fromEntries(Object.entries(pages).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(basePages[key])));
       const removed = Object.keys(basePages).filter(key => !pages[key]);

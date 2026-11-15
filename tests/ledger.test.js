@@ -102,7 +102,7 @@ test("연표를 프롬프트에 넣을 때 고른다: 원안·직접 수정한 �
 });
 test("연표 상한 삭제가 없어지고 문서 작성·설정 대조가 고른 연표를 쓴다", () => {
   assert(!html.includes("w.timeline.length > 48"));
-  assert(html.includes("const tl = promptTimeline(w, focus)"));
+  assert(html.includes("promptTimeline(w, focus, timeline, options ? options.timelineCount : TIMELINE_PROMPT_N)"));
   assert(html.includes("${canonBlock(w, [e.title, e.summary"));
   assert(html.includes("ok(t.src)) }, focus)}"));
 });
@@ -212,7 +212,7 @@ test("사건 장부가 생성·검사·수정 흐름에 연결되어 있다", ()
   assert(html.includes('["사건 장부", (w, k) => [...eventIssues(w, k), ...timelineIssues(w, k)]]'));
   assert(html.includes("나이 규칙|사건 장부"));
   assert((html.match(/\$\{EVENTS_JSON\}/g) || []).length >= 3, "문서 작성, 확정 사실 정리, 수정본 분석");
-  assert(html.includes("ingestEvents(w, key, out.events)")); assert(html.includes("${eventBlock(w, key, rel)}")); assert(html.includes("${eventCheckBlock(w, key, ok)}"));
+  assert(html.includes("ingestEvents(w, key, out.events)")); assert(html.includes("eventBlock(w, key, rel, inputs.eventsCount)")); assert(html.includes("${eventCheckBlock(w, key, ok)}"));
   assert(html.includes("if (w.events) w.events = w.events.filter(x => x.src !== key);"), "문서를 지우거나 다시 쓰면 그 문서의 기록을 걷어 낸다");
 });
 
@@ -263,7 +263,7 @@ test("검사할 문서에는 그 문서에 나온 용어만 넣는다", () => {
   assert.equal(c.glossaryBlock({ entities: {} }), "", "옛 세계관에는 glossary가 없다");
 });
 test("용어 정의가 모든 문서 프롬프트와 문서 읽기 검사에 들어간다", () => {
-  assert(html.includes('${(w.glossary || []).length ? "\\n\\n" + glossaryBlock(w) : ""}'), "canonBlock에 넣는다");
+  assert(html.includes("glossaryBlock(w, null, options ? options.glossaryCount : GLOSSARY_PROMPT_N)"), "canonBlock에 넣는다");
   assert(html.includes("이 세계의 용어를 아래 '용어 정의'와 다른 뜻으로 쓴 곳"));
   assert(html.includes("const g = glossaryBlock(w, docForCheck(p))"));
   assert(html.includes(",${TERMS_JSON}}")); assert(html.includes("ingestTerms(w, key, out.terms)"));
@@ -292,7 +292,7 @@ test("events의 kind를 저장하고, 띄어쓰기만 다른 유형 이름은 �
   assert(!c.eventsSpec(world("x")).includes("이미 쓰는 유형 이름"), "유형이 없으면 목록을 넣지 않는다");
   for (const f of ["prompts.js", "edit-source.js"]) {
     const src = require("fs").readFileSync(require("path").join(__dirname, "..", "js", f), "utf8");
-    assert(src.includes("${eventsSpec(w)}") && !src.includes("${EVENTS_SPEC}"), f + "는 유형 목록이 든 지시를 쓴다");
+    assert(src.includes("eventsSpec(w)") && !src.includes("${EVENTS_SPEC}"), f + "는 유형 목록이 든 지시를 쓴다");
   }
 });
 test("문서를 쓸 때 같은 유형의 기존 사건 표(날짜, 장소, 참가자, 결과, 출처 문서)와 연결 지시를 넣는다", () => {
@@ -311,7 +311,7 @@ test("문서를 쓸 때 같은 유형의 기존 사건 표(날짜, 장소, 참�
   for (let i = 0; i < 12; i++) c.S.pages["p" + i] = doc("p" + i, 10 + i);
   assert.equal(c.sameKindEvents(w, K("서해 연방"), []).length, 8, "많아야 8개");
   const src = require("fs").readFileSync(require("path").join(__dirname, "..", "js", "prompts.js"), "utf8");
-  assert(src.includes('${eventBlock(w, key, rel)}${sameKindBlock(w, key, rel, guide || "")}'), "문서 생성 프롬프트에 넣는다");
+  assert(src.includes("eventBlock(w, key, rel, inputs.eventsCount)") && src.includes('sameKindBlock(w, key, rel, guide || "", inputs.sameEventsCount)'), "문서 생성 프롬프트에 넣는다");
 });
 test("kind가 없는 옛 장부 항목이 있어도 깨지지 않는다", () => {
   const { w, K } = kindWorld();
@@ -329,7 +329,7 @@ test("문체 지침에 '최초·유일' 주장 제한이 들어간다", () => {
   const core = require("fs").readFileSync(require("path").join(__dirname, "..", "js", "core.js"), "utf8");
   const desc = core.slice(core.indexOf("desc: `작중의 팬들이"), core.indexOf("`", core.indexOf("desc: `작중의 팬들이") + 7));
   assert(desc.includes("'최초', '유일', '처음', '사상 첫' 같은 주장은, 위에 주어진 확정 설정이나 사건 장부로 뒷받침될 때만 쓴다. 근거가 없으면 쓰지 않는다."));
-  assert(html.includes("- 문체: ${st.desc}") && html.includes("const st = STYLES.encyc;"), "문서 생성 프롬프트가 이 문체 지침을 쓴다");
+  assert(html.includes("- 문체: ${st.desc}") && html.includes("st = STYLES.encyc;"), "문서 생성 프롬프트가 이 문체 지침을 쓴다");
 });
 
 /* ---------- 5단계: 세계 전체 점검 ---------- */

@@ -163,6 +163,11 @@ document.addEventListener("click", ev => {
       (navigator.clipboard?.writeText(link) || Promise.reject()).then(() => toast("사이트 링크를 복사했습니다. 접속 암호는 따로 알려 주세요."), () => setGres("사이트 링크: " + link));
       break;
     }
+    case "gset-export": {
+      readGsetForm();const blob=new Blob([JSON.stringify(aiSettingsFile(),null,2)],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="worldwiki-ai-settings-"+new Date().toISOString().slice(0,10)+".json";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);setGres("AI 설정을 내보냈습니다.");break;
+    }
+    case "gset-import": $("#aiSettingsFile")?.click();break;
+    case "gset-input-defaults": readGsetForm();GS.prompt=normalizePromptOptions();saveGS();renderMain();setGres("문서 작성 입력 자료를 기본값으로 복원했습니다.");break;
     case "gset-test": (async () => {
       readGsetForm(); renderSide(); if (!gReady()) { setGres("서버 접속 암호를 먼저 저장해 주세요."); return; }
       const out = [];
@@ -188,6 +193,7 @@ document.addEventListener("click", ev => {
         const result=await listClaudeModels();S.cmodels=result.models;
         const resolved=[];
         for(const role of ["main","quick","check"]){const id=result.aliases?.[GS[role]];if(id&&S.cmodels.some(m=>m.id===id)){resolved.push(GS[role]+" → "+id);GS[role]=id}}
+        for(const task of Object.values(GS.taskModels||{})){const id=result.aliases?.[task.model];if(id&&S.cmodels.some(m=>m.id===id)){resolved.push(task.model+" → "+id);task.model=id}}
         if(resolved.length)saveGS();
         S.gres=`Claude ${result.total}개 중 앱 지원 모델 ${S.cmodels.length}개를 불러왔습니다 (4.5/4.6).`+(resolved.length?` 별칭을 실제 ID로 확인했습니다: ${resolved.join(' / ')}.`:"")+(result.unavailable?.length?` 서버 키로 확인할 수 없는 선택값: ${result.unavailable.join(', ')}. 목록에서 다시 선택해 주세요.`:"");
         renderMain();
@@ -318,7 +324,10 @@ $("#searchForm").addEventListener("submit", ev => {
   if (hit) { $("#q").value = ""; $("#sugg").hidden = true; openEntity(hit[0]); } else goSearch(q);
 });
 document.addEventListener("change", ev => {
-  if (["gMain", "gQuick", "gCheck", "gImage"].includes(ev.target.id)) { updateThinkingOptions(); updateModelIds(); }
+  if (["gMain", "gQuick", "gCheck", "gImage"].includes(ev.target.id)) { updateThinkingOptions(); updateTaskThinkingOptions(); updateModelIds(); }
+  if(ev.target.dataset?.taskModel)updateTaskThinkingOptions();
+  if(ev.target.dataset?.promptFlag){const row=ev.target.closest(".ai-input"),count=row?.querySelector("[data-prompt-count]");if(count)count.disabled=!ev.target.checked;}
+  if(ev.target.id==="aiSettingsFile"&&ev.target.files?.[0]){const file=ev.target.files[0];ev.target.value="";(async()=>{try{if(file.size>1024*1024)throw new Error("설정 파일이 너무 큽니다.");const settings=parseAISettingsFile(JSON.parse(await file.text()));GS={...GS,...settings};saveGS();S.sample=gReady()?gemini:null;S.gres="AI 설정을 가져와 저장했습니다.";renderMain();}catch(e){setGres("가져오지 못했습니다. "+e.message)}})();}
   if (ev.target.dataset?.wcExtra) { wcToggleExtra(ev.target.dataset.wcExtra, ev.target.dataset.wcDoc, ev.target.checked); return; }
   if (ev.target.dataset?.worldExport && S.world) { const field = ev.target.dataset.worldExport; if (["images", "stories"].includes(field)) (S.worldExports[S.world.id] ||= { images: true, stories: true })[field] = ev.target.checked; return; }
   if (ev.target.dataset?.proseImage === "model" && S.proseGen?.illustration && !S.proseGen.busy) { S.proseGen.illustration.opts.model = ev.target.value; renderMain(); return; }

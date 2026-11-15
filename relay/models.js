@@ -8,7 +8,7 @@ export async function claudeModels(request,env,url,passOk){
  if(!env.PASSWORDS||!await passOk(request.headers.get('X-WW-Pass')||'',env.PASSWORDS))return json({error:{message:'서버 접속 암호를 확인해 주세요.'}},403);
  if(!env.ANTHROPIC_API_KEY)return json({error:{message:'서버에 ANTHROPIC_API_KEY가 등록되지 않았습니다.'}},503);
  const selected=[...new Set((url.searchParams.get('selected')||'').split(',').filter(Boolean))];
- if(selected.length>3||selected.some(id=>!ID.test(id)))return json({error:{message:'Claude 모델 ID를 확인해 주세요.'}},400);
+ if(selected.length>24||selected.some(id=>!ID.test(id)))return json({error:{message:'Claude 모델 ID를 확인해 주세요.'}},400);
  const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),20000);
  const headers={'x-api-key':env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'};
  const get=async path=>{const r=await fetch('https://api.anthropic.com/v1/models'+path,{headers,signal:ctl.signal});if(!r.ok){await r.body?.cancel();throw {status:r.status}};try{return JSON.parse(await boundedText(r.body,1024*1024))}catch{throw{status:502}}};

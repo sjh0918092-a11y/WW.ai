@@ -213,9 +213,9 @@ const PERSON_TITLE_RULE = "새 인물을 링크할 때 [[ ]] 안의 제목은 �
 function worldCats(w, except, limit = 40) {
   return [...catStats(w, except)].map(([c, s]) => [c, s.n]).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko")).slice(0, limit);
 }
-function catGuide(w, key) {
+function catGuide(w, key, max = 30) {
   const st = [...catStats(w, key)].sort((a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0], "ko"));
-  const list = ax => st.filter(([, s]) => s.axis === ax).slice(0, 30).map(([c, s]) => `${c}(${s.n})`).join(", ");
+  const list = ax => st.filter(([, s]) => s.axis === ax).slice(0, max).map(([c, s]) => `${c}(${s.n})`).join(", ");
   const have = [...CAT_AXES.map(ax => [ax, list(ax)]), ["축 미정(예전 문서)", list("")]].filter(([, t]) => t);
   return `categories는 위키 하단의 분류처럼 링크 없이 짧게, 축별 객체로 쓴다: {"소속":[...],"유형":[...],"사건":[...],"기타":[...]}
 ${CAT_AXIS_RULES}
@@ -362,17 +362,17 @@ ${showFor(ty, ["인물"]) ? `## 인물의 성격과 특징\n${TRAIT_RULE}\n\n## 
 - 안내 틀(notices)은 빈 배열로 둔다.`;
 }
 function pagePrompt(w, key, rewriteDir = null, guide = "", angle = null, angleMode = "section", birthday = null, persona = null) {   // angleMode: section(대상이 정해진 문서에 얹기) · novel(랜덤 서핑이 방향에 넣어 보낸 각도)
-  const e = w.entities[key];
+  const e = w.entities[key], inputs = writingOptions();
   const ty = TYPES.includes(e.type) ? e.type : "";
   const staged = !!w.stage && !isStory(w);
-  const rel = related(w, key);
-  const relText = rel.map(k => entityBrief(w, k, null)).join("\n\n") || "(아직 없음)";
+  const rel = inputs.related ? related(w, key, inputs.relatedCount) : [];
+  const relText = rel.map(k => entityBrief(w, k, null, null, null, inputs)).join("\n\n") || "(아직 없음)";
   const idx = Object.entries(w.entities).filter(([k]) => k !== key && !rel.includes(k))
-    .sort((a, b) => (b[1].page ? 1 : 0) - (a[1].page ? 1 : 0)).slice(0, 60)
+    .sort((a, b) => (b[1].page ? 1 : 0) - (a[1].page ? 1 : 0)).slice(0, inputs.index ? inputs.indexCount : 0)
     .map(([, o]) => `- ${o.title}${o.type ? " — " + o.type : ""}${o.summary ? ". " + o.summary.slice(0, 60) : ""}`).join("\n") || "(아직 없음)";
   const known = e.facts.length || e.mentions.length || e.summary;
   const target = known
-    ? `이미 다른 문서에서 확정된 내용이다. 반드시 일치시켜라.\n${e.type ? "유형: " + e.type + "\n" : ""}${e.summary ? "요약: " + e.summary + "\n" : ""}${e.facts.some(live) ? "확정 사실:\n" + promptFacts(w, key, e.facts.filter(live)).map(f => "- " + factLine(f)).join("\n") + "\n" : ""}${e.mentions.some(live) ? "다른 문서에서의 언급:\n" + promptMentions(w, key, e.mentions.filter(live)).map(m => `- 「${w.entities[m.from]?.title || "?"}」: "${m.text}"`).join("\n") : ""}`
+    ? `이미 다른 문서에서 확정된 내용이다. 반드시 일치시켜라.\n${e.type ? "유형: " + e.type + "\n" : ""}${e.summary ? "요약: " + e.summary + "\n" : ""}${inputs.facts && e.facts.some(live) ? "확정 사실:\n" + promptFacts(w, key, e.facts.filter(f => live(f) && (inputs.userFacts || f.src !== "user")), null, inputs.factsCount).map(f => "- " + factLine(f)).join("\n") + "\n" : ""}${inputs.mentions && e.mentions.some(live) ? "다른 문서에서의 언급:\n" + promptMentions(w, key, e.mentions.filter(live), null, inputs.mentionsCount).map(m => `- 「${w.entities[m.from]?.title || "?"}」: "${m.text}"`).join("\n") : ""}`
     : e.src === "search" ? `검색창에서 직접 입력된 이름이며, 이 세계관의 어떤 문서에서도 언급된 적이 없다. 먼저 이 이름이 아래 셋 중 무엇인지 판정하고 그에 따라 쓴다.
 (가) 현실에도 있는 일반 명사나 고유명사(예: 참치, 우산, 파리, 커피, 나폴레옹): 현실의 의미를 그대로 문서의 주제로 삼는다. 일반적인 설명에 더해, 이 세계의 역사·산업·제도·문화가 그 대상과 맞닿는 지점을 섹션 일부(전체의 절반 이하)로 구체적으로 쓴다. 현실과 갈라진 시점 이후의 역사는 이 세계에 맞게 바꾼다. 이 단어를 세계관 고유의 은어나 전혀 다른 뜻으로 재해석하지 않는다.
 (나) 현실에는 없지만 이름으로 읽히는 말(인물명, 지명, 조직명, 작전명처럼 그럴듯한 조합): 이 세계 안의 새 항목으로 창작한다.
@@ -380,9 +380,9 @@ function pagePrompt(w, key, rewriteDir = null, guide = "", angle = null, angleMo
     : e.src === "guided" ? "사용자가 방향을 정해 새로 만들기로 한 항목이다. 아래 '사용자가 요청한 방향'에 맞춰 정의한다. 현실에도 있는 말이면 방향이 달리 말하지 않는 한 현실의 의미를 바탕으로 이 세계에서의 모습을 쓴다."
     : e.src === "force" ? "사용자가 이 이름으로 항목을 새로 만들기로 했다. 의미 없는 문자열처럼 보여도 이 세계 안의 고유명사(암호명, 인물의 별칭, 지명, 조직명, 제품명 등)로 해석해 창작하고, 그 이름이 왜 그렇게 붙었는지도 설명한다."
     : "아직 아무 문서에서도 언급되지 않은 새 항목이다. 세계관에 자연스럽게 녹아들도록 정의하라.";
-  return `${pageWritingRules(w, ty)}\n\n너는 가상 세계관 위키 「${w.title}」의 집필자다. 이 위키는 실존하지 않는 세계를 다루며, 작중 기준 시점은 ${w.era}이다. 현실 세계, AI, '설정'이라는 단어 등 세계 바깥의 시선은 언급하지 말고 작중의 백과사전처럼 쓴다.
+  return `${inputs.guidelines ? pageWritingRules(w, ty) : ""}\n\n너는 가상 세계관 위키 「${w.title}」의 집필자다. 이 위키는 실존하지 않는 세계를 다루며, 작중 기준 시점은 ${w.era}이다. 현실 세계, AI, '설정'이라는 단어 등 세계 바깥의 시선은 언급하지 말고 작중의 백과사전처럼 쓴다.
 
-${canonBlock(w, [e.title, e.summary, ...e.facts.filter(live).map(f => f.t), ...e.mentions.filter(live).map(m => m.text)].join("\n"))}
+${canonBlock(w, [e.title, e.summary, ...e.facts.filter(live).map(f => f.t), ...e.mentions.filter(live).map(m => m.text)].join("\n"), inputs)}
 ${isStory(w) ? "\n" + storyBlock(w, key, true) + "\n" : ""}
 ${toneBlock(w)}${w.guide ? `## 작가 지침 (사용자 지정)
 ${w.guide}
@@ -391,7 +391,7 @@ ${w.guide}
 ` : ""}## 작성할 문서: 「${e.title}」
 ${target}
 ${rewriteDir === null ? redirectBlock(w, key) : ""}
-${(() => { const nbs = navboxesFor(w, key).filter(([, nb]) => nb.src !== key); return nbs.length ? `\n이 항목은 아래 예전 틀에 실려 있다. 이름, 번호, 역할, 전·현직 여부와 다른 구성원과의 관계를 틀과 일치시킨다.\n${nbs.map(([, nb]) => navboxText(nb)).join("\n\n")}` : ""; })()}
+${(() => { const nbs = (inputs.nav ? navboxesFor(w, key).slice(0, inputs.navCount) : []).filter(([, nb]) => nb.src !== key); return nbs.length ? `\n이 항목은 아래 예전 틀에 실려 있다. 이름, 번호, 역할, 전·현직 여부와 다른 구성원과의 관계를 틀과 일치시킨다.\n${nbs.map(([, nb]) => navboxText(nb, inputs.navCount)).join("\n\n")}` : ""; })()}
 
 ${birthday && rewriteDir === null ? `## 생일 (인물 문서일 때만)
 이 문서가 인물 문서이고 위의 확정 내용에 생일·출생일이 없다면, 생일(월·일)은 ${birthday.m}월 ${birthday.d}일로 한다. 출생 연도는 확정 내용과 세계관에 맞게 정한다. 사용자가 요청한 방향이 생일을 정했거나, 인물이 아니면 이 항목은 무시한다.
@@ -405,11 +405,11 @@ ${guide}
 이 문서는 이전 버전을 폐기하고 처음부터 새로 쓰는 것이다. 위에 적힌 확정 내용은 모두 다른 문서나 사용자가 정한 것이므로 반드시 지키고, 그 밖의 부분은 이전과 달라도 된다.
 ${rewriteDir ? `사용자가 요청한 방향: ${rewriteDir}\n이 방향을 최우선으로 따르되, 확정 내용(핵심 규칙, 연표, 사용자 확정 설정, 다른 문서의 사실과 언급)과 충돌하는 부분은 따르지 않는다. 방향이 분량이나 구성에 관한 것이면 아래 작성 규칙의 분량·구성보다 우선한다.` : ""}
 
-` : ""}${navPromptBlock(w, key)}${relRefBlock(w, [key, ...rel], key, key, 24)}${(() => { const qi = quoteIndex(w, key); return qi ? `## 이미 기록된 발언 (같은 사람의 같은 자리 발언은 글자 그대로)
+` : ""}${inputs.nav ? navPromptBlock(w, key, inputs.navCount) : ""}${inputs.relations ? relRefBlock(w, [key, ...rel], key, key, inputs.relationsCount) : ""}${(() => { const qi = inputs.quotes ? quoteIndex(w, key, inputs.quotesCount) : ""; return qi ? `## 이미 기록된 발언 (같은 사람의 같은 자리 발언은 글자 그대로)
 다른 문서에 이미 기록된 말이다. 같은 사람이 같은 날 같은 자리에서 한 말을 이 문서에서 다시 다룰 때는 아래를 글자 그대로 옮기거나, 인용하지 않고 간접 서술로 쓴다. 같은 자리의 말을 새로 지어내지 않는다.
 ${qi}
 
-` : ""; })()}${eventBlock(w, key, rel)}${sameKindBlock(w, key, rel, guide || "")}${ty === "인물" ? lifeFlowBlock(w, key, rel) : ""}## 관련 항목의 확정 설정 (모순 금지)
+` : ""; })()}${inputs.events ? eventBlock(w, key, rel, inputs.eventsCount) : ""}${inputs.sameEvents ? sameKindBlock(w, key, rel, guide || "", inputs.sameEventsCount) : ""}${inputs.life && ty === "인물" ? lifeFlowBlock(w, key, rel, inputs.lifeCount) : ""}## 관련 항목의 확정 설정 (모순 금지)
 ${staged ? "아래는 모순을 피하기 위한 참고 자료다. 이 항목이 새로 더하는 사실과 장면을 중심으로 쓰고, 이미 기록된 경위는 연결에 필요한 만큼만 쓴다." : "아래는 모순을 피하기 위한 참고 자료다. 여기 있는 항목과 사실을 본문에 모두 언급할 필요는 없고, 같은 사고, 같은 절차, 같은 규정을 이 문서에서 되풀이하지 않는다. 다만 세계의 큰 사건을 이 항목의 자리에서 보여 주는 것은 되풀이가 아니다."}
 ${relText}
 
@@ -417,15 +417,15 @@ ${relText}
 이 목록은 이름이 겹치거나 엇갈리지 않게 하려는 색인이다. 목록에 있다는 이유로 본문에 끌어오지 않는다. 각 줄의 "—" 앞까지가 제목이며, 뒤의 유형과 정의는 제목이 아니다. 제목에 "(인물)" 같은 유형을 붙이지 않는다.
 ${idx}
 
-${firstPageBlock(w, key, rewriteDir)}${worldGaps(w)}${showFor(ty, ["인물"]) ? personaBlock(persona) + (() => { const ti = traitIndex(w, key); return ti ? `## 다른 인물의 특징 (표현 반복 참고)\n${ti}\n\n` : ""; })() : ""}
+${inputs.guidelines ? firstPageBlock(w, key, rewriteDir) : ""}${inputs.gaps ? worldGaps(w) : ""}${showFor(ty, ["인물"]) ? personaBlock(persona) + (() => { const ti = inputs.traits ? traitIndex(w, key, inputs.traitsCount) : ""; return ti ? `## 다른 인물의 특징 (표현 반복 참고)\n${ti}\n\n` : ""; })() : ""}
 
 ## 출력
 JSON 객체 하나만 출력:
 {"title":"${e.title}",${angle && rewriteDir === null ? (angleMode === "section" ? '"angleUsed":"true 또는 false(이번 각도를 반영했는가)",' : "") + '"sceneUsed":"이번 각도로 실제로 쓴 장면 한 문장(쓰지 않았으면 빈 문자열)",' : ""}"type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의(링크 없이)","categories":{"소속":["..."],"유형":["..."],"사건":[],"기타":[]},"notices":["..."],"infobox":[{"label":"...","value":"..."}],"sections":[{"heading":"개요","level":1,"body":"..."},{"heading":"생애","level":1,"body":""},{"heading":"1959년 데뷔","level":2,"body":"..."}],${showFor(ty, ["인물"]) ? '"motifs":["' + (staged ? '이 인물의 특징 전체를 대표하는 중심 소재(짧은 명사)' : '이 인물 문서에서 성격을 보여 준 일화의 중심 소재(짧은 명사)') + '"],' : ""}"facts":[{"about":"항목 제목","fact":"이 문서에서 확정한, 그 항목에 관한 사실 한 문장"}],${REL_JSON},"newEntities":[{"title":"새로 링크한 항목 제목","type":"유형","summary":"한 문장 정의","소속":["아는 경우"],"유형":["아는 경우"]}],"timeline":[{"year":"연도","month":3,"day":14,"about":"사건의 주체가 되는 항목 제목","event":"이 문서에서 새로 확정한, 세계에 영향을 준 사건"}],${EVENTS_JSON},${TERMS_JSON}}
 relations에는 이 문서에 나온 인물 사이의 관계를 넣는다. 이 항목이 인물이면 이 문서에 실제로 나온 인물과의 주요 관계를 넣는다. 관계를 채우려고 새 인물이나 연인을 지어내지 않는다. '기존 인물 관계'에 이미 있는 관계를 이 문서가 다시 다루면 same으로 그 번호만 쓰고, 관계의 성격이 실제로 바뀌었을 때만 next를 쓴다. a와 b는 이 문서의 제목이거나 이 문서가 링크한 항목의 제목을 글자 그대로 쓴다. 인물이 아닌 항목만 다룬 문서라면 빈 배열.
 ${REL_SPEC}
-${showFor(ty, ["인물"]) ? `${staged ? 'motifs에는 인물의 성격·능력·습관 등 특징 전체의 중심 소재 1~3개를 쓴다. 기존 소재와 의미가 같으면 그 이름을 재사용한다. 인물이 아니면 빈 배열.' : 'motifs에는 이 항목이 인물이면 이 문서에서 성격을 보여 준 일화의 중심 소재 1~3개를 짧은 명사로 쓴다(예: "보급품", "규칙 위반", "음식", "동물", "음악", "가족"). 인물이 아니면 빈 배열.'}\n` : ""}${catGuide(w, key)} sections의 level은 1(큰 섹션) 또는 2(바로 앞 큰 섹션의 하위 섹션)이며, 섹션 번호는 쓰지 않는다.
-facts에는 이 문서가 링크한 항목 중 중요한 것(인물, 조직, 사건, 장소 위주) 6~10개에 대해 1개씩 넣되, 이 문서의 절정이나 큰 사건에 등장한 항목은 빠짐없이 포함해 그 사건에서 무엇을 했고 어떻게 되었는지(쓴 무기나 수단, 생사, 결과)를 사실로 남긴다. 그리고 「${e.title}」 자체에 대한 핵심 사실 3~6개를 넣는다. newEntities에는 위 '이미 존재하는 항목' 목록에 없던 링크 대상을 모두 넣되, summary는 40자 안팎의 한 문장으로 짧게 쓴다. newEntities의 소속과 유형은 이 문서에서 알 수 있는 범위에서 categories와 같은 규칙(기존 분류 이름 우선)으로 0~1개씩 쓰고, 모르면 빈 배열로 둔다. timeline에는 이 문서에서 새로 확정한 사건 중 세계에 영향을 준 것(전쟁, 조약, 창설, 해체, 발견, 사고, 정변처럼 그 해에 일어난 일)만 0~2개 넣는다. 넣을 사건이 없으면 빈 배열이 정상이며, 연표를 채우려고 사건을 만들지 않는다. ${TL_DATE_SPEC}${tlDateNote(w)} 현재 상태, 근황, 거주, 요양, 재직 중, 복무 중 같은 서술은 연표가 아니라 본문에 쓴다. event 문장에는 그 일을 한 주체의 고유명사를 넣고, 같은 이름을 about에 글자 그대로 쓴다. 이미 연표에 있는 사건은 다시 넣지 않는다. ${eventsSpec(w)} ${TERMS_SPEC}`;
+${showFor(ty, ["인물"]) ? `${staged ? 'motifs에는 인물의 성격·능력·습관 등 특징 전체의 중심 소재 1~3개를 쓴다. 기존 소재와 의미가 같으면 그 이름을 재사용한다. 인물이 아니면 빈 배열.' : 'motifs에는 이 항목이 인물이면 이 문서에서 성격을 보여 준 일화의 중심 소재 1~3개를 짧은 명사로 쓴다(예: "보급품", "규칙 위반", "음식", "동물", "음악", "가족"). 인물이 아니면 빈 배열.'}\n` : ""}${catGuide(w, key, inputs.categories ? inputs.categoriesCount : 0)} sections의 level은 1(큰 섹션) 또는 2(바로 앞 큰 섹션의 하위 섹션)이며, 섹션 번호는 쓰지 않는다.
+facts에는 이 문서가 링크한 항목 중 중요한 것(인물, 조직, 사건, 장소 위주) 6~10개에 대해 1개씩 넣되, 이 문서의 절정이나 큰 사건에 등장한 항목은 빠짐없이 포함해 그 사건에서 무엇을 했고 어떻게 되었는지(쓴 무기나 수단, 생사, 결과)를 사실로 남긴다. 그리고 「${e.title}」 자체에 대한 핵심 사실 3~6개를 넣는다. newEntities에는 위 '이미 존재하는 항목' 목록에 없던 링크 대상을 모두 넣되, summary는 40자 안팎의 한 문장으로 짧게 쓴다. newEntities의 소속과 유형은 이 문서에서 알 수 있는 범위에서 categories와 같은 규칙(기존 분류 이름 우선)으로 0~1개씩 쓰고, 모르면 빈 배열로 둔다. timeline에는 이 문서에서 새로 확정한 사건 중 세계에 영향을 준 것(전쟁, 조약, 창설, 해체, 발견, 사고, 정변처럼 그 해에 일어난 일)만 0~2개 넣는다. 넣을 사건이 없으면 빈 배열이 정상이며, 연표를 채우려고 사건을 만들지 않는다. ${TL_DATE_SPEC}${tlDateNote(w)} 현재 상태, 근황, 거주, 요양, 재직 중, 복무 중 같은 서술은 연표가 아니라 본문에 쓴다. event 문장에는 그 일을 한 주체의 고유명사를 넣고, 같은 이름을 about에 글자 그대로 쓴다. 이미 연표에 있는 사건은 다시 넣지 않는다. ${inputs.events || inputs.sameEvents ? eventsSpec(w) : EVENTS_SPEC_BASE} ${TERMS_SPEC}`;
 }
 /* 제목의 표기들: "白頭(백두)"는 "白頭"와 "백두"로도 찾는다 */
 const namesOf = t => { const m = String(t).match(/^(.+?)\((.+)\)$/); return [t, ...(m ? [m[1].trim(), m[2].trim()] : [])].filter(x => x.length >= 2); };

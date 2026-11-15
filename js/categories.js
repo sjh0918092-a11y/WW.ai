@@ -177,11 +177,12 @@ function legacyNavboxesAt(w, k, autos) {
   });
 }
 /* 문서 작성 맥락: 이 항목이 속한 틀의 구성원 목록(계산 결과) */
-function navPromptBlock(w, key) {
+function navPromptBlock(w, key, max = NAV_PROMPT_N) {
+  if (max <= 0) return "";
   const hits = navboxesAt(w, key).slice(0, NAV_OPEN_MAX); if (!hits.length) return "";
   return `## 이 항목이 속한 틀 (분류에서 계산한 목록)
 위키가 분류로 모은 목록이다. 본문에서 구성원 수, 순서, 몇 번째인지를 말할 때 이 목록과 맞춘다. 목록에 없는 항목을 구성원으로 세지 않는다. 연도를 모르는 항목은 끝에 있다.
-${hits.map(h => { const rows = navRows(w, h.d, h.members), all = rows.flatMap(r => r.items); return `### 틀: ${h.d.title} (기준 분류: ${h.d.cats.join(" + ")} · 총 ${all.length}개, 연도순)\n` + all.slice(0, NAV_PROMPT_N).map((it, i) => `${i + 1}. ${it.t}${it.y != null ? ` (${it.y}년)` : ""}${it.k === key ? " ← 이 항목" : ""}${S.pages[it.k] ? "" : " [미작성]"}`).join("\n") + (all.length > NAV_PROMPT_N ? `\n…외 ${all.length - NAV_PROMPT_N}개` : ""); }).join("\n\n")}
+${hits.map(h => { const rows = navRows(w, h.d, h.members), all = rows.flatMap(r => r.items); return `### 틀: ${h.d.title} (기준 분류: ${h.d.cats.join(" + ")} · 총 ${all.length}개, 연도순)\n` + all.slice(0, max).map((it, i) => `${i + 1}. ${it.t}${it.y != null ? ` (${it.y}년)` : ""}${it.k === key ? " ← 이 항목" : ""}${S.pages[it.k] ? "" : " [미작성]"}`).join("\n") + (all.length > max ? `\n…외 ${all.length - max}개` : ""); }).join("\n\n")}
 
 `;
 }

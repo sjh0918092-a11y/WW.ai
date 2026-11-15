@@ -21,7 +21,7 @@ const TEXT_MODELS = [
 const THINKS = [["", "모델 기본값"], ["minimal", "minimal"], ["low", "low"], ["medium", "medium"], ["high", "high"]];
 let GS = (() => {
   let st = {}; try { st = JSON.parse(localStorage.getItem(GKEY) || "{}") || {}; } catch {}
-  const g = { ...GDEF, ...st };
+  const g = { ...GDEF, ...st, taskModels: normalizeTaskModels(st.taskModels), prompt: normalizePromptOptions(st.prompt) };
   // 서버 연결로 이전하면서 브라우저에 저장했던 개인 키와 전송 허용을 제거한다.
   g.mode = "relay";
   for (const key of ["key", "openaiKey", "serverKeys", "serverKeysFor"]) delete g[key];
@@ -190,8 +190,9 @@ const gemini = {
     if (opts.progressWatch) opts = { ...opts, deadline: gActiveNow() + G_STAGE_MAX_MS };
     const retryLimit = opts.progressWatch ? G_PROGRESS_RETRY : G_RETRY;
     const tier = opts.modelTier === "quick" ? "quick" : opts.modelTier === "check" ? "check" : "main";
-    const model = (tier === "check" ? (GS.check || GS.main || GDEF.main) : (GS[tier] || GDEF[tier])).trim();
-    let think = (tier === "check" ? GS.checkThink ?? GDEF.checkThink : GS[tier + "Think"]) || "";
+    const selected = taskSelection(opts.taskKind || opts.jobMeta?.kind, tier);
+    const model = selected.model.trim();
+    let think = selected.think;
     const mk = (contents, json) => { const b = { contents, generationConfig: json ? { responseMimeType: "application/json" } : {} }; if (think) b.generationConfig.thinkingConfig = { thinkingLevel: think }; return b; };
     const user = [{ role: "user", parts: [{ text: prompt }] }];
     let acc = "", usage = null, retries = 0, contTried = 0;
@@ -260,7 +261,7 @@ async function listGeminiModels() {
 
 async function listClaudeModels() {
   if(!Sync.acct?.token)throw{message:"Claude 목록 조회는 로그인이 필요합니다."};
-  const ctx={base:Sync.base(),owner:Sync.acct.id,token:Sync.acct.token},selected=[...new Set([GS.main,GS.quick,GS.check].filter(id=>/^claude-/.test(id||"")))];
+  const ctx={base:Sync.base(),owner:Sync.acct.id,token:Sync.acct.token},selected=[...new Set([GS.main,GS.quick,GS.check,...Object.values(GS.taskModels||{}).map(v=>v.model)].filter(id=>/^claude-/.test(id||"")))];
   const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),25000);
   try{
     const res=await fetch(ctx.base+"/models/claude?selected="+encodeURIComponent(selected.join(',')),{headers:{Authorization:"Bearer "+ctx.token,"X-WW-Pass":GS.pass},signal:ctl.signal});
@@ -273,7 +274,7 @@ async function listClaudeModels() {
 }
 const LOGK = "wwiki:log";
 const LOG = (() => { try { const v = JSON.parse(localStorage.getItem(LOGK) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })();
-const KIND = { discovery: "새 대상 탐색", angles: "각도 목록", section: "문단 다시 쓰기", prose: "단편 쓰기", image: "이미지 생성", choices: "행동 후보", read: "문서 읽기 검사", ageRule: "나이 규칙 해석", bible: "세계관 생성", storyBible: "스토리 세계관 생성", chapterPlan: "장 계획", chapterBlock: "장 섹션", page: "문서 작성", tone: "분위기 판별", check: "설정 검사", analyze: "수정 대조", fix: "충돌 고치기", worldCheck: "세계 전체 점검", relMigrate: "인물 관계 정리", timelineDate: "연표 날짜", cats: "분류 다시 받기" };
+const KIND = { discovery: "새 대상 탐색", angles: "각도 목록", section: "문단 다시 쓰기", prose: "단편 쓰기", image: "이미지 생성", choices: "행동 후보", read: "문서 읽기 검사", ageRule: "나이 규칙 해석", bible: "세계관 생성", storyBible: "스토리 세계관 생성", chapterPlan: "장 계획", chapterBlock: "장 섹션", page: "문서 작성", tone: "분위기 판별", check: "설정 검사", analyze: "직접 편집 설정 대조", factSync: "수정 후 사실 정리", fix: "충돌 고치기", worldCheck: "세계 전체 점검", relMigrate: "인물 관계 정리", timelineDate: "연표 날짜", cats: "분류 다시 받기" };
 function pushLog(r) {
   LOG.push(r); if (LOG.length > 40) LOG.splice(0, LOG.length - 40);
   try { localStorage.setItem(LOGK, JSON.stringify(LOG)); } catch {}
@@ -290,13 +291,13 @@ async function callJson(kind, prompt, opts = {}, meta = {}) {
   const costCall = typeof DocumentCost !== "undefined" ? (opts.costSession ? DocumentCost.beginSession(opts.costSession,kind) : DocumentCost.begin(target.wid,target.key,kind)) : null;
   const recoveryMeta = typeof AIRecovery !== "undefined" && AIJobs.enabled("gemini") && S.world?.id === target.wid ? await AIRecovery.capture(kind, S.world, target.key, opts.recoveryMeta || (S.gen?.recovery ? { group: S.gen.recovery.group } : {})) : null;
   const jobMeta = { kind, title: meta.title || "", wid: target.wid || "", key: target.key || "", ...(recoveryMeta || {}), ...(opts.jobMeta || {}) };
-  const o = { progressWatch: ["page", "check", "read", "prose", "section", "discovery"].includes(kind), ...opts, jobMeta,
+  const o = { progressWatch: ["page", "check", "read", "prose", "section", "discovery"].includes(kind), ...opts, jobMeta, taskKind: kind,
     onJob: j => { rec.transport = "server"; (rec.jobs ||= []).push(j.id); opts.onJob?.(j); }, onText: u => { if (first === null) first = performance.now(); chars = u.text.length; if (user) user(u); },
     onRetry: r => { rec.retry = r.n; (rec.retries ||= []).push(r.reason ? String(r.reason).slice(0, 120) : r.mode); opts.onRetry?.(r); },
     onUsage: u => { if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,rec.model,u); opts.onUsage?.(u); },
     onMeta: m => { if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,m.model,m.usage); rec.model = m.model; rec.effort = m.think || ""; if (m.retries) rec.retry = m.retries; if (m.usage) rec.tok = { i: m.usage.promptTokenCount || 0, o: m.usage.candidatesTokenCount || 0, t: m.usage.thoughtsTokenCount || 0 }; } };
   const done = () => { rec.first = first === null ? null : Math.round(first - t0); rec.total = Math.round(performance.now() - t0); rec.out = chars; };
-  try { const r = await S.sample.json(prompt, o); done(); rec.ok = true; if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,rec.model,null,"done"); pushLog(rec); if (typeof AIRecovery !== "undefined" && !["page", "check", "read", "prose", "section", "fix", "analyze"].includes(kind)) for (const id of rec.jobs || []) AIRecovery.handled(id); return r; }
+  try { const r = await S.sample.json(prompt, o); done(); rec.ok = true; if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,rec.model,null,"done"); pushLog(rec); if (typeof AIRecovery !== "undefined" && !["page", "check", "read", "prose", "section", "fix", "analyze", "factSync"].includes(kind)) for (const id of rec.jobs || []) AIRecovery.handled(id); return r; }
   catch (e) { if (!chars && typeof e?.text === "string") chars = e.text.length; done(); rec.ok = false; if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,rec.model,null,"failed"); rec.err = e?.code || String(e?.message || e).slice(0, 80); if (e?.message) rec.msg = String(e.message).slice(0, 200); pushLog(rec); throw e; }
 }
 const secs = ms => ms == null ? "-" : (ms / 1000).toFixed(1) + "초";

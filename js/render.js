@@ -121,6 +121,18 @@ function updateThinkingOptions() {
   }
 }
 
+function taskThinkOptions(model, value) {
+  return `<option value="inherit" ${value === "inherit" ? "selected" : ""}>공통 배정 따름</option>` + thinkOptions(model, value);
+}
+function updateTaskThinkingOptions() {
+  const settings={...GS,main:$("#gMain")?.value||GS.main,quick:$("#gQuick")?.value||GS.quick,check:$("#gCheck")?.value||""};
+  document.querySelectorAll("[data-task-model]").forEach(el=>{
+    const kind=el.dataset.taskModel, think=$("#gTaskThink-"+kind), value=think.value;
+    const tier=["tone","relMigrate","timelineDate"].includes(kind)?"quick":["check","read","analyze","factSync","ageRule","cats","worldCheck"].includes(kind)?"check":"main";
+    think.innerHTML=taskThinkOptions(el.value||taskSelection(kind,tier,{...settings,taskModels:{}}).model,value);
+  });
+}
+
 function updateModelIds() {
   for(const id of ["gMain","gQuick","gCheck","gImage"]) {
     const note=$("#"+id+"Id");if(note)note.textContent="API ID: "+($("#"+id)?.value || $("#gMain")?.value || "");
@@ -138,6 +150,14 @@ function gsetHtml() {
       return entries.length ? `<optgroup label="${label}">${entries.map(([id, name]) => `<option value="${esc(id)}" ${value === id ? "selected" : ""}>${esc(name)}</option>`).join("")}</optgroup>` : "";
     }).join("");
   };
+  const tasks=normalizeTaskModels(GS.taskModels), inputs=writingOptions();
+  const taskRows=AI_TASKS.map(([kind,label])=>{
+    const task=tasks[kind]||{model:"",think:"inherit"};
+    const tier=["tone","relMigrate","timelineDate"].includes(kind)?"quick":["check","read","analyze","factSync","ageRule","cats","worldCheck"].includes(kind)?"check":"main";
+    const model=taskSelection(kind,tier).model;
+    return `<div class="ai-task"><h3 class="lb">${esc(label)}</h3><div class="two"><div><label class="note" for="gTask-${kind}">모델</label><select id="gTask-${kind}" data-task-model="${kind}">${modelOptions(task.model,false,true).replace("기본 모델과 같게","공통 배정 따름")}</select></div><div><label class="note" for="gTaskThink-${kind}">생각 수준</label><select id="gTaskThink-${kind}" data-task-think="${kind}">${taskThinkOptions(model,task.think)}</select></div></div></div>`;
+  }).join("");
+  const inputRows=AI_PROMPT_FIELDS.map(([key,label,,count])=>`<div class="ai-input"><label for="gInput-${key}"><input type="checkbox" id="gInput-${key}" data-prompt-flag="${key}" ${inputs[key]?"checked":""}> ${esc(label)}</label>${count?`<label class="note" for="gInput-${count}">최대 <input class="txt" type="number" min="0" max="500" step="1" id="gInput-${count}" data-prompt-count="${count}" value="${inputs[count]}" style="width:78px" ${inputs[key]?"":"disabled"}> 개</label>`:""}</div>`).join("");
   return `<div class="sheet gset"><div class="crumb"><span>도구</span></div><h1 class="t">AI 연결 설정</h1>
     <p class="note">접속 암호와 모델만 설정하세요. API 키는 서버에서 관리합니다.</p>
     <h2 class="nf-h">서버 연결</h2>
@@ -149,11 +169,14 @@ function gsetHtml() {
         <p class="note" style="margin:6px 0 0">비워 두면 기본 서버를 씁니다.</p></details>
       <div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="relay-invite">사이트 링크 복사</button><span class="note">친구에게 링크를 보내고, 접속 암호는 따로 알려 주세요.</span></div>
     </div>
-    <h2 class="nf-h">문서 모델</h2>
-    <p class="note">용도별로 Gemini 또는 Claude를 선택하세요. Claude는 로그인과 서버 AI 실행이 필요합니다. 생각 깊이는 아래 실행·검사 옵션에서 조정하세요.</p>
+    <h2 class="nf-h">공통 모델</h2>
+    <p class="note">용도별로 Gemini 또는 Claude를 선택하세요. Claude는 로그인과 서버 AI 실행이 필요합니다. 공통 생각 깊이는 실행·검사 옵션에서, 작업별 값은 아래에서 조정하세요.</p>
     <div><label class="lb" for="gMain">기본 모델 <span class="note" style="font-weight:400">세계관 생성, 문서 작성, 랜덤 서핑, 충돌 고치기</span></label><select id="gMain">${modelOptions(GS.main)}</select><p class="note" id="gMainId">API ID: ${esc(GS.main)}</p></div>
     <div><label class="lb" for="gQuick">빠른 모델 <span class="note" style="font-weight:400">분위기 판별</span></label><select id="gQuick">${modelOptions(GS.quick)}</select><p class="note" id="gQuickId">API ID: ${esc(GS.quick)}</p></div>
-    <div><label class="lb" for="gCheck">검사 모델 <span class="note" style="font-weight:400">설정 검사, 수정 대조</span></label><select id="gCheck">${modelOptions(GS.check || "", false, true)}</select><p class="note" id="gCheckId">API ID: ${esc(GS.check || GS.main)}</p></div>
+    <div><label class="lb" for="gCheck">검사 모델 <span class="note" style="font-weight:400">작업별로 지정하지 않은 검사·추출 작업</span></label><select id="gCheck">${modelOptions(GS.check || "", false, true)}</select><p class="note" id="gCheckId">API ID: ${esc(GS.check || GS.main)}</p></div>
+    <details class="memo" id="gTasks" style="margin-top:18px"><summary>작업별 모델·생각 수준</summary><div style="padding:0 12px 12px"><p class="note">작업마다 따로 지정할 수 있습니다. ‘공통 배정 따름’은 위 기본·빠른·검사 모델 설정을 사용합니다. ‘모델 기본값’은 해당 작업의 생각 수준을 모델 기본값으로 지정합니다.</p>${taskRows}</div></details>
+    <details class="memo" id="gInputs" style="margin-top:14px"><summary>문서 작성에 보낼 자료·개수</summary><div style="padding:0 12px 12px"><p class="note">문서 작성·다시 쓰기에 적용합니다. 검사 작업은 별도 자료 구성을 유지합니다. 개수는 0~500개로 조절합니다. 연표 개수는 일반 항목 기준이며 원안·사용자 수정 항목 포함 여부는 따로 선택합니다. 확정 사실 개수도 일반 사실 기준입니다.</p>${inputRows}<p class="note">공통 작성 지침을 꺼도 결과를 저장하기 위한 JSON 출력 형식은 보냅니다.</p><button type="button" class="btn" data-act="gset-input-defaults">입력 자료 기본값 복원</button></div></details>
+    <div class="row" style="margin-top:14px"><button type="button" class="btn" data-act="gset-export">AI 설정 내보내기</button><button type="button" class="btn" data-act="gset-import">AI 설정 가져오기</button><input type="file" id="aiSettingsFile" accept="application/json,.json" hidden></div><p class="note">작업별 모델·생각 수준·입력 자료 설정을 JSON으로 저장합니다. 접속 암호와 로그인 정보는 포함하지 않습니다.</p>
     <h2 class="nf-h">이미지 생성</h2>
     <label class="lb" for="gImage">기본 이미지 모델</label><select id="gImage">${modelOptions(GS.imageModel || GDEF.imageModel, true)}</select><p class="note" id="gImageId">API ID: ${esc(GS.imageModel || GDEF.imageModel)}</p>
     <p class="note">이미지는 서버 키로 생성합니다. OpenAI 이미지를 사용하려면 로그인과 서버 AI 실행이 필요합니다.</p>
@@ -210,6 +233,12 @@ function readGsetForm() {
   const relay = normRelay(v("gRelay")) || DEFAULT_RELAY;
   if(relay!==normRelay(GS.relay || DEFAULT_RELAY)){delete S.gmodels;delete S.cmodels;}
   GS = { ...GS, mode: "relay", relay, pass: v("gPass"), main: v("gMain") || GDEF.main, mainThink: v("gMainT"), quick: v("gQuick") || GDEF.quick, quickThink: v("gQuickT"), check: v("gCheck"), checkThink: v("gCheckT"), preCheck: !!$("#gPre")?.checked, imageModel: v("gImage") || GDEF.imageModel, serverJobs: !!$("#gServerJobs")?.checked, documentPipeline: !!$("#gDocumentPipeline")?.checked };
+  const taskModels={};
+  document.querySelectorAll("[data-task-model]").forEach(el=>{const kind=el.dataset.taskModel;taskModels[kind]={model:el.value,think:$("#gTaskThink-"+kind)?.value||""}});
+  GS.taskModels=normalizeTaskModels(taskModels);
+  const prompt={};document.querySelectorAll("[data-prompt-flag]").forEach(el=>{prompt[el.dataset.promptFlag]=el.checked});
+  document.querySelectorAll("[data-prompt-count]").forEach(el=>{if(el.value!=="")prompt[el.dataset.promptCount]=Number(el.value)});
+  GS.prompt=normalizePromptOptions(prompt);
   saveGS(); S.sample = gReady() ? gemini : null;
   AIRecovery.authChanged();
 }

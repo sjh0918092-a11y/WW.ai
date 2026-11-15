@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import {validTaskModels,validPromptOptions} from '../relay/ai-settings.js';
+import {validateJob} from '../relay/providers.js';
+const ctx={};vm.createContext(ctx);vm.runInContext(readFileSync('js/ai-settings.js','utf8')+';globalThis.api={AI_TASKS,AI_PROMPT_FIELDS,normalizePromptOptions,normalizeTaskModels,parseAISettingsFile};',ctx);const c=ctx.api;
+assert(validPromptOptions(c.normalizePromptOptions()));for(const[k]of c.AI_TASKS)assert(validTaskModels({[k]:{model:'claude-sonnet-4-6',think:'inherit'}}));
+for(const raw of [{unknown:true},{seed:'false'},{factsCount:-1},{factsCount:501},{factsCount:1.5}])assert(!validPromptOptions(raw));
+for(const raw of [{page:{model:'gpt-image-1',think:''}},{page:{model:'gemini',think:'bad'}},{secret:{model:'gemini',think:''}}])assert(!validTaskModels(raw));
+const wrap=settings=>({format:'worldwiki-ai-settings',version:1,settings});
+for(const settings of [{pass:'secret'},{taskModels:{page:{model:'gpt-image-1',think:''}}},{prompt:{seed:0}},{prompt:JSON.parse('{"__proto__":true}')},{prompt:{factsCount:-1}}])assert.throws(()=>c.parseAISettingsFile(wrap(settings)));
+assert.equal(c.parseAISettingsFile(wrap({taskModels:{factSync:{model:'gemini-3.5-flash-lite',think:''}},prompt:{seed:false,factsCount:0}})).taskModels.factSync.think,'');
+const b={id:'settings-validation-0001',type:'document.pipeline',model:'gemini-main',input:{action:'generate',wid:'world',key:'key',worldHash:'a'.repeat(64),pageHash:'b'.repeat(64),settings:{taskModels:{factSync:{model:'gemini-quick',think:'minimal'}},prompt:{seed:false,factsCount:0}}}};
+assert.equal(validateJob(b),null);assert(validateJob({...b,input:{...b.input,settings:{taskModels:{page:{model:'claude-sonnet-4-6',think:''}}}},credential:{type:'personal',key:'personal-secret'}}));
+assert(validateJob({...b,input:{...b.input,settings:{prompt:{factsCount:-1}}}}));
+console.log('✓ Frontend/server option schema, zero counts, invalid import rejection and Claude credential isolation');

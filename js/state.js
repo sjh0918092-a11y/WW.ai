@@ -448,11 +448,13 @@ function prepareRewrite(w, key) {
 }
 function restoreRewrite(w, backup) { const b = JSON.parse(backup); w.entities = b.entities; w.timeline = b.timeline; w.navboxes = b.navboxes; if (b.relations) w.relations = b.relations; if (b.events) w.events = b.events; if (b.glossary) w.glossary = b.glossary; }
 const navboxesFor = (w, key) => Object.entries(w.navboxes || {}).filter(([, nb]) => nb.src === key || (nb.members || []).includes(key));
-function navboxText(nb) {
-  return `### 틀: ${nb.title} (총 ${nb.members.length}개 항목, 「${nb.srcTitle}」 문서에서 확정)\n` + nb.rows.map(r => `- ${r.label}: ${r.items.map(stripMarks).join(" / ")}`).join("\n");
+function navboxText(nb, max = Infinity) {
+  let left = max;
+  const rows = nb.rows.map(r => { const items = r.items.slice(0, left); left -= items.length; return items.length ? `- ${r.label}: ${items.map(stripMarks).join(" / ")}` : ""; }).filter(Boolean);
+  return `### 틀: ${nb.title} (총 ${nb.members.length}개 항목, 「${nb.srcTitle}」 문서에서 확정)\n` + rows.join("\n");
 }
 
-function related(w, key) {
+function related(w, key, max = 8) {
   const e = w.entities[key]; const blob = [e.summary, ...e.facts.map(f => f.t), ...e.mentions.map(m => m.text)].join(" ");
   const sc = {};
   for (const m of e.mentions) { sc[m.from] = (sc[m.from] || 0) + 3; const p = S.pages[m.from]; if (p) for (const l of p.links || []) if (l !== key) sc[l] = (sc[l] || 0) + 1; }
@@ -463,7 +465,7 @@ function related(w, key) {
     if (o.title.length >= 2 && blob.includes(o.title)) sc[k] = (sc[k] || 0) + 2;
     if (e.title.length >= 2 && o.facts.some(f => f.t.includes(e.title))) sc[k] = (sc[k] || 0) + 2;  // 이 항목에 소속되었다고 확정된 항목(구성원 등)
   }
-  return Object.entries(sc).sort((a, b) => b[1] - a[1]).map(x => x[0]).filter(k => k !== key && w.entities[k]).slice(0, 8);
+  return Object.entries(sc).sort((a, b) => b[1] - a[1]).map(x => x[0]).filter(k => k !== key && w.entities[k]).slice(0, max);
 }
 /* 연표도 저장할 때는 지우지 않고, 프롬프트에 넣을 때 고른다. 원안 연표와 직접 수정한 문서의 항목은 언제나 넣고,
    나머지는 pickRelevant로 TIMELINE_PROMPT_N개까지. 고른 것은 연도 순서 그대로 둔다 */
@@ -512,10 +514,12 @@ function stageBlock(w) {
     + (now ? "\n\n## 지금 진행 중인 일\n" + now : "")
     + (parties.length ? "\n\n## 지금 진행 중인 일의 당사자\n" + parties.map(p => `- ${p.name}${p.kind ? " (" + p.kind + ")" : ""}${p.want ? ": " + p.want : ""}`).join("\n") : "");
 }
-function canonBlock(w, focus = null) {
+function canonBlock(w, focus = null, options = null) {
+  const on = key => !options || options[key];
   const rules = (w.rules || []).map(r => "- " + r).join("\n") || "- (없음)";
-  const tl = promptTimeline(w, focus).map(t => `- ${tlWhen(t)}: ${t.event}${S.pages[t.src]?.editedAt ? " [사용자 확정]" : ""}`).join("\n") || "- (없음)";
-  return `## 세계관 원안\n${w.seed}\n\n## 핵심 규칙 (절대 위반 금지)\n이 규칙들은 어기면 안 되는 전제일 뿐, 문서마다 언급해야 할 소재가 아니다. 이 항목과 직접 관련된 규칙만 본문에 반영한다.\n${rules}${stageBlock(w)}\n\n## 사용자 확정 설정 (최우선. 다른 모든 정보보다 우선한다)\n${(w.userCanon || "").trim() || "(없음)"}\n\n## 연표\n${tl}${(w.glossary || []).length ? "\n\n" + glossaryBlock(w) : ""}`;
+  const timeline = options && !options.fixedTimeline ? (w.timeline || []).filter(t => t.src !== "seed" && !S.pages[t.src]?.editedAt) : w.timeline || [];
+  const tl = on("timeline") ? promptTimeline(w, focus, timeline, options ? options.timelineCount : TIMELINE_PROMPT_N).map(t => `- ${tlWhen(t)}: ${t.event}${S.pages[t.src]?.editedAt ? " [사용자 확정]" : ""}`).join("\n") || "- (없음)" : "";
+  return [on("seed") ? `## 세계관 원안\n${w.seed}` : "", on("rules") ? `## 핵심 규칙 (절대 위반 금지)\n이 규칙들은 어기면 안 되는 전제일 뿐, 문서마다 언급해야 할 소재가 아니다. 이 항목과 직접 관련된 규칙만 본문에 반영한다.\n${rules}` : "", on("stage") ? stageBlock(w).trim() : "", on("canon") ? `## 사용자 확정 설정 (최우선. 다른 모든 정보보다 우선한다)\n${(w.userCanon || "").trim() || "(없음)"}` : "", on("timeline") ? `## 연표\n${tl}` : "", on("glossary") && (w.glossary || []).length ? glossaryBlock(w, null, options ? options.glossaryCount : GLOSSARY_PROMPT_N) : ""].filter(Boolean).join("\n\n");
 }
 /* 검사의 기준: 검사하는 문서(p)보다 먼저 정해진 설정만. 원안·사용자 지정·이야기 장 줄거리·직접 수정한 문서는 언제나 기준이다.
    나중에 쓴 문서가 정한 설정과 어긋나면, 고칠 쪽은 그 나중 문서이므로 그쪽 검사에서 잡힌다 */
@@ -531,6 +535,7 @@ function focusInfo(w, focus) {
   return (focusMemo = { w, focus, years, names });
 }
 function pickRelevant(w, self, items, textOf, n, focus) {
+  if (n <= 0) return [];
   if (!focus) return items.slice(-n);
   const fi = focusInfo(w, focus), others = fi.names.filter(([x]) => x !== self).map(([, n]) => n);
   const score = t => {
@@ -540,10 +545,10 @@ function pickRelevant(w, self, items, textOf, n, focus) {
   const top = new Set(items.map((x, i) => ({ i, s: score(textOf(x)) })).sort((a, b) => b.s - a.s || a.i - b.i).slice(0, n).map(x => x.i));
   return items.filter((_, i) => top.has(i));   // 고른 것은 원래 순서대로 보여 준다
 }
-function entityBrief(w, k, excludeSrc, okSrc, focus) {
+function entityBrief(w, k, excludeSrc, okSrc, focus, options = null) {
   const o = w.entities[k];
-  const facts = pickRelevant(w, k, o.facts.filter(f => f.src !== excludeSrc && live(f) && (!okSrc || okSrc(f.src))), f => f.t, 6, focus).map(f => "- " + factLine(f)).join("\n");
+  const facts = pickRelevant(w, k, o.facts.filter(f => f.src !== excludeSrc && live(f) && (!okSrc || okSrc(f.src))), f => f.t, options ? options.relatedFacts ? options.relatedFactsCount : 0 : 6, focus).map(f => "- " + factLine(f)).join("\n");
   const own = !okSrc || !S.pages[k] || okSrc(k);   // 그 항목의 문서가 나중에 쓰였으면 그 문서의 정의와 인포박스는 기준에서 뺀다
-  const summary = own ? o.summary : (o.stub?.summary || ""), box = own ? o.box : "";
+  const summary = options && !options.relatedSummary ? "" : own ? o.summary : (o.stub?.summary || ""), box = options && !options.relatedBox ? "" : own ? o.box : "";
   return `### 「${o.title}」${o.type ? " · " + o.type : ""}${summary ? " — " + summary : ""}${box ? "\n정보: " + box : ""}${facts ? "\n" + facts : ""}`;
 }

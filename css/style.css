@@ -393,3 +393,12 @@ details.ent li{margin-bottom:3px}
 
 /* 문서 생성 사용량 */
 .doc-cost{margin:14px 0;font-size:13px}.doc-cost summary{cursor:pointer;line-height:1.6}.cost-body{padding:0 12px 10px;overflow-wrap:anywhere}.cost-body ul{padding:0;list-style:none}.cost-body li{display:flex;gap:12px;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line)}.cost-body li span:last-child{flex-shrink:0}.cost-body .note{line-height:1.6}@media(max-width:560px){.cost-body li{display:block}.cost-body li span{display:block}}
+
+/* AI 작업별 배정과 작성 입력 설정 */
+.ai-task { padding: 10px 0 14px; border-bottom: 1px solid var(--line); }
+.ai-task .lb { margin-top: 0; }
+.ai-task select { width: 100%; min-width: 0; }
+.ai-input { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0; }
+.ai-input > label:first-child { flex:1; }
+.ai-input > label:last-child:not(:first-child) { display:flex;align-items:center;gap:4px;white-space:nowrap; }
+@media(max-width:480px) { .ai-input { flex-wrap:wrap; } .ai-input > label:first-child { min-width:65%; } }
