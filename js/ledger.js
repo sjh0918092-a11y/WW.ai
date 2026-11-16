@@ -237,7 +237,7 @@ function timelineIssues(w, k) {
    처음 기록된 값이 기준이다(refOK와 같은 원칙). 사용자가 직접 고친 문서의 기록은 언제나 기준이다
    detail: 이 문서가 이 사건을 한 문단 넘게 자세히 서술했는가(생성 응답). detailIn: 그 사건의 상세 서술을 맡은 문서 키
    (사건 이름의 문서가 있으면 그 문서, 없으면 detail인 기록 중 기준 순서가 앞선 문서). 다른 문서는 요약하고 그 문서를 참조한다.
-   beats: [{actor, action}] 핵심 경과 3~5줄. 기준 순서가 앞선 기록의 경과가 기준이다. 옛 기록에는 detail·detailIn·beats가 없다 */
+   beats: [{actor, action}] 핵심 경과 3~7줄(단계 순서, 결과, 피해 포함). 기준 순서가 앞선 기록의 경과가 기준이다. 옛 기록에는 detail·detailIn·beats가 없다 */
 const EVENTS_PER_PAGE = 6;
 const evText = (x, n) => norm(stripMarks(asText(x ?? ""))).slice(0, n);
 function normEvent(w, x) {
@@ -267,14 +267,20 @@ function ingestEvents(w, src, list) {
   }
   return got.length;
 }
-const BEATS_MAX = 5;
+const BEATS_MAX = 7;
 function normBeats(list) {
   return (Array.isArray(list) ? list : []).map(b => b && typeof b === "object" ? { actor: evText(b.actor ?? b.who, 60), action: evText(b.action ?? b.what, 120) } : null).filter(b => b && b.actor && b.action).slice(0, BEATS_MAX);
 }
 /* 상세 서술을 맡은 문서: 사건 이름의 문서 > detail인 기록 중 직접 고친 문서 > 먼저 쓴 문서. cur는 지금 저장 중인(아직 S.pages에 없을 수 있는) 문서 */
+/* 사건 이름의 문서가 없으면: 직접 고친 문서 > 사건 문서(이름이 달라도, 예: 걸프전·걸프 전쟁) > 그 사건의 참가자 문서.
+   참가자도 아닌 개념·국가 문서가 사건을 길게 다뤘다고 상세 서술을 맡지는 않는다 */
 function eventDetailIn(w, ek, cur = null) {
   if (w.entities[ek] && (cur === ek || (S.world === w && S.pages[ek]))) return ek;
-  const c = (w.events || []).filter(x => x.k === ek && x.detail && (x.src === cur || S.pages[x.src])).sort(eventRank)[0];
+  const all = (w.events || []).filter(x => x.k === ek && x.detail && (x.src === cur || S.pages[x.src]));
+  const parts = new Set((w.events || []).filter(x => x.k === ek).flatMap(x => x.parts || []));
+  const typeOf = src => S.pages[src]?.type || w.entities[src]?.type;
+  const tier = x => eventEdited(x) ? 0 : typeOf(x.src) === "사건" ? 1 : parts.has(x.src) ? 2 : 3;
+  const c = all.filter(x => tier(x) < 3).sort((a, b) => tier(a) - tier(b) || eventRank(a, b))[0];
   return c ? c.src : null;
 }
 /* 기준 핵심 경과: beats가 있는 기록 중 기준 순서가 가장 앞선 것 */
@@ -342,7 +348,7 @@ ${rows.join("\n")}
 ${beats.length ? `
 ### 핵심 경과 (먼저 기록한 문서 기준. [사용자 확정]은 직접 고친 문서)
 ${beats.map(x => beatLine(w, x)).join("\n")}
-이 경과의 주체와 행위는 바꾸지 않는다. 세부 묘사는 덧붙여도 된다.
+이 경과의 주체와 행위는 바꾸지 않는다. 세부 묘사는 덧붙여도 된다. 단계의 순서와 피해(부상 부위, 회복 기간, 손실)도 바꾸지 않고, 경과 사이에 다른 항목의 상태나 행동을 바꾸는 장면(쓰러짐, 부상, 지연, 출발·이동 방식)을 끼워 넣지 않는다.
 ` : ""}${det.length ? `
 ### 자세한 서술을 맡은 문서
 ${det.map(([ek, d]) => { const t = w.entities[d].title; return `- 「${evName(ek)}」: 이 사건은 「${t}」 문서에 자세히 서술되어 있다. 이 문서에서는 이 항목의 관점에서 2~3문장으로 요약하고, '자세한 내용은 [[${t}]] 문서 참조'를 붙인다. 장면을 다시 묘사하지 않는다.`; }).join("\n")}
@@ -357,7 +363,7 @@ function eventCheckBlock(w, key, okSrc) {
   const beats = eventKeysFor(w, key, (w.events || []).filter(x => x.src === key).map(x => x.k), okSrc).map(ek => eventBeats(w, ek, x => x !== key && (!okSrc || okSrc(x)))).filter(Boolean);
   if (!rows.length && !cand.length) return "";
   return `## 사건 장부 (먼저 기록된 사건)
-${rows.length ? `${EVENT_HEAD}\n${rows.join("\n")}\n` : "(없음)\n"}${beats.length ? `핵심 경과(누가 무엇을 했는가). 이 문서가 같은 사건의 주체나 행위를 다르게 썼으면 지적한다(evidence에는 경과 줄을 옮긴다). 세부 묘사를 덧붙인 것은 지적하지 않는다.\n${beats.map(x => beatLine(w, x)).join("\n")}\n` : ""}${cand.length ? `
+${rows.length ? `${EVENT_HEAD}\n${rows.join("\n")}\n` : "(없음)\n"}${beats.length ? `핵심 경과(누가 무엇을 했는가). 이 문서가 같은 사건의 주체나 행위, 단계 순서, 피해를 다르게 썼으면 지적한다(evidence에는 경과 줄을 옮긴다). 세부 묘사를 덧붙인 것은 지적하지 않는다.\n${beats.map(x => beatLine(w, x)).join("\n")}\n` : ""}${cand.length ? `
 ## 같은 사건일 수 있는 기록 (이름이 달라 앱이 정하지 못했다. 날짜가 겹치고 참가자가 같다)
 ${cand.map(([m, r]) => `- 이 문서: 「${m.name}」 ${m.date}${m.place ? ", " + m.place : ""}${m.nums.length ? ", " + numText(m) : ""}\n  「${S.pages[r.src]?.title || "?"}」: 「${r.name}」 ${r.date}${r.place ? ", " + r.place : ""}${r.nums.length ? ", " + numText(r) : ""}`).join("\n")}
 두 기록이 같은 사건을 가리키면 날짜, 장소, 수치가 어긋나는 곳을 지적하고(evidence에는 다른 문서의 기록을 옮긴다), 다른 사건이면 지적하지 않는다.
@@ -441,13 +447,13 @@ function eventBeatsCheckBlock(w, key) {
   const list = [...ks].map(ek => eventBeats(w, ek, src => src !== key && refOK(src, p))).filter(Boolean);
   if (!list.length) return "";
   return `## 다른 문서가 먼저 기록한 사건의 핵심 경과
-이 문서가 같은 사건을 다룰 때 아래 경과의 주체(누가)와 행위(무엇을)를 다르게 썼는지 본다. 다르게 썼으면 claim에 이 문서의 서술을 글자 그대로 옮기고 evidence에 아래 경과 줄을 옮긴다. 세부 묘사를 덧붙인 것은 지적하지 않는다.
+이 문서가 같은 사건을 다룰 때 아래 경과의 주체(누가)와 행위(무엇을)를 다르게 썼는지 본다. 단계의 순서, 피해(부상 부위, 회복 기간, 손실)가 다르거나, 경과 사이에 다른 항목의 상태를 바꾸는 장면을 끼워 넣었으면 그것도 지적한다. 다르게 썼으면 claim에 이 문서의 서술을 글자 그대로 옮기고 evidence에 아래 경과 줄을 옮긴다. 세부 묘사를 덧붙인 것은 지적하지 않는다.
 ${list.map(x => beatLine(w, x)).join("\n")}
 
 `;
 }
 const eventKindsNote = w => { const ks = eventKinds(w); return ks.length ? ` 이미 쓰는 유형 이름: ${ks.join(", ")}. 같은 종류면 이 이름을 글자 그대로 쓰고, 새 종류일 때만 새 이름을 짓는다.` : ""; };
-const EVENTS_SPEC_BASE = `events에는 이 문서가 날짜와 함께 장소나 수치까지 구체적으로 서술한 사건만 0~4개 넣는다. 막연히 언급만 한 사건, 날짜가 없는 사건은 넣지 않는다. name은 사건 항목을 링크했다면 그 제목을 글자 그대로 쓰고, 장부에 이미 있는 사건이면 장부의 사건 이름, 수치 이름, 단위를 똑같이 쓴다. nums의 value에는 단위 없이 값만 쓴다. participants에는 참가한 항목 제목을 글자 그대로 쓴다. kind에는 이 세계에서 쓰는 짧은 사건 유형 이름으로, 무엇을 상대로 무엇을 한 일인지 드러나는 이름(예: 영해 침범 선박 저지, 재난 방호, 거체 간 격투, 기동 거부)을 하나 쓴다. detail은 이 문서가 이 사건을 한 문단 넘게 자세히 서술했으면 true, 짧게 요약하거나 언급만 했으면 false다. beats에는 이 문서가 서술한 사건의 핵심 경과 3~5줄을 순서대로 쓰고, 각 줄은 actor(그 일을 한 주체: 항목 제목이나 이름)와 action(한 일)이다. 장부에 핵심 경과가 이미 있는 사건이면 그 주체와 행위를 그대로 따른다.`;
+const EVENTS_SPEC_BASE = `events에는 이 문서가 날짜와 함께 장소나 수치까지 구체적으로 서술한 사건만 0~4개 넣는다. 막연히 언급만 한 사건, 날짜가 없는 사건은 넣지 않는다. name은 사건 항목을 링크했다면 그 제목을 글자 그대로 쓰고, 장부에 이미 있는 사건이면 장부의 사건 이름, 수치 이름, 단위를 똑같이 쓴다. nums의 value에는 단위 없이 값만 쓴다. participants에는 참가한 항목 제목을 글자 그대로 쓴다. kind에는 이 세계에서 쓰는 짧은 사건 유형 이름으로, 무엇을 상대로 무엇을 한 일인지 드러나는 이름(예: 영해 침범 선박 저지, 재난 방호, 거체 간 격투, 기동 거부)을 하나 쓴다. detail은 이 문서가 이 사건을 한 문단 넘게 자세히 서술했으면 true, 짧게 요약하거나 언급만 했으면 false다. beats에는 이 문서가 서술한 사건의 핵심 경과 3~7줄을 순서대로 쓰고, 각 줄은 actor(그 일을 한 주체: 항목 제목이나 이름)와 action(한 일)이다. 단계가 있으면 단계마다 한 줄씩 순서대로 쓰고, 결과와 피해(부상 부위, 회복 기간, 손실)가 있으면 action에 넣는다. 장부에 핵심 경과가 이미 있는 사건이면 그 주체, 행위, 순서, 피해를 그대로 따른다.`;
 const eventsSpec = w => EVENTS_SPEC_BASE + eventKindsNote(w);
 const EVENTS_JSON = `"events":[{"name":"사건 이름","kind":"사건 유형","date":"날짜(문서에 쓴 그대로)","place":"장소","nums":[{"name":"수치 이름(예: 거리, 수심, 병력, 사상자)","value":"값","unit":"단위"}],"participants":["참가 항목 제목"],"result":"결과 한 문장","detail":"true 또는 false","beats":[{"actor":"주체","action":"한 일"}]}]`;
 
@@ -479,7 +485,8 @@ function ingestTerms(w, src, list) {
 }
 /* 문서가 지워지거나 다시 쓰일 때: 그 문서가 낸 후보는 걷어 내고, 그 문서가 처음 정한 미확정 용어는 후보가 있으면 첫 후보로, 없으면 지운다 */
 function purgeTerms(w, src) {
-  if (w.entities?.[src]?.affil?.src === src) delete w.entities[src].affil;   // 그 문서가 정한 자기 소속도 함께 걷어 낸다
+  if (w.entities?.[src]?.affil?.src === src) delete w.entities[src].affil;   // 그 문서가 정한 자기 소속과 존속 기간도 함께 걷어 낸다
+  if (w.entities?.[src]?.span?.src === src) delete w.entities[src].span;
   if (!w.glossary) return;
   for (const g of w.glossary) if (g.alts) { g.alts = g.alts.filter(a => a.src !== src); if (!g.alts.length) delete g.alts; }
   w.glossary = w.glossary.filter(g => {
@@ -540,18 +547,35 @@ function rosterOf(w, org) {
   }
   return rows;
 }
+/* 문서가 정한 기간으로 계산한, 기준 시점까지 구성원이 하나도 없던 연도 구간 */
+function rosterGaps(w, rows) {
+  const era = +yearText(w.era); if (!era) return [];
+  const spans = rows.map(r => r.a).filter(a => a?.from).map(a => [+a.from, a.to ? +a.to : a.state === "현역" ? era : null]).filter(([a, b]) => b !== null && b >= a);
+  if (!spans.length) return [];
+  const first = Math.min(...spans.map(x => x[0])), out = [];
+  let run = null;
+  for (let y = first; y <= era; y++) {
+    const on = spans.some(([a, b]) => y >= a && y <= b);
+    if (!on && run === null) run = y;
+    if ((on || y === era) && run !== null) { const endY = on ? y - 1 : y; out.push(endY > run ? `${run}~${endY}` : `${run}`); run = null; }
+  }
+  return out.slice(0, 4);
+}
 function rosterBlock(w, orgs, n = 30, check = false) {
   if (n <= 0) return "";
   const parts = [];
   for (const org of [...new Set(orgs)]) {
     const rows = rosterOf(w, org); if (!rows.length || !w.entities[org]) continue;
     const count = {}; for (const r of rows) if (r.a) count[r.a.state] = (count[r.a.state] || 0) + 1;
-    parts.push(`### 「${w.entities[org].title}」 (문서가 정한 상태: ${Object.entries(count).map(([s, c]) => `${s} ${c}`).join(", ") || "없음"})\n${rows.slice(0, n).map(({ k, a }) => `- ${w.entities[k].title}${a ? `: ${[a.role, a.state, affilSpan(a)].filter(Boolean).join(", ")}` : ": (문서 없음, 상태 미정)"}`).join("\n")}`);
+    const active = rows.filter(r => r.a?.state === "현역").map(r => w.entities[r.k].title), gaps = rosterGaps(w, rows);
+    const head = `문서가 정한 상태: ${Object.entries(count).map(([s, c]) => `${s} ${c}`).join(", ") || "없음"} · 기준 시점 현역 ${active.length}${active.length ? `(${active.join(", ")})` : ""}${gaps.length ? ` · 구성원이 없던 기간: ${gaps.join(", ")}` : ""}`;
+    parts.push(`### 「${w.entities[org].title}」 (${head})\n${rows.slice(0, n).map(({ k, a }) => `- ${w.entities[k].title}${a ? `: ${[a.role, a.state, affilSpan(a)].filter(Boolean).join(", ")}` : ": (문서 없음, 상태 미정)"}`).join("\n")}`);
     if (parts.length >= 4) break;
   }
   if (!parts.length) return "";
   return `## 소속 구성원 현황 (각 항목의 문서가 정한 소속·상태·기간을 앱이 모은 표)
-${check ? "문서가 'N기 중', '유일', '0기', '모두', '가장 ~한' 같은 수·비교로 구성원을 말하면 이 표와 맞춰 본다. 표의 상태와 모순되면(예: 표에 현역이 있는데 현역 0기라고 씀, 현역이 1기뿐인데 현역 3기 중 하나라고 씀) high로 지적한다. 표보다 많은 수를 말했으면 이 문서가 그 구성원의 이름을 밝혔는지 보고, 밝혔으면 지적하지 않는다." : "구성원의 수, 현역 여부, '유일', '가장 ~한', 'N기 중' 같은 비교는 이 표와 맞춘다. 표에 있는 항목의 상태와 기간은 바꾸지 않는다. 표에 없는 구성원을 더할 때는 이름을 밝힌다."}
+수와 공백 기간은 문서가 정한 기간만으로 계산했다. 문서가 없거나 기간을 정하지 않은 구성원은 빠져 있다.
+${check ? "공백 기간에 그 조직의 구성원이 활동했다고 쓰면, 다른 문서가 그 기간에 구성원이 없었다고 밝혔는지 원문으로 확인하고, 밝혔으면 high, 아니면 low로 쓴다. '최초', '처음', '유일', '~만' 같은 주장은 이 표와 기간표에 더 이른 사례가 있는지 확인한다. 문서가 'N기 중', '유일', '0기', '모두', '가장 ~한' 같은 수·비교로 구성원을 말하면 이 표와 맞춰 본다. 표의 상태와 모순되면(예: 표에 현역이 있는데 현역 0기라고 씀, 현역이 1기뿐인데 현역 3기 중 하나라고 씀) high로 지적한다. 표보다 많은 수를 말했으면 이 문서가 그 구성원의 이름을 밝혔는지 보고, 밝혔으면 지적하지 않는다." : "구성원의 수, 현역 여부, '최초', '유일', '가장 ~한', 'N기 중' 같은 비교는 이 표와 맞춘다. 구성원이 없던 기간에 그 조직의 구성원을 활동시키지 않는다. 표에 있는 항목의 상태와 기간은 바꾸지 않는다. 표에 없는 구성원을 더할 때는 이름을 밝힌다."}
 ${parts.join("\n\n")}
 
 `;
@@ -587,21 +611,38 @@ function episodeIssues(w, k) {
     conflict: `근거: ${[...x.docs].map(d => `「${S.pages[d].title}」`).join(", ")} · 사건 장부: 다른 문서 ${x.docs.size}곳이 이 항목의 「${w.entities[x.k].title}」 행적을 기록했지만 이 문서에는 없다. 생애나 경과에 그 일을 한두 문장 더한다. 예: ${stripMarks(x.text).slice(0, 160)}`.slice(0, 500),
   }));
 }
-/* 문서에 나온 대상들의 기간표: 공존 서술(함께 복무, 같은 시설 사용, 교전, 인계)이 두 기간 안에 들어가는지 계산할 재료 */
-const PERIOD_LABEL = /출생|사망|생몰|발현|퇴역|은퇴|전역|복무|재임|재위|활동|현역|취역|퇴역|진수|해체|창설|설립|폐지|해산|건조|폐기|운용|존속|기간/;
-function periodBlock(w, keys, max = 16) {
+/* ---------- 존속 기간: 그 항목 자신의 문서가 JSON으로 정한다(정보상자 이름을 단어 목록으로 찾지 않는다) ----------
+   e.span = { src, what, start, end, endWhat } */
+const SPAN_SPEC = `existence에는 「{T}」 자신이 존재하거나 효력을 가진 기간을 쓴다. what은 시작을 뜻하는 짧은 말(예: 출생, 발현, 창설, 체결, 도입, 설립, 취역, 첫 방송), start와 end는 연도, endWhat은 끝을 뜻하는 짧은 말(예: 사망, 퇴역, 해체, 폐지, 종영)이다. 이어지고 있거나 모르면 end와 endWhat은 빈 문자열, 시작을 모르면 start도 빈 문자열로 둔다.`;
+const SPAN_JSON = `"existence":{"what":"시작을 뜻하는 말","start":"연도","end":"","endWhat":""}`;
+function ingestSpan(w, key, x) {
+  const e = w.entities[key]; if (!e || !x || typeof x !== "object" || Array.isArray(x)) return;
+  const start = yearText(x.start), end = yearText(x.end);
+  if (!start && !end) { if (e.span?.src === key) delete e.span; return; }
+  e.span = { src: key, what: evText(x.what, 20), start, end, endWhat: end ? evText(x.endWhat, 20) : "" };
+}
+const spanText = s => [s.start ? `${s.what || "시작"} ${s.start}` : "", s.end ? `${s.endWhat || "끝"} ${s.end}` : ""].filter(Boolean).join(" ~ ");
+/* 대상들의 존속·소속 기간표. 연도가 붙은 서술에서 어떤 항목이 쓰이거나 활동했다면 그 기간 안이어야 한다 */
+function periodBlock(w, keys, max = 16, check = true) {
   const rows = [];
-  for (const k of keys) {
-    const o = w.entities[k], p = S.pages[k]; if (!o) continue;
-    const lines = (p?.infobox || []).filter(r => PERIOD_LABEL.test(r.label) && /\d{3,4}/.test(r.value)).map(r => `${r.label} ${stripMarks(r.value)}`.slice(0, 80));
+  for (const k of [...new Set(keys)]) {
+    const o = w.entities[k]; if (!o) continue;
+    const lines = [];
+    if (o.span && spanText(o.span)) lines.push(spanText(o.span));
     for (const a of o.affil?.list || []) if (affilSpan(a)) lines.push(`${w.entities[a.org]?.title || "?"} ${a.role || ""} ${a.state} ${affilSpan(a)}`.replace(/\s+/g, " "));
-    if (lines.length) rows.push(`- ${o.title}: ${[...new Set(lines)].slice(0, 5).join(" · ")}`);
+    if (lines.length) rows.push(`- ${o.title}: ${lines.slice(0, 5).join(" · ")}`);
     if (rows.length >= max) break;
   }
-  return rows.length ? `## 등장 대상의 기간 (함께 복무했다, 같은 시설·장비를 썼다, 맞붙었다, 넘겨받았다처럼 둘이 같은 때에 있어야 하는 서술은 두 기간이 실제로 겹치는지 계산한다. 겹치지 않으면 high)
+  if (!rows.length) return "";
+  return check ? `## 등장 대상의 존속·소속 기간 (각 항목의 문서가 정한 값)
+연도가 붙은 서술에서 어떤 항목(제도, 체계, 조직, 인물, 장비)이 쓰이거나 활동했다면 그 시점이 그 항목의 기간 안인지 계산한다. 생기기 전에 그것을 따르거나 쓰거나, 끝난 뒤에 활동하면 high다. 함께 복무했다, 같은 시설을 썼다, 맞붙었다, 넘겨받았다처럼 둘이 같은 때에 있어야 하는 서술은 두 기간이 겹치는지 계산한다. 나중에 소급해 붙인 이름이나 후대의 평가라고 문서가 밝힌 서술은 지적하지 않는다.
 ${rows.join("\n")}
 
-` : "";
+` : `## 관련 항목의 존속·소속 기간 (각 항목의 문서가 정한 값)
+연도가 붙은 장면에서 이 항목들을 쓰거나 활동시킬 때는 그 시점이 기간 안이어야 한다. 생기기 전의 제도·체계를 그때 따랐다고 쓰지 않고, 기간이 겹치지 않는 둘을 함께 있게 하지 않는다. 나중에 붙은 이름으로 부를 때는 소급한 것임을 밝힌다.
+${rows.join("\n")}
+
+`;
 }
 
 /* ---------- 세계 전체 점검 (사용자가 버튼을 눌렀을 때만) ----------
