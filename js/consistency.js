@@ -782,7 +782,12 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
       if (!fld || !old.trim() || old === nw) continue;
       let at = nf[fld].indexOf(old); if (at < 0) { old = old.trim(); at = nf[fld].indexOf(old); } if (at < 0) continue;
       nf[fld] = nf[fld].slice(0, at) + nw + nf[fld].slice(at + old.length); applied++;
-      const memo = Number(ed.memo ?? (high.length === 1 ? 1 : NaN));
+      // 메모 번호가 빠졌으면 고친 구절과 지적된 서술이 겹치는 메모 하나에만 연결한다.
+      let memo = Number(ed.memo ?? (high.length === 1 ? 1 : NaN));
+      if (ed.memo === undefined && !Number.isInteger(memo)) {
+        const o = stripMarks(old), hits = high.map((i, x) => [stripMarks(i.claim), x + 1]).filter(([c]) => c && o && (c.includes(o) || o.includes(c)));
+        if (hits.length === 1) memo = hits[0][1];
+      }
       if (Number.isInteger(memo) && memo >= 1 && memo <= high.length) fixedEdits.push({ memo, field: fld, old, new: nw });
     }
     if (!applied) return res;
@@ -805,9 +810,12 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
     const beforeRaw = docForCheck(page, t => t), afterRaw = docForCheck(np, t => t);
     const verified = detIssues(w, k);
     const finalSource = pageToSource(w, np);
-    const edited = new Set(fixedEdits.filter(e =>
-      f[e.field].includes(e.old) && !finalSource[e.field].includes(e.old) && finalSource[e.field].includes(e.new)
-    ).map(e => high[e.memo - 1]).filter(i => {
+    // 저장 직전 자동 링크가 [[...]]를 덧붙이므로 링크 표시를 걷어 낸 글로 비교한다.
+    const finalPlain = Object.fromEntries(Object.entries(finalSource).map(([x, t]) => [x, stripMarks(t)]));
+    const edited = new Set(fixedEdits.filter(e => {
+      const o = stripMarks(e.old), nw = stripMarks(e.new);
+      return f[e.field].includes(e.old) && o && !finalPlain[e.field].includes(o) && (!nw || finalPlain[e.field].includes(nw));
+    }).map(e => high[e.memo - 1]).filter(i => {
       const links = i.claim.includes("[[");
       const claim = links ? i.claim : stripMarks(i.claim);
       return claim && (!(links ? beforeRaw : before).includes(claim) || !(links ? afterRaw : after).includes(claim))

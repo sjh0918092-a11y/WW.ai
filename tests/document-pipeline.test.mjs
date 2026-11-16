@@ -141,6 +141,15 @@ try {
  fixEdits=null;fixClaim='푸른 바다를 항해한다.';
  pass('적용 실패·잘못된 메모 번호·기존 구절이 남은 수정은 경고를 닫지 않는다');
 
+ for (const edits of [[{field:'body',old:'푸른',new:'항구 앞의 붉은',memo:1}],[{field:'body',old:'푸른',new:'항구 앞의 붉은'}]]) {
+  e=await reset({rewrite:true});behavior='fix';fixEdits=edits;fixClaim='선장의 항해지가 푸른 바다로 설정되어 있다';
+  await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));
+  assert(storedPage(B).sections[0].body.includes('[[항구]] 앞의 붉은'),storedPage(B).sections[0].body);
+  assert.equal(r.result.pipeline.fixed,1);assert.equal(r.result.pipeline.remaining,0);assert.deepEqual(storedPage(B).check.issues,[]);
+ }
+ fixEdits=null;fixClaim='푸른 바다를 항해한다.';
+ pass('자동 수정 뒤 자동 링크가 붙거나 메모 번호가 빠져도 고친 메모는 닫는다');
+
  e=await reset({rewrite:true,settings:{taskModels:{page:{model:'gemini-writer',think:'minimal'},check:{model:'claude-sonnet-4-6',think:'high'},read:{model:'claude-haiku-4-5',think:'low'},fix:{model:'gemini-fixer',think:''},factSync:{model:'gemini-extractor',think:'minimal'}},prompt:{seed:false,guidelines:false}}});behavior='fix';await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));
  assert.deepEqual(orderedChecks(r.job.steps).map(s=>[s.kind,s.model]),[['page','gemini-writer'],['check','claude-sonnet-4-6'],['read','claude-haiku-4-5'],['fix','gemini-fixer'],['factSync','gemini-extractor']]);
  const writer=calls.find(c=>c.kind==='page');assert(!JSON.stringify(writer.body).includes('항구 세계'));assert(!JSON.stringify(writer.body).includes('## 절제'));assert(calls.find(c=>c.kind==='check').body.messages[0].content[0].text.includes('항구 세계'));
