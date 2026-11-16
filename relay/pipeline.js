@@ -2,6 +2,8 @@ import { createDocumentEngine, ENGINE_SOURCE } from "./engine.generated.js";
 import { snapshotWorld, commitDocument, digest } from "./pipeline-store.js";
 import { runProvider, usageCounts } from "./providers.js";
 const yieldError = () => ({ code: "pipeline_yield", serverJob: true });
+const CHECK_CONCURRENCY = 4;
+const isCheck = kind => ["check", "read", "ageRule"].includes(kind);
 const phaseFor = kind => ["check","read","ageRule"].includes(kind) ? "check" : ["fix","analyze","factSync"].includes(kind) ? "fix" : "generate";
 const safeError = e => ({ code: e?.code || "pipeline_error", message: e?.safeMessage || "문서 작업을 끝내지 못해 원본을 유지했습니다. AI 작업에서 결과를 확인해 주세요.", ...(e?.status ? { httpStatus: e.status } : {}), ...(e?.code === "model_not_found" && e.model ? {model:e.model,phase:e.phase} : {}) });
 const resultFor = (state, output, saved, error) => {
@@ -16,7 +18,7 @@ const resultFor = (state, output, saved, error) => {
   } };
 };
 
-// replay는 순수 메모리 실행. 새 제공자 호출 하나만 먼저 기록하고 alarm 하나에서 실행한다.
+// replay는 순수 메모리 실행. 독립된 검사만 최대 4개 기록한 뒤 함께 실행한다.
 export async function processPipeline(host, job, signal) {
   const input = job.input.input;
   let state = await host.pipelineState(job.id);
@@ -44,9 +46,11 @@ export async function processPipeline(host, job, signal) {
   }
   if (state.saving) { await finish("succeeded", null, state.output, true); return; }
   if (state.engine !== ENGINE_SOURCE) { await finish("interrupted", { code: "engine_changed", message: "서버 실행 규칙이 업데이트되어 중복 호출 없이 중단했습니다. 남은 초안을 확인해 주세요." }); return; }
-  const running = state.steps.find(s => s.status === "running");
-  if (running) { running.status = "unknown"; running.error = { code: "outcome_unknown", safeMessage: "실행 도중 서버가 중단되어 해당 AI 호출을 다시 보내지 않았습니다.", serverJob: true }; }
-  let selected = null, output, engineError;
+  for (const running of state.steps.filter(s => s.status === "running")) {
+    running.status = "unknown"; running.error = { code: "outcome_unknown", safeMessage: "실행 도중 서버가 중단되어 해당 AI 호출을 다시 보내지 않았습니다.", serverJob: true };
+  }
+  const selected = [];
+  let output, engineError;
   const counts = {}, runtime = { id: job.id, at: state.at, input, snapshot: state.snapshot, failures: [], notes: [], yielded: false,
     async request(kind, model, body) {
       const slot = kind + ":" + (counts[kind] = (counts[kind] || 0) + 1);
@@ -57,25 +61,33 @@ export async function processPipeline(host, job, signal) {
         throw { ...old.error, message: old.error?.safeMessage, serverJob: true };
       }
       if (state.steps.some(s => s.status === "unknown")) throw { code: "outcome_unknown", serverJob: true };
-      if (state.steps.length >= 32) throw { code: "step_limit", serverJob: true };
-      if (!selected) selected = { slot, kind, model, fingerprint, body };
+      if (state.steps.length + selected.length >= 32) throw { code: "step_limit", serverJob: true };
+      if (!selected.length || isCheck(selected[0].kind) && isCheck(kind) && selected.length < CHECK_CONCURRENCY) selected.push({ slot, kind, model, fingerprint, body });
       runtime.yielded = true; throw yieldError();
     },
   };
   try { output = await createDocumentEngine(runtime).execute(); }
   catch (e) { engineError = e; }
   if (runtime.failures.some(f => f.code === "replay_changed")) { await finish("interrupted",safeError({code:"replay_changed"}),output); return; }
-  if (selected) {
-    const { body, ...step } = selected;
-    step.status = "running"; state.steps.push(step);
-    if (!await host.savePipeline(job, state, phaseFor(step.kind), false)) return;
-    let response, failure;
-    try { response = await runProvider({ keyMode: job.keyMode, input: { type: "gemini.generate", model: step.model, input: body } }, host.env, job.personalKey, signal); }
-    catch (e) { failure = { code: e?.code || "outcome_unknown", safeMessage: safeError(e).message, serverJob: true, definite: !!e?.definite, ...(e?.code === "model_not_found" ? {model:step.model,phase:step.kind} : {}), ...(e?.status ? { status: e.status } : {}) }; }
-    if (failure) { step.error = failure; step.status = failure.definite ? "failed" : "unknown"; }
-    else { step.response = response; step.status = "done"; }
-    // 완료 기록과 다음 예약을 함께 저장한다. 응답이 불명확한 호출은 재전송하지 않는다.
-    try { await host.savePipeline(job, state, phaseFor(step.kind), true); }
+  if (selected.length) {
+    const phase = phaseFor(selected[0].kind);
+    const batch = selected.map(({ body, ...step }) => { step.status = "running"; state.steps.push(step); return { body, step }; });
+    // 네트워크 요청 전에 전체 실행 기록을 남긴다. 재시작 시 미확인 요청은 재전송하지 않는다.
+    if (!await host.savePipeline(job, state, phase, false)) return;
+    let persistence = Promise.resolve(), stopped = false;
+    await Promise.allSettled(batch.map(async ({ body, step }) => {
+      try {
+        step.response = await runProvider({ keyMode: job.keyMode, input: { type: "gemini.generate", model: step.model, input: body } }, host.env, job.personalKey, signal);
+        step.status = "done";
+      } catch (e) {
+        step.error = { code: e?.code || "outcome_unknown", safeMessage: safeError(e).message, serverJob: true, definite: !!e?.definite, ...(e?.code === "model_not_found" ? {model:step.model,phase:step.kind} : {}), ...(e?.status ? { status: e.status } : {}) };
+        step.status = step.error.definite ? "failed" : "unknown";
+      }
+      // 먼저 끝난 결과도 즉시 보존하되 상태 저장은 직렬화한다. 모든 응답 전에는 replay하지 않는다.
+      persistence = persistence.then(async () => { if (!stopped) stopped = !await host.savePipeline(job, state, phase, false); });
+      await persistence;
+    }));
+    try { await persistence; if (!stopped) await host.savePipeline(job, state, phase, true); }
     catch (e) { if (!e.definite) throw e; await finish("failed",safeError(e),output); }
     return;
   }

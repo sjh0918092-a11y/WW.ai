@@ -20,23 +20,31 @@ const world=()=>({kind:'world',id:'test-world',title:'항구',seed:'항구 세�
 const page=()=>({key:A,title:'항구',type:'지명',summary:'항구 도시',infobox:[],sections:[{heading:'개요',level:1,body:'거대한 항구이다.'}],links:[],savedAt:100,createdAt:1});
 let fixClaim='푸른 바다를 항해한다.', fixEdits=null;
 let calls=[],behavior='ok',gate,release,n=0;
+let checkHolds=[],inFlight=0,peakChecks=0;
+const waitFor=async fn=>{const end=Date.now()+3000;while(!await fn()){if(Date.now()>end)throw Error('검사 대기 시간 초과');await new Promise(r=>setTimeout(r,5));}};
 const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
 // 두 검사는 병렬로 준비하므로 둘 사이의 접수 순서만 정규화한다.
 const orderedChecks=rows=>{const out=[...rows];for(let i=0;i<out.length-1;i++)if(out[i].kind==='read'&&out[i+1].kind==='check')[out[i],out[i+1]]=[out[i+1],out[i]];return out;};
 const originalFetch=globalThis.fetch;
-const response=(kind)=> kind==='page'?{title:'선장',type:'인물',summary:'해양 탐험가',infobox:[{label:'성별',value:'남성'}],sections:[{heading:'개요',level:1,body:'선장은 푸른 바다를 항해한다.'}],categories:['소속:항구','유형:인물'],facts:[],newEntities:[],relations:[],timeline:behavior==='dedupe'?[{year:'1900',month:1,day:1,about:'선장',event:'선장이 참여한 항구 항해법 공표가 이루어지다.'}]:[]}:kind==='check'&&behavior==='dedupe'?{issues:[],timelineSame:[1]}:kind==='fix'?{edits:fixEdits||[{field:'body',old:'푸른',new:'붉은',memo:1}]}:kind==='factSync'?{facts:[{about:'선장',fact:'붉은 바다를 항해한다.'}],relations:[],timeline:[]}:kind==='check'&&['fix','timeout-fix'].includes(behavior)?{issues:[{claim:fixClaim,evidence:'세계의 바다는 붉다.',conflict:'붉은 바다여야 한다.',severity:'high'}]}:{issues:[]};
+const response=(kind)=> kind==='page'?{title:'선장',type:'인물',summary:'해양 탐험가',infobox:[{label:'성별',value:'남성'}],sections:[{heading:'개요',level:1,body:'선장은 푸른 바다를 항해한다.'}],categories:['소속:항구','유형:인물'],facts:[],newEntities:[],relations:[],timeline:behavior==='dedupe'?[{year:'1900',month:1,day:1,about:'선장',event:'선장이 참여한 항구 항해법 공표가 이루어지다.'}]:[]}:kind==='check'&&behavior==='dedupe'?{issues:[],timelineSame:[1]}:kind==='fix'?{edits:fixEdits||[{field:'body',old:'푸른',new:'붉은',memo:1}]}:kind==='factSync'?{facts:[{about:'선장',fact:'붉은 바다를 항해한다.'}],relations:[],timeline:[]}:kind==='check'&&['fix','timeout-fix','parallel'].includes(behavior)?{issues:[{claim:fixClaim,evidence:'세계의 바다는 붉다.',conflict:'붉은 바다여야 한다.',severity:'high'}]}:{issues:[]};
 // 스텝 종류는 큐의 공개 상태로 확인한다. 프롬프트 문구 변경에 테스트가 의존하지 않는다.
 let activeEntry;
 globalThis.fetch=async(url,opts)=>{
  const job=activeEntry.storage.data.get('jobs').find(j=>j.status==='running');
- const step=job.steps.at(-1), kind=step.kind;
- calls.push({kind,url,body:JSON.parse(opts.body)});
+ const step=job.steps.find(s=>s.status==='running'&&!calls.some(c=>c.slot===s.slot)), kind=step.kind;
+ calls.push({slot:step.slot,kind,url,body:JSON.parse(opts.body)});
  if (url==='https://api.openai.com/v1/responses') {assert.equal(opts.headers.Authorization,'Bearer private-openai-key');return Response.json({model:step.model,status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(response(kind))}]}],usage:{input_tokens:1000,output_tokens:120,input_tokens_details:{cached_tokens:200,cache_write_tokens:100},output_tokens_details:{reasoning_tokens:20}}});}
  if (url.includes('anthropic.com')) {
   assert.equal(opts.headers['x-api-key'], 'private-claude-key');
   return Response.json({content:[{type:'thinking',thinking:'private reasoning'},{type:'text',text:JSON.stringify(response(kind))}],stop_reason:'end_turn'});
  }
  assert.equal(opts.headers['x-goog-api-key'],'private-server-key');
+ if(behavior==='parallel'&&['check','read'].includes(kind)) {
+  inFlight++;peakChecks=Math.max(peakChecks,inFlight);
+  await new Promise(resolve=>checkHolds.push({slot:step.slot,resolve:()=>{inFlight--;resolve();}}));
+ }
+ if(behavior==='parallel'&&kind==='fix') {assert.equal(inFlight,0);assert.equal(calls.filter(c=>['check','read'].includes(c.kind)).length,7,'모든 검사 뒤에만 수정한다');}
+
  if(behavior==='hold'&&kind==='page') { gate?.(); await new Promise(r=>{release=r}); }
  if(behavior==='unknown'&&kind==='check') throw new Error('private-key must not leak');
  if(behavior==='missing-model'&&kind==='check') return Response.json({error:{message:'private-key'}},{status:404});
@@ -65,6 +73,40 @@ try {
  assert(r.job.steps.some(s=>s.usage?.promptTokenCount===1000));assert(r.result.pipeline.steps.some(s=>s.usage?.thoughtsTokenCount===20));assert(!JSON.stringify(r.job.steps).includes('private-server-key'));
  assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert(r.result.pipeline.saved);assert(r.result.pipeline.checked);assert(storedPage(B)?.check);assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page','check','read']);assert(calls[0].url.includes('custom-main'));assert(calls[1].url.includes('custom-check'));assert.equal(calls[1].body.generationConfig.thinkingConfig.thinkingLevel,'high');
  assert(!JSON.stringify(r).includes('private-server-key'));assert(![...e.storage.data.keys()].some(k=>/^(key:|in:|pipe:)/.test(k)));pass('매 alarm마다 서버 객체를 재생성해도 생성·두 검사·D1 저장까지 완료하며 완료된 호출은 재실행하지 않는다');
+
+ async function parallelFixture() {
+  const e=await reset({rewrite:true});behavior='parallel';checkHolds=[];inFlight=0;peakChecks=0;
+  for(let i=0;i<6;i++) {
+   const key='reference-'+i;e.w.entities[key]=ent('참고 문서 '+i,'지명',true);
+   const p={...page(),key,title:'참고 문서 '+i,links:[B],sections:[{heading:'개요',level:1,body:'항구 기록 '.repeat(6000)}]};
+   db.sqlite.prepare('INSERT INTO pages VALUES(?,?,?,?,100,0,100)').run('alice',e.w.id,key,JSON.stringify(p));
+  }
+  db.sqlite.prepare('UPDATE worlds SET data=? WHERE uid=?').run(JSON.stringify(e.w),'alice');e.input.worldHash=await digest(e.w);
+  await request(e,'',e.body);await fireAlarm(e.obj);return e;
+ }
+ e=await parallelFixture();let batch=e.obj.alarm();await waitFor(()=>checkHolds.length===4);assert.equal(peakChecks,4);
+ const first=checkHolds.pop();first.resolve();
+ await waitFor(async()=> (await e.obj.pipelineState(e.id)).steps.some(s=>s.slot===first.slot&&s.status==='done'));
+ assert.equal(calls.some(c=>c.kind==='fix'),false,'빠른 검사 하나만 끝나도 수정하지 않는다');
+ for(const h of checkHolds.reverse())h.resolve();await batch;
+ checkHolds=[];e.obj=new AiJobs({storage:e.storage},env);activeEntry=e;batch=e.obj.alarm();await waitFor(()=>checkHolds.length===3);
+ assert.equal(calls.some(c=>c.kind==='fix'),false,'두 번째 검사 묶음이 끝나기 전에는 수정하지 않는다');
+ for(const h of checkHolds.reverse())h.resolve();await batch;r=await run(e);
+ assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert.equal(r.result.pipeline.fixed,1);assert.equal(r.result.pipeline.remaining,0);assert.equal(peakChecks,4);
+ assert.equal(new Set(calls.map(c=>c.slot)).size,calls.length,'완료된 호출은 다시 보내지 않는다');
+ pass('검사 7개를 최대 4개씩 실행하고 역순 완료에도 모든 검사 후 한 번만 수정한다');
+
+ e=await parallelFixture();batch=e.obj.alarm();await waitFor(()=>checkHolds.length===4);
+ const completed=checkHolds.pop();completed.resolve();
+ await waitFor(async()=> (await e.obj.pipelineState(e.id)).steps.some(s=>s.slot===completed.slot&&s.status==='done'));
+ const completedIndex=(await e.obj.pipelineState(e.id)).steps.findIndex(s=>s.slot===completed.slot);
+ const crashed=new JobStorage();crashed.data=structuredClone(e.storage.data);
+ await request(e,e.id+'/cancel',{});for(const h of checkHolds)h.resolve();await batch;
+ e={...e,storage:crashed,obj:new AiJobs({storage:crashed},env)};activeEntry=e;const beforeRestart=calls.length;r=await run(e);
+ assert.equal(r.job.status,'interrupted');assert.equal(calls.length,beforeRestart);assert(!r.result.pipeline.saved);
+ assert.equal(r.result.pipeline.steps.filter(s=>s.status==='unknown').length,3);
+ assert.equal(r.result.pipeline.steps[completedIndex].status,'done');
+ pass('병렬 검사 중 재시작하면 완료 결과를 보존하고 나머지 3개를 모두 미확인으로 처리해 재호출과 저장을 막는다');
 
  for(const preCheck of [true,false]) {
   e=await reset({settings:{preCheck}});behavior='dedupe';

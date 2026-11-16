@@ -12,7 +12,7 @@ const until=async(fn,ms=20000)=>{const t=Date.now();while(Date.now()-t<ms){if(aw
  await worker.fetch(new Request(origin+'/api/sync',{headers:{Origin:origin}}),env);db.sqlite.exec("INSERT INTO users VALUES('tester','s','h',1);INSERT INTO sessions VALUES('token','tester',1)");
  const jobs=()=>entries.get('account:tester')?.storage.data.get('jobs')||[];
  globalThis.fetch=async(url,opts)=>{
-  const j=jobs().find(j=>j.status==='running');assert(j);const kind=j.steps.at(-1).kind;calls.push({id:j.id,kind,url});
+  const j=jobs().find(j=>j.status==='running');assert(j);const step=j.steps.find(s=>s.status==='running'&&!calls.some(c=>c.id===j.id&&c.slot===s.slot));const kind=step.kind;calls.push({id:j.id,slot:step.slot,kind,url});
   if(hold&&kind==='page')await new Promise(r=>{release=r});
   const out=kind==='page'?{title:j.meta.title,type:'인물',summary:'해양 탐험가',infobox:[{label:'성별',value:'남성'}],sections:[{heading:'개요',level:1,body:'서버가 끝까지 완성한 항해 기록이다.'}],categories:['소속:항구','유형:인물'],facts:[],newEntities:[],relations:[],timeline:[]}:kind==='fix'?{edits:[]}:kind==='analyze'?{facts:[],relations:[],timeline:[]}:{issues:[]};
   return Response.json({candidates:[{content:{parts:[{text:JSON.stringify(out)}]},finishReason:'STOP'}],usageMetadata:{promptTokenCount:1000,candidatesTokenCount:100,thoughtsTokenCount:20}});

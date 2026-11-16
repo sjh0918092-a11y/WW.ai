@@ -737,6 +737,8 @@ async function runChecks(w, k, opts, label) {
     callJson("check", checkPrompt(w, k, timelinePairs, batches[0]), { modelTier: "check", ...opts }, { title: label }),
     callJson("read", readPrompt(w, k), { modelTier: "check", ...opts }, { title: label }),
     ...batches.slice(1).map((text, i) => callJson("check", checkPrompt(w, k, [], text), { modelTier: "check", ...opts }, { title: label + ` · 연결 문서 ${i + 2}/${batches.length}` }))]);
+  // 서버에 아직 실행하지 않은 검사가 있으면 일부 결과로 연표 정리나 자동 수정을 시작하지 않는다.
+  if ([ar, ...rs].some(r => r.status === "rejected" && r.reason?.code === "pipeline_yield")) throw { code: "pipeline_yield", serverJob: true };
   if ([ar, ...rs].some(r => r.status === "rejected" && r.reason?.code === "cancelled")) throw { code: "cancelled" };
   if (S.world === w && S.pages[k] === p && !p.editedAt && !opts?.signal?.aborted && rs[0].status === "fulfilled") applyTimelineMatches(w, timelinePairs, rs[0].value);
   const num = detIssues(w, k);
