@@ -18,12 +18,13 @@ db.sqlite.exec("INSERT INTO users VALUES('alice','s','h',1); INSERT INTO session
 const ent=(title,type,page=false)=>({title,type,summary:'',facts:[],mentions:[],page,box:''});
 const world=()=>({kind:'world',id:'test-world',title:'항구',seed:'항구 세계',era:'1900년',guide:'',rules:[],userCanon:'',timeline:[],relations:[],events:[],navboxes:{},aliases:{},toneTried:true,angleOff:true,relMigrated:true,entities:{[A]:ent('항구','지명',true),[B]:ent('선장','인물')},mainKey:A,updatedAt:100,createdAt:1});
 const page=()=>({key:A,title:'항구',type:'지명',summary:'항구 도시',infobox:[],sections:[{heading:'개요',level:1,body:'거대한 항구이다.'}],links:[],savedAt:100,createdAt:1});
+let fixClaim='푸른 바다를 항해한다.', fixEdits=null;
 let calls=[],behavior='ok',gate,release,n=0;
 const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
 // 두 검사는 병렬로 준비하므로 둘 사이의 접수 순서만 정규화한다.
 const orderedChecks=rows=>{const out=[...rows];for(let i=0;i<out.length-1;i++)if(out[i].kind==='read'&&out[i+1].kind==='check')[out[i],out[i+1]]=[out[i+1],out[i]];return out;};
 const originalFetch=globalThis.fetch;
-const response=(kind)=> kind==='page'?{title:'선장',type:'인물',summary:'해양 탐험가',infobox:[{label:'성별',value:'남성'}],sections:[{heading:'개요',level:1,body:'선장은 푸른 바다를 항해한다.'}],categories:['소속:항구','유형:인물'],facts:[],newEntities:[],relations:[],timeline:behavior==='dedupe'?[{year:'1900',month:1,day:1,about:'선장',event:'선장이 참여한 항구 항해법 공표가 이루어지다.'}]:[]}:kind==='check'&&behavior==='dedupe'?{issues:[],timelineSame:[1]}:kind==='fix'?{edits:[{field:'body',old:'푸른',new:'붉은',memo:1}]}:kind==='factSync'?{facts:[{about:'선장',fact:'붉은 바다를 항해한다.'}],relations:[],timeline:[]}:kind==='check'&&['fix','timeout-fix'].includes(behavior)?{issues:[{claim:'푸른 바다를 항해한다.',evidence:'세계의 바다는 붉다.',conflict:'붉은 바다여야 한다.',severity:'high'}]}:{issues:[]};
+const response=(kind)=> kind==='page'?{title:'선장',type:'인물',summary:'해양 탐험가',infobox:[{label:'성별',value:'남성'}],sections:[{heading:'개요',level:1,body:'선장은 푸른 바다를 항해한다.'}],categories:['소속:항구','유형:인물'],facts:[],newEntities:[],relations:[],timeline:behavior==='dedupe'?[{year:'1900',month:1,day:1,about:'선장',event:'선장이 참여한 항구 항해법 공표가 이루어지다.'}]:[]}:kind==='check'&&behavior==='dedupe'?{issues:[],timelineSame:[1]}:kind==='fix'?{edits:fixEdits||[{field:'body',old:'푸른',new:'붉은',memo:1}]}:kind==='factSync'?{facts:[{about:'선장',fact:'붉은 바다를 항해한다.'}],relations:[],timeline:[]}:kind==='check'&&['fix','timeout-fix'].includes(behavior)?{issues:[{claim:fixClaim,evidence:'세계의 바다는 붉다.',conflict:'붉은 바다여야 한다.',severity:'high'}]}:{issues:[]};
 // 스텝 종류는 큐의 공개 상태로 확인한다. 프롬프트 문구 변경에 테스트가 의존하지 않는다.
 let activeEntry;
 globalThis.fetch=async(url,opts)=>{
@@ -78,6 +79,25 @@ try {
  pass('무대 세계관 연표 중복은 기존 검사 응답으로 저장하고 검사 끄기 설정에서도 호출을 늘리지 않는다');
 
  e=await reset({rewrite:true});behavior='fix';await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert.equal(r.result.pipeline.fixed,1);assert(storedPage(B).sections[0].body.includes('붉은'));assert.deepEqual(storedPage(B).portrait,{src:'original-image'});assert.equal(storedPage(B).shortStories[0].body,'소중한 원문');assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page','check','read','fix','factSync']);const savedWorld=JSON.parse(db.sqlite.prepare('SELECT data FROM worlds WHERE uid=?').get('alice').data);assert(savedWorld.entities[B].facts.some(f=>f.t.includes('붉은')));pass('자동 수정 뒤 AI 검사를 반복하지 않고 확정 사실을 정리하며 원래 이미지·단편을 보존한다');
+
+ e=await reset({rewrite:true});behavior='fix';fixClaim='선장의 항해지가 푸른 바다로 설정되어 있다';
+ await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));
+ assert.equal(r.result.pipeline.fixed,1);assert.equal(r.result.pipeline.remaining,0);assert.deepEqual(storedPage(B).check.issues,[]);
+ assert(storedPage(B).sections[0].body.includes('붉은'));assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page','check','read','fix','factSync']);
+ fixClaim='푸른 바다를 항해한다.';
+ pass('검사 메모가 원문을 요약했어도 실제로 적용한 자동 수정에 해당하는 경고는 닫고 재검사를 호출하지 않는다');
+
+ for (const edits of [
+  [{field:'body',old:'원문에 없는 구절',new:'붉은',memo:1}],
+  [{field:'body',old:'푸른',new:'붉은',memo:2}],
+  [{field:'body',old:'푸른',new:'아주 푸른',memo:1}],
+ ]) {
+  e=await reset({rewrite:true});behavior='fix';fixEdits=edits;fixClaim='선장의 항해지가 푸른 바다로 설정되어 있다';
+  await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));
+  assert.equal(r.result.pipeline.fixed,0);assert.equal(r.result.pipeline.remaining,1);assert.equal(storedPage(B).check.issues.length,1);
+ }
+ fixEdits=null;fixClaim='푸른 바다를 항해한다.';
+ pass('적용 실패·잘못된 메모 번호·기존 구절이 남은 수정은 경고를 닫지 않는다');
 
  e=await reset({rewrite:true,settings:{taskModels:{page:{model:'gemini-writer',think:'minimal'},check:{model:'claude-sonnet-4-6',think:'high'},read:{model:'claude-haiku-4-5',think:'low'},fix:{model:'gemini-fixer',think:''},factSync:{model:'gemini-extractor',think:'minimal'}},prompt:{seed:false,guidelines:false}}});behavior='fix';await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));
  assert.deepEqual(orderedChecks(r.job.steps).map(s=>[s.kind,s.model]),[['page','gemini-writer'],['check','claude-sonnet-4-6'],['read','claude-haiku-4-5'],['fix','gemini-fixer'],['factSync','gemini-extractor']]);

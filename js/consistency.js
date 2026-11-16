@@ -773,14 +773,15 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
     const f = pageToSource(w, page);
     const fr = await callJson("fix", fixBatchPrompt(w, page, f, high), { modelTier: "default", ...PAGE_MODEL, signal: g.ctl.signal }, { title: page.title + ` · 자동 ${high.length}곳` });
     if (S.world !== w || S.pages[k] !== page) return res;
-    const nf = { ...f }, fixedMemo = new Set(); let applied = 0;
+    const nf = { ...f }, fixedEdits = []; let applied = 0;
     for (const ed of (Array.isArray(fr?.edits) ? fr.edits : []).slice(0, 16)) {
       const fld = ["summary", "cats", "infobox", "body"].includes(ed?.field) ? ed.field : null;
       let old = String(ed?.old || ""); const nw = String(ed?.new ?? "");
       if (!fld || !old.trim() || old === nw) continue;
       let at = nf[fld].indexOf(old); if (at < 0) { old = old.trim(); at = nf[fld].indexOf(old); } if (at < 0) continue;
       nf[fld] = nf[fld].slice(0, at) + nw + nf[fld].slice(at + old.length); applied++;
-      fixedMemo.add(Math.max(1, Math.min(high.length, parseInt(ed.memo, 10) || 1)));
+      const memo = Number(ed.memo ?? (high.length === 1 ? 1 : NaN));
+      if (Number.isInteger(memo) && memo >= 1 && memo <= high.length) fixedEdits.push({ memo, field: fld, old, new: nw });
     }
     if (!applied) return res;
     const out = sourceToOut(nf); if (!out.sections.some(x => x.body.trim())) return res;
@@ -797,14 +798,17 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
     S.pages[k] = np;
     np.check = { at: Date.now(), issues, auto: true, numV: numStamp(w) };
     Object.assign(res, { page: np, keep: issues, patched: true });
-    // 수정 뒤에는 로컬 대조만 갱신한다. 실제로 바뀐 원문에 해당하는 메모만 닫는다.
+    // 수정 뒤에는 로컬 대조만 갱신한다. 요약된 claim도 적용된 원문과 메모 번호로 확인한다.
     const before = docForCheck(page), after = docForCheck(np);
     const beforeRaw = docForCheck(page, t => t), afterRaw = docForCheck(np, t => t);
     const verified = detIssues(w, k);
-    const edited = new Set([...fixedMemo].map(n => high[n - 1]).filter(i => {
+    const finalSource = pageToSource(w, np);
+    const edited = new Set(fixedEdits.filter(e =>
+      f[e.field].includes(e.old) && !finalSource[e.field].includes(e.old) && finalSource[e.field].includes(e.new)
+    ).map(e => high[e.memo - 1]).filter(i => {
       const links = i.claim.includes("[[");
       const claim = links ? i.claim : stripMarks(i.claim);
-      return claim && (links ? beforeRaw : before).includes(claim) && !(links ? afterRaw : after).includes(claim)
+      return claim && (!(links ? beforeRaw : before).includes(claim) || !(links ? afterRaw : after).includes(claim))
         && !verified.some(x => x.conflict === i.conflict);
     }));
     const keep = mergeIssues([...verified, ...issues.filter(i => !edited.has(i) && !isNumIssue(i))]);
