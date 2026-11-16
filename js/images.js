@@ -25,7 +25,7 @@ async function preparePortrait(file) {
     throw new Error("이미지를 저장할 크기로 줄이지 못했습니다. 더 작은 파일을 선택해 주세요.");
   } finally { URL.revokeObjectURL(url); }
 }
-const portraitBusy = k => S.discovery?.busy || (S.proseGen?.saving && S.proseGen.key === k) || S.gen || S.storyGen || S.syncing === k || S.checking === k || S.fixing || S.bgSync === k || (S.imageGen?.busy && S.imageGen.key === k) || isHeld(k);
+const portraitBusy = k => S.discovery?.busy || (S.proseGen?.saving && S.proseGen.key === k) || S.gen?.key === k || S.storyGen || S.syncing === k || S.checking === k || S.fixing || S.bgSync === k || (S.imageGen?.busy && S.imageGen.key === k) || isHeld(k);
 async function setPortrait(k, file) {
   const w = S.world, p = S.pages[k];
   if (!w || !p) return;

@@ -148,6 +148,36 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
     await page.click('[data-act="image-close"]'); await page.reload(); await page.waitForSelector('#main h1, #main .wcard, #gPass'); await page.click('#side [data-act="home"]'); await page.waitForSelector('.wcard'); await openWorld(page);
     pass("생성 도중 다른 기기에서 바뀐 문서를 이전 본문으로 덮어쓰지 않는다");
 
+    const otherBefore = await read(page, "p:images:place"), parallelStart = requests.length;
+    await page.evaluate(() => { S.gen = { key: "place", wid: S.world.id, title: "테스트 항구", raw: "", t0: performance.now(), ctl: new AbortController() }; renderMain(); });
+    await openGenerator(page); await generate(page);
+    assert.strictEqual(requests.length, parallelStart + 1);
+    await apply(page);
+    assert.strictEqual(await page.evaluate(() => S.gen.key), "place");
+    assert.deepStrictEqual(await read(page, "p:images:place"), otherBefore);
+    assert((await read(page, "p:images:person")).portrait);
+    pass("다른 문서 작성 중에도 이미지 생성·적용이 가능하고 작성 중인 문서는 건드리지 않는다");
+
+    await openGenerator(page);
+    const sameStart = requests.length;
+    const blocked = await page.evaluate(async () => {
+      S.gen.key = "person";
+      await generateDocImage();
+      const error = S.imageGen.error, menu = portraitMenuHtml(S.pages.person, "person", false);
+      S.gen.key = "place"; renderMain();
+      return { error, menu };
+    });
+    assert(blocked.error.includes("문서 작업이 끝난 뒤"));
+    assert(/data-image-open="person" disabled/.test(blocked.menu));
+    assert.strictEqual(requests.length, sameStart);
+    await generate(page);
+    await page.evaluate(async () => { S.gen.key = "person"; await applyDocImage(); S.gen.key = "place"; renderMain(); });
+    assert((await page.locator(".image-gen [role=alert]").innerText()).includes("문서 작업이 끝난 뒤"));
+    assert.strictEqual(await page.locator(".image-gen .preview").count(), 1);
+    await page.click('[data-act="image-close"]');
+    await page.evaluate(() => { S.gen = null; renderMain(); });
+    pass("같은 문서 작성 중에는 생성 요청과 이미지 적용을 계속 막고 미리보기는 보존한다");
+
     await page.click('#side [data-act="gset"]');
     const [dl] = await Promise.all([page.waitForEvent("download"), page.click('[data-act="export"]')]);
     const stream = await dl.createReadStream(), chunks = []; for await (const chunk of stream) chunks.push(chunk);
