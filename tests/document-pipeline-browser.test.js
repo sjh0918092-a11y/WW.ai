@@ -45,7 +45,7 @@ const until=async(fn,ms=20000)=>{const t=Date.now();while(Date.now()-t<ms){if(aw
   await until(()=>jobs().find(j=>j.id===id2)?.status==='succeeded');assert(await page.evaluate(()=>!!S.gen));await page.evaluate(()=>{window.testHidden=false;document.dispatchEvent(new Event('visibilitychange'))});await page.waitForFunction(k=>!!S.pages[k]?.check&&!S.gen,C);pass('화면이 숨겨진 동안 서버가 저장하고 돌아온 탭이 완성된 결과를 동기화한다');
 
   const D=await fixture('기관장');hold=true;loseSubmit=true;await page.evaluate(k=>{generatePage(k)},D);await until(()=>release);const id3=jobs().at(-1).id;
-  db.sqlite.prepare("UPDATE worlds SET data=json_set(data,'$.guide','다른 기기 수정'),updated=updated+1 WHERE wid='browser-world'").run();hold=false;release();release=null;
+  db.sqlite.prepare("UPDATE worlds SET data=json_set(data,'$.entities.'||?||'.summary','다른 기기 수정'),updated=updated+1 WHERE wid='browser-world'").run(D);hold=false;release();release=null;
   await until(()=>jobs().find(j=>j.id===id3)?.status==='failed');await page.waitForFunction(()=>!S.gen);assert.equal(db.sqlite.prepare('SELECT count(*) AS n FROM pages WHERE pkey=?').get(D).n,0);assert.equal(calls.filter(c=>c.id===id3&&c.kind==='page').length,1);
   await page.evaluate(id=>AIRecovery.open(id),id3);await page.waitForSelector('[data-job-download]');assert.equal(await page.locator('[data-job-apply]').count(),0);assert((await page.locator('.job-detail').innerText()).includes('초안'));pass('접수 응답이 유실돼도 중복 생성하지 않고, 다른 기기의 원본 수정 시 초안만 내려받게 한다');
 
