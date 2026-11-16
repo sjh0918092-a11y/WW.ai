@@ -5,7 +5,7 @@ function pageToSource(w, p) {
   const body = p.sections.map(s => { const m = (s.level || 1) === 2 ? "==" : "="; return `${m} ${s.ch && m === "=" ? `[${s.ch}장] ` : ""}${s.heading} ${m}\n${s.body.trim()}`; }).join("\n\n");
   const navbox = Object.values(w.navboxes || {}).filter(nb => nb.src === p.key)
     .map(nb => `= ${nb.title} =\n` + nb.rows.map(r => `${r.label ? `== ${r.label} ==\n` : ""}${r.items.join("\n")}`).join("\n")).join("\n\n");
-  return { summary: p.summary || "", type: p.type || "", cats: (p.categories || []).join(" | "), notices: (p.notices || []).join("\n"),
+  return { title: p.title || "", summary: p.summary || "", type: p.type || "", cats: (p.categories || []).join(" | "), notices: (p.notices || []).join("\n"),
     infobox: (p.infobox || []).map(r => `${r.label}: ${r.value}`).join("\n"), body, navbox };
 }
 function parseHeadings(text) {

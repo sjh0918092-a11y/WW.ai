@@ -91,10 +91,21 @@ function edStatus(msg, busy) {
   const btn = $("#edSave"), err = $("#edErr");
   if (btn) { btn.disabled = !!busy; btn.textContent = busy ? "설정과 대조하는 중…" : "저장"; }
   if (err) { err.hidden = !msg; err.innerHTML = msg || ""; }
+  if (S.edit && !S.edit.section) document.querySelectorAll(".ed input, .ed textarea").forEach(el => el.disabled = !!S.edit.saving);
   if (S.edit?.section) {
     document.querySelectorAll(".ed textarea, .ed [data-act='section-rewrite'], .ed [data-act='section-undo']").forEach(el => el.disabled = !!busy || !!S.edit.aiBusy);
     const cancel = document.querySelector(".ed [data-act='ed-cancel']"); if (cancel) cancel.disabled = !!S.edit.saving;
   }
+}
+function editTitle(w, ed) {
+  const current = w.entities[ed.key]?.title || "";
+  if (ed.section) return current;
+  const title = norm(ed.f.title ?? current);
+  if (!title || title.length > 120 || /[\[\]{}|<>\r\n]/.test(ed.f.title ?? current)) throw new Error("문서 제목을 1~120자로 입력해 주세요. 줄바꿈이나 위키 문법 기호는 사용할 수 없습니다.");
+  const nk = keyOf(title);
+  if (nk !== ed.key && (w.entities[nk] || S.pages[nk] || (w.aliases?.[nk] && w.aliases[nk] !== ed.key))) throw new Error("이미 사용 중인 제목입니다. 다른 제목을 입력해 주세요.");
+  if (title !== current && (S.gen || S.storyGen || S.syncing || S.checking || S.fixing || S.bgSync || S.portraitJob || S.imageGen?.busy || S.proseGen?.busy)) throw new Error("진행 중인 문서 작업이 끝난 뒤 제목을 바꿔 주세요.");
+  return title;
 }
 async function saveEdit(skipCheck) {
   const ed = S.edit, w = S.world; if (!ed || !w) return;
@@ -107,6 +118,7 @@ async function saveEdit(skipCheck) {
   if (ed.aiBusy || ed.saving) return;
   let out;
   try {
+    editTitle(w, ed);
     if (ed.section && sectionBaseStamp(w, S.pages[k]) !== ed.section.stamp) throw new Error("원본 문서가 바뀌었습니다. 초안을 복사한 뒤 문서를 다시 열어 주세요.");
     out = ed.section ? sectionEditOut(w, S.pages[k], ed) : sourceToOut(ed.f);
   } catch (err) { edStatus(esc(err.message || errMsg(err))); return; }
@@ -154,7 +166,7 @@ function conflictPanelHtml(w, ask) {
 }
 function applyConflictChoices() {
   const ed = S.edit; if (!ed?.pending) return;
-  if (ed.section && ed.pending.draftStamp !== JSON.stringify(ed.f)) { ed.pending = null; if ($("#edConflicts")) $("#edConflicts").innerHTML = ""; edStatus("충돌 확인 중 초안이 바뀌었습니다. 다시 저장해 주세요."); return; }
+  if (ed.pending.draftStamp !== JSON.stringify(ed.f)) { ed.pending = null; if ($("#edConflicts")) $("#edConflicts").innerHTML = ""; edStatus("충돌 확인 중 초안이 바뀌었습니다. 다시 저장해 주세요."); return; }
   const ch = { rules: {}, keep: {} };
   for (const c of ed.pending.conflicts.filter(c => c.ask)) {
     const box = document.getElementById("cf-" + c.id);
@@ -177,6 +189,12 @@ function clearBadges(k) {
 async function commitEdit(ed, out, r, conflicts, ch) {
   const w = S.world, k = ed.key, e = w.entities[k]; let old = S.pages[k];
   if (S.edit !== ed || !old || ed.saving) return;
+  let title;
+  try { title = editTitle(w, ed); } catch (err) { edStatus(esc(err.message)); return; }
+  const renaming = !ed.section && title !== e.title;
+  const renameBackup = renaming ? JSON.stringify({ world: w, pages: S.pages, recent: S.recent, view: S.view }) : null;
+  // 수정본이 새 제목으로 자기 자신을 가리켜도 별도 항목을 만들지 않는다.
+  if (renaming && keyOf(title) !== k) (w.aliases ||= {})[keyOf(title)] = k;
   if (ed.section) {
     ed.saving = true; edStatus("", true);
     try {
@@ -202,7 +220,11 @@ async function commitEdit(ed, out, r, conflicts, ch) {
     }
     for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === k) delete w.navboxes[id];
     page = integrate(w, k, out);
-  } catch (err) { const b = JSON.parse(backup); restoreRewrite(w, backup); w.rules = b.rules; ed.saving = false; edStatus("저장하지 못했습니다. " + esc(errMsg(err))); return; }
+  } catch (err) {
+    const b = JSON.parse(backup); restoreRewrite(w, backup); w.rules = b.rules;
+    if (renaming) { const aliases = JSON.parse(renameBackup).world.aliases; if (aliases) w.aliases = aliases; else delete w.aliases; }
+    ed.saving = false; edStatus("저장하지 못했습니다. " + esc(errMsg(err))); return;
+  }
   if (ed.section) {
     for (const field of ["title", "type", "summary", "categories", "notices", "infobox", "style", "portrait", "shortStories"]) { if (old[field] !== undefined) page[field] = old[field]; else delete page[field]; }
     page.sections = out.sections;
@@ -244,6 +266,7 @@ async function commitEdit(ed, out, r, conflicts, ch) {
   }
   page.pending = [...(ed.section ? old.pending || [] : []), ...pending.map(c => ({ label: conflictLabel(w, c), old: c.old, claim: c.claim }))];
   cleanupOrphans(w, k);
+  if (renaming) { await saveRenamedEdit(w, ed, page, title, touched, renameBackup); return; }
   if (ed.section) {
     const changed = [...touched].filter(x => x !== k && S.pages[x]).map(x => S.pages[x]);
     try {
@@ -273,6 +296,41 @@ async function commitEdit(ed, out, r, conflicts, ch) {
   if (ruled) parts.push(`핵심 규칙 ${ruled}개를 고쳤습니다`);
   if (pending.length) parts.push(`해결하지 않은 충돌 ${pending.length}건이 남아 있습니다`);
   toast("저장했습니다." + (parts.length ? " " + parts.join(". ") + "." : ""));
+}
+async function saveRenamedEdit(w, ed, page, title, touched, backup) {
+  const k = ed.key, nk = keyOf(title), before = JSON.parse(backup);
+  ed.saving = true; edStatus("", true);
+  try {
+    S.pages[k] = page;
+    if (nk === k) { w.entities[k].title = title; page.title = title; }
+    else {
+      w.entities[nk] = { ...w.entities[k], title, facts: [], mentions: [], page: false };
+      const re = await mergeEntities(w, [[k, nk]], { persist: false });
+      for (const key of re.saved) touched.add(key);
+    }
+    touched.add(nk);
+    const pages = S.pages;
+    for (const key of touched) if (pages[key]) await Store.savePage(w.id, pages[key]);
+    await Store.saveWorld(w);
+    if (nk !== k) await Store.deletePage(w.id, k);
+  } catch (err) {
+    for (const key of Object.keys(w)) delete w[key];
+    Object.assign(w, before.world);
+    if (S.world === w) { S.pages = before.pages; S.recent = before.recent; S.view = before.view; }
+    try {
+      for (const key of new Set([k, ...touched])) if (before.pages[key]) await Store.savePage(w.id, before.pages[key]);
+      await Store.saveWorld(w);
+      if (nk !== k) await Store.deletePage(w.id, nk);
+    } catch {}
+    ed.saving = false;
+    if (S.edit === ed) edStatus("저장하지 못했습니다. 제목과 본문 초안은 유지했습니다. " + esc(errMsg(err)));
+    return;
+  }
+  if (S.world === w && S.edit === ed) {
+    S.edit = null; S.view = { name: "article", key: nk }; S.recent = [nk, ...S.recent.filter(x => x !== k && x !== nk)].slice(0, 8);
+    S.memo = null; S.fixv = null; noteExplore(nk, "edited"); renderAll(); window.scrollTo({ top: 0 });
+  }
+  toast(`제목을 「${title}」(으)로 바꾸고 저장했습니다.`);
 }
 async function deletePage(k) {
   const w = S.world, e = w.entities[k], p = S.pages[k]; if (!e || !p) return;

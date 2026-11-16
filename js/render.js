@@ -480,6 +480,8 @@ function editHtml(k) {
   return `<div class="sheet ed"><div class="crumb"><span>${esc(w.title)}</span><span>문서 편집</span></div>
     <h1 class="t">${esc(e.title)} <span class="note" style="font-family:var(--f-body);font-size:14px;font-weight:400">편집 중</span></h1>
     ${S.edit.fix ? `<div class="banner warn"><b>고치기 제안</b>${S.edit.fix.note ? " · " + esc(S.edit.fix.note) : ""}<ul>${S.edit.fix.applied.map(a => `<li><del>${esc(stripMarks(a.old))}</del><br>→ ${esc(stripMarks(a.new))}</li>`).join("")}</ul>아래 편집 칸에 이미 반영해 두었습니다. 확인하고 저장을 누르면 설정과 대조한 뒤 확정 사실과 연표도 새로 정리합니다.</div>` : ""}
+    <label class="lb" for="edTitle">문서 제목</label><input id="edTitle" class="txt" data-ef="title" maxlength="120" value="${esc(f.title ?? e.title)}">
+    <p class="note">제목을 바꾸면 기존 제목의 링크도 이 문서로 이어집니다.</p>
     <label class="lb" for="edSummary">한 줄 정의</label><input id="edSummary" class="txt" data-ef="summary" value="${esc(f.summary)}">
     <div class="ed-2">
       <div><label class="lb" for="edType">유형</label><input id="edType" class="txt" data-ef="type" list="typeList" value="${esc(f.type)}"><datalist id="typeList">${TYPES.map(t => `<option value="${t}"></option>`).join("")}</datalist></div>

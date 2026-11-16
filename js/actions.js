@@ -90,7 +90,7 @@ function setupStory(w, b, user = {}) {
 /* 항목 합치기: pairs = [[없앨 항목 키, 남길 항목 키], ...]
    남길 항목에 문서가 없으면 없앨 항목의 문서를 옮기고, 둘 다 문서가 있으면 없앨 항목의 문서와 그 문서가 남긴 설정을 지운다.
    없앤 이름은 w.aliases에 남겨, 이후 그 이름으로 건 링크가 남길 항목으로 넘어가게 한다(넘겨주기). */
-async function mergeEntities(w, pairs) {
+async function mergeEntities(w, pairs, options = {}) {
   const map = Object.fromEntries(pairs), re = k => { let n = 0; while (map[k] && n++ < 20) k = map[k]; return k; };
   const removed = [], saved = new Set();
   w.aliases ||= {};
@@ -122,6 +122,7 @@ async function mergeEntities(w, pairs) {
     o.mentions = o.mentions.filter(x => { x.from = re(x.from); return x.from !== k; });
     for (const x of [...o.facts, ...o.mentions]) if (x.sup) x.sup.by = re(x.sup.by);
     if (o.origin) o.origin = re(o.origin);
+    if (o.notSame) o.notSame = [...new Set(o.notSame.map(re))];
   }
   w.relations = (w.relations || []).filter(x => { x.a = re(x.a); x.b = re(x.b); x.src = re(x.src); if (x.sup) x.sup.by = re(x.sup.by); return x.a !== x.b; });
   for (const t of w.timeline) { t.src = re(t.src); if (t.k) t.k = re(t.k); if (t.sup) t.sup.by = re(t.sup.by); }
@@ -135,6 +136,11 @@ async function mergeEntities(w, pairs) {
   if (w.mainKey) w.mainKey = re(w.mainKey);
   if (isStory(w)) {
     const st = w.story; st.protagonistKey = re(st.protagonistKey);
+    for (const c of st.cast || []) { c.key = re(c.key); if (w.entities[c.key]) c.name = w.entities[c.key].title; }
+    for (const t of st.continuity?.threads || []) if (t.origin?.source?.startsWith("page:")) {
+      const k = re(t.origin.source.slice(5)); t.origin.source = "page:" + k;
+      if (w.entities[k]) t.origin.title = w.entities[k].title;
+    }
     const uniq = a => [...new Set((a || []).map(re))];
     for (const c of st.chapters) {
       c.auto = uniq(c.auto);
@@ -153,6 +159,8 @@ async function mergeEntities(w, pairs) {
     if (JSON.stringify([p.sections, p.infobox, p.notices, p.links, p.conflicts, p.autoConflicts, p.autoDismissed]) !== before) saved.add(k);
   }
   S.recent = [...new Set(S.recent.map(re))].filter(x => w.entities[x]);
+  re.saved = saved; re.removed = removed;
+  if (options.persist === false) return re;
   try {
     for (const k of removed) await Store.deletePage(w.id, k);
     for (const k of saved) if (S.pages[k]) await Store.savePage(w.id, S.pages[k]);
