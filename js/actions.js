@@ -435,9 +435,16 @@ function afterGen(k, ok, failToast = false) {
 /* 작성 대기열: 문서를 작성·검사·수정하는 동안 누른 빨간 링크는 여기에 쌓았다가 앞 문서가 끝나면 차례로 작성한다 */
 function queueGen(k) {
   const w = S.world, e = w?.entities[k]; if (!e || S.genQ.some(q => q.key === k)) return;
-  S.genQ.push({ key: k, wid: w.id, title: e.title });
+  S.genQ.push({ key: k, wid: w.id, title: e.title, ...(e.searched ? { ent: JSON.parse(JSON.stringify(e)) } : {}) });   // 검색창으로 만든 항목은 저장 전이라 담아 둔다
   toast(`「${e.title}」 문서를 작성 대기열 ${S.genQ.length}번째에 넣었습니다.`);
 }
+/* 서버 작성이 끝나면 세계관을 저장본으로 바꾸므로, 대기 중인 검색 항목(저장 전)이 빠진다. 담아 둔 항목으로 되살린다 */
+function restoreQueued(w) {
+  if (!w) return;
+  for (const q of S.genQ) if (q.ent && q.wid === w.id && !w.entities[q.key] && !w.aliases?.[q.key] && !S.pages[q.key] && !S.nf.has(q.key)) w.entities[q.key] = JSON.parse(JSON.stringify(q.ent));
+}
+/* 대기 중인 검색 항목은 아직 저장 전이라 저장본과 비교할 때 뺀다 */
+const queuedUnsaved = (w, stored) => S.genQ.filter(q => q.ent && q.wid === w.id && w.entities[q.key] && !stored.entities[q.key]).map(q => q.key);
 function unqueueGen(k) {
   const q = S.genQ.find(x => x.key === k); if (!q) return;
   S.genQ = S.genQ.filter(x => x !== q); renderAll(); toast(`「${q.title}」 문서 작성을 대기열에서 뺐습니다.`);

@@ -59,6 +59,14 @@ const until=async(fn,ms=20000)=>{const t=Date.now();while(Date.now()-t<ms){if(aw
   await page.evaluate(async()=>{const p=await Store.getPage('browser-world',keyOf('항구'));p.summary='업로드 중 두 번째 수정';await Store.savePage('browser-world',p);window.releaseSync();await window.firstPush;window.keptDirty=Sync.dirty.p.has('browser-world'+'\u0001'+keyOf('항구'));Sync.req=window.originalSyncReq;await Sync.flush()});
   assert(await page.evaluate(()=>window.keptDirty));const aKey=await page.evaluate(()=>keyOf('항구'));assert.equal(JSON.parse(db.sqlite.prepare('SELECT data FROM pages WHERE pkey=?').get(aKey).data).summary,'업로드 중 두 번째 수정');pass('업로드 중 새 수정도 동기화 대기 목록에 남겨 다음 업로드에서 보존한다');
 
+  // 서버 작성 중 검색창으로 만든(저장 전) 항목을 대기열에 넣으면, 앞 문서가 끝나 세계관이 저장본으로 바뀐 뒤에도 차례가 와서 작성된다.
+  const E=await fixture('조타수'),Q=await page.evaluate(()=>keyOf('검색 선원'));hold=true;await page.evaluate(k=>{generatePage(k)},E);await until(()=>release);
+  await page.evaluate(()=>goSearch('검색 선원'));assert.deepEqual(await page.evaluate(()=>S.genQ.map(q=>q.title)),['검색 선원']);
+  hold=false;release();release=null;
+  await page.waitForFunction(k=>!!S.pages[k],E);await page.waitForFunction(k=>!!S.pages[k]&&!S.gen,Q,{timeout:20000});
+  assert.equal(await page.evaluate(()=>S.genQ.length),0);assert.equal(jobs().filter(j=>j.meta?.title==='검색 선원').length,1);
+  pass('서버 작성 중 검색창으로 넣은 대기 문서도 앞 문서가 끝난 뒤 건너뛰지 않고 작성한다');
+
   assert.deepEqual(errors,[]);pass('공유 엔진·작업 화면·문서 열기에서 브라우저 오류가 없다');
  }finally{globalThis.fetch=originalFetch;for(const e of entries.values())clearTimeout(e.timer);await context?.close();await browser?.close();await new Promise(r=>server.close(r));db.sqlite.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});

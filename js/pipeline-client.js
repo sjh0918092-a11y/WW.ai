@@ -16,6 +16,7 @@ const DocumentPipeline = {
     if (original && S.world === original) {
       for (const key of Object.keys(original)) delete original[key]; Object.assign(original,w);
       S.pages = pages; S.worlds = S.worlds.map(v => v.id === w.id ? original : v);
+      restoreQueued(original);
     }
     return { world: w, pages, report };
   },
@@ -31,6 +32,7 @@ const DocumentPipeline = {
     // 모든 미저장 설정 변경을 먼저 올린다. 탐색 중인 새 후보만 아직 원본에 없을 수 있다.
     const compare = JSON.parse(JSON.stringify(w));
     if (pending) delete compare.entities[k];
+    for (const x of queuedUnsaved(w, stored)) delete compare.entities[x];
     if (await AIRecovery.hash(compare) !== await AIRecovery.hash(stored)) throw new Error("화면의 설정과 저장된 원본이 다릅니다. 세계관을 다시 열고 시작해 주세요.");
     const settings = Object.fromEntries(["main","mainThink","quick","quickThink","check","checkThink","preCheck","taskModels","prompt"].map(key => [key,GS[key]]));
     const input = { action,wid:w.id,key:k,rewrite:!!rewrite,direction:direction || "",novel:!!novel,settings,
@@ -85,7 +87,7 @@ const DocumentPipeline = {
   },
   async handledOpen(r,world,report) {
     await AIRecovery.handled(r.id);
-    S.world = await Store.getWorld(world.id); S.pages = await Store.listPages(world.id);
+    S.world = await Store.getWorld(world.id); S.pages = await Store.listPages(world.id); restoreQueued(S.world);
     S.view = report.notFound ? {name:"notfound",title:r.meta.title} : {name:"article",key:report.targetKey}; renderAll();
   },
 };
