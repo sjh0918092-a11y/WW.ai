@@ -22,19 +22,23 @@ const cacheKey=text=>{let h=0x811c9dc5;for(let i=0;i<text.length;i++){h^=text.ch
 // GPT-5.6 이후는 메시지 끝에서만 캐시를 찾는다. 공통 지침(첫 조각)을 앞쪽 developer 메시지로 떼어
 // 그 끝이 캐시 조회 지점이 되게 한다. 나머지 조각은 원래 사용자 메시지로 이어 붙인다.
 const split=contents=>contents?.[0]?.role!=='model'&&contents?.[0]?.parts?.length>1;
-const openAIInput=contents=>{
+// GPT-5.6 이후는 기본(암묵) 모드가 매 요청의 프롬프트 전체를 1.25배 쓰기 요금으로 캐시에 쓴다.
+// 명시 모드로 바꾸고 공통 지침 끝에만 캐시 지점을 두어, 문서마다 다른 뒷부분은 일반 단가로 낸다.
+const explicitCache=model=>/^gpt-(?:5\.[6-9]|[6-9])/.test(model);
+const openAIInput=(contents,explicit)=>{
  const msg=c=>({role:c.role==='model'?'assistant':'user',content:c.parts.map(p=>p.text).join('')});
  if(!split(contents))return contents.map(msg);
  const [first,...rest]=contents[0].parts;
- return [{role:'developer',content:first.text},msg({...contents[0],parts:rest}),...contents.slice(1).map(msg)];
+ return [{role:'developer',content:explicit?[{type:'input_text',text:first.text,prompt_cache_breakpoint:{mode:'explicit'}}]:first.text},msg({...contents[0],parts:rest}),...contents.slice(1).map(msg)];
 };
 export function openAIRequest(model,input){
  const json=input.generationConfig?.responseMimeType==='application/json';
  const system=(input.systemInstruction?.parts||[]).map(p=>p.text).join('\n');
  return {model,store:false,service_tier:"default",max_output_tokens:/^gpt-4o/.test(model)?16384:32768,...openAIThinking(model,input.generationConfig?.thinkingConfig?.thinkingLevel),
-  input:openAIInput(input.contents),
-  // 캐시 경계로 나뉜 요청은 첫 조각(공통 지침)으로 같은 캐시 서버에 모이게 한다(GPT-5.6 이전 모델의 라우팅). 경계가 없으면 넣지 않는다.
-  ...(split(input.contents)?{prompt_cache_key:'ww-'+cacheKey(input.contents[0].parts[0].text)}:{}),
+  input:openAIInput(input.contents,explicitCache(model)),
+  // GPT-5.6 이후: 명시 모드(경계가 없는 요청은 캐시에 쓰지 않는다).
+  // 그 이전: 캐시 경계로 나뉜 요청은 첫 조각(공통 지침) 해시 키로 같은 캐시 서버에 모이게 한다.
+  ...(explicitCache(model)?{prompt_cache_options:{mode:'explicit'}}:split(input.contents)?{prompt_cache_key:'ww-'+cacheKey(input.contents[0].parts[0].text)}:{}),
   ...(system||json?{instructions:[system,json?'Return only a valid JSON value. Do not wrap it in Markdown fences.':''].filter(Boolean).join('\n\n')}:{}),
   ...(json?{text:{format:{type:'json_object'}}}:{})};
 }
