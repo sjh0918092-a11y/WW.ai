@@ -206,8 +206,7 @@ const gemini = {
     const user = [{ role: "user", parts: (pieces.length ? pieces : [""]).map(text => ({ text })) }];
     let acc = "", usage = null, retries = 0, contTried = 0;
     opts.onMeta?.({ model, think });
-    for (;;) {
-      await gWaitVisible(opts.signal);
+    for (;;) {   // 탭이 숨겨져도 새 요청은 보낸다. 연결 오류 뒤 재시도만 화면 복귀를 기다린다(정지된 탭에서 재시도를 다 쓰지 않도록)
       if (opts.deadline && gActiveNow() >= opts.deadline) throw { code: "stage_timeout", message: "화면이 열린 동안의 최대 대기 시간(10분, 응답 복구 포함)을 넘었습니다. 잠시 뒤 다시 실행해 주세요." };
       const cont = acc.length >= 200;   // 받은 게 어느 정도 있으면 이어 받기, 아니면 처음부터
       const body = cont ? mk([...user, { role: "model", parts: [{ text: acc }] }, { role: "user", parts: [{ text: G_CONT }] }], false) : mk(user, true);

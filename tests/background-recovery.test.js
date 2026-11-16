@@ -26,8 +26,8 @@ let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
   pass('문서 생성 도중 화면을 숨겼다가 돌아와도 원래 결과를 문서로 저장한다');
   await page.fill('#q','기존 인물');await page.press('#q','Enter');await page.waitForSelector('.article h2');await page.locator('.portrait-menu summary').click();await page.click('[data-image-open]');kind='image';await page.click('[data-act="image-generate"]');await waitCalls(1);await hide();await page.clock.fastForward(400000);assert.equal(calls.length,4);await show();release();await page.waitForSelector('.image-gen .preview');assert.equal(calls.length,4);
   pass('이미지도 숨김 시간이 5분을 넘어도 중단·중복 과금 요청 없이 미리보기를 받는다');
-  await page.click('[data-act="image-close"]');kind='check';await hide();await page.click('[data-check]');await page.clock.fastForward(400000);assert.equal(pending.length,0);assert.equal(calls.length,4);await show();await waitCalls(2);release();await page.waitForFunction(()=>document.querySelector('.memo-line')?.textContent.includes('설정 노트와 맞춰 봤습니다'));assert.equal(calls.length,6);
-  pass('백그라운드에서 예약된 새 검사는 화면으로 복귀한 뒤에만 요청한다');
+  await page.click('[data-act="image-close"]');kind='check';await hide();await page.click('[data-check]');await waitCalls(2);release();await page.waitForFunction(()=>document.querySelector('.memo-line')?.textContent.includes('설정 노트와 맞춰 봤습니다'));assert.equal(calls.length,6);await show();
+  pass('탭이 숨겨진 동안 시작한 새 검사도 복귀를 기다리지 않고 바로 요청해 끝낸다');
   assert.deepStrictEqual(errors,[]);console.log(`\n모두 통과 (${n}개). 실제 API 호출 0회. 실제 iPhone 절전·메모리 종료는 재현하지 않음.`);
  }finally{release();await browser.close();await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

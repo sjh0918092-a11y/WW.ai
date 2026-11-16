@@ -78,8 +78,7 @@ const AIJobs = {
       for (;;) {
         if (opts.signal?.aborted) { await cancel(); throw { code: "cancelled", serverJob: true }; }
         if (!this.current(ctx)) throw { code: "job_account_changed", serverJob: true, message: "로그인 계정이나 서버가 바뀌었습니다. 원래 계정의 작업 번호로 결과를 확인할 수 있습니다." };
-        await gWaitVisible(opts.signal);
-        if (!this.current(ctx)) throw { code: "job_account_changed", serverJob: true, message: "로그인 계정이나 서버가 바뀌어 접수를 중지했습니다." };
+        if (!this.current(ctx)) throw { code: "job_account_changed", serverJob: true, message: "로그인 계정이나 서버가 바뀌어 접수를 중지했습니다." };   // 탭이 숨겨져도 접수·상태 조회를 이어 간다
         if (Date.now() - receipt.createdAt > 86400000) throw { code: "job_wait_expired", serverJob: true, message: "작업 대기 시간이 길어졌습니다. 저장된 작업 번호로 상태를 다시 확인해 주세요." };
         try {
           if (!attempted) {

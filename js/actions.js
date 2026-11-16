@@ -439,7 +439,7 @@ function afterGen(k, ok, failToast = false) {
 /* 작성 대기열은 브라우저에 세계관별로 남긴다. 화면이 꺼지거나 새로고침해도 작성 중이던 문서와 대기 문서를 다시 연 세계관에서 이어서 작성한다 */
 const GENQ_K = "wwiki:genq";
 function saveGenQ(head) {
-  const w = S.world; if (!w) return;
+  const w = S.world; if (!w || typeof LS === "undefined") return;   // 서버 엔진에는 브라우저 저장소가 없다
   const all = LS.get(GENQ_K) || {}, seen = new Set(), items = [];
   const add = q => { if (!q || q.wid !== w.id || seen.has(q.key) || S.pages[q.key]) return; seen.add(q.key); items.push({ key: q.key, title: q.title, ...(q.ent ? { ent: q.ent } : {}) }); };
   const g = S.gen;
@@ -459,8 +459,22 @@ function loadGenQ(w) {
   saveGenQ();
   return S.genQ.length;
 }
-addEventListener("pagehide", () => saveGenQ());
-document.addEventListener("visibilitychange", () => { if (document.hidden) saveGenQ(); });
+/* 문서를 작성하거나 대기열이 남아 있는 동안 화면이 저절로 꺼지지 않게 한다. 숨겨지면 브라우저가 풀므로 돌아올 때 다시 잡는다 */
+const GenWake = {
+  lock: null, asking: false,
+  sync() {
+    const want = !!(S.gen || S.genQ.length) && !document.hidden;
+    if (want && !this.lock && !this.asking && navigator.wakeLock?.request) {
+      this.asking = true;
+      navigator.wakeLock.request("screen").then(l => { this.lock = l; l.addEventListener("release", () => { if (this.lock === l) this.lock = null; }); if (!(S.gen || S.genQ.length)) this.sync(); }).catch(() => {}).finally(() => { this.asking = false; });
+    } else if (!want && this.lock && !document.hidden) { const l = this.lock; this.lock = null; l.release().catch(() => {}); }
+  }
+};
+if (globalThis.document && globalThis.document === document) {   // 서버 엔진에도 이 파일이 들어가므로(가짜 document) 실제 브라우저에서만 건다
+  window.addEventListener("pagehide", () => saveGenQ());
+  document.addEventListener("visibilitychange", () => { if (document.hidden) saveGenQ(); GenWake.sync(); });
+  setInterval(() => GenWake.sync(), 1000);
+}
 /* 작성 대기열: 문서를 작성·검사·수정하는 동안 누른 빨간 링크는 여기에 쌓았다가 앞 문서가 끝나면 차례로 작성한다 */
 function queueGen(k) {
   const w = S.world, e = w?.entities[k]; if (!e || S.genQ.some(q => q.key === k)) return;
