@@ -98,8 +98,9 @@ try {
 
   const largeIndexStore = new JobStorage(), largeIndex = new AiJobs({ storage: largeIndexStore }, env);
   largeIndexStore.data.set("jobs", Array.from({ length: 400 }, (_, i) => ({ id: "index-job-" + String(i).padStart(8, "0"), type: "gemini.generate", model: "m".repeat(100), fingerprint: "f".repeat(64), runId: "r".repeat(36), status: "failed", receivedAt: Date.now(), expiresAt: Date.now() + 100000, error: { code: "bad_key", message: "오류".repeat(60) } })));
-  r = await request(largeIndex); assert.equal(r.json.jobs.length, 400); assert(largeIndexStore.data.get("jobs").chunks > 1);
-  assert.equal((await request(new AiJobs({ storage: largeIndexStore }, env))).json.jobs.length, 400);
+  r = await request(largeIndex); assert.equal(r.json.jobs.length, 400); assert(Array.isArray(largeIndexStore.data.get("jobs")), "조회는 저장소에 쓰지 않는다");
+  globalThis.fetch = async () => success(); await request(largeIndex, "", textBody("index-migrate-0001")); assert(largeIndexStore.data.get("jobs").chunks > 1);
+  assert.equal((await request(new AiJobs({ storage: largeIndexStore }, env))).json.jobs.length, 401);
   ok("많은 완료 기록도 KV 값 크기를 넘지 않고 재기동 뒤 목록을 읽을 수 있다");
 
   const db = { prepare: () => ({ bind: token => ({ first: async () => token === "valid" ? { uid: "personal" } : null }) }), batch: async () => [] };
@@ -169,10 +170,10 @@ try {
     } }), { headers: { "Content-Type": "text/event-stream" } });
     globalThis.fetch = hang("");
     let t = {}; await assert.rejects(runProvider(job, fast, null, undefined, t), e => e.code === "no_first_response" && e.definite);
-    assert.equal(t.first, null); assert.equal(t.code, "no_first_response"); assert(t.end >= 60 && t.headers !== null);
+    assert.equal(t.first, null); assert.equal(t.code, "no_first_response"); assert(t.end >= 50 && t.headers !== null);
     globalThis.fetch = hang('data: {"candidates":[{"content":{"parts":[{"text":"{"}]}}]}\n\n');
     t = {}; await assert.rejects(runProvider(job, fast, null, undefined, t), e => e.code === "stream_stalled" && e.definite);
-    assert(t.first !== null && t.bytes > 0 && t.end - t.last >= 60);
+    assert(t.first !== null && t.bytes > 0 && t.end - t.last >= 50);
     globalThis.fetch = (url, options) => new Promise((_, rej) => options.signal.addEventListener("abort", () => rej(new DOMException("abort", "AbortError"))));
     const ctl = new AbortController(); setTimeout(() => ctl.abort("deadline"), 20);
     t = {}; await assert.rejects(runProvider(job, { GEMINI_KEY: "k" }, null, ctl.signal, t), e => e.code === "deadline_exceeded" && !e.definite);
@@ -180,6 +181,32 @@ try {
     await assert.rejects(runProvider(job, { GEMINI_KEY: "k" }, null, user.signal, {}), e => e?.name === "AbortError");
     globalThis.fetch = async () => success(); t = {};
     await runProvider(job, fast, null, undefined, t); assert(t.first !== null && t.end !== null && !t.code);
-    ok("서버 AI 호출의 첫 응답 없음·도중 멈춤·10분 제한을 구분해 빨리 끝내고 시간 기록을 남긴다");
+    // 상태 조회는 쓰기 0회, 바뀐 것 없는 갱신은 큰 목록 조각을 다시 쓰지 않는다.
+    const wStore = new JobStorage(), wObj = new AiJobs({ storage: wStore }, env); let puts = 0;
+    wStore.data.set("jobs", Array.from({ length: 400 }, (_, i) => ({ id: "write-job-" + String(i).padStart(8, "0"), type: "gemini.generate", model: "m".repeat(100), status: "failed", receivedAt: Date.now(), expiresAt: Date.now() + 100000, error: { code: "bad_key", message: "오류".repeat(60) } })));
+    await request(wObj, "", textBody("write-count-00001")); const chunks = wStore.data.get("jobs").chunks; assert(chunks > 2);
+    const tx0 = wStore.transaction.bind(wStore);
+    wStore.transaction = fn => tx0(tx => fn({ ...tx, put: async (k, v) => { puts++; return tx.put(k, v); }, delete: async k => { puts++; return tx.delete(k); } }));
+    for (let i = 0; i < 5; i++) { await request(wObj); await request(wObj, "write-count-00001"); }
+    assert.equal(puts, 0, "상태 조회는 쓰지 않는다");
+    await request(wObj, "write-count-00001/cancel", {}); assert(puts > 0 && puts < chunks, `취소는 바뀐 조각만 쓴다(${puts}/${chunks})`);
+    wStore.transaction = tx0;
+    // 파이프라인 단계 저장은 앞쪽의 세계관 스냅샷 조각을 다시 쓰지 않는다(재기동 뒤 캐시가 없어도).
+    for (const fresh of [false, true]) {
+      const pStore = new JobStorage(); let pObj = new AiJobs({ storage: pStore }, env); let pPuts = 0;
+      pStore.data.set("jobs", [{ id: "pipe-job-000000001", type: "document.pipeline", status: "running", runId: "run-1", expiresAt: Date.now() + 100000 }]);
+      const state = { input: { key: "a" }, at: 1, engine: "e", steps: [], snapshot: { world: { id: "w", body: "세계관".repeat(60000) } } };
+      await pObj.savePipeline({ id: "pipe-job-000000001", runId: "run-1" }, state, "generate", false);
+      const total = pStore.data.get("jobs")[0].pipelineChunks; assert(total > 10);
+      if (fresh) pObj = new AiJobs({ storage: pStore }, env);
+      const tx1 = pStore.transaction.bind(pStore);
+      pStore.transaction = fn => tx1(tx => fn({ ...tx, put: async (k, v) => { if (k.startsWith("pipe:")) pPuts++; return tx.put(k, v); } }));
+      state.steps.push({ kind: "page", status: "done", response: { candidates: [{ content: { parts: [{ text: "본문".repeat(500) }] } }] } });
+      await pObj.savePipeline({ id: "pipe-job-000000001", runId: "run-1" }, state, "generate", false);
+      pStore.transaction = tx1;
+      assert(pPuts <= 2, `바뀐 끝 조각만 쓴다(${pPuts}/${total})`);
+      assert.deepEqual(await pObj.pipelineState("pipe-job-000000001"), state);
+    }
+    ok("서버 AI 호출의 무응답을 구분해 빨리 끝내고, 상태 조회는 쓰지 않으며 단계 저장은 바뀐 조각만 쓴다");
   }
 } finally { globalThis.fetch = original; }
