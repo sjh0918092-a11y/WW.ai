@@ -96,6 +96,8 @@ document.addEventListener("click", ev => {
   if (d.memoDel !== undefined) { deleteMemo(d.memoK, Number(d.memoDel)); return; }
   if (d.fixk) { openFixView(d.fixk, [Number(d.fix)], true); return; }
   if (d.cfix) { openConflictFix(d.cfix, d.cfield || "conflicts"); return; }
+  if (d.fixopen) { if (S.fixJobs.has(d.fixopen)) { S.view = { name: "fix", key: d.fixopen }; renderAll(); window.scrollTo({ top: 0 }); } return; }
+  if (d.fixdrop) { dropFix(d.fixdrop); if (S.view.name === "fix" && S.view.key === d.fixdrop) S.view = { name: "article", key: d.fixdrop }; renderAll(); return; }
   if (d.sectionEdit !== undefined) { openSectionEditor(d.sectionKey, Number(d.sectionEdit)); return; }
   if (d.edit) { openEditor(d.edit); return; }
   if (d.imageOpen) { openImageGen(d.imageOpen); return; }
@@ -155,8 +157,10 @@ document.addEventListener("click", ev => {
     case "fixv-open": { const k = S.view.key, m = S.memo; if (m && m.k === k) openFixView(k, m.items.map((x, i) => i).filter(i => m.items[i].severity === "high"), false); break; }
     case "fixv-run": runFixBatch(); break;
     case "fixv-apply": applyFix(); break;
-    case "fixv-redo": if (S.fixv) { S.fixv.phase = "pick"; S.fixv.edits = []; S.fixv.err = ""; renderMain(); } break;
-    case "fixv-back": { const k = S.fixv?.key || S.view.key; S.fixv = null; S.view = S.world && S.world.entities[k] ? { name: "article", key: k } : { name: "home" }; renderAll(); break; }
+    case "fixv-redo": { const v = curFix(); if (v) { v.phase = "pick"; v.edits = []; v.err = ""; renderMain(); renderSide(); } break; }
+    case "fixv-drop": case "fixv-back": { const k = S.view.key, v = curFix();   // 진행 중이거나 검토를 기다리는 교정은 '나중에 보기'로 남겨 두고 사이드바에서 다시 연다
+      if (v && (d.act === "fixv-drop" || !fixActive(k))) dropFix(k);
+      S.view = S.world && S.world.entities[k] ? { name: "article", key: k } : { name: "home" }; renderAll(); break; }
     case "log": S.view = { name: "log" }; renderAll(); window.scrollTo({ top: 0 }); break;
     case "jobs": AIRecovery.open(); break;
     case "jobs-refresh": AIRecovery.detail = null; AIRecovery.refresh(); break;
@@ -321,9 +325,10 @@ document.addEventListener("input", ev => {
   if (ev.target.id === "guideIn") S.guideIn = ev.target.value;
   if (ev.target.name === "advPick" && S.adv) { S.adv.pick = Number(ev.target.value); renderMain(); if (S.adv.pick === -2) $("#advCustom")?.focus(); }
   if (ev.target.id === "advCustom" && S.adv) { S.adv.custom = ev.target.value; const b = $('[data-act="story-go"]'); if (b) b.disabled = !S.sample || !norm(ev.target.value); }
-  if (S.fixv && ev.target.dataset?.fsel !== undefined) { const x = Number(ev.target.dataset.fsel); ev.target.checked ? S.fixv.sel.add(x) : S.fixv.sel.delete(x); renderMain(); }
-  if (S.fixv && ev.target.dataset?.fon !== undefined) { const e = S.fixv.edits[Number(ev.target.dataset.fon)]; if (e) { e.on = ev.target.checked; renderMain(); } }
-  if (S.fixv && ev.target.dataset?.fnew !== undefined) { const e = S.fixv.edits[Number(ev.target.dataset.fnew)]; if (e) e.new = ev.target.value; }
+  const fv = curFix();
+  if (fv && ev.target.dataset?.fsel !== undefined) { const x = Number(ev.target.dataset.fsel); ev.target.checked ? fv.sel.add(x) : fv.sel.delete(x); renderMain(); }
+  if (fv && ev.target.dataset?.fon !== undefined) { const e = fv.edits[Number(ev.target.dataset.fon)]; if (e) { e.on = ev.target.checked; renderMain(); } }
+  if (fv && ev.target.dataset?.fnew !== undefined) { const e = fv.edits[Number(ev.target.dataset.fnew)]; if (e) e.new = ev.target.value; }
   if (ev.target.id === "sectionDirection" && S.edit?.section && !S.edit.aiBusy) S.edit.aiDirection = ev.target.value;
   if (ev.target.dataset?.ef && S.edit) S.edit.f[ev.target.dataset.ef] = ev.target.value;
   if (ev.target.id === "discoveryDirection" && S.discovery && !S.discovery.busy) { S.discovery.direction = ev.target.value; const button = $('[data-act="discovery-create"]'); if (button) button.textContent = ev.target.value.trim() ? "이 내용으로 새 문서 만들기" : "랜덤으로 새 문서 만들기"; }

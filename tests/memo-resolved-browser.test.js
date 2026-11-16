@@ -32,9 +32,10 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
     // 원문에서 사라진 서술: AI가 수정안을 내지 않아도 메모를 닫는다
     answer = { edits: [], note: "" };
     await page.click('[data-fix="0"]');
-    await page.waitForFunction(k => S.pages[k].check.issues.length === 2 && !S.fixing, base);
-    await page.waitForFunction(() => S.fixv?.phase === "pick" && S.fixv.err.includes("메모 1개를 닫았습니다"));
-    await page.click('[data-act="fixv-back"]'); await page.waitForSelector("[data-fix]");
+    assert.equal(await page.evaluate(() => S.view.name), "article", "메모의 고치기는 문서 화면에 머문 채 뒤에서 진행한다");
+    await page.waitForFunction(k => S.pages[k].check.issues.length === 2, base);
+    await page.waitForFunction(k => S.fixJobs.get(k)?.phase === "pick" && S.fixJobs.get(k).err.includes("메모 1개를 닫았습니다"), base);
+    await page.click(`#side [data-fixdrop="${base}"]`); await page.waitForFunction(k => !S.fixJobs.has(k), base); await page.waitForSelector("[data-fix]");
     assert.deepEqual(await issues(), ["확정 설정과 다르다.", "다른 이유로 지적했다."]);
     pass("메모의 고치기: 원문에 없는 서술의 메모는 경고 대신 닫고 저장한다");
 
@@ -42,15 +43,15 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
     answer = { edits: [], resolved: [1], note: "" };
     await page.click('[data-act="fixv-open"]'); await page.waitForFunction(() => S.view.name === "fix");
     await page.click('[data-act="fixv-run"]');
-    await page.waitForFunction(() => S.fixv?.phase === "pick" && S.fixv.err);
+    await page.waitForFunction(() => curFix()?.phase === "pick" && curFix().err);
     assert.deepEqual(await issues(), ["다른 이유로 지적했다."]);
-    assert((await page.evaluate(() => S.fixv.err)).includes("메모 1개를 닫았습니다"));
-    assert.equal(await page.evaluate(() => S.fixv.items.length), 1);
+    assert((await page.evaluate(() => curFix().err)).includes("메모 1개를 닫았습니다"));
+    assert.equal(await page.evaluate(() => curFix().items.length), 1);
     pass("교정 화면에서 AI가 해결됐다고 답한 메모만 닫는다");
 
     answer = { edits: [], note: "" };
     await page.click('[data-act="fixv-run"]');
-    await page.waitForFunction(() => S.fixv?.phase === "pick" && S.fixv.err.includes("고칠 곳을 원문에서 찾지 못했습니다"));
+    await page.waitForFunction(() => curFix()?.phase === "pick" && curFix().err.includes("고칠 곳을 원문에서 찾지 못했습니다"));
     assert.deepEqual(await issues(), ["다른 이유로 지적했다."]);
     pass("원문에 그대로 있는 서술은 해결 신호 없이 닫지 않는다");
 

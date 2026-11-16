@@ -606,7 +606,7 @@ test("kind가 first면 연결 버튼 없이 [그 주장 고치기]만 두고, �
   for (const s of ["data-wc-link=", "data-wc-alts=", "data-wc-edit=", "문서별로 고치기"]) assert(!part.includes(s), "first에 있으면 안 됨: " + s);
   assert(part.includes(`data-wc-claim="${x.id}"`) && part.includes("그 주장 고치기") && part.includes("주장한 문서"));
   const env = wcEnv(w); let ran = 0;
-  Object.assign(c, { runFixBatch: () => { ran++; }, window: { scrollTo() {} } });
+  Object.assign(c, { startFix: v => { ran++; c.S.fixv = v; }, window: { scrollTo() {} } });
   await c.worldCheckAction(x.id, "link"); await c.worldCheckAction(x.id, "edit", "아무 문장");
   assert.equal(w.userCanon, undefined, "연결하기는 막힌다"); assert.equal(x.status, "open");
   x.linked = "억지"; x.status = "linked"; await c.worldCheckBatch(w, x); assert.deepEqual(env.fixed, [], "일괄 반영하지 않는다");

@@ -3,7 +3,7 @@
 /* ---------- boot ---------- */
 (async function boot() {
   renderAll();
-  setInterval(() => { if (S.gen) updateGenLive(); if (S.storyGen) updateStoryLive(); const ct = $("#chkTick"); if (ct && S.checking && S.checkT0) ct.textContent = Math.floor((performance.now() - S.checkT0) / 1000) + "초"; const t = $("#fxTick"); if (t && S.fixv?.t0) t.textContent = Math.floor((performance.now() - S.fixv.t0) / 1000) + "초"; }, 1000);
+  setInterval(() => { if (S.gen) updateGenLive(); if (S.storyGen) updateStoryLive(); const ct = $("#chkTick"); if (ct && S.checking && S.checkT0) ct.textContent = Math.floor((performance.now() - S.checkT0) / 1000) + "초"; const t = $("#fxTick"), fv = curFix(); if (t && fv?.t0) t.textContent = Math.floor((performance.now() - fv.t0) / 1000) + "초"; for (const el of document.querySelectorAll("[data-fxt]")) { const v = S.fixJobs.get(el.dataset.fxt); if (v?.t0) el.textContent = Math.floor((performance.now() - v.t0) / 1000) + "초"; } }, 1000);
   const inv = /(?:^#|&)relay=([^&]+)/.exec(location.hash || "");   // 초대 링크(#relay=주소)로 들어오면 중계 서버 주소를 채운다
   let invited = false;
   if (inv) { const u = normRelay(decodeURIComponent(inv[1])); if (/^https:\/\//i.test(u)) { const same = GS.mode === "relay" && GS.relay === u; GS = { ...GS, mode: "relay", relay: u, pass: same ? GS.pass : "" }; saveGS(); invited = !GS.pass; } history.replaceState(null, "", location.pathname + location.search); }

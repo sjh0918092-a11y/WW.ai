@@ -7,7 +7,8 @@ const S = {
   creating: false, createErr: null, seed: "", seedTab: "own", ownSeed: "", dice: null, whatIfs: null, first: "", guideIn: "",
   discovery: null, worldExports: Object.create(null), confirmDel: null, confirmRewrite: null, canonFilter: "all", focusEnt: null, nf: new Set(),
   edit: null, refreshing: null, confirmDelPage: null, confirmMerge: null, compose: null, portraitJob: null, imageGen: null, proseGen: null,
-  mode: "basic", storyN: 5, protoDesc: "", cast: [], regen: null, storyGen: null, syncQ: [], syncing: null, syncErr: null, hold: null, adv: null, storyCard: null
+  mode: "basic", storyN: 5, protoDesc: "", cast: [], regen: null, storyGen: null, syncQ: [], syncing: null, syncErr: null, hold: null, adv: null, storyCard: null,
+  fixJobs: new Map()   // 문서별 교정 작업(문서 키 → 교정 상태). 여러 문서를 동시에 고칠 수 있다
 };
 
 /* 주소/방문 기록에는 저장된 화면만 담는다. 복원은 생성·검사를 시작하지 않는다. */

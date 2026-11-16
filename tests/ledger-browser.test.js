@@ -147,8 +147,8 @@ const read = (p, k) => p.evaluate(k => new Promise(resolve => { const r = indexe
 
     await page.click(`[data-wc-reopen="${a.id}"]`); await page.waitForSelector(`[data-wc-link="${a.id}"]`);
     await page.click(`#wc-${a.id} .wc-docs summary`);
-    await page.click(`[data-wc-fix="${a.id}"][data-wc-doc="${stub}"]`); await page.waitForFunction(k => S.view.name === "fix" && S.fixv?.key === k, stub);
-    assert((await page.evaluate(() => S.fixv.items[0].conflict)).includes("서로의 사건을 언급하게 한다"));
+    await page.click(`[data-wc-fix="${a.id}"][data-wc-doc="${stub}"]`); await page.waitForFunction(k => S.view.name === "fix" && S.view.key === k && S.fixJobs.has(k), stub);
+    assert((await page.evaluate(k => S.fixJobs.get(k).items[0].conflict, stub)).includes("서로의 사건을 언급하게 한다"));
     pass("펼치기 안의 [해당 문서 고치기]는 그 문서의 고치기 화면을 연다");
 
     assert.deepEqual(errors, []);

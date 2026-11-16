@@ -940,9 +940,7 @@ async function worldCheckAction(id, what, arg) {
     if (S.gen && S.gen.key === k) { toast("이 문서를 작성하는 중입니다."); return; }
     x.claimDoc = k; x.status = "fix";
     try { await Store.saveWorld(w); } catch {}
-    S.fixv = { key: k, items: [wcClaimIssue(w, x, k)], sel: new Set([0]), phase: "pick", edits: [], note: "", err: "", skipped: 0 };
-    S.view = { name: "fix", key: k }; renderAll(); window.scrollTo({ top: 0 });
-    runFixBatch();
+    startFix({ key: k, items: [wcClaimIssue(w, x, k)], sel: new Set([0]), phase: "pick", edits: [], note: "", err: "", skipped: 0 });
     return;
   }
   if (what === "close") { w.worldCheck.items = w.worldCheck.items.filter(y => y !== x); S.wcFocus = null; }
@@ -954,9 +952,7 @@ async function worldCheckAction(id, what, arg) {
     try { await Store.saveWorld(w); } catch {}
     const others = x.docs.filter(k => k !== arg).slice(0, 12).map(k => `「${S.pages[k]?.title || w.entities[k]?.title}」`).join(", ");
     const items = [{ claim: `세계 전체 점검: ${x.title}`, conflict: `${x.detail}${others ? ` 함께 볼 문서: ${others}.` : ""}${x.linked ? ` 확정한 설정: ${x.linked}` : ""} 고칠 방향: ${x.fix || x.link}`, severity: "high" }];
-    S.fixv = { key: arg, items, sel: new Set([0]), phase: "pick", edits: [], note: "", err: "", skipped: 0 };
-    S.view = { name: "fix", key: arg }; renderAll(); window.scrollTo({ top: 0 });
-    runFixBatch();
+    startFix({ key: arg, items, sel: new Set([0]), phase: "pick", edits: [], note: "", err: "", skipped: 0 });
     return;
   } else if (what === "reopen") x.status = "open";
   renderMain(); document.getElementById("wc-" + id)?.scrollIntoView({ block: "center" });

@@ -126,36 +126,6 @@ async function closeMemos(k, items, field) {
   else if (p.check) p.check.issues = (p.check.issues || []).filter(x => !items.includes(x));
   try { await Store.savePage(S.world.id, p); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
 }
-async function fixIssue(k, idx) {
-  const w = S.world, p = S.pages[k], issue = S.memo && S.memo.k === k ? S.memo.items[idx] : null;
-  if (!w || !p || !issue || S.fixing) return;
-  if (!S.sample) { toast(ERR.no_sample); return; }
-  if (S.gen && S.gen.key === k) { toast("이 문서를 작성하는 중이라 고칠 수 없습니다."); return; }
-  S.fixing = { key: k, i: idx }; renderMain();
-  const f = pageToSource(w, p);
-  try {
-    const r = await callJson("fix", fixPrompt(w, p, f, issue), { modelTier: "default", ...PAGE_MODEL, effort: "low" }, { title: p.title });
-    const nf = { ...f }, applied = [];
-    for (const ed of (Array.isArray(r?.edits) ? r.edits : []).slice(0, 6)) {
-      const fld = ["summary", "cats", "infobox", "body"].includes(ed?.field) ? ed.field : null;
-      let old = String(ed?.old || ""); const nw = String(ed?.new ?? "");
-      if (!fld || !old.trim() || old === nw) continue;
-      let at = nf[fld].indexOf(old);
-      if (at < 0) { old = old.trim(); at = nf[fld].indexOf(old); }
-      if (at < 0) continue;
-      nf[fld] = nf[fld].slice(0, at) + nw + nf[fld].slice(at + old.length);
-      applied.push({ old, new: nw });
-    }
-    S.fixing = null;
-    if (!applied.length) { toast("고칠 곳을 원문에서 찾지 못했습니다. 다시 시도하거나 편집에서 직접 고쳐 주세요."); renderMain(); return; }
-    if (S.world !== w || !S.pages[k]) return;
-    S.edit = { key: k, f: nf, fix: { note: stripMarks(r?.note || "").slice(0, 240), applied } };
-    S.confirmRewrite = null; S.confirmDelPage = null;
-    if (S.view.name === "article" && S.view.key === k) { renderMain(true); window.scrollTo({ top: 0 }); }
-    else toast(`「${p.title}」의 고치기 제안이 준비되었습니다.`, { label: "열기", fn: () => { S.view = { name: "article", key: k }; renderAll(); } });
-  } catch (err) { S.fixing = null; toast(errMsg(err)); renderMain(); }
-}
-
 /* ---------- 교정 페이지: 편집자 메모를 한 번에 고치고, 대조는 뒤에서 ---------- */
 function fixBatchPrompt(w, p, f, issues) {
   return `다음은 가상 세계관 위키 「${w.title}」(작중 기준 시점 ${w.era})의 문서 「${p.title}」의 원문과, 편집자가 남긴 메모 ${issues.length}개다. 메모마다 지적된 부분만 최소한으로 고친다.
@@ -190,21 +160,35 @@ JSON 객체 하나만 출력:
 {"edits":[{"memo":1,"field":"summary, cats, infobox, body 중 하나","old":"원문 그대로의 일부","new":"고친 내용"}],"resolved":[],"note":"전체적으로 무엇을 고쳤는지 한 문장"}
 지적된 서술이 원문에 더 이상 없거나 이미 고쳐져 있는 메모는 edits를 만들지 않고 그 메모 번호를 resolved에 넣는다.`;
 }
+/* 교정 작업 목록: 문서마다 하나씩, 서로 독립적으로 진행한다. 화면에서 보는 교정은 지금 열린 문서의 것이다 */
+const curFix = () => S.view.name === "fix" ? S.fixJobs.get(S.view.key) || null : null;
+const fixActive = k => { const v = S.fixJobs.get(k); return !!v && (v.phase === "busy" || v.phase === "review"); };
+/* 새 교정을 등록한다. 같은 문서의 교정이 진행 중이거나 검토를 기다리면 그것을 연다.
+   open이면 교정 화면으로 가고, 아니면 지금 화면에 머문 채 뒤에서 수정안을 만든다(사이드바 '진행 중인 작업'에 보인다) */
+function startFix(v, { open = true, run = true } = {}) {
+  const k = v.key, old = S.fixJobs.get(k);
+  if (old && fixActive(k)) {
+    if (open || old.phase === "review") { S.view = { name: "fix", key: k }; renderAll(); window.scrollTo({ top: 0 }); }
+    else toast(`「${S.pages[k]?.title || ""}」은(는) 이미 고치는 중입니다.`);
+    return old;
+  }
+  v.wid = S.world.id; S.fixJobs.set(k, v);
+  if (open) { S.view = { name: "fix", key: k }; renderAll(); window.scrollTo({ top: 0 }); }
+  if (run && v.sel.size) runFixBatch(v); else if (!open) renderAll();
+  return v;
+}
+function dropFix(k) { S.fixJobs.delete(k); }
 /* 다른 문서와 어긋난 서술을 AI로 고친다. field가 "conflicts"면 다른 문서의 직접 수정(그쪽이 기준),
    "autoConflicts"면 자동 대조가 이 문서를 고칠 대상으로 정한 지적이다 */
 function openConflictFix(k, field = "conflicts") {
   const p = S.pages[k], list = p?.[field]; if (!list?.length) return;
   if (S.gen && S.gen.key === k) { toast("이 문서를 작성하는 중입니다."); return; }
   const items = list.map(c => ({ claim: c.old, conflict: field === "autoConflicts" ? `「${c.byTitle}」 문서의 설정과 맞추려면 이 문서의 이 서술을 고쳐야 한다: ${c.claim}` : `「${c.byTitle}」 문서를 사용자가 직접 수정해 이렇게 확정했다: ${c.claim}. 이 확정 내용에 맞게 이 문서의 해당 서술과 그와 얽힌 서술을 고친다.`, severity: "high" }));
-  S.fixv = { key: k, items, sel: new Set(items.map((_, i) => i)), phase: "pick", edits: [], note: "", err: "", skipped: 0, fromConflicts: field };
-  S.view = { name: "fix", key: k }; renderAll(); window.scrollTo({ top: 0 });
-  runFixBatch();
+  startFix({ key: k, items, sel: new Set(items.map((_, i) => i)), phase: "pick", edits: [], note: "", err: "", skipped: 0, fromConflicts: field }, { open: false });
 }
 function openFixView(k, sel, autoRun) {
   const p = S.pages[k]; if (!p || !S.memo || S.memo.k !== k || !S.memo.items.length) return;
-  S.fixv = { key: k, items: S.memo.items.slice(), sel: new Set(sel), phase: "pick", edits: [], note: "", err: "", skipped: 0 };
-  S.view = { name: "fix", key: k }; renderAll(); window.scrollTo({ top: 0 });
-  if (autoRun && S.fixv.sel.size) runFixBatch();
+  startFix({ key: k, items: S.memo.items.slice(), sel: new Set(sel), phase: "pick", edits: [], note: "", err: "", skipped: 0 }, { open: !autoRun, run: !!autoRun });
 }
 /* 고치기 응답의 edits 중 원문에서 찾을 수 있는 것만. mi는 메모 번호(1부터) */
 function parseFixEdits(r, f, nMemo) {
@@ -219,15 +203,16 @@ function parseFixEdits(r, f, nMemo) {
   }
   return edits;
 }
-async function runFixBatch() {
-  const v = S.fixv, w = S.world, p = v && S.pages[v.key]; if (!v || !p || v.phase === "busy") return;
+async function runFixBatch(v = curFix()) {
+  const w = S.world, p = v && S.pages[v.key]; if (!v || !p || v.phase === "busy") return;
+  const gone = () => S.fixJobs.get(v.key) !== v || S.world !== w;
   if (!S.sample) { v.err = ERR.no_sample; renderMain(); return; }
   const picked = [...v.sel].sort((a, b) => a - b); if (!picked.length) return;
-  v.phase = "busy"; v.err = ""; v.t0 = performance.now(); renderMain();
+  v.phase = "busy"; v.err = ""; v.t0 = performance.now(); renderMain(); renderSide();
   const f = pageToSource(w, p);
   try {
     const r = await callJson("fix", fixBatchPrompt(w, p, f, picked.map(n => v.items[n])), { modelTier: "default", ...PAGE_MODEL, effort: "low" }, { title: p.title + ` · ${picked.length}곳` });
-    if (S.fixv !== v) return;
+    if (gone()) return;
     const edits = parseFixEdits(r, f, picked.length).map(e => ({ n: picked[e.mi - 1], field: e.field, old: e.old, new: e.new, on: true }));
     // 수정안이 없는 메모 가운데 이미 원문에 반영된 것은 닫는다.
     const said = new Set((Array.isArray(r?.resolved) ? r.resolved : []).map(x => parseInt(x, 10)).filter(x => x >= 1 && x <= picked.length).map(x => picked[x - 1]));
@@ -236,7 +221,7 @@ async function runFixBatch() {
     if (done.length) {
       const field = v.fromConflicts ? (v.fromConflicts === true ? "conflicts" : v.fromConflicts) : null;
       await closeMemos(v.key, field ? done : done.map(n => v.items[n]), field);
-      if (S.fixv !== v) return;
+      if (gone()) return;
       const keep = v.items.map((_, i) => i).filter(i => !done.includes(i)), at = new Map(keep.map((i, x) => [i, x]));
       v.items = keep.map(i => v.items[i]); v.sel = new Set([...v.sel].filter(i => at.has(i)).map(i => at.get(i)));
       for (const e of edits) e.n = at.get(e.n);
@@ -246,9 +231,11 @@ async function runFixBatch() {
     v.closed = done.length;
     v.phase = edits.length ? "review" : "pick";
     if (!edits.length) v.err = done.length ? `이미 원문에 반영된 메모 ${done.length}개를 닫았습니다.${v.items.length ? "" : " 남은 메모가 없습니다."}` : "고칠 곳을 원문에서 찾지 못했습니다. 다시 시도하거나 편집에서 직접 고쳐 주세요.";
-  } catch (err) { if (S.fixv !== v) return; v.phase = "pick"; v.err = errMsg(err); }
-  if (S.view.name === "fix" && S.view.key === v.key) renderMain();
-  else if (v.phase === "review") toast(`「${p.title}」의 교정안이 준비되었습니다.`, { label: "열기", fn: () => { S.view = { name: "fix", key: v.key }; renderAll(); } });
+  } catch (err) { if (gone()) return; v.phase = "pick"; v.err = errMsg(err); }
+  if (S.view.name === "fix" && S.view.key === v.key) { renderMain(); renderSide(); return; }
+  renderAll();
+  if (v.phase === "review") toast(`「${p.title}」의 교정안이 준비되었습니다.`, { label: "검토하기", fn: () => { S.view = { name: "fix", key: v.key }; renderAll(); } });
+  else { if (!v.items.length || !v.err) dropFix(v.key); toast(`「${p.title}」 ${v.err || "교정을 마쳤습니다."}`, v.items.length && v.err ? { label: "열기", fn: () => { S.view = { name: "fix", key: v.key }; renderAll(); } } : undefined); }
 }
 /* 고치기 수정안(e.on인 것)을 문서 k에 적용해 S.pages[k]를 바꾼다. 저장은 하지 않는다.
    돌려주는 값: { page, applied, missed } 또는 { why: "none" | "empty" }. integrate가 실패하면 되돌리고 던진다 */
@@ -281,7 +268,7 @@ function commitFix(w, k, edits, beforeAssign) {
 const WC_FIX_EDITS = 2;
 async function wcFixDoc(w, k, x) {
   const p = S.pages[k]; if (!p || !S.sample || p.editedAt) return "failed";
-  if ((S.gen && S.gen.key === k) || S.syncing === k || S.storyGen || (S.fixv?.key === k && S.fixv.phase !== "pick")) return "failed";
+  if ((S.gen && S.gen.key === k) || S.syncing === k || S.storyGen || fixActive(k)) return "failed";
   const others = x.docs.filter(d => d !== k).slice(0, 12).map(d => `「${S.pages[d]?.title || w.entities[d]?.title || "?"}」`).join(", ");
   const issue = { claim: `세계 전체 점검으로 확정한 설정: ${x.linked}`, severity: "high",
     conflict: `${x.detail} 이 문서가 이 확정 설정을 모르거나 어긋나게 읽히지 않도록, 관련된 서술 한두 문장만 고치거나 기존 문장에 이어 한 문장을 더한다. 많아야 ${WC_FIX_EDITS}곳.${others ? ` 같은 설정을 반영할 다른 문서: ${others}.` : ""}` };
@@ -298,7 +285,7 @@ async function wcFixDoc(w, k, x) {
   return "done";
 }
 async function applyFix() {
-  const v = S.fixv, w = S.world, k = v?.key, old = k && S.pages[k]; if (!v || !old || v.phase !== "review") return;
+  const v = curFix(), w = S.world, k = v?.key, old = k && S.pages[k]; if (!v || !old || v.phase !== "review") return;
   if (S.gen && S.gen.key === k) { toast("이 문서를 작성하는 중이라 저장할 수 없습니다."); return; }
   if (S.storyGen || S.syncing === k) { toast("이야기를 반영하는 중이라 저장할 수 없습니다. 잠시 뒤 다시 적용해 주세요."); return; }
   let res;
@@ -307,7 +294,7 @@ async function applyFix() {
   if (res.why === "none") { toast("적용할 수정이 없습니다."); return; }
   if (res.why === "empty") { toast("본문이 비게 되어 저장하지 않았습니다."); return; }
   const { page, applied, missed } = res;
-  S.fixv = null; S.memo = null;
+  dropFix(k); S.memo = null;
   S.view = { name: "article", key: k }; renderAll(); window.scrollTo({ top: 0 });
   try { await Store.savePage(w.id, page); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); return; }
   toast(`${applied}곳을 고쳤습니다.${missed ? ` 겹쳐서 적용하지 못한 수정 ${missed}곳은 건너뛰었습니다.` : ""}`);
@@ -348,8 +335,8 @@ async function bgSync(k) {
   if (S.view.name === "article" && S.view.key === k) renderMain(); else renderSide();
 }
 function fixvHtml(k) {
-  const v = S.fixv, p = S.pages[k], w = S.world;
-  if (!v || v.key !== k || !p) return `<div class="sheet"><p class="note">교정할 문서를 찾을 수 없습니다.</p><div class="tools"><button type="button" class="btn" data-act="fixv-back">돌아가기</button></div></div>`;
+  const v = S.fixJobs.get(k), p = S.pages[k], w = S.world;
+  if (!v || !p) return `<div class="sheet"><p class="note">교정할 문서를 찾을 수 없습니다.</p><div class="tools"><button type="button" class="btn" data-act="fixv-back">돌아가기</button></div></div>`;
   const head = `<div class="sheet"><div class="crumb"><span>${esc(w.title)}</span><span>교정</span></div><h1 class="t">${esc(p.title)} <span class="note" style="font-family:var(--f-body);font-size:14px;font-weight:400">교정</span></h1>`;
   if (v.phase === "review") {
     const on = v.edits.filter(e => e.on).length;
@@ -359,11 +346,11 @@ function fixvHtml(k) {
         <del>${esc(e.old)}</del>
         <textarea id="fnew-${i}" data-fnew="${i}" rows="${Math.min(6, Math.max(2, Math.ceil(e.new.length / 60)))}">${esc(e.new)}</textarea></div>`).join("")}</div>
       ${v.closed ? `<p class="note">이미 원문에 반영된 메모 ${v.closed}개는 닫았습니다.</p>` : ""}${v.skipped ? `<p class="note">수정안이 나오지 않은 메모 ${v.skipped}개는 그대로 남습니다.</p>` : ""}
-      <div class="row"><button type="button" class="btn pri" data-act="fixv-apply" ${on ? "" : "disabled"}>${on}곳 적용하고 저장</button><button type="button" class="btn" data-act="fixv-redo">메모 다시 고르기</button><button type="button" class="btn" data-act="fixv-back">취소</button></div></div>`;
+      <div class="row"><button type="button" class="btn pri" data-act="fixv-apply" ${on ? "" : "disabled"}>${on}곳 적용하고 저장</button><button type="button" class="btn" data-act="fixv-redo">메모 다시 고르기</button><button type="button" class="btn" data-act="fixv-drop">교정안 버리기</button><button type="button" class="btn" data-act="fixv-back">나중에 보기</button></div></div>`;
   }
   const busy = v.phase === "busy", n = v.sel.size;
   return head + `<p class="note">고칠 메모를 고르면 한 번에 수정안을 만듭니다. 수정안을 확인한 뒤 적용합니다.</p>
     <div class="fx-list">${v.items.map((i, x) => `<label class="fx-pick"><input type="checkbox" id="fsel-${x}" data-fsel="${x}" ${v.sel.has(x) ? "checked" : ""} ${busy ? "disabled" : ""}><span><span class="sev">${i.lint ? "문체" : i.severity === "high" ? "다듬을 곳" : "참고"}</span>${esc(i.claim)}${i.conflict ? `<span class="memo-why">${esc(i.conflict)}</span>` : ""}</span></label>`).join("")}</div>
     ${v.err ? `<div class="banner warn">${esc(v.err)}</div>` : ""}
-    <div class="row"><button type="button" class="btn pri" data-act="fixv-run" ${busy || !n || !S.sample ? "disabled" : ""}>${busy ? `수정안을 만드는 중… <span id="fxTick"></span>` : `선택한 ${n}곳 고치기`}</button><button type="button" class="btn" data-act="fixv-back">돌아가기</button></div></div>`;
+    <div class="row"><button type="button" class="btn pri" data-act="fixv-run" ${busy || !n || !S.sample ? "disabled" : ""}>${busy ? `수정안을 만드는 중… <span id="fxTick"></span>` : `선택한 ${n}곳 고치기`}</button><button type="button" class="btn" data-act="fixv-back">${busy ? "문서로 돌아가기 (계속 진행)" : "돌아가기"}</button></div></div>`;
 }

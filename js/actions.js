@@ -221,7 +221,7 @@ async function mergeAction(dk, bk) {
   if (S.edit) { toast("편집 중인 문서를 먼저 저장하거나 취소해 주세요."); return; }
   if (dk === w.mainKey || (isStory(w) && dk === w.story.protagonistKey)) { toast(`「${w.entities[dk].title}」은(는) ${isStory(w) ? "주인공" : "대문"} 문서라 다른 문서에 합칠 수 없습니다. 반대로 다른 문서를 이쪽에 합쳐 주세요.`); return; }
   const from = w.entities[dk].title, to = w.entities[bk].title;
-  S.confirmMerge = null; S.memo = null; S.fixv = null;
+  S.confirmMerge = null; S.memo = null; dropFix(dk); dropFix(bk);
   await mergeEntities(w, [[dk, bk]]);
   S.view = { name: "article", key: bk }; S.recent = [bk, ...S.recent.filter(x => x !== bk)].slice(0, 8);
   renderAll(); window.scrollTo({ top: 0 });
@@ -264,6 +264,8 @@ async function openWorld(wid, goKey, restoring = false) {
   if (S.gen && S.gen.wid !== wid) { toast("다른 세계관의 문서를 작성하는 중입니다. 끝난 뒤 열어 주세요."); return; }
   if (S.storyGen && S.world?.id !== wid) { toast("다음 장을 쓰는 중입니다. 끝난 뒤 열어 주세요."); return; }
   if (S.syncing && S.world?.id !== wid) { toast("장의 변화를 문서에 반영하는 중입니다. 끝난 뒤 열어 주세요."); return; }
+  if ([...S.fixJobs.values()].some(v => v.wid !== wid && v.phase === "busy")) { toast("다른 세계관의 교정안을 만드는 중입니다. 끝난 뒤 열어 주세요."); return; }
+  for (const [k, v] of S.fixJobs) if (v.wid !== wid) S.fixJobs.delete(k);
   S.world = w; S.pages = {}; S.recent = []; S.confirmDel = null; S.nf = new Set(); S.edit = null; S.confirmDelPage = null; S.confirmMerge = null; S.syncQ = []; S.genQ = []; S.syncErr = null; S.storyCard = null; S.adv = null;
   S.view = { name: "loading" }; renderAll();
   try { S.pages = await Store.listPages(w.id); } catch (e) { toast(errMsg(e)); }

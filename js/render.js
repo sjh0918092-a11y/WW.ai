@@ -85,6 +85,7 @@ function renderSide() {
     </ul></section>
     <section class="stat"><h4>문서 현황</h4><span>작성된 문서 <em>${done}</em></span><span>미작성 항목 <em>${ents.length - done}</em></span><span>연표 사건 <em>${w.timeline.length}</em></span></section>
     ${genQueueHtml(w)}
+    ${workHtml(w)}
     ${fixReqHtml(w)}
     ${recentGenHtml(w)}
     <section><h4>도구</h4><ul><li><button type="button" data-act="gset" class="${S.view.name === "gset" ? "cur" : ""}">AI 연결 설정${gReady() ? "" : " ⚠"}</button></li>${jobTool()}<li><button type="button" data-act="log" class="${S.view.name === "log" ? "cur" : ""}">로그 보기 (${LOG.length})</button></li></ul></section>
@@ -99,6 +100,19 @@ function genQueueHtml(w) {
   const cur = S.gen ? `<li class="genpill"><span class="dot"></span><span class="gq-st">작성 중</span><button type="button" class="btn gq-t" data-k="${S.gen.key}">${esc(S.gen.title)}</button><button type="button" class="btn gq-x" data-act="stop" title="${checking ? "검사를 건너뛰고 지금까지 쓴 문서를 보여 줍니다" : "이 문서 작성을 멈춥니다"}">${checking ? "검사 건너뛰기" : "취소"}</button></li>` : "";
   const wait = q.map((x, i) => `<li class="genpill"><span class="gq-n">${i + 1}</span><span class="gq-st">대기</span><button type="button" class="btn gq-t" data-k="${x.key}">${esc(w.entities[x.key].title)}</button><button type="button" class="btn gq-x" data-unq="${x.key}" title="대기열에서 뺍니다">취소</button></li>`).join("");
   return `<section class="genq"><h4>작성 대기열${q.length ? ` · 대기 ${q.length}` : ""}</h4><ul>${cur}${wait}</ul></section>`;
+}
+/* 진행 중인 작업: 문서별 교정(동시에 여러 개), 설정 검사, 확정 사실 정리. 문서 작성은 작성 대기열에 따로 보인다 */
+function workHtml(w) {
+  const name = k => esc(w.entities[k]?.title || S.pages[k]?.title || "?");
+  const rows = [];
+  for (const [k, v] of S.fixJobs) {
+    if (v.wid !== w.id || !w.entities[k]) continue;
+    const st = v.phase === "busy" ? `<span class="dot"></span><span class="gq-st">교정 중</span>` : v.phase === "review" ? `<span class="gq-st on">검토 대기</span>` : `<span class="gq-st">${v.err ? "확인 필요" : "고를 메모"}</span>`;
+    rows.push(`<li class="genpill">${st}<button type="button" class="btn gq-t" data-fixopen="${k}" title="${v.phase === "review" ? "수정안을 확인하고 적용합니다" : "교정 화면을 엽니다"}">${name(k)}</button>${v.phase === "busy" ? `<span class="src" data-fxt="${k}"></span>` : `<button type="button" class="btn gq-x" data-fixdrop="${k}" title="이 교정을 버립니다">버리기</button>`}</li>`);
+  }
+  if (S.checking && w.entities[S.checking]) rows.push(`<li class="genpill"><span class="dot"></span><span class="gq-st">설정 검사</span><button type="button" class="btn gq-t" data-k="${S.checking}">${name(S.checking)}</button></li>`);
+  if (S.bgSync && w.entities[S.bgSync]) rows.push(`<li class="genpill"><span class="dot"></span><span class="gq-st">사실 정리</span><button type="button" class="btn gq-t" data-k="${S.bgSync}">${name(S.bgSync)}</button></li>`);
+  return rows.length ? `<section class="genq work"><h4>진행 중인 작업 · ${rows.length}</h4><ul>${rows.join("")}</ul></section>` : "";
 }
 /* 수정 요청: 다른 문서의 직접 수정·자동 대조로 충돌 표시가 붙어 고쳐야 하는 문서 */
 const fixReqs = (w, P) => [...(P.conflicts || []), ...(P.autoConflicts || []).filter(c => w.entities[c.by])];
@@ -408,10 +422,10 @@ function articleHtml(k) {
   const chk = p.check;
   const hi = (chk?.issues || []).filter(i => i.severity === "high"), lo = (chk?.issues || []).filter(i => i.severity !== "high");   // 편집자 메모는 설정 충돌만 다룬다
   S.memo = { k, items: [...hi, ...lo] };
-  const fixBtn = n => `<button type="button" class="btn memo-fix" data-fix="${n}" data-fixk="${k}" ${S.fixing || (S.gen && S.gen.key === k) || !S.sample ? "disabled" : ""}>${S.fixing && S.fixing.key === k && S.fixing.i === n ? "고치는 중…" : "고치기"}</button>`;
+  const fixBtn = n => `<button type="button" class="btn memo-fix" data-fix="${n}" data-fixk="${k}" ${fixActive(k) || (S.gen && S.gen.key === k) || !S.sample ? "disabled" : ""}>고치기</button>`;
   const item = (i, n, cls) => `<li class="${cls}">${esc(i.claim)}${i.conflict ? `<span class="memo-why">${esc(i.conflict)}</span>` : ""}${i.target && i.target !== k ? "" : fixBtn(n)}<button type="button" class="memo-del" data-memo-del="${n}" data-memo-k="${k}" aria-label="이 메모 삭제" ${S.fixing && S.fixing.key === k ? "disabled" : ""}>[삭제]</button></li>`;   // 다른 문서가 고칠 대상이면 이 문서의 고치기 버튼은 두지 않는다
   const chkHtml = S.bgSync === k ? `<p class="memo-line"><span class="dot"></span>확정 사실을 정리하는 중</p>` : S.checking === k ? `<p class="memo-line"><span class="dot"></span>설정 노트와 맞춰 보는 중 <span class="src" id="chkTick"></span></p>`
-    : (hi.length || lo.length) ? `<details class="memo"${hi.length ? " open" : ""}><summary><span class="memo-dot${hi.length ? " on" : ""}"></span>편집자 메모${hi.length ? ` · 다듬을 곳 ${hi.length}` : ""}${lo.length ? ` · 참고 ${lo.length}` : ""}${chk ? `<span class="src">${fmtDate(chk.at)}</span>` : ""}</summary><ul>${hi.map((i, n) => item(i, n, "")).join("")}${lo.map((i, n) => item(i, hi.length + n, "lo")).join("")}</ul>${hi.length + lo.length > 1 ? `<div class="memo-foot"><button type="button" class="btn" data-act="fixv-open" ${S.gen && S.gen.key === k ? "disabled" : ""}>여러 곳 한꺼번에 교정하기</button></div>` : ""}</details>`
+    : (hi.length || lo.length) ? `<details class="memo"${hi.length ? " open" : ""}><summary><span class="memo-dot${hi.length ? " on" : ""}"></span>편집자 메모${hi.length ? ` · 다듬을 곳 ${hi.length}` : ""}${lo.length ? ` · 참고 ${lo.length}` : ""}${chk ? `<span class="src">${fmtDate(chk.at)}</span>` : ""}</summary><ul>${hi.map((i, n) => item(i, n, "")).join("")}${lo.map((i, n) => item(i, hi.length + n, "lo")).join("")}</ul>${hi.length + lo.length > 1 ? `<div class="memo-foot"><button type="button" class="btn" data-act="fixv-open" ${(S.gen && S.gen.key === k) || fixActive(k) ? "disabled" : ""}>여러 곳 한꺼번에 교정하기</button></div>` : ""}</details>`
     : chk ? `<p class="memo-line">설정 노트와 맞춰 봤습니다 <span class="src">${fmtDate(chk.at)}</span></p>` : "";
   const rw = `<button type="button" class="btn" data-rw="${k}" aria-expanded="${S.confirmRewrite === k}" ${S.gen || S.storyGen || S.syncing === k || !S.sample ? "disabled" : ""}>다시 쓰기</button>`;
   const binding = e.mentions.filter(m => m.from !== k).length + e.facts.filter(f => f.src !== k).length;
@@ -432,11 +446,12 @@ function articleHtml(k) {
     ${p.stale ? `<div class="banner warn">직접 수정한 내용을 설정과 대조하지 못해, 설정 노트에 이전 버전의 사실이 남아 있을 수 있습니다. <button type="button" class="btn" data-refresh="${k}" style="margin-left:6px;padding:2px 10px" ${!S.sample ? "disabled" : ""}>설정과 대조해 다시 저장</button></div>` : ""}
     ${p.conflicts?.length ? `<div class="banner warn"><b>「${esc(p.conflicts[0].byTitle)}」${p.conflicts.some(c => c.byTitle !== p.conflicts[0].byTitle) ? " 등" : ""} 문서가 직접 수정되어, 이 문서의 서술 ${p.conflicts.length}곳이 설정과 맞지 않습니다.</b>
       <ul>${p.conflicts.map(c => `<li>${esc(c.old)} <span class="src">→ ${linkHtml(c.byTitle)}: ${esc(c.claim)}</span></li>`).join("")}</ul>
-      <div class="row" style="margin-top:4px"><button type="button" class="btn pri" data-cfix="${k}" ${S.gen || S.fixing || !S.sample ? "disabled" : ""}>AI로 고치기</button><button type="button" class="btn" data-edit="${k}">편집해서 고치기</button><button type="button" class="btn" data-rw="${k}" ${S.gen || !S.sample ? "disabled" : ""}>다시 쓰기</button><button type="button" class="btn" data-dismiss="${k}" data-field="conflicts">표시 지우기</button></div></div>` : ""}
+      <div class="row" style="margin-top:4px"><button type="button" class="btn pri" data-cfix="${k}" ${(S.gen && S.gen.key === k) || fixActive(k) || !S.sample ? "disabled" : ""}>AI로 고치기</button><button type="button" class="btn" data-edit="${k}">편집해서 고치기</button><button type="button" class="btn" data-rw="${k}" ${S.gen || !S.sample ? "disabled" : ""}>다시 쓰기</button><button type="button" class="btn" data-dismiss="${k}" data-field="conflicts">표시 지우기</button></div></div>` : ""}
     ${(() => { const ac = (p.autoConflicts || []).filter(c => w.entities[c.by]); if (!ac.length) return "";   // 자동 대조가 이 문서를 고칠 대상으로 정한 지적
       return `<div class="banner warn"><b>「${esc(ac[0].byTitle)}」${ac.some(c => c.byTitle !== ac[0].byTitle) ? " 등" : ""} 문서와 맞지 않는 서술 ${ac.length}곳 (자동 대조)</b>
       <ul>${ac.map(c => `<li>${esc(c.old)} <span class="src">→ ${linkHtml(c.byTitle)}: ${esc(c.claim)}</span></li>`).join("")}</ul>
-      <div class="row" style="margin-top:4px"><button type="button" class="btn pri" data-cfix="${k}" data-cfield="autoConflicts" ${S.gen || S.fixing || !S.sample ? "disabled" : ""}>AI로 고치기</button><button type="button" class="btn" data-edit="${k}">편집해서 고치기</button><button type="button" class="btn" data-dismiss="${k}" data-field="autoConflicts">표시 지우기</button></div></div>`; })()}
+      <div class="row" style="margin-top:4px"><button type="button" class="btn pri" data-cfix="${k}" data-cfield="autoConflicts" ${(S.gen && S.gen.key === k) || fixActive(k) || !S.sample ? "disabled" : ""}>AI로 고치기</button><button type="button" class="btn" data-edit="${k}">편집해서 고치기</button><button type="button" class="btn" data-dismiss="${k}" data-field="autoConflicts">표시 지우기</button></div></div>`; })()}
+    ${(() => { const v = S.fixJobs.get(k); if (!v || v.wid !== w.id) return ""; return v.phase === "busy" ? `<p class="memo-line"><span class="dot"></span>교정안을 만드는 중 (${v.sel.size}곳) <span class="src" data-fxt="${k}"></span> <span class="note">다른 문서를 보거나 고쳐도 계속 진행됩니다</span></p>` : v.phase === "review" ? `<p class="memo-line">교정안이 준비되었습니다 <button type="button" class="btn" data-fixopen="${k}" style="padding:2px 10px;margin-left:6px">검토하기</button></p>` : ""; })()}
     ${(() => { const sent = Object.keys(S.pages).filter(x => x !== k && w.entities[x] && fixReqs(w, S.pages[x]).some(c => c.by === k)); return sent.length ? `<p class="memo-line">이 문서와 맞지 않아 수정 요청을 보낸 문서: ${sent.map(x => `${linkHtml(w.entities[x].title)} <span class="src">${fixReqs(w, S.pages[x]).filter(c => c.by === k).length}곳</span>`).join(" · ")}</p>` : ""; })()}
     ${p.pending?.length ? `<div class="banner warn"><b>이 문서의 수정 내용이 직접 정한 설정과 충돌한 채 저장되었습니다.</b>
       <ul>${p.pending.map(c => `<li><span class="sev">${esc(c.label)}</span>${esc(c.old)} <span class="src">↔ 수정본: ${esc(c.claim)}</span></li>`).join("")}</ul>

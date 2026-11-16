@@ -328,7 +328,7 @@ async function saveRenamedEdit(w, ed, page, title, touched, backup) {
   }
   if (S.world === w && S.edit === ed) {
     S.edit = null; S.view = { name: "article", key: nk }; S.recent = [nk, ...S.recent.filter(x => x !== k && x !== nk)].slice(0, 8);
-    S.memo = null; S.fixv = null; noteExplore(nk, "edited"); renderAll(); window.scrollTo({ top: 0 });
+    S.memo = null; dropFix(k); dropFix(nk); noteExplore(nk, "edited"); renderAll(); window.scrollTo({ top: 0 });
   }
   toast(`제목을 「${title}」(으)로 바꾸고 저장했습니다.`);
 }
