@@ -113,12 +113,18 @@ async function saveEdit(skipCheck) {
   if (!out.sections.some(s => s.body.trim())) { edStatus("본문이 비어 있습니다. 섹션 아래에 내용을 적어 주세요."); return; }
   if (skipCheck || !S.sample) { commitEdit(ed, out, null, [], {}); return; }
   const snap = JSON.stringify(ed.f);
-  const linkKeys = linksOfOut(w, out, k);
+  const checked = ed.section ? { ...out, summary: "", infobox: [], notices: [], navboxes: [], sections: sectionDraft(ed) } : out;
+  const linkKeys = linksOfOut(w, checked, k);
   const ctx = conflictContext(w, k, linkKeys);
-  const temp = { key: k, title: e.title, summary: out.summary, infobox: out.infobox, sections: out.sections, navboxes: out.navboxes };
+  const temp = { key: k, title: e.title, summary: checked.summary, infobox: checked.infobox, sections: checked.sections, navboxes: checked.navboxes };
+  const scope = ed.section ? sectionAnalysisContext(w, S.pages[k], ed) : null;
   edStatus("", true);
   let r;
-  try { r = await callJson("analyze", analyzePrompt(w, temp, linkKeys, ctx), { modelTier: "check" }, { title: w.entities[k]?.title || "" }); }
+  try {
+    const prompt = analyzePrompt(w, temp, linkKeys, ctx) + (scope?.text || "");
+    r = await callJson("analyze", prompt, { modelTier: "check" }, { title: w.entities[k]?.title || "" });
+    if (scope && r) r.sectionRemoved = new Set((Array.isArray(r.removeRecords) ? r.removeRecords : []).map(id => scope.refs[id]).filter(Boolean));
+  }
   catch (err) {
     if (S.edit !== ed) return;
     edStatus(`설정과 대조하지 못했습니다. ${esc(errMsg(err))} <button type="button" class="btn" data-act="ed-save-raw" style="margin-left:6px;padding:2px 10px">대조 없이 저장</button>`);
@@ -183,15 +189,17 @@ async function commitEdit(ed, out, r, conflicts, ch) {
   const pagesBackup = ed.section ? Object.fromEntries(Object.entries(S.pages).map(([key, p]) => [key, { ...p, ...(p.conflicts ? { conflicts: p.conflicts.slice() } : {}) }])) : null;
   const ownNavboxes = ed.section ? Object.fromEntries(Object.entries(w.navboxes || {}).filter(([, nb]) => nb.src === k)) : null;
   const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], events: w.events || [], glossary: w.glossary || [], rules: w.rules });
-  const touched = clearBadges(k);
+  const touched = ed.section ? new Set() : clearBadges(k);
   let page;
   try {
     for (const o of Object.values(w.entities)) {
       o.mentions = o.mentions.filter(m => m.from !== k);              // 링크와 언급은 수정본 기준으로 다시 계산
-      for (const x of [...o.facts, ...o.mentions]) if (x.sup?.by === k) delete x.sup;   // 이전 수정이 대체했던 사실은 이번 대조 결과로 다시 정한다
+      if (!ed.section) for (const x of [...o.facts, ...o.mentions]) if (x.sup?.by === k) delete x.sup;   // 전체 편집일 때만 이전 대조 결과를 초기화
     }
-    w.timeline.forEach(t => { if (t.sup?.by === k) delete t.sup; });
-    (w.relations || []).forEach(x => { if (x.sup?.by === k) delete x.sup; });
+    if (!ed.section) {
+      w.timeline.forEach(t => { if (t.sup?.by === k) delete t.sup; });
+      (w.relations || []).forEach(x => { if (x.sup?.by === k) delete x.sup; });
+    }
     for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === k) delete w.navboxes[id];
     page = integrate(w, k, out);
   } catch (err) { const b = JSON.parse(backup); restoreRewrite(w, backup); w.rules = b.rules; ed.saving = false; edStatus("저장하지 못했습니다. " + esc(errMsg(err))); return; }
@@ -203,13 +211,19 @@ async function commitEdit(ed, out, r, conflicts, ch) {
   }
   Object.assign(page, { createdAt: old.createdAt, rewrittenAt: old.rewrittenAt, direction: old.direction, editedAt: Date.now(), stale: !r, baseAsOf: old.baseAsOf, syncedTo: old.syncedTo, storyNotice: old.storyNotice });
   if (r) {
-    for (const o of Object.values(w.entities)) o.facts = o.facts.filter(f => f.src !== k);
-    w.timeline = w.timeline.filter(x => x.src !== k);
+    // 문단 분석은 해당 문단에서 사라진 기록만 교체한다. 나머지 문서의 기록은 유지한다.
+    const keep = x => ed.section ? !r.sectionRemoved?.has(x) : x.src !== k;
+    for (const o of Object.values(w.entities)) o.facts = o.facts.filter(keep);
+    w.timeline = w.timeline.filter(keep);
     for (const f of (Array.isArray(r.facts) ? r.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = kOf(w, f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), k); }
     for (const t of (Array.isArray(r.timeline) ? r.timeline : [])) addTimeline(w, t, k);
     afterTimeline(w);
-    if (Array.isArray(r.events)) ingestEvents(w, k, r.events);   // 직접 고친 문서의 사건 기록은 기준이 된다
-    w.relations = (w.relations || []).filter(x => x.src !== k);
+    const keptEvents = ed.section ? (w.events || []).filter(x => x.src === k && keep(x)) : [];
+    if (Array.isArray(r.events)) {
+      ingestEvents(w, k, r.events);
+      if (ed.section) w.events.push(...keptEvents.filter(x => !w.events.some(y => y.src === k && y.k === x.k)));
+    }
+    w.relations = (w.relations || []).filter(keep);
     for (const x of (Array.isArray(r.relations) ? r.relations : []).slice(0, 16)) addRelation(w, k, x);
     for (const n of (Array.isArray(r.newEntities) ? r.newEntities : [])) {
       if (!n || !n.title) continue; const o = w.entities[kOf(w, n.title)];
@@ -228,7 +242,7 @@ async function commitEdit(ed, out, r, conflicts, ch) {
     if (c.src && c.src !== "seed") badge(w, c.src, k, c, touched);
     if (!c.ask) auto++;
   }
-  page.pending = pending.map(c => ({ label: conflictLabel(w, c), old: c.old, claim: c.claim }));
+  page.pending = [...(ed.section ? old.pending || [] : []), ...pending.map(c => ({ label: conflictLabel(w, c), old: c.old, claim: c.claim }))];
   cleanupOrphans(w, k);
   if (ed.section) {
     const changed = [...touched].filter(x => x !== k && S.pages[x]).map(x => S.pages[x]);

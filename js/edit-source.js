@@ -107,6 +107,26 @@ ${eventsSpec(w)}
 ${ENTITY_DEFINITION_RULE}
 facts에는 「${temp.title}」 자체의 핵심 사실 3~6개와 주요 링크 항목의 사실을 넣는다. about, a, b는 문서 제목이나 링크한 항목 제목 그대로 쓴다. timeline에는 연도가 적힌 사건 중 세계에 영향을 준 것만 0~2개 넣고, 현재 상태·근황·거주는 넣지 않는다. about에는 사건의 주체가 되는 항목 제목을 글자 그대로 쓴다. ${TL_DATE_SPEC}${tlDateNote(w)} newEntities에는 아직 정의가 없는 링크 항목만 넣는다. relations는 문서에 적힌 주요 인물 관계를 6개까지 넣는다. ${REL_SPEC}`;
 }
+/* 기존 문서의 기록은 문단별 출처가 없으므로, 이전 문단에서 사라진 기록만 번호로 지정해 교체한다. */
+function sectionAnalysisContext(w, p, ed) {
+  const refs = {}, records = [];
+  const add = (kind, x, text) => { const id = "S" + (records.length + 1); refs[id] = x; records.push(`${id}. [${kind}] ${text}`); };
+  for (const o of Object.values(w.entities)) for (const f of o.facts) if (f.src === ed.key) add("사실", f, `${o.title}: ${f.t}`);
+  for (const t of w.timeline) if (t.src === ed.key) add("연표", t, `${tlWhen(t)}: ${t.event}`);
+  for (const r of w.relations || []) if (r.src === ed.key) add("관계", r, relLine(w, r));
+  for (const e of w.events || []) if (e.src === ed.key) add("사건", e, `${e.name}: ${e.date}, ${e.place}, ${numText(e)}, ${e.result}`);
+  const before = { key: p.key, title: p.title, sections: p.sections.slice(ed.section.index, ed.section.end) };
+  return { refs, text: `
+
+## 문단 편집 검사 범위 (위의 일반 문서 지시보다 우선)
+수정된 문서에는 선택한 문단과 하위 문단만 들어 있다. 이 범위만 설정과 대조하고 facts, timeline, relations, events, newEntities를 추출한다. 다른 문단이나 문서 전체를 검사하지 않는다. 사실 개수 할당을 채우려고 범위 밖의 내용을 만들지 않는다.
+아래 이전 문단은 기록 교체 판단용이며 충돌 검사 대상이 아니다.
+### 수정 전 선택 문단
+${docText(before, w, [])}
+### 이 문서가 남긴 기존 기록 (검사 대상이 아닌 보존 목록)
+${records.join("\n") || "(없음)"}
+응답 JSON에 removeRecords 배열을 추가한다. 이전 문단에 근거한 기록 중 수정으로 삭제되거나 바뀌어 더 이상 성립하지 않는 기록의 S번호만 넣는다. 다른 문단의 기록이나 근거가 불명확한 기록은 보존한다. 새 문단에 없다는 이유만으로 삭제하지 않는다. 해당 기록이 없으면 빈 배열이다.` };
+}
 function analyzePrompt(w, temp, linkKeys, ctx) {
   const linked = linkKeys.filter(x => w.entities[x]).map(x => `- ${w.entities[x].title}${w.entities[x].page || w.entities[x].summary ? "" : " (정의 없음)"}`).join("\n") || "(없음)";
   return `다음은 가상 세계관 위키 「${w.title}」(작중 기준 시점 ${w.era})의 문서 「${temp.title}」이며, 사용자가 직접 수정한 최종본이다. 두 가지를 하라.
