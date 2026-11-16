@@ -473,7 +473,7 @@ const GenWake = {
 if (globalThis.document && globalThis.document === document) {   // 서버 엔진에도 이 파일이 들어가므로(가짜 document) 실제 브라우저에서만 건다
   window.addEventListener("pagehide", () => saveGenQ());
   document.addEventListener("visibilitychange", () => { if (document.hidden) saveGenQ(); GenWake.sync(); });
-  setInterval(() => GenWake.sync(), 1000);
+  if (navigator.wakeLock) setInterval(() => GenWake.sync(), 1000);   // 화면 꺼짐 방지를 지원하는 실제 브라우저에서만 돈다(테스트용 가짜 환경이 끝나지 않는 일 방지)
 }
 /* 작성 대기열: 문서를 작성·검사·수정하는 동안 누른 빨간 링크는 여기에 쌓았다가 앞 문서가 끝나면 차례로 작성한다 */
 function queueGen(k) {
