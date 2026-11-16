@@ -200,8 +200,8 @@ function redirectBlock(w, key) {
   const e = w.entities[key];
   const pages = Object.entries(S.pages).filter(([k]) => k !== key && w.entities[k] && !e.notSame?.includes(k) && !w.entities[k].notSame?.includes(key))
     .map(([k, p]) => {
-      const o = w.entities[k], names = (p.infobox || []).filter(r => IDENTITY_LABEL.test(stripMarks(r.label).replace(/\s/g, ""))).map(r => `${r.label}: ${stripMarks(r.value)}`).join(" / ");
-      const facts = o.facts.filter(live).filter(f => /본명|코드명|제식명|암호명|별칭|별명|가명|정체|동일/.test(f.t) || f.t.includes(e.title)).slice(-4).map(f => f.t).join(" / ");
+      const o = w.entities[k], names = infoboxNames(p).join(" / ");
+      const facts = o.facts.filter(live).filter(f => /본명|코드명|호출부호|콜사인|이명|칭호|제식명|암호명|별칭|별명|가명|정체|동일/.test(f.t) || f.t.includes(e.title)).slice(-4).map(f => f.t).join(" / ");
       const text = `- ${p.title} (${p.type}): ${p.summary || ""}${names ? "\n  이름 정보: " + names : ""}${facts ? "\n  확정 사실: " + facts : ""}\n  개요: ${firstPara(p)}`;
       return { text, match: text.includes(e.title) ? 1 : 0 };
     }).sort((a, b) => b.match - a.match).slice(0, 80);
@@ -214,7 +214,7 @@ ${pages.map(x => x.text).join("\n")}\n\n`;
 /* 인물 문서 제목은 본명 풀 네임으로. 코드명·기체명·칭호로 정해지면 같은 인물의 제목이 문서마다 달라진다 */
 /* 링크와 새 항목 제목에 관한 지침은 linkNameRule() 하나로 붙인다.
    새 항목 제목이나 [[링크]]를 만들 수 있는 프롬프트는 모두 이 함수를 쓰고, tests/name-rule.test.js의 목록에도 넣는다 */
-const PERSON_TITLE_RULE = "새 인물을 링크할 때 [[ ]] 안의 제목은 본명 풀 네임으로 정한다. 코드명, 호출부호, 기체명, 칭호, 별명, 성이나 이름 하나만 있는 표기는 제목으로 쓰지 않고 보일 말로만 쓴다(예: 본문에서 '인디펜던스'로 불리는 조슬린 앤 케인은 [[조슬린 앤 케인|인디펜던스]]). 제목에 이명이나 '본명:'을 덧붙이지 않는다(예: [[Type-18 '인디펜던스']]·[[인디펜던스(조슬린 앤 케인)]]는 쓰지 않는다). 본명이 정해지지 않았거나 작중에서 아직 밝혀지지 않은 비밀이면 가장 널리 불리는 이름을 제목으로 쓴다. 이명은 그 인물 문서의 인포박스(코드명, 별칭 등)에 적는다. 이미 있는 항목 목록에 있는 인물은 그 제목을 그대로 쓴다.";
+const PERSON_TITLE_RULE = "인물에게 붙은 호출부호·코드명·제식명·세대 번호는 그 인물의 다른 이름이다. 거대한 신체, 병기 취급, 숫자가 붙은 이름만을 이유로 인물을 물건·기체로 분리하지 않는다. 실제 별도 장비라는 근거가 있을 때만 장비 항목을 만들고, 인물 본인의 신체와 본명을 장비와 복무자·조종사로 나누지 않는다. newEntities에도 그 인물의 본명 제목 하나만 넣고 aliases 배열에 그 인물의 호출부호·코드명·이명을 적는다(없으면 빈 배열). 이명은 [[본명|이명]]으로 링크하며 별도 newEntities 항목을 만들지 않는다. 새 인물을 링크할 때 [[ ]] 안의 제목은 본명 풀 네임으로 정한다. 코드명, 호출부호, 기체명, 칭호, 별명, 성이나 이름 하나만 있는 표기는 제목으로 쓰지 않고 보일 말로만 쓴다(예: 본문에서 '인디펜던스'로 불리는 조슬린 앤 케인은 [[조슬린 앤 케인|인디펜던스]]). 제목에 이명이나 '본명:'을 덧붙이지 않는다(예: [[Type-18 '인디펜던스']]·[[인디펜던스(조슬린 앤 케인)]]는 쓰지 않는다). 본명이 정해지지 않았거나 작중에서 아직 밝혀지지 않은 비밀이면 가장 널리 불리는 이름을 제목으로 쓴다. 이명은 그 인물 문서의 인포박스(코드명, 별칭 등)에 적는다. 이미 있는 항목 목록에 있는 인물은 그 제목을 그대로 쓴다.";
 /* 분류 지침: 축(소속·유형·사건·기타)별로, 넓게, 적게, 이미 있는 것을 우선한다. 같은 분류에 문서가 모여야 분류와 틀이 의미가 있다.
    기존 분류 목록은 합친 분류를 새 이름으로 읽은 결과다 */
 function worldCats(w, except, limit = 40) {
@@ -379,7 +379,7 @@ function pagePrompt(w, key, rewriteDir = null, guide = "", angle = null, angleMo
     .map(([, o]) => `- ${o.title}${o.type ? " — " + o.type : ""}${o.summary ? ". " + o.summary.slice(0, 60) : ""}`).join("\n") || "(아직 없음)";
   const known = e.facts.length || e.mentions.length || e.summary;
   const target = known
-    ? `이미 다른 문서에서 확정된 내용이다. 반드시 일치시켜라.\n${e.type ? "유형: " + e.type + "\n" : ""}${e.summary ? "요약: " + e.summary + "\n" : ""}${inputs.facts && e.facts.some(live) ? "확정 사실:\n" + promptFacts(w, key, e.facts.filter(f => live(f) && (inputs.userFacts || f.src !== "user")), null, inputs.factsCount).map(f => "- " + factLine(f)).join("\n") + "\n" : ""}${inputs.mentions && e.mentions.some(live) ? "다른 문서에서의 언급:\n" + promptMentions(w, key, e.mentions.filter(live), null, inputs.mentionsCount).map(m => `- 「${w.entities[m.from]?.title || "?"}」: "${m.text}"`).join("\n") : ""}`
+    ? `아래 확정 사실과 언급의 내용은 반드시 지킨다. 유형과 요약은 이전 응답에서 추출한 설명이므로, 인물의 호출부호를 별도 물건으로 잘못 분류한 경우 그 오분류를 유지하지 않는다. 누구를 가리키는지 먼저 확인하고 본명·신체·호출부호를 같은 인물로 다룬다. 실제 조종사와 별도 장비는 구분한다.\n${e.type ? "이전 분류(확정된 신원과 다르면 바로잡을 것): " + e.type + "\n" : ""}${e.summary ? "요약: " + e.summary + "\n" : ""}${inputs.facts && e.facts.some(live) ? "확정 사실:\n" + promptFacts(w, key, e.facts.filter(f => live(f) && (inputs.userFacts || f.src !== "user")), null, inputs.factsCount).map(f => "- " + factLine(f)).join("\n") + "\n" : ""}${inputs.mentions && e.mentions.some(live) ? "다른 문서에서의 언급:\n" + promptMentions(w, key, e.mentions.filter(live), null, inputs.mentionsCount).map(m => `- 「${w.entities[m.from]?.title || "?"}」: "${m.text}"`).join("\n") : ""}`
     : e.src === "search" ? `검색창에서 직접 입력된 이름이며, 이 세계관의 어떤 문서에서도 언급된 적이 없다. 먼저 이 이름이 아래 셋 중 무엇인지 판정하고 그에 따라 쓴다.
 (가) 현실에도 있는 일반 명사나 고유명사(예: 참치, 우산, 파리, 커피, 나폴레옹): 현실의 의미를 그대로 문서의 주제로 삼는다. 일반적인 설명에 더해, 이 세계의 역사·산업·제도·문화가 그 대상과 맞닿는 지점을 섹션 일부(전체의 절반 이하)로 구체적으로 쓴다. 현실과 갈라진 시점 이후의 역사는 이 세계에 맞게 바꾼다. 이 단어를 세계관 고유의 은어나 전혀 다른 뜻으로 재해석하지 않는다.
 (나) 현실에는 없지만 이름으로 읽히는 말(인물명, 지명, 조직명, 작전명처럼 그럴듯한 조합): 이 세계 안의 새 항목으로 창작한다.

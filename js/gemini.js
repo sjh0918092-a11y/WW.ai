@@ -305,6 +305,7 @@ const PK = "wwiki:lastPrompt";
 let LASTP = (() => { try { const v = JSON.parse(localStorage.getItem(PK) || "null"); return v && typeof v.text === "string" ? v : null; } catch { return null; } })();
 async function callJson(kind, prompt, opts = {}, meta = {}) {
   if (kind === "page") { LASTP = { at: Date.now(), title: meta.title || "", type: meta.type || "", text: prompt }; try { localStorage.setItem(PK, JSON.stringify(LASTP)); } catch {} }
+  const identityWorld=S.world;
   const t0 = performance.now(); let first = null, chars = 0;
   const user = opts.onText;
   const rec = { at: Date.now(), kind, tier: opts.modelTier || "default", model: "", effort: "", in: prompt.length, ...meta };
@@ -319,7 +320,7 @@ async function callJson(kind, prompt, opts = {}, meta = {}) {
     onUsage: u => { if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,rec.model,u); opts.onUsage?.(u); },
     onMeta: m => { if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,m.model,m.usage); rec.model = m.model; rec.effort = m.think || ""; if (m.retries) rec.retry = m.retries; if (m.usage) rec.tok = { i: m.usage.promptTokenCount || 0, o: m.usage.candidatesTokenCount || 0, t: m.usage.thoughtsTokenCount || 0 }; } };
   const done = () => { rec.first = first === null ? null : Math.round(first - t0); rec.total = Math.round(performance.now() - t0); rec.out = chars; };
-  try { const r = await S.sample.json(prompt, o); done(); rec.ok = true; if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,rec.model,null,"done"); pushLog(rec); if (typeof AIRecovery !== "undefined" && !["page", "check", "read", "prose", "section", "fix", "analyze", "factSync"].includes(kind)) for (const id of rec.jobs || []) AIRecovery.handled(id); return r; }
+  try { const r = await S.sample.json(prompt, o); if(S.world===identityWorld && ["page","discovery","chapterPlan","chapterBlock","analyze","factSync"].includes(kind))validateAIIdentity(identityWorld,target.key,r); done(); rec.ok = true; if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,rec.model,null,"done"); pushLog(rec); if (typeof AIRecovery !== "undefined" && !["page", "check", "read", "prose", "section", "fix", "analyze", "factSync"].includes(kind)) for (const id of rec.jobs || []) AIRecovery.handled(id); return r; }
   catch (e) { if (!chars && typeof e?.text === "string") chars = e.text.length; done(); rec.ok = false; if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,rec.model,null,"failed"); rec.err = e?.code || String(e?.message || e).slice(0, 80); if (e?.message) rec.msg = String(e.message).slice(0, 200); pushLog(rec); throw e; }
 }
 const secs = ms => ms == null ? "-" : (ms / 1000).toFixed(1) + "초";

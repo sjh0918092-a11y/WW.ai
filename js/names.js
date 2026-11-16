@@ -101,3 +101,38 @@ function nameTwinsHtml(w) {
     <ul class="twins">${xs.map(t => `<li>${linkHtml(w.entities[t.a].title)} · ${linkHtml(w.entities[t.b].title)} <span class="src">(겹치는 이름: ${esc(t.name)})</span>
       <div class="row" style="margin-top:4px"><button type="button" class="btn" data-mgdo="${t.a}" data-mgto="${t.b}" ${S.gen || S.storyGen || S.syncing ? "disabled" : ""}>「${esc(w.entities[t.b].title)}」에 합치기</button><button type="button" class="btn" data-notsame="${t.a}" data-other="${t.b}">다른 인물입니다</button></div></li>`).join("")}</ul>`;
 }
+
+/* 새 AI 응답만 검증한다. 이름이 비슷하다는 추측으로 기존 데이터를 변경하지 않는다. */
+function validateAIIdentity(w, key, out) {
+  if(!w || !out || typeof out!=="object")return;
+  const people=new Map();
+  const remember=(name,owner)=>{
+    const id=identityName(name);if(!id)return;
+    if(!people.has(id))people.set(id,new Set());people.get(id).add(owner);
+  };
+  for(const [id,e]of Object.entries(w.entities||{})){
+    if(e.type!=="인물" || w.entities[key]?.notSame?.includes(id)||e.notSame?.includes(key))continue;
+    remember(e.title,id);
+  }
+  for(const [id,p]of Object.entries(S.world===w?S.pages:{})){
+    if(p.type!=="인물" || !w.entities[id])continue;
+    if(w.entities[key]?.notSame?.includes(id)||w.entities[id].notSame?.includes(key))continue;
+    for(const name of [p.title,...infoboxNames(p)])remember(name,id);
+  }
+  const rows=[...(out.type?[{...out,title:out.title||w.entities[key]?.title}]:[]),...(Array.isArray(out.newEntities)?out.newEntities:[])];
+  for(const [i,row]of rows.entries())if(row?.type==="인물"){
+    const owner=keyOf(norm(row.title||""))||String(i);
+    for(const name of [row.title,...infoboxNames({infobox:Array.isArray(row.infobox)?row.infobox:[]}),...(Array.isArray(row.aliases)?row.aliases.filter(x=>typeof x==="string"):[])])remember(name,owner);
+  }
+  for(const row of rows){
+    if(!row || !row.type || row.type==="인물")continue;
+    const owners=new Set(people.get(identityName(row.title||""))||[]);
+    const aliasOwner=w.aliases?.[keyOf(norm(row.title||""))];
+    if(aliasOwner && w.entities[aliasOwner]?.type==="인물" && !w.entities[key]?.notSame?.includes(aliasOwner) && !w.entities[aliasOwner].notSame?.includes(key))owners.add(aliasOwner);
+    // '본명/성명'과 호출부호를 함께 명시하면서 물건으로 출력한 자기모순도 차단한다.
+    const box=Array.isArray(row.infobox)?row.infobox:[];
+    const real=box.some(r=>/^(?:본명|성명)$/.test(stripMarks(r?.label||"").replace(/\s/g,"")) && infoboxNames({infobox:[r]},true).length);
+    const code=box.some(r=>CODE_NAME_LABEL.test(stripMarks(r?.label||"").replace(/\s/g,"")));
+    if(owners?.size===1 || real&&code)throw {code:"identity_conflict",message:`「${row.title||w.entities[key]?.title||"항목"}」을 인물의 이름·호출부호와 별도 대상으로 동시에 분류한 AI 응답이라 저장하지 않았습니다. 다시 시도해 주세요.`};
+  }
+}
