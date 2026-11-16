@@ -246,7 +246,7 @@ function numericIssues(w, k) {
 /* ---------- 나이 규칙: 핵심 규칙의 나이 제한으로 출생·기간 연도를 맞춰 본다 ---------- */
 /* 숫자 대조 로직(numericIssues, quoteIssues, ageRuleIssues, 성별 규칙)을 바꿀 때마다 올린다.
    문서를 열 때 p.check.numV가 이 값과 다르면 결정론 지적만 다시 계산해 바꿔 끼운다 */
-const NUMERIC_VERSION = 11;
+const NUMERIC_VERSION = 12;
 /* 규칙 문장은 세계관마다 표현이 달라 코드로 읽지 않는다. 핵심 규칙이 바뀌었을 때만 AI가 한 번 구조로 뽑고(w.ageRules),
    판정은 그 구조로 코드가 한다. 그래서 검사할 때마다 결과가 같다 */
 const rulesText = w => (w.rules || []).join("\n");
@@ -666,19 +666,128 @@ function genderIssues(w, k) {
   if (!p0 || p0.type !== "인물" || (p0.infobox || []).some(r => /성별/.test(r.label))) return [];
   return [{ claim: (p0.infobox || [])[0] ? `${p0.infobox[0].label}: ${p0.infobox[0].value}` : p0.summary || p0.title, conflict: "근거: 인물 문서 규칙 · 인포박스에 '성별' 줄이 없다. 본문의 서술과 대명사에 맞는 성별(남성, 여성, 설정상 필요하면 그 밖의 표현)을 '성별: …' 줄로 인포박스에 더한다.", severity: "high", by: "num" }];
 }
-/* 결정론 지적 전부 (숫자 대조 → 나이 규칙 → 인용 대조 → 성별 규칙). 하나가 실패해도 나머지는 쓴다 */
+/* ---------- 텍스트 결함: AI 없이 글자만 보고 찾는 생성 사고 ----------
+   다른 문자 체계 섞임, 같은 음절의 연속 반복, 링크 대상과 다른 사람의 이름을 표시명으로 쓴 링크.
+   세계관 원안·제목·규칙에 쓰인 문자 체계와 괄호 안의 원어 병기는 허용한다 */
+const FOREIGN_SCRIPTS = [["아랍 문자", /[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]+/g], ["히브리 문자", /[֐-׿]+/g], ["타이 문자", /[฀-๿]+/g], ["데바나가리 문자", /[ऀ-ॿ]+/g], ["키릴 문자", /[Ѐ-ӿ]+/g], ["그리스 문자", /[Ͱ-Ͽ]+/g], ["가나 문자", /[぀-ヿ]+/g], ["아르메니아 문자", /[԰-֏]+/g], ["조지아 문자", /[Ⴀ-ჿ]+/g]];
+const OPEN_CLOSE = [["(", ")"], ["（", "）"], ["「", "」"], ["『", "』"], ["«", "»"], ["[", "]"]];
+function insideBrackets(text, at) {
+  const before = text.slice(Math.max(0, text.lastIndexOf("\n", at) + 1), at);
+  return OPEN_CLOSE.some(([o, c]) => before.split(o).length - 1 > before.split(c).length - 1);
+}
+function sentenceAt(text, at) {
+  const s = Math.max(...[".", "!", "?", "。", "\n"].map(ch => text.lastIndexOf(ch, at - 1))) + 1;
+  const ends = [".", "!", "?", "。", "\n"].map(ch => text.indexOf(ch, at)).filter(i => i >= 0);
+  return text.slice(s, ends.length ? Math.min(...ends) + 1 : text.length).trim();
+}
+/* 인포박스 이름 칸에 링크로 적은 이름들(예: 호출부호: [[리버티]]) */
+function linkedNames(p) {
+  const out = new Set();
+  for (const r of p?.infobox || []) {
+    const label = stripMarks(r.label).replace(/\s/g, "");
+    if (IDENTITY_LABEL.test(label) || CODE_NAME_LABEL.test(label)) for (const m of String(r.value || "").matchAll(LINK_RE)) { out.add(identityName(m[1])); if (m[2]) out.add(identityName(m[2])); }
+  }
+  return out;
+}
+function textIssues(w, k) {
+  const p = S.pages[k]; if (!p) return [];
+  const out = [], seen = new Set(), push = (claim, conflict, severity = "high") => { if (seen.has(claim)) return; seen.add(claim); out.push({ claim: claim.slice(0, 300), conflict: `근거: 텍스트 검사 · ${conflict}`.slice(0, 400), severity, by: "num" }); };
+  const allowed = [w.seed, w.title, w.era, ...(w.rules || []), w.userCanon, ...Object.values(w.entities).map(o => o.title)].join("\n");
+  const texts = [p.summary || "", ...(p.infobox || []).map(r => `${r.label}: ${stripMarks(r.value)}`), ...p.sections.map(s => stripMarks(s.body))];
+  for (const t of texts) {
+    for (const [name, re] of FOREIGN_SCRIPTS) {
+      re.lastIndex = 0; if (re.test(allowed)) continue;
+      for (const m of t.matchAll(re)) {
+        if (insideBrackets(t, m.index)) continue;   // "모스크바(Москва)" 같은 원어 병기
+        push(sentenceAt(t, m.index), `한국어 문장 안에 ${name} '${m[0]}'가 섞여 있다. 이 세계관에서 쓰지 않는 문자다. 한글 표기로 바꾼다.`);
+      }
+    }
+    for (const m of t.matchAll(/(?<=[가-힣])([가-힣])\1{2,}/g))   // "몸통통통": 낱말 끝 음절이 겹쳐 찍힌 생성 사고. 낱말 첫머리의 의성어(쿵쿵쿵)는 보지 않는다
+      push(sentenceAt(t, m.index), `'${m[0]}'처럼 같은 음절이 연달아 반복되어 있다. 반복된 글자를 지워 원래 낱말로 고친다.`);
+  }
+  let owners = null;
+  for (const raw of [...(p.infobox || []).map(r => r.value), ...p.sections.map(s => s.body)]) {
+    for (const m of String(raw).matchAll(LINK_RE)) {
+      if (!m[2]) continue;
+      const a = kOf(w, m[1]), label = norm(m[2]), A = w.entities[a];
+      if (!A || identityName(label) === identityName(m[1]) || w.aliases?.[keyOf(label)] === a) continue;
+      owners ||= documentNameOwners(w);
+      const own = owners.get(identityName(label)); if (own?.has(a) || linkedNames(S.pages[a]).has(identityName(label))) continue;   // 대상 문서가 인포박스에 적은 이명이다
+      const other = Object.entries(w.entities).find(([x, o]) => x !== a && identityName(o.title) === identityName(label));
+      const otherKey = own ? [...own.keys()][0] : other?.[0];
+      const plain = sentenceAt(stripMarks(raw), stripMarks(String(raw).slice(0, m.index)).length);
+      if (otherKey && otherKey !== a) { push(plain, `링크 [[${m[1]}|${label}]]는 「${A.title}」로 이어지지만 보이는 이름 '${label}'은 다른 항목 「${w.entities[otherKey]?.title || label}」의 이름이다. 링크 대상과 보이는 이름 중 문맥에 맞는 쪽으로 맞춘다.`); continue; }
+      const type = S.pages[a]?.type || A.type;
+      const tokens = label.split(/[\s·]+/).filter(x => x.replace(/\./g, "").length >= 1);
+      if (type !== "인물" || tokens.length < 2 || !/^[가-힣A-Za-z.·\s-]+$/.test(label)) continue;   // 사람 이름처럼 보이는 두 낱말 이상 표시명만 본다
+      const mine = new Set([...namesOf(A.title), ...(S.pages[a] ? infoboxNames(S.pages[a]) : [])].flatMap(n => [n, ...String(n).split(/[\s·]+/)]).map(identityName));
+      if (tokens.some(x => mine.has(identityName(x)))) continue;
+      push(plain, `링크 [[${m[1]}|${label}]]의 보이는 이름 '${label}'이 대상 인물 「${A.title}」의 이름이나 이명과 겹치지 않는다. 다른 사람의 이름을 표시명으로 쓴 것인지 확인해 링크 대상이나 보이는 이름을 바로잡는다.`);
+    }
+  }
+  return out.slice(0, 6);
+}
+/* ---------- 직접 수정의 전파: 수정으로 바뀐 이름·수치가 다른 문서 본문에 옛 값으로 남은 곳 ----------
+   수정 전후 문장을 짝지어 사라진 값(old)과 새 값, 문맥이 같은 기준어(anchor)를 뽑는다.
+   다른 문서에서 옛 값과 기준어가 한 문장에 함께 나오면 그 문장을 수정 요청으로 단다. AI를 부르지 않는다 */
+const EDIT_NUM_RE = /\d[\d,.]*\s*(?:[A-Za-z%]+|[가-힣]{1,2})?/g;
+function editTokens(w, marked, titles) {
+  const out = new Set(), plain = stripMarks(marked);
+  for (const m of String(marked).matchAll(LINK_RE)) { out.add(norm(m[1])); if (m[2]) out.add(norm(m[2])); }
+  for (const m of plain.matchAll(EDIT_NUM_RE)) { const v = m[0].replace(/\s+/g, "").replace(/[.,]+$/, ""); if (/\d{2,}|\d[가-힣A-Za-z%]/.test(v)) out.add(v); }
+  for (const t of titles) if (plain.includes(t)) out.add(t);
+  return [...out].filter(x => x && x.length >= 2);
+}
+function editPropagation(w, k, oldPage, newPage) {
+  if (!oldPage || !newPage) return [];
+  const marked = p => [...(p.infobox || []).map(r => `${r.label}: ${r.value}`), ...(p.sections || []).flatMap(s => String(s.body).split(/\n+/))].flatMap(t => String(t).match(/[^.!?。]+[.!?。]?/g) || []).map(x => x.trim()).filter(x => x.length > 4);
+  const before = marked(oldPage), after = marked(newPage), key = t => stripMarks(t).replace(/\s+/g, "");
+  const beforeSet = new Set(before.map(key)), afterSet = new Set(after.map(key));
+  const oldPlain = before.map(stripMarks).join("\n"), newPlain = after.map(stripMarks).join("\n");
+  const titles = Object.values(w.entities).flatMap(o => namesOf(o.title)).filter(t => t.length >= 2);
+  const others = Object.entries(S.pages).filter(([x, P]) => x !== k && w.entities[x] && P.sections);
+  const otherText = new Map(others.map(([x, P]) => [x, pageTexts(P).join("\n")]));
+  const df = t => others.filter(([x]) => otherText.get(x).includes(t)).length;
+  const changes = [];
+  for (const s of before) {
+    if (afterSet.has(key(s))) continue;
+    const To = editTokens(w, s, titles); if (!To.length) continue;
+    let best = null, bestN = 0;
+    for (const n of after) {
+      if (beforeSet.has(key(n))) continue;
+      const Tn = editTokens(w, n, titles), shared = To.filter(t => Tn.includes(t)).length;
+      if (shared > bestN) { best = { n, Tn }; bestN = shared; }
+    }
+    if (!best || bestN / To.length < 0.3) continue;
+    const removed = To.filter(t => !best.Tn.includes(t) && !newPlain.includes(t));
+    const added = best.Tn.filter(t => !To.includes(t) && !oldPlain.includes(t));
+    const anchors = To.filter(t => best.Tn.includes(t) && df(t) < Math.max(2, others.length / 2));   // 거의 모든 문서에 나오는 말은 문맥을 가리지 못한다
+    if (removed.length && added.length && anchors.length) changes.push({ removed, added, anchors, now: stripMarks(best.n) });
+  }
+  const hits = [], per = new Map(), byTitle = w.entities[k]?.title || newPage.title;
+  for (const c of changes) for (const [x, P] of others) {
+    for (const sen of pageTexts(P).flatMap(sentencesOf)) {
+      const r = c.removed.find(t => sen.includes(t)); if (!r || !c.anchors.some(a => a !== r && sen.includes(a))) continue;
+      if (hits.some(h => h.target === x && h.old === sen) || (per.get(x) || 0) >= 3 || hits.length >= 12) continue;
+      per.set(x, (per.get(x) || 0) + 1);
+      hits.push({ target: x, old: sen, claim: `「${byTitle}」 문서를 직접 수정하면서 '${r}'을(를) '${c.added.join(", ")}'(으)로 바꿨다. 수정본: ${c.now}` });
+    }
+  }
+  return hits;
+}
+/* 결정론 지적 전부 (숫자 대조 → 나이 규칙 → 인용 대조 → 성별 규칙 → 사건 장부 → 텍스트 결함). 하나가 실패해도 나머지는 쓴다 */
 function detIssues(w, k) {
   return withNameCheckContext(w, () => detIssuesInContext(w, k));
 }
 function detIssuesInContext(w, k) {
   let num = [];
-  for (const [name, fn] of [["숫자 대조", numericIssues], ["나이 규칙", ageRuleIssues], ["인용 대조", quoteIssues], ["성별 규칙", genderIssues], ["사건 장부", (w, k) => [...eventIssues(w, k), ...timelineIssues(w, k)]]]) {
+  for (const [name, fn] of [["숫자 대조", numericIssues], ["나이 규칙", ageRuleIssues], ["인용 대조", quoteIssues], ["성별 규칙", genderIssues], ["사건 장부", (w, k) => [...eventIssues(w, k), ...timelineIssues(w, k)]], ["텍스트 결함", textIssues]]) {
     try { num = num.concat(fn(w, k)); } catch (e) { console.warn(`[${name}]`, e); }
   }
   return num.map(i => ({ ...i, by: "num" }));
 }
 /* 결정론 지적인가. 옛 저장 데이터에는 by 표시가 없으므로 conflict 문구로 알아본다 */
-const isNumIssue = i => i.by === "num" || /· (?:숫자 대조|인용 대조|나이 규칙|사건 장부):/.test(i.conflict || "") || /^근거: 인물 문서 규칙 ·/.test(i.conflict || "");
+const isNumIssue = i => i.by === "num" || /· (?:숫자 대조|인용 대조|나이 규칙|사건 장부):|^근거: 텍스트 검사 ·/.test(i.conflict || "") || /^근거: 인물 문서 규칙 ·/.test(i.conflict || "");
 /* 같은 서술에 대한 지적은 하나로 합치고, 다듬을 곳을 앞에 둔다 */
 function mergeIssues(list) {
   const all = [], seen = new Map(), keyOfClaim = c => stripMarks(c).replace(/\s+/g, "").slice(0, 40);

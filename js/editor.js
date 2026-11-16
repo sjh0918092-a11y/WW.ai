@@ -264,6 +264,11 @@ async function commitEdit(ed, out, r, conflicts, ch) {
     if (c.src && c.src !== "seed") badge(w, c.src, k, c, touched);
     if (!c.ask) auto++;
   }
+  // 장부에 기록되지 않은 다른 문서 본문에도 바뀐 이름·수치가 옛 값으로 남았으면 수정 요청을 단다
+  for (const h of editPropagation(w, k, old, page)) {
+    const P = S.pages[h.target]; if (!P || P.conflicts?.some(c => c.by === k && (c.old === h.old || h.old.includes(c.old) || c.old.includes(h.old)))) continue;
+    badge(w, h.target, k, h, touched); auto++;
+  }
   page.pending = [...(ed.section ? old.pending || [] : []), ...pending.map(c => ({ label: conflictLabel(w, c), old: c.old, claim: c.claim }))];
   cleanupOrphans(w, k);
   if (renaming) { await saveRenamedEdit(w, ed, page, title, touched, renameBackup); return; }
