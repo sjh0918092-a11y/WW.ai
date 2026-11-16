@@ -251,12 +251,13 @@ function sourceBatches(w, key, focus, outgoing = [], eligible = () => true) {
   const names = new Set();
   for (const [k, p] of Object.entries(S.pages)) if ((p.links || []).includes(key) || mentions.has(k)) names.add(k);
   for (const k of Object.keys(S.pages)) if (w.entities[k] && hasName(focus, w.entities[k].title)) names.add(k);
-  const batches = [[]];
+  const batches = [[]], titles = [];
   let size = 0;
   for (const k of new Set([...links, ...names])) {
     const p = S.pages[k];
     if (k === key || !p || !eligible(k)) continue;
     if (isStory(w) && (p.syncedTo || p.baseAsOf || 1) > (S.pages[key]?.syncedTo || w.story.chapter)) continue;
+    titles.push(p.title);
     const label = `문서 「${p.title}」${p.editedAt ? " [사용자 수정]" : ""}`;
     const text = label + "\n" + docForCheck(p, t => t);
     const pieces = text.length <= SOURCE_TEXT_BUDGET ? [text] : [
@@ -269,7 +270,9 @@ function sourceBatches(w, key, focus, outgoing = [], eligible = () => true) {
       size += piece.length + 2;
     }
   }
-  return batches.map(batch => batch.join("\n\n"));
+  const out = batches.map(batch => batch.join("\n\n"));
+  out.titles = titles;   // 진단 기록용: 이번 검사에 원문이 함께 넘어간 문서들
+  return out;
 }
 /* 작성 입력: 관련 항목의 단독 문서에서 이 항목이 나오는 문단(그 항목이 주인인 경위). 다시 서술할 때 세부를 지어내지 않게 한다 */
 const OWNER_PARA_MAX = 700, OWNER_PER_DOC = 2;
@@ -470,9 +473,10 @@ facts에는 이 문서가 링크한 항목 중 중요한 것(인물, 조직, 사
 const namesOf = t => { const m = String(t).match(/^(.+?)\((.+)\)$/); return [t, ...(m ? [m[1].trim(), m[2].trim()] : [])].filter(x => x.length >= 2); };
 function checkBrief(w, k, key, focus) {
   const o = w.entities[k], p = S.pages[key], ok = src => refOK(src, p) || (!isStory(w) && src === k);   // 항목 자신의 문서가 정한 사실과 정의는 그 항목의 기준이다
-  const ms = pickRelevant(w, k, o.mentions.filter(m => m.from !== key && live(m) && ok(m.from)), m => m.text, 2, focus).map(m => `- 「${w.entities[m.from]?.title || "?"}」의 서술: ${m.text}`);
+  const red = !S.pages[k];   // 단독 문서가 없으면 다른 문서들의 서술이 유일한 기준이므로 넉넉히 넣는다
+  const ms = pickRelevant(w, k, o.mentions.filter(m => m.from !== key && live(m) && ok(m.from)), m => m.text, red ? 8 : 2, focus).map(m => `- 「${w.entities[m.from]?.title || "?"}」의 서술: ${m.text}`);
   const rs = pickRelevant(w, k, relationsOf(w, k).filter(x => x.src !== key && live(x) && ok(x.src)), x => relLine(w, x), 3, focus).map(x => "- 관계: " + relLine(w, x));
-  return [entityBrief(w, k, key, ok, focus), ...ms, ...rs].join("\n");
+  return [entityBrief(w, k, key, ok, focus) + (red && ms.length ? "\n(단독 문서가 없는 항목: 아래 다른 문서들의 서술이 기준이다)" : ""), ...ms, ...rs].join("\n");
 }
 /* 문서 안에서 두 곳 이상에 나오는 대상(항목 이름, 연도)과 그 위치. 검사 모델이 무엇을 맞춰 볼지 고르지 않아도 되게 앱이 먼저 짚어 준다 */
 function crossRefs(w, p) {
@@ -523,14 +527,22 @@ function checkSourceBatches(w, key) {
   const p = S.pages[key], focus = docForCheck(p, t => t);
   return sourceBatches(w, key, focus, p.links, ownerRefOK(w, p, focus));
 }
+/* 설정 대조에 '관련 항목의 확정 설정'으로 넣을 항목들.
+   단독 문서가 없는 항목(빨간 링크)은 원문 대조로 들어오지 않아 이 목록이 유일한 근거이므로 앞에 두고 자리를 따로 준다 */
+const CHECK_REF_N = 10, CHECK_RED_N = 8, CHECK_NAMED_N = 8;
+function checkKeys(w, key) {
+  const p = S.pages[key];
+  const all = [...new Set([...related(w, key), ...(p.links || [])])].filter(k => k !== key && w.entities[k]);
+  const base = [...all.filter(k => !S.pages[k]).slice(0, CHECK_RED_N), ...all.filter(k => S.pages[k]).slice(0, CHECK_REF_N)];
+  const plain = [...(p.infobox || []).map(r => stripMarks(r.value)), ...p.sections.map(s => stripMarks(s.body))].join("\n");
+  const named = Object.entries(w.entities).filter(([x]) => x !== key && !base.includes(x) && refNames(w, x).some(n => hasName(plain, n)))
+    .sort((a, b) => (S.pages[a[0]] ? 1 : 0) - (S.pages[b[0]] ? 1 : 0)).slice(0, CHECK_NAMED_N).map(([x]) => x);   // 링크 없이 이름만 나온 항목도 대조한다. 문서 없는 항목 먼저
+  return [...base, ...named];
+}
 /* 검사 1: 설정 대조. 문서가 세계관의 확정 설정과 어긋나는지만 엄격하게 본다 */
 function checkPrompt(w, key, timelinePairs = timelineMatchPairs(w, key), sourceText = null) {
   const p = S.pages[key];
-  const base = [...new Set([...related(w, key), ...(p.links || [])])].filter(k => k !== key && w.entities[k]).slice(0, 10);
-  const plain = [...(p.infobox || []).map(r => stripMarks(r.value)), ...p.sections.map(s => stripMarks(s.body))].join("\n");
-  const named = Object.entries(w.entities).filter(([x, o]) => x !== key && !base.includes(x) && namesOf(o.title).some(n => plain.includes(n)))
-    .sort((a, b) => (b[1].page ? 1 : 0) - (a[1].page ? 1 : 0)).slice(0, 8).map(([x]) => x);   // 링크 없이 이름만 나온 항목도 대조한다
-  const keys = [...base, ...named];
+  const keys = checkKeys(w, key);
   const focus = docForCheck(p);   // 검사할 문서와 관련된 사실부터 넣는다. 최신순으로 자르면 기준이 되는 오래된 사실이 먼저 빠진다
   const ctx = keys.map(k => checkBrief(w, k, key, focus)).join("\n\n");
   const ok = src => refOK(src, p);
@@ -549,6 +561,7 @@ function checkPrompt(w, key, timelinePairs = timelineMatchPairs(w, key), sourceT
 - ${NUMBER_CHECK_RULE}
 - [[대상|표시명]]에서는 대상과 표시명을 각각 확인한다. 직접 경험은 해당 시점의 현장 참석 근거를 확인한다. 생년월일과 사건 시점이 주어지면 가능한 만 나이 또는 날짜 범위를 계산한다.
 - 원문끼리 엇갈리면 사용자 확정 설정과 사용자 수정 기록을 먼저 따른다.
+- 단독 문서가 없는 항목은 '관련 항목의 확정 설정'에 모은 다른 문서들의 서술이 기준이다. 이 문서가 그 항목의 계급·직위·연도·소속·인원·수치를 그 서술들과 다르게 쓰면 지적한다. 계급·직위처럼 시기에 따라 바뀌는 값은 같은 시점끼리 비교하고, 시점이 겹치지 않으면 진급·이동 순서가 앞뒤로 맞는지 본다. 기준 서술끼리 이미 엇갈려 어느 쪽인지 정할 수 없으면 low로 쓴다.
 - '용어 정의와 공통 값'에 있는 종류 전체의 값(크기와 무게, 등급별 효과, 한계 수치)과 다른 값을 쓰면 high다. 경계는 이상·초과·이하·미만까지 같은지 본다(예: 정의는 '3등급 이상이면 버틴다'인데 문서는 '3등급 이하면 무릎 꿇는다'). '수천 톤'처럼 범위로 쓴 값은 그 범위가 공통 값과 겹치지 않을 때만 지적한다.
 ${ownerCheckRule(w, p)}- 같은 사건의 값·순서가 양립할 수 없거나, 지목한 조항의 내용과 초안이 그 조항에 귀속시킨 제한이 명백히 다르면 high. 예를 들어 명시된 상시 배치 상한을 해외 파견 상한이라고 단정한 경우가 그렇다.
 - 시점이나 범위를 확인하면 양립할 수 있거나, 제시된 기록만으로 인용 근거를 확정할 수 없으면 low로 쓰고 무엇을 더 확인해야 하는지 적는다. 한쪽에 서술이 빠졌다는 이유만으로 high로 올리지 않는다. 기존 기록과 양립하는 새 세부 내용은 지적하지 않는다.

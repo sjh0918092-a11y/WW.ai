@@ -246,7 +246,7 @@ function numericIssues(w, k) {
 /* ---------- 나이 규칙: 핵심 규칙의 나이 제한으로 출생·기간 연도를 맞춰 본다 ---------- */
 /* 숫자 대조 로직(numericIssues, quoteIssues, ageRuleIssues, 성별 규칙)을 바꿀 때마다 올린다.
    문서를 열 때 p.check.numV가 이 값과 다르면 결정론 지적만 다시 계산해 바꿔 끼운다 */
-const NUMERIC_VERSION = 13;
+const NUMERIC_VERSION = 14;
 /* 규칙 문장은 세계관마다 표현이 달라 코드로 읽지 않는다. 핵심 규칙이 바뀌었을 때만 AI가 한 번 구조로 뽑고(w.ageRules),
    판정은 그 구조로 코드가 한다. 그래서 검사할 때마다 결과가 같다 */
 const rulesText = w => (w.rules || []).join("\n");
@@ -666,6 +666,60 @@ function genderIssues(w, k) {
   if (!p0 || p0.type !== "인물" || (p0.infobox || []).some(r => /성별/.test(r.label))) return [];
   return [{ claim: (p0.infobox || [])[0] ? `${p0.infobox[0].label}: ${p0.infobox[0].value}` : p0.summary || p0.title, conflict: "근거: 인물 문서 규칙 · 인포박스에 '성별' 줄이 없다. 본문의 서술과 대명사에 맞는 성별(남성, 여성, 설정상 필요하면 그 밖의 표현)을 '성별: …' 줄로 인포박스에 더한다.", severity: "high", by: "num" }];
 }
+/* ---------- 등급 규칙: 'N등급(하한~상한 단위)' 같은 등급표와 개별 문서의 'N등급 … X단위'를 맞춰 본다 (AI 호출 없음) ----------
+   등급표: "3등급(10~25kτ)", "5등급(50kτ 초과)", "4등급 기준선인 35킬로타우(kτ)". 단위는 라틴·그리스 문자 단위나 "킬로타우(kτ)"처럼 괄호에 적은 것만 읽는다.
+   기준 순서: 용어 정의 > 사용자가 고친 문서 > 먼저 쓴 문서. 등급에 구간이 없으면 다른 등급의 닫힌 구간에 들어가는지만 본다 */
+const GRADE_LABEL = String.raw`(?<![\dA-Za-z])(\d{1,2}|[A-Z]{1,2})\s*등급`;
+const GRADE_NUM = String.raw`(\d[\d,]*(?:\.\d+)?)`;
+const GRADE_UNIT = String.raw`\s*(?:[가-힣]{1,6}\s*[(（]\s*([A-Za-zΑ-ω%°/]+)\s*[)）]|([A-Za-zΑ-ω%°/]+))`;
+const GRADE_SKIP_AFTER = /^\s*(?:[을를이가은는의]\s*)?(?:초과|이상|이하|미만|아래|넘|가량|안팎|내외|정도|쯤|수준|까지|부터|대|미터|km)/;
+const gNum = t => +String(t).replace(/,/g, "");
+function gradeDefs(w) {
+  const srcs = [...(w.glossary || []).filter(g => g.definition).map(g => ({ text: stripMarks(`${g.term}: ${g.definition}`), title: `용어 정의 「${g.term}」`, rank: g.confirmed ? 0 : 1, at: 0 })),
+    ...Object.values(S.pages).map(p => ({ text: pageTexts(p).join("\n"), title: `「${p.title}」`, rank: p.editedAt ? 1 : 2, at: p.createdAt || 0, key: p.key }))]
+    .sort((a, b) => a.rank - b.rank || a.at - b.at);
+  const defs = new Map(), put = (label, unit, d) => { const k = label + "|" + unit; if (!defs.has(k)) defs.set(k, { label, unit, ...d }); };
+  const range = new RegExp(GRADE_LABEL + String.raw`\s*[(（]\s*` + GRADE_NUM + String.raw`\s*[~∼～–-]\s*` + GRADE_NUM + GRADE_UNIT + String.raw`\s*[)）]`, "g");
+  const over = new RegExp(GRADE_LABEL + String.raw`\s*[(（]\s*` + GRADE_NUM + GRADE_UNIT + String.raw`\s*(초과|이상)\s*[)）]`, "g");
+  const base = new RegExp(GRADE_LABEL + String.raw`\s*기준선(?:인|은|이)?\s*` + GRADE_NUM + GRADE_UNIT, "g");
+  for (const s of srcs) {
+    for (const m of s.text.matchAll(range)) put(m[1], m[4] || m[5], { lo: gNum(m[2]), hi: gNum(m[3]), loInc: true, hiInc: true, src: s, line: m[0] });
+    for (const m of s.text.matchAll(over)) put(m[1], m[3] || m[4], { lo: gNum(m[2]), hi: Infinity, loInc: m[5] === "이상", hiInc: false, src: s, line: m[0] });
+    for (const m of s.text.matchAll(base)) put(m[1], m[3] || m[4], { lo: gNum(m[2]), hi: Infinity, loInc: true, hiInc: false, src: s, line: m[0] });
+  }
+  return [...defs.values()];
+}
+const inGrade = (d, v) => (d.loInc ? v >= d.lo : v > d.lo) && (d.hiInc ? v <= d.hi : v < d.hi);
+const gradeRange = d => d.hi === Infinity ? `${d.lo}${d.unit} ${d.loInc ? "이상" : "초과"}` : `${d.lo}~${d.hi}${d.unit}`;
+/* 이 문서의 'N등급 … X단위' 서술 (구간 정의 자체와 '초과·이하·수준' 같은 경계 표현은 뺀다) */
+function gradeClaims(p) {
+  const out = [], label = new RegExp(GRADE_LABEL, "g"), num = new RegExp(GRADE_NUM + GRADE_UNIT, "g");
+  for (const text of pageTexts(p)) for (const m of text.matchAll(label)) {
+    const after = text.slice(m.index + m[0].length, m.index + m[0].length + 40).split(/[.!?。\n]|등급/)[0];
+    if (/^\s*[(（]\s*\d[\d,.]*\s*[~∼～–-]|기준선/.test(after)) continue;
+    for (const n of after.matchAll(num)) {
+      const prev = after.slice(0, n.index).trimEnd().slice(-1);
+      if (/[~∼～–-]/.test(prev) || GRADE_SKIP_AFTER.test(after.slice(n.index + n[0].length))) continue;
+      out.push({ label: m[1], v: gNum(n[1]), unit: n[2] || n[3], sentence: sentenceAt(text, m.index) });
+      break;
+    }
+  }
+  return out;
+}
+function gradeIssues(w, k) {
+  const p = S.pages[k]; if (!p || p.editedAt) return [];
+  const claims = gradeClaims(p); if (!claims.length) return [];
+  const defs = gradeDefs(w), out = [];
+  for (const c of claims) {
+    const same = defs.find(d => d.label === c.label && d.unit === c.unit && d.src.key !== k);
+    // 다른 등급의 닫힌 구간(상한까지 정한 것)에 들어가면 그것이 가장 분명한 근거다. 아니면 같은 등급의 구간을 벗어났는지 본다
+    const other = defs.find(d => d.label !== c.label && d.unit === c.unit && d.hi !== Infinity && d.src.key !== k && inGrade(d, c.v));
+    const ref = other || (same && !inGrade(same, c.v) ? same : null); if (!ref) continue;
+    const bad = ref === other ? `${c.v}${c.unit}는 ${other.label}등급 구간(${gradeRange(other)})에 드는데 이 문서는 ${c.label}등급으로 적었다` : `${c.label}등급의 구간은 ${gradeRange(same)}인데 이 문서는 ${c.label}등급을 ${c.v}${c.unit}로 적었다`;
+    out.push({ claim: c.sentence.slice(0, 300), severity: "high", conflict: `근거: ${ref.src.title}: ${ref.line} · 등급 규칙: ${bad}. 등급표에 맞춰 등급이나 수치를 고친다.`.slice(0, 400) });
+  }
+  return out;
+}
 /* ---------- 텍스트 결함: AI 없이 글자만 보고 찾는 생성 사고 ----------
    다른 문자 체계 섞임, 같은 음절의 연속 반복, 링크 대상과 다른 사람의 이름을 표시명으로 쓴 링크.
    세계관 원안·제목·규칙에 쓰인 문자 체계와 괄호 안의 원어 병기는 허용한다 */
@@ -781,7 +835,7 @@ function detIssues(w, k) {
 }
 function detIssuesInContext(w, k) {
   let num = [];
-  for (const [name, fn] of [["숫자 대조", numericIssues], ["나이 규칙", ageRuleIssues], ["인용 대조", quoteIssues], ["성별 규칙", genderIssues], ["사건 장부", (w, k) => [...eventIssues(w, k), ...timelineIssues(w, k), ...episodeIssues(w, k)]], ["텍스트 결함", textIssues]]) {
+  for (const [name, fn] of [["숫자 대조", numericIssues], ["나이 규칙", ageRuleIssues], ["인용 대조", quoteIssues], ["성별 규칙", genderIssues], ["등급 규칙", gradeIssues], ["사건 장부", (w, k) => [...eventIssues(w, k), ...timelineIssues(w, k), ...episodeIssues(w, k)]], ["텍스트 결함", textIssues]]) {
     try { num = num.concat(fn(w, k)); } catch (e) { console.warn(`[${name}]`, e); }
   }
   return num.map(i => ({ ...i, by: "num" }));
@@ -804,7 +858,7 @@ function mergeIssues(list) {
   return all.slice(0, 10);
 }
 /* 작성 직후 자동으로 고칠 지적: 다듬을 곳 중 고칠 대상이 이 문서인 것만. 다른 문서가 고칠 대상이면 이 문서를 고쳐도 풀리지 않고 다른 서술만 망가진다 */
-const autoFixList = (issues, k) => issues.filter(i => !i.advisory && i.severity === "high" && (!i.target || i.target === k));
+const autoFixList = (issues, k) => issues.filter(i => !i.advisory && i.severity === "high" && !i.unrouted && (!i.target || i.target === k));   // 수정 요청을 못 보낸 지적은 주인 문서 쪽을 고치지 않는다
 /* 다른 문서가 고칠 대상인 지적을 그 문서의 autoConflicts에 단다. 이 문서(k)를 다시 검사해 더 이상 나오지 않는 지적은 지운다.
    p.conflicts는 직접 수정한 문서가 낸 것만 남기므로(cleanAiSupersede) 따로 둔다. 바뀐 문서 키들을 돌려준다 */
 function routeAutoConflicts(w, k, issues) {
@@ -852,7 +906,24 @@ async function runChecks(w, k, opts, label) {
   if (S.world === w && S.pages[k] === p && !p.editedAt && !opts?.signal?.aborted && rs[0].status === "fulfilled") applyTimelineMatches(w, timelinePairs, rs[0].value);
   const num = detIssues(w, k);
   if (rs.every(r => r.status === "rejected") && !num.length) throw rs[0].reason;   // AI 검사가 모두 실패해도 숫자 대조 결과는 쓴다
-  return mergeIssues([...num, ...rs.filter(r => r.status === "fulfilled").flatMap(r => parseIssues(r.value, w, k))]);
+  const out = mergeIssues([...num, ...rs.filter(r => r.status === "fulfilled").flatMap(r => parseIssues(r.value, w, k))]);
+  Object.defineProperty(out, "meta", { value: checkMetaOf(w, k, batches), enumerable: false });   // 저장되는 지적 목록에는 섞지 않는다
+  return out;
+}
+/* ---------- 진단 기록: 검사에 무엇이 넘어갔고 지적이 어디로 갔는지. 백업에 남아 진단 도구(tools/diagnose-backup.cjs)가 읽는다 ---------- */
+const CHECK_LOG_N = 8;
+function checkMetaOf(w, k, batches) {
+  let refs = [];
+  try { refs = checkKeys(w, k).map(x => w.entities[x]?.title).filter(Boolean); } catch { /* 기록 실패는 검사에 영향을 주지 않는다 */ }
+  return { sources: [...(batches?.titles || [])], batches: batches?.length || 0, refs };
+}
+/* 문서의 현재 검사 결과를 요약해 checkLog에 남긴다. checkLog는 고치기·자동 수정으로 check가 바뀌거나 지워져도 유지된다 */
+function noteCheck(p, extra = {}) {
+  const c = p?.check; if (!c) return;
+  const is = c.issues || [], uniq = a => [...new Set(a)];
+  const row = { at: c.at, auto: !!c.auto, sources: c.sources?.length ?? null, batches: c.batches ?? null, issues: is.length, high: is.filter(i => i.severity === "high").length,
+    routed: uniq(is.filter(i => i.target).map(i => S.pages[i.target]?.title || i.target)), unrouted: uniq(is.filter(i => i.unrouted).map(i => i.unrouted)), fixed: c.fixed?.length || 0, ...extra };
+  p.checkLog = [...(p.checkLog || []), row].slice(-CHECK_LOG_N);
 }
 /* 다른 문서에 단 자동 대조 표시를 저장한다 */
 function saveRouted(w, keys) { for (const x of keys || []) if (S.pages[x]) Store.savePage(w.id, S.pages[x]).catch(() => {}); }
@@ -871,13 +942,30 @@ function parseIssues(r, w = null, k = null) {
 }
 /* 주인 문서 원칙: 검사가 고칠 쪽으로 다른 문서를 지목하면 그 문서에 수정 요청으로 보낸다.
    이야기 모드, 사용자가 직접 고친 문서, 이 문서가 직접 고친 문서인데 상대는 아닌 경우, 근거 구절이 그 문서에 없는 경우는 받지 않는다 */
+/* 근거 인용에서 상대 문서 본문에 글자 그대로 있을 만한 구절들.
+   모델은 근거를 「걸프전」: “던 대위 편대는…”처럼 문서 제목과 따옴표를 붙여 쓰므로 둘 다 떼고, 따옴표 안 인용이 여럿이면 각각 본다 */
+const EV_PREFIX = /^「[^」]{1,60}」(?:\s*문서)?(?:의\s*[^:：“"]{0,30})?\s*[:：]\s*/;
+function evidenceQuotes(ev) {
+  const t = stripMarks(String(ev || "")).replace(/\s+/g, " ").trim();
+  const quoted = [...t.matchAll(/[“"]([^“”"]{8,})[”"]/g)].map(m => m[1]);
+  const bare = t.replace(EV_PREFIX, "").replace(/^[“"]|[”"]$/g, "");
+  return [...new Set([...quoted, bare].map(s => s.trim()).filter(s => s.length >= 8))];
+}
+/* 구절이 본문에 있으면 본문에 있는 그 원문 조각을 돌려준다: 통째로 > 앞 40자 > 쉼표·마침표로 나눈 12자 이상 조각 중 가장 긴 것 */
+function findQuoteIn(body, q) {
+  if (body.includes(q)) return q;
+  const head = q.slice(0, 40); if (head.length >= 12 && body.includes(head)) return head;
+  return q.split(/[,，.。;；]\s*/).map(s => s.trim()).filter(s => s.length >= 12 && body.includes(s)).sort((a, b) => b.length - a.length)[0] || null;
+}
 function ownerTarget(w, k, raw, issue) {
   if (!w || !k || !raw?.fixDoc || isStory(w)) return issue;
   const x = kOf(w, String(raw.fixDoc).replace(/^「|」$/g, "").trim()), P = S.pages[x], here = S.pages[k];
   if (!P || x === k || !w.entities[x] || P.editedAt || !here) return issue;
-  const ev = stripMarks(raw.evidence || "").replace(/\s+/g, " ").trim(), body = pageTexts(P).join("\n").replace(/\s+/g, " ");
-  if (!ev || !body.includes(ev.slice(0, Math.min(ev.length, 40)))) return issue;   // 상대 문서에서 글자 그대로 찾을 수 있는 구절만 수정 요청이 된다
-  return { ...issue, severity: "low", target: x, targetOld: ev.slice(0, 300), targetClaim: `「${here.title}」(이 항목의 단독 문서) 서술: ${stripMarks(raw.claim)}`.slice(0, 400), conflict: `${issue.conflict} · 고칠 쪽: 「${P.title}」`.slice(0, 400) };
+  const body = pageTexts(P).join("\n").replace(/\s+/g, " ");
+  const found = evidenceQuotes(raw.evidence).map(q => findQuoteIn(body, q)).filter(Boolean).sort((a, b) => b.length - a.length)[0];
+  // 상대 문서에서 글자 그대로 찾을 수 있는 구절만 수정 요청이 된다. 못 찾으면 이 문서(주인 문서)를 자동으로 고치지 않도록 낮춰 두고 기록한다
+  if (!found) return { ...issue, severity: "low", unrouted: P.title, conflict: `${issue.conflict.slice(0, 300)} · 고칠 쪽으로 지목된 「${P.title}」에서 근거 구절을 찾지 못해 수정 요청을 보내지 못함`.slice(0, 400) };
+  return { ...issue, severity: "low", target: x, targetOld: found.slice(0, 300), targetClaim: `「${here.title}」(이 항목의 단독 문서) 서술: ${stripMarks(raw.claim)}`.slice(0, 400), conflict: `${issue.conflict} · 고칠 쪽: 「${P.title}」`.slice(0, 400) };
 }
 /* 작성 직후, 문서를 보여 주기 전에 설정 검사를 돌리고 '다듬을 곳'은 자동으로 고친다.
    실패하거나 사용자가 건너뛰면 작성된 문서를 그대로 쓴다. 고쳤으면 { page: 고친 문서, fixed, keep: 남은 지적 } */
@@ -887,7 +975,7 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
   try {
     g.phase = "check"; show();
     const issues = await runChecks(w, k, { signal: g.ctl.signal }, page.title + label), high = autoFixList(issues, k);
-    page.check = { at: Date.now(), issues, auto: true, numV: numStamp(w) }; res.done = true;
+    page.check = { at: Date.now(), issues, auto: true, numV: numStamp(w), ...(issues.meta || {}) }; res.done = true;
     if (S.world === w && S.pages[k] === page) saveRouted(w, routeAutoConflicts(w, k, issues));
     if (!high.length || S.world !== w || S.pages[k] !== page) return res;
     g.phase = "fix"; g.nFix = high.length; show();
@@ -922,7 +1010,7 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
     for (const x of PAGE_KEEP) if (page[x] !== undefined) np[x] = page[x];
     cleanupOrphans(w, k);
     S.pages[k] = np;
-    np.check = { at: Date.now(), issues, auto: true, numV: numStamp(w) };
+    np.check = { ...page.check, at: Date.now() };
     Object.assign(res, { page: np, keep: issues, patched: true });
     // claim은 수정 후에도 남는 주어나 문장 일부일 수 있다. 메모 번호와 실제 원문 교체로 확인한다.
     const verified = detIssues(w, k);
@@ -936,11 +1024,12 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
     }).map(e => high[e.memo - 1]).filter(i => !verified.some(x => x.conflict === i.conflict)));
     const keep = mergeIssues([...verified, ...issues.filter(i => !edited.has(i) && !isNumIssue(i))]);
     const fixed = edited.size;
-    np.check = { ...np.check, issues: keep, numV: numStamp(w) };
+    np.check = { ...np.check, issues: keep, numV: numStamp(w), fixed: [...edited].map(i => ({ claim: String(i.claim).slice(0, 200), conflict: String(i.conflict).slice(0, 300) })) };
     if (fixed) np.autoFixed = { at: Date.now(), n: fixed };
     saveRouted(w, routeAutoConflicts(w, k, keep));
     Object.assign(res, { fixed, keep });
   } catch (err) { /* 건너뛰었거나 실패: 작성된 문서를 그대로 보여 주며 자동 재검사를 예약하지 않는다 */ }
+  if (res.done) noteCheck(res.page);
   return res;
 }
 /* 작성 직후의 preCheck 외에는 사용자가 설정 검사 버튼을 눌렀을 때만 실행한다. */
@@ -955,7 +1044,7 @@ async function checkPage(k) {
     const beforeTimeline = w.timeline;
     const group = typeof AIRecovery !== "undefined" && AIJobs.enabled("gemini") ? crypto.randomUUID() : "", issues = await runChecks(w, k, { recoveryMeta: { group } }, p.title);
     if (S.pages[k] === p) {   // 검사하는 동안 문서가 바뀌었으면(장 반영 등) 옛 문서를 저장하지 않는다
-      p.check = { at: Date.now(), issues, auto: false, numV: numStamp(w) };
+      p.check = { at: Date.now(), issues, auto: false, numV: numStamp(w), ...(issues.meta || {}) }; noteCheck(p);
       saveRouted(w, routeAutoConflicts(w, k, issues));
       try { await Store.savePage(w.id, p); if (w.timeline !== beforeTimeline) await Store.saveWorld(w); if (typeof AIRecovery !== "undefined") AIRecovery.handled(group); } catch (err) { toast("검사 결과를 저장하지 못했습니다. " + errMsg(err)); }
     }

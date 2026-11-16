@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,checkSourceBatches,checkPrompt,parseIssues,pagePrompt,ownerExcerptBlock,routeAutoConflicts});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,checkSourceBatches,checkPrompt,parseIssues,pagePrompt,ownerExcerptBlock,routeAutoConflicts,autoFixList});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -48,6 +48,20 @@ test('근거 구절이 지목한 문서에 없거나 그 문서를 사용자가 
   assert.equal(c.parseIssues(r('지어낸 문장'), w, K('옥사나 체르넨코'))[0].target, undefined);
   w = world([hub(), owner()]); c.S.pages[K('러시아')].editedAt = 5;
   assert.equal(c.parseIssues(r('우크라이나 국적 전환을 거부하고'), w, K('옥사나 체르넨코'))[0].target, undefined);
+});
+test('근거에 「문서 제목」: 접두어와 따옴표가 붙어도 수정 요청을 단다', () => {
+  for (const ev of ['「러시아」: “옥사나 체르넨코는 우크라이나 국적 전환을 거부하고 러시아 흑해함대에 남았다.”', '「러시아」 문서: "우크라이나 국적 전환을 거부하고 러시아 흑해함대에 남았다"', '「러시아」의 서술: “체르넨코는 국적 전환을 거부했다” 그리고 “우크라이나 국적 전환을 거부하고 러시아 흑해함대에 남았다.”']) {
+    const w = world([hub(), owner()]);
+    const is = c.parseIssues({ issues: [{ claim: '우크라이나 해군으로 옮겨', evidence: ev, conflict: '다르다', severity: 'high', fixDoc: '러시아' }] }, w, K('옥사나 체르넨코'));
+    assert.equal(is[0].target, K('러시아'), ev);
+    assert.ok(c.S.pages[K('러시아')].sections[0].body.replace(/\[\[|\]\]/g, '').includes(is[0].targetOld), is[0].targetOld);
+  }
+});
+test('근거 구절을 못 찾아 수정 요청을 못 보내면 주인 문서를 자동으로 고치지 않고 기록한다', () => {
+  const w = world([hub(), owner()]);
+  const is = c.parseIssues({ issues: [{ claim: '우크라이나 해군으로 옮겨', evidence: '「러시아」: “지어낸 문장이 여기에 있다”', conflict: '다르다', severity: 'high', fixDoc: '러시아' }] }, w, K('옥사나 체르넨코'));
+  assert.equal(is[0].target, undefined); assert.equal(is[0].unrouted, '러시아'); assert.equal(is[0].severity, 'low');
+  assert.equal(c.autoFixList(is, K('옥사나 체르넨코')).length, 0);
 });
 test('허브 작성 입력에 관련 항목 문서의 해당 문단이 들어간다', () => {
   const w = world([page('러시아', '국가', '러시아다.', 1), page('옥사나 체르넨코', '인물', '1992년 체르넨코는 [[우크라이나]] 해군으로 옮겼다.\n\n1994년 [[러시아]]로 귀환해 흑해함대에 복귀했다.', 2)]);
