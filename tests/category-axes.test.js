@@ -39,7 +39,7 @@ const ax = (o) => Object.entries(o).flatMap(([axis, xs]) => xs.map(name => ({ na
   page.on('pageerror', e => { errors.push(e.message); console.error('Browser:', e.message); });
   let pageOut = null, retryOut = null;
   await ctx.route('**/v1beta/models/**', async r => {
-    const prompt = JSON.parse(r.request().postData()).contents[0].parts[0].text;
+    const prompt = JSON.parse(r.request().postData()).contents[0].parts.map(p=>p.text).join("");
     const kind = prompt.includes('## 작성할 문서:') ? 'page' : prompt.includes('소속과 유형을 정한다') ? 'cats' : 'other'; calls.push({ kind, prompt });
     const body = kind === 'page' ? pageOut(/## 작성할 문서: 「([^」]+)」/.exec(prompt)[1]) : kind === 'cats' ? retryOut : null;
     if (!body) { try { await r.fulfill({ status: 404, json: { error: { message: 'model missing' } } }); } catch {} return; }

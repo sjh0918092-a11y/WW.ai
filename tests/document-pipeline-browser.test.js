@@ -1,4 +1,5 @@
 /* 브라우저 → 인증된 Worker → SQLite → 단계별 alarm. 제공자 호출은 모두 대체한다. */
+const cacheCalls=[];
 const assert=require('node:assert/strict'),{chromium}=require('playwright'),{appServer}=require('./helpers/app');
 const server=appServer();let browser,context,page,n=0,hold=true,release,calls=[],errors=[],loseSubmit=false;
 const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
@@ -12,6 +13,7 @@ const until=async(fn,ms=20000)=>{const t=Date.now();while(Date.now()-t<ms){if(aw
  await worker.fetch(new Request(origin+'/api/sync',{headers:{Origin:origin}}),env);db.sqlite.exec("INSERT INTO users VALUES('tester','s','h',1);INSERT INTO sessions VALUES('token','tester',1)");
  const jobs=()=>entries.get('account:tester')?.storage.data.get('jobs')||[];
  globalThis.fetch=async(url,opts)=>{
+ if(String(url).includes("/cachedContents")){cacheCalls.push({url:String(url),method:(opts||{}).method,body:(opts||{}).body});return Response.json({name:"cachedContents/test-cache",expireTime:new Date(Date.now()+900000).toISOString()})}if(String(url).endsWith(":countTokens"))return Response.json({totalTokens:5000});
   const j=jobs().find(j=>j.status==='running');assert(j);const step=j.steps.find(s=>s.status==='running'&&!calls.some(c=>c.id===j.id&&c.slot===s.slot));const kind=step.kind;calls.push({id:j.id,slot:step.slot,kind,url});
   if(hold&&kind==='page')await new Promise(r=>{release=r});
   const out=kind==='page'?{title:j.meta.title,type:'인물',summary:'해양 탐험가',infobox:[{label:'성별',value:'남성'}],sections:[{heading:'개요',level:1,body:'서버가 끝까지 완성한 항해 기록이다.'}],categories:['소속:항구','유형:인물'],facts:[],newEntities:[],relations:[],timeline:[]}:kind==='fix'?{edits:[]}:kind==='analyze'?{facts:[],relations:[],timeline:[]}:{issues:[]};

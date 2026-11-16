@@ -51,13 +51,13 @@ export function usageCounts(raw) {
   return {...Object.fromEntries(keys.filter(k => Number.isFinite(raw[k])).map(k => [k, Math.max(0, raw[k])])), ...(raw.complete === false ? {complete:false} : {})};
 }
 
-export async function boundedText(stream, limit) {
+export async function boundedText(stream, limit, onChunk) {
   if (!stream) return "";
   const reader = stream.getReader(), dec = new TextDecoder(); let size = 0, text = "";
   try {
     for (;;) {
       const { done, value } = await reader.read(); if (done) break;
-      size += value.byteLength;
+      size += value.byteLength; onChunk?.(value.byteLength);
       if (size > limit) { await reader.cancel(); throw { code: "too_large" }; }
       text += dec.decode(value, { stream: true });
     }
@@ -100,14 +100,43 @@ export function claudeThinking(model, level = "") {
   throw { code: "unsupported_thinking", definite: true, safeMessage: "이 모델의 생각 깊이 설정은 아직 지원하지 않습니다. 기본값이나 Claude 4.5 모델을 선택해 주세요." };
 }
 
-export async function runProvider(job, env, personalKey, signal) {
+// 서버 AI 호출의 무응답 감시. 브라우저 경로처럼 첫 응답과 도중 멈춤을 따로 본다.
+// 10분 전체 제한까지 기다리지 않고, 멈춘 스트림은 확정 실패로 빨리 끝낸다. env로 조정할 수 있다.
+export const FIRST_BYTE_MS = 240000, STREAM_IDLE_MS = 90000;
+const watchMs = (v, d) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : d; };
+const stalledError = (first, ms) => ({ code: first ? "no_first_response" : "stream_stalled", definite: true, safeMessage: first
+  ? `AI가 ${Math.round(ms / 1000)}초 동안 첫 응답을 보내지 않아 연결을 끊었습니다. 생각 수준을 낮추거나 잠시 뒤 다시 실행해 주세요.`
+  : `AI 응답이 도중에 ${Math.round(ms / 1000)}초 동안 멈춰 연결을 끊었습니다. 잠시 뒤 다시 실행해 주세요.` });
+const deadlineError = () => ({ code: "deadline_exceeded", safeMessage: "서버 실행 제한(10분)을 넘어 AI 호출을 중단했습니다. 생각 수준을 낮추거나 잠시 뒤 다시 실행해 주세요." });
+
+// trace에는 진단용 시각(시작 기준 ms)과 받은 크기만 남긴다. 본문·키는 넣지 않는다.
+export async function runProvider(job, env, personalKey, signal, trace = {}) {
+  const at = Date.now(), since = () => Date.now() - at;
+  Object.assign(trace, { at, headers: null, first: null, last: null, end: null, bytes: 0 });
+  const watched = ["gemini.generate", "claude.generate", "openai.generate"].includes(job.input?.type || "gemini.generate");
+  const firstMs = watchMs(env?.AI_FIRST_BYTE_MS, FIRST_BYTE_MS), idleMs = watchMs(env?.AI_STREAM_IDLE_MS, STREAM_IDLE_MS);
+  const ctl = new AbortController(), forward = () => ctl.abort(signal.reason);
+  if (signal?.aborted) forward(); else signal?.addEventListener("abort", forward, { once: true });
+  let stalled = null, timer = null;
+  const arm = ms => { clearTimeout(timer); if (watched) timer = setTimeout(() => { stalled = stalledError(trace.first === null, ms); ctl.abort("stalled"); }, ms); };
+  const onChunk = bytes => { const t = since(); if (trace.first === null) trace.first = t; trace.last = t; trace.bytes += bytes; arm(idleMs); };
+  arm(firstMs);
+  try { return await callProvider(job, env, personalKey, ctl.signal, trace, since, onChunk); }
+  catch (e) {
+    const out = stalled || (signal?.aborted && signal.reason === "deadline" ? deadlineError() : e);
+    trace.code = out?.code || (signal?.aborted ? "cancelled" : "outcome_unknown");
+    throw out;
+  } finally { clearTimeout(timer); signal?.removeEventListener("abort", forward); trace.end = since(); }
+}
+
+async function callProvider(job, env, personalKey, signal, trace, since, onChunk) {
   const { type = "gemini.generate", model, input } = job.input;
   const claude = type === "claude.generate" || type === "gemini.generate" && /^claude-/.test(model);
   const openai = type === "openai.generate" || type === "gemini.generate" && isOpenAITextModel(model);
   if ((claude || openai) && job.keyMode === "personal") throw { code: "server_key_missing", definite: true };
   const key = job.keyMode === "personal" ? personalKey : env[serverKeyName(type, model)];
   if (!key) throw { code: "server_key_missing", definite: true };
-  let url, headers, body;
+  let url, headers, body, explicit = null;
   if (type === "openai.image") {
     const { reference: ref, ...values } = input;
     const fields = { ...values, model, n: 1, output_format: "png" };
@@ -135,10 +164,18 @@ export async function runProvider(job, env, personalKey, signal) {
     const streamed = type === "gemini.generate";
     url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + (streamed ? ":streamGenerateContent?alt=sse" : ":generateContent");
     headers = { "Content-Type": "application/json", "x-goog-api-key": key }; body = JSON.stringify(input);
+    if (streamed) explicit = await geminiExplicitCache(model, input, key, job.keyMode, env, signal);
   }
-  const res = await fetch(url, { method: "POST", headers, body, signal });
+  let res = await fetch(url, { method: "POST", headers, body: explicit ? explicit.body : body, signal });
+  // 명시적 캐시가 만료·삭제됐거나 거절되면 캐시를 버리고 같은 요청을 캐시 없이 한 번 보낸다(생성 전 거절이라 중복 과금이 없다).
+  if (explicit && !res.ok && [400, 403, 404].includes(res.status)) {
+    const text = await res.text().catch(() => "");
+    if (res.status === 404 || /cach/i.test(text)) { explicit.drop(); res = await fetch(url, { method: "POST", headers, body, signal }); }
+    else res = new Response(text, { status: res.status, headers: res.headers });   // 캐시와 무관한 거절(생각 설정 등)은 원래 오류 처리로 넘긴다
+  }
+  trace.headers = since(); trace.httpStatus = res.status;
   if (!res.ok) throw await providerError(res, model);
-  const text = await boundedText(res.body, type.endsWith(".image") ? 20 * 1024 * 1024 : 4 * 1024 * 1024);
+  const text = await boundedText(res.body, type.endsWith(".image") ? 20 * 1024 * 1024 : 4 * 1024 * 1024, onChunk);
   let result;
   if (/:streamGenerateContent/.test(url)) result = mergeGeminiStream(text);
   else if (openai) result = mergeOpenAIStream(text);
@@ -160,6 +197,56 @@ export async function runProvider(job, env, personalKey, signal) {
   }
   if (!result || (type === "openai.image" ? !Array.isArray(result.data) || !result.data.length : (!Array.isArray(result.candidates) || !result.candidates.length) && !result.promptFeedback?.blockReason)) throw { code: "empty_response", definite: true };
   return result;
+}
+
+// Gemini 명시적 캐시. 자동(암묵) 캐시는 같은 앞부분이어도 적중이 보장되지 않아,
+// 캐시 경계로 나뉜 요청의 앞 조각들을 cachedContents로 저장하고 요청은 마지막 조각만 보낸다.
+// 15분 유지, 쓸 때 남은 시간이 10분 아래면 15분으로 연장. 키·모델·내용 해시별로 이 실행 환경 메모리에 둔다.
+// 만들거나 쓰다 실패하면 일반 요청으로 보낸다. env.GEMINI_EXPLICIT_CACHE = "off"이면 쓰지 않는다.
+const geminiCaches = new Map(), cacheRefused = new Map();   // cacheRefused: 캐시를 만들 수 없던 모델은 10분간 다시 시도하지 않는다
+const CACHE_TTL_S = 900, GEMINI_API = "https://generativelanguage.googleapis.com/v1beta/";
+const sha = async text => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))].map(n => n.toString(16).padStart(2, "0")).join("").slice(0, 24);
+async function geminiExplicitCache(model, input, key, keyMode, env, signal) {
+  const parts = input?.contents?.[0]?.parts;
+  if (env?.GEMINI_EXPLICIT_CACHE === "off" || /^gemini-4/.test(model) || (cacheRefused.get(model) || 0) > Date.now() || input.systemInstruction || input.contents[0].role === "model" || !Array.isArray(parts) || parts.length < 2) return null;
+  const stable = parts.slice(0, -1), text = stable.map(p => p.text || "").join("");
+  if (text.length < 6000) return null;
+  const id = (await sha(keyMode + ":" + key)).slice(0, 10) + ":" + model + ":" + await sha(text);   // 키가 다르면(개인 키·서버 키 교체) 캐시를 섞지 않는다
+  const headers = { "Content-Type": "application/json", "x-goog-api-key": key };
+  const create = async () => {
+    const res = await fetch(GEMINI_API + "cachedContents", { method: "POST", headers, signal,
+      body: JSON.stringify({ model: "models/" + model, contents: [{ role: "user", parts: stable }], ttl: CACHE_TTL_S + "s" }) });
+    if (!res.ok) { try { await res.body?.cancel(); } catch {} throw new Error("cache " + res.status); }
+    const out = await res.json(); if (typeof out?.name !== "string") throw new Error("cache name");
+    return { name: out.name, expiresAt: Date.parse(out.expireTime) || Date.now() + CACHE_TTL_S * 1000 };
+  };
+  let entry = geminiCaches.has(id) ? await geminiCaches.get(id).catch(() => null) : null;
+  if (!entry || entry.expiresAt - Date.now() < 60000) {
+    const pending = create(); geminiCaches.set(id, pending);
+    while (geminiCaches.size > 50) geminiCaches.delete(geminiCaches.keys().next().value);
+    entry = await pending.catch(() => null);
+    if (!entry) { geminiCaches.delete(id); cacheRefused.set(model, Date.now() + 600000); return null; }
+  } else if (entry.expiresAt - Date.now() < 600000) {
+    try {
+      const res = await fetch(GEMINI_API + entry.name + "?updateMask=ttl", { method: "PATCH", headers, signal, body: JSON.stringify({ ttl: CACHE_TTL_S + "s" }) });
+      if (res.ok) { const out = await res.json().catch(() => ({})); entry.expiresAt = Date.parse(out.expireTime) || Date.now() + CACHE_TTL_S * 1000; } else { try { await res.body?.cancel(); } catch {} }
+    } catch {}
+  }
+  const rest = { ...input, contents: [{ role: "user", parts: parts.slice(-1) }, ...input.contents.slice(1)] };
+  return { body: JSON.stringify({ ...rest, cachedContent: entry.name }), drop: () => geminiCaches.delete(id) };
+}
+
+// 캐시 진단용: 앞부분(캐시 대상)의 실제 토큰 수. Gemini countTokens는 생성 요금이 없다. 실패하면 null.
+export async function countGeminiTokens(model, text, env, keyMode, personalKey, signal) {
+  const key = keyMode === "personal" ? personalKey : env.GEMINI_KEY;
+  if (!key || /^claude-/.test(model) || isOpenAITextModel(model)) return null;
+  try {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":countTokens", {
+      method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, signal,
+      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text }] }] }) });
+    if (!res.ok) return null;
+    const n = (await res.json())?.totalTokens; return Number.isFinite(n) ? n : null;
+  } catch { return null; }
 }
 
 // SSE의 data 줄을 JSON으로 읽는다. 스트림이 아닌 JSON 본문이면 null을 돌려 호출자가 그대로 쓰게 한다.

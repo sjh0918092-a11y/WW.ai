@@ -20,9 +20,16 @@ const error = (status, code, message) => reply({ error: { code, message } }, sta
 const publicJob = j => Object.fromEntries(Object.entries(j).filter(([k]) => !["inputChunks", "resultChunks", "fingerprint", "runId", "uid", "pipelineChunks"].includes(k)));
 const hash = async s => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map(x => x.toString(16).padStart(2, "0")).join("");
 
-async function writeText(storage, prefix, text) {
+// 기존 조각(old개)과 같은 내용은 다시 쓰지 않는다. Durable Object는 쓴 행 수로 과금·제한되므로
+// 앞부분이 그대로인 큰 상태(세계관 스냅샷·작업 목록)를 매번 통째로 쓰지 않게 한다. 남는 조각은 지운다.
+async function writeText(storage, prefix, text, old = 0, prevText) {
   const chunks = Math.ceil(text.length / CHUNK);
-  for (let i = 0; i < chunks; i++) await storage.put(prefix + i, text.slice(i * CHUNK, (i + 1) * CHUNK));
+  for (let i = 0; i < chunks; i++) {
+    const part = text.slice(i * CHUNK, (i + 1) * CHUNK);
+    if (i < old && (typeof prevText === "string" ? prevText.slice(i * CHUNK, (i + 1) * CHUNK) : await storage.get(prefix + i)) === part) continue;
+    await storage.put(prefix + i, part);
+  }
+  for (let i = chunks; i < old; i++) await storage.delete(prefix + i);
   return chunks;
 }
 async function readText(storage, prefix, chunks) {
@@ -75,7 +82,8 @@ export class AiJobs {
   async update(fn) {
     return this.storage.transaction(async tx => {
       const index = await tx.get("jobs") || [];
-      let jobs = Array.isArray(index) ? index : JSON.parse(await readText(tx, "index:", index.chunks));
+      const before = Array.isArray(index) ? JSON.stringify(index) : await readText(tx, "index:", index.chunks);
+      let jobs = JSON.parse(before);
       const now = Date.now(), expired = jobs.filter(j => terminal(j) && j.expiresAt <= now);
       for (const j of expired) {
         await deleteText(tx, "in:" + j.id + ":", j.inputChunks);
@@ -92,15 +100,17 @@ export class AiJobs {
         await deleteText(tx, "out:" + j.id + ":", j.resultChunks);
         j.resultChunks = 0; j.resultCollected = true; count--;
       }
+      // 바뀐 것이 없으면 목록을 다시 쓰지 않는다.
       const serialized = JSON.stringify(jobs);
-      if (new TextEncoder().encode(serialized).length < 96000) {
+      if (serialized === before) {}
+      else if (new TextEncoder().encode(serialized).length < 96000) {
         if (!Array.isArray(index)) await deleteText(tx, "index:", index.chunks);
         await tx.put("jobs", jobs);
       }
       else {
-        const chunks = await writeText(tx, "index:", serialized);
-        if (!Array.isArray(index)) for (let i = chunks; i < index.chunks; i++) await tx.delete("index:" + i);
-        await tx.put("jobs", { chunks });
+        const old = Array.isArray(index) ? 0 : index.chunks;
+        const chunks = await writeText(tx, "index:", serialized, old, Array.isArray(index) ? undefined : before);
+        if (chunks !== old) await tx.put("jobs", { chunks });
       }
       // 실행 중인 alarm은 완료 때 다음 작업을 예약한다. 중간 조회가 중복 alarm을 만들지 않는다.
       if (!jobs.some(j => j.status === "running")) {
@@ -109,9 +119,21 @@ export class AiJobs {
         const scheduled = await tx.getAlarm();
         // 잦은 상태 조회가 실행 시각을 계속 뒤로 미루면 안 된다.
         if (due !== null && (scheduled === null || due < scheduled)) await tx.setAlarm(due);
-        else if (due === null) await tx.deleteAlarm();
+        else if (due === null && scheduled !== null) await tx.deleteAlarm();
       }
       return value;
+    });
+  }
+
+  // 조회 전용. 상태 확인은 1.5~5초마다 반복되므로 저장소에 아무것도 쓰지 않는다.
+  // 만료 기록은 숨기기만 하고 삭제는 alarm·쓰기 요청의 update에 맡긴다.
+  async read(fn) {
+    return this.storage.transaction(async tx => {
+      const index = await tx.get("jobs") || [], now = Date.now();
+      const jobs = (Array.isArray(index) ? index : JSON.parse(await readText(tx, "index:", index.chunks))).filter(j => !(terminal(j) && j.expiresAt <= now));
+      // 예약이 사라진 대기 작업만 다시 예약한다(드문 쓰기).
+      if (jobs.some(j => j.status === "queued") && !jobs.some(j => j.status === "running") && await tx.getAlarm() === null) await tx.setAlarm(now + 1000);
+      return fn(jobs, tx);
     });
   }
 
@@ -119,10 +141,13 @@ export class AiJobs {
     const parts = new URL(request.url).pathname.split("/").filter(Boolean), id = parts[0];
     if (parts.length > 2 || (id && !ID.test(id))) return error(404, "not_found", "작업을 찾을 수 없습니다.");
     if (request.method === "POST" && !id) return this.submit(request);
-    if (request.method === "GET" && !id) return this.update(async jobs => reply({ jobs: jobs.map(publicJob).reverse() }));
-    if (request.method === "GET" && parts.length === 1) return this.update(async (jobs, tx) => {
+    if (request.method === "GET" && !id) return this.read(async jobs => reply({ jobs: jobs.map(publicJob).reverse() }));
+    if (request.method === "GET" && parts.length === 1) return this.read(async (jobs, tx) => {
       const j = jobs.find(j => j.id === id); if (!j) return error(404, "not_found", "작업을 찾을 수 없습니다.");
       const out = { job: publicJob(j) };
+      // 실행 중인 단계의 진행(첫 수신·마지막 수신·받은 양)은 메모리 값으로 덧붙인다. serverNow로 시계 차이 없이 경과를 계산한다.
+      if (j.status === "running" && this.live?.id === id) out.job.liveSteps = this.live.steps.map(s => ({ kind: s.kind, status: s.status, model: s.model, ...(s.timing ? { timing: { ...s.timing } } : {}) }));
+      out.job.serverNow = Date.now();
       if (terminal(j) && j.resultChunks) out.result = JSON.parse(await readText(tx, "out:" + id + ":", j.resultChunks));
       return reply(out);
     });
@@ -180,20 +205,26 @@ export class AiJobs {
   }
 
   async pipelineState(id) {
-    return this.update(async (jobs, tx) => { const j = jobs.find(j => j.id === id); return j?.pipelineChunks ? JSON.parse(await readText(tx, "pipe:" + id + ":", j.pipelineChunks)) : null; });
+    return this.read(async (jobs, tx) => { const j = jobs.find(j => j.id === id); return j?.pipelineChunks ? JSON.parse(await readText(tx, "pipe:" + id + ":", j.pipelineChunks)) : null; });
   }
   async savePipeline(job, state, phase, queued) {
-    return this.update(async (jobs, tx) => {
+    // 마지막으로 저장된 상태 문자열은 트랜잭션이 확정된 뒤에만 기억한다(롤백 시 비교 기준이 어긋나지 않게).
+    let written = null;
+    const ok = await this.update(async (jobs, tx) => {
       const j = jobs.find(j => j.id === job.id); if (!j || j.status !== "running" || j.runId !== job.runId) return false;
-      const text = JSON.stringify(state);
+      // 변하지 않는 입력·세계관 스냅샷을 앞에 두어, 단계가 늘어도 앞쪽 조각은 다시 쓰지 않게 한다.
+      const { input, at, engine, snapshot, ...rest } = state;
+      const text = JSON.stringify({ input, at, engine, snapshot, ...rest });
       if (new TextEncoder().encode(text).length > 16 * 1024 * 1024) throw { code:"pipeline_limit", definite:true, safeMessage:"작업 기록이 커서 초안으로 보관했습니다. 원본은 유지했습니다." };
-      const old = j.pipelineChunks || 0;
-      j.pipelineChunks = await writeText(tx, "pipe:" + j.id + ":", text);
-      for (let i = j.pipelineChunks; i < old; i++) await tx.delete("pipe:" + j.id + ":" + i);
-      j.phase = phase; j.steps = state.steps.map(s => ({kind:s.kind,status:s.status,model:s.model,slot:s.slot,usage:usageCounts(s.response?.usageMetadata)}));
+      const prev = this.pipeText?.id === j.id && this.pipeText.chunks === (j.pipelineChunks || 0) ? this.pipeText.text : undefined;
+      j.pipelineChunks = await writeText(tx, "pipe:" + j.id + ":", text, j.pipelineChunks || 0, prev);
+      written = { id: j.id, chunks: j.pipelineChunks, text };
+      j.phase = phase; j.steps = state.steps.map(s => ({kind:s.kind,status:s.status,model:s.model,slot:s.slot,usage:usageCounts(s.response?.usageMetadata),...(s.timing ? {timing:s.timing} : {}),...(s.cache ? {cache:s.cache} : {}),...(s.error?.code ? {code:s.error.code} : {})}));
       if (queued) { j.status = "queued"; await tx.setAlarm(Date.now()+1000); }
       return true;
     });
+    if (written) this.pipeText = written;
+    return ok;
   }
   async finishPipeline(job, complete) {
     const finish = () => this.update(async (jobs, tx) => {
@@ -229,15 +260,16 @@ export class AiJobs {
     if (!job) return;
     const controller = new AbortController(); this.active = { id: job.id, controller };
     if (job.input.type === "document.pipeline") {
-      const timer = setTimeout(() => controller.abort(), DEADLINE);
+      const timer = setTimeout(() => controller.abort("deadline"), DEADLINE);
       try { await processPipeline(this, job, controller.signal); }
       finally { clearTimeout(timer); job.personalKey = null; if (this.active?.id === job.id) this.active = null; }
       return;
     }
-    const timeout = setTimeout(() => controller.abort(), job.input.type === "openai.image" ? 300000 : job.input.type === "gemini.image" ? 180000 : DEADLINE);
-    let result, failure;
+    const image = (job.input.type || "").endsWith(".image");
+    const timeout = setTimeout(() => controller.abort(image ? undefined : "deadline"), job.input.type === "openai.image" ? 300000 : image ? 180000 : DEADLINE);
+    let result, failure; const timing = {}; this.live = { id: job.id, steps: [{ kind: job.input.type, model: job.input.model, status: "running", timing }] };
     try {
-      result = await runProvider(job, this.env, job.personalKey, controller.signal);
+      result = await runProvider(job, this.env, job.personalKey, controller.signal, timing);
     } catch (e) {
       failure = { status: e?.definite ? "failed" : "interrupted", error: {
         code: e?.code || "outcome_unknown",
@@ -245,9 +277,10 @@ export class AiJobs {
         ...(e?.status ? { httpStatus: e.status } : {}),
         ...(e?.code === "model_not_found" && e.model ? {model:e.model} : {}),
       } };
-    } finally { clearTimeout(timeout); job.personalKey = null; if (this.active?.id === job.id) this.active = null; }
+    } finally { clearTimeout(timeout); job.personalKey = null; if (this.active?.id === job.id) this.active = null; if (this.live?.id === job.id) this.live = null; }
     await this.update(async (jobs, tx) => {
       const j = jobs.find(j => j.id === job.id); if (!j || j.status !== "running" || j.runId !== job.runId) return; // 중단한 작업의 늦은 응답은 버린다.
+      j.timing = timing;
       if (failure) Object.assign(j, failure);
       else { j.usage = usageCounts(result.usageMetadata); j.resultChunks = await writeText(tx, "out:" + j.id + ":", JSON.stringify(result)); j.status = "succeeded"; }
       await deleteText(tx, "in:" + j.id + ":", j.inputChunks); j.inputChunks = 0;

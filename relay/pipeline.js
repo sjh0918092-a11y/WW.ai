@@ -1,6 +1,6 @@
 import { createDocumentEngine, ENGINE_SOURCE } from "./engine.generated.js";
 import { snapshotWorld, commitDocument, digest } from "./pipeline-store.js";
-import { runProvider, usageCounts } from "./providers.js";
+import { runProvider, usageCounts, countGeminiTokens } from "./providers.js";
 const yieldError = () => ({ code: "pipeline_yield", serverJob: true });
 const CHECK_CONCURRENCY = 4;
 const isCheck = kind => ["check", "read", "ageRule"].includes(kind);
@@ -14,11 +14,25 @@ const resultFor = (state, output, saved, error) => {
     version: 1, saved, wid: state.snapshot?.world.id, targetKey: output?.targetKey || state.input.key, checked: !!output?.checked,
     fixed: output?.fixed || 0, remaining: output?.remaining || 0, notFound: !!output?.notFound, redirectTo: output?.redirectTo || null,
     sceneUsed: output?.sceneUsed || "", angleRecorded: !!state.input.novel && saved,
-    steps: state.steps.map(({ kind, model, status, error, response }) => ({ kind, model, status, usage:usageCounts(response?.usageMetadata), ...(error ? { error: safeError(error) } : {}) })), ...(error ? { error } : {}),
+    steps: state.steps.map(({ kind, model, status, error, response, timing, cache }) => ({ kind, model, status, usage:usageCounts(response?.usageMetadata), ...(timing ? { timing } : {}), ...(cache ? { cache } : {}), ...(error ? { error: safeError(error) } : {}) })), ...(error ? { error } : {}),
   } };
 };
 
 // replay는 순수 메모리 실행. 독립된 검사만 최대 4개 기록한 뒤 함께 실행한다.
+// 캐시 진단: 캐시 경계로 나뉜 요청의 앞부분(마지막 조각 제외) 글자 수·해시·토큰 수를 단계에 남긴다.
+// 토큰 수는 생성과 동시에 한 번만 세고(같은 앞부분은 메모리 재사용), 최대 8초만 기다린다. 본문은 남기지 않는다.
+async function cacheProbe(host, job, step, body, signal) {
+  const parts = body?.contents?.[0]?.parts || [];
+  if (parts.length < 2) return;
+  const text = parts.slice(0, -1).map(p => p.text || "").join("");
+  const hash = (await digest(text)).slice(0, 12), hashes = [];
+  for (const p of parts.slice(0, -1)) hashes.push((await digest(p.text || "")).slice(0, 6));
+  step.cache = { chars: text.length, hash, hashes };
+  const memo = (host.tokenMemo ||= new Map()), id = step.model + ":" + hash;
+  if (!memo.has(id)) memo.set(id, countGeminiTokens(step.model, text, host.env, job.keyMode, job.personalKey, signal));
+  const tokens = await Promise.race([memo.get(id), new Promise(r => setTimeout(() => r(null), 8000))]);
+  if (Number.isFinite(tokens)) step.cache.tokens = tokens; else memo.delete(id);
+}
 export async function processPipeline(host, job, signal) {
   const input = job.input.input;
   let state = await host.pipelineState(job.id);
@@ -74,10 +88,15 @@ export async function processPipeline(host, job, signal) {
     const batch = selected.map(({ body, ...step }) => { step.status = "running"; state.steps.push(step); return { body, step }; });
     // 네트워크 요청 전에 전체 실행 기록을 남긴다. 재시작 시 미확인 요청은 재전송하지 않는다.
     if (!await host.savePipeline(job, state, phase, false)) return;
+    // 실행 중 진단: 진행 중인 단계의 시간 기록을 메모리로만 공유해 상태 조회에 실어 보낸다(저장소 쓰기 없음).
+    host.live = { id: job.id, steps: state.steps };
     let persistence = Promise.resolve(), stopped = false;
     await Promise.allSettled(batch.map(async ({ body, step }) => {
       try {
-        step.response = await runProvider({ keyMode: job.keyMode, input: { type: "gemini.generate", model: step.model, input: body } }, host.env, job.personalKey, signal);
+        step.timing = {};
+        const counting = cacheProbe(host, job, step, body, signal);
+        step.response = await runProvider({ keyMode: job.keyMode, input: { type: "gemini.generate", model: step.model, input: body } }, host.env, job.personalKey, signal, step.timing);
+        await counting;
         step.status = "done";
       } catch (e) {
         step.error = { code: e?.code || "outcome_unknown", safeMessage: safeError(e).message, serverJob: true, definite: !!e?.definite, ...(e?.code === "model_not_found" ? {model:step.model,phase:step.kind} : {}), ...(e?.status ? { status: e.status } : {}) };
@@ -87,6 +106,7 @@ export async function processPipeline(host, job, signal) {
       persistence = persistence.then(async () => { if (!stopped) stopped = !await host.savePipeline(job, state, phase, false); });
       await persistence;
     }));
+    if (host.live?.id === job.id) host.live = null;
     try { await persistence; if (!stopped) await host.savePipeline(job, state, phase, true); }
     catch (e) { if (!e.definite) throw e; await finish("failed",safeError(e),output); }
     return;

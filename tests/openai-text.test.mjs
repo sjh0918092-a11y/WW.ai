@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
-import {isOpenAITextModel,openAILevels,openAIThinking,normalizeOpenAI} from '../relay/openai.js';
+import {isOpenAITextModel,openAILevels,openAIThinking,normalizeOpenAI,openAIRequest} from '../relay/openai.js';
 import {runProvider,validateJob,serverKeyName,usageCounts} from '../relay/providers.js';
 import {AiJobs} from '../relay/jobs.js';
 import {JobStorage,jobRequest,fireAlarm} from './helpers/jobs.mjs';
@@ -27,5 +27,13 @@ try{
  const refusal=normalizeOpenAI({...response(),output:[{type:'message',content:[{type:'refusal',refusal:'private detail'}]}]});assert.equal(refusal.promptFeedback.blockReason,'REFUSED');assert(!JSON.stringify(refusal).includes('private detail'));
  assert.equal(usageCounts(normalizeOpenAI({...response(),usage:{input_tokens:4,output_tokens:2}}).usageMetadata).complete,false);
  globalThis.fetch=async()=>Response.json({error:{message:env.OPENAI_API_KEY}},{status:404});await assert.rejects(runProvider({keyMode:'relay',input:body},env),e=>e.code==='model_not_found'&&e.model===body.model&&!JSON.stringify(e).includes(env.OPENAI_API_KEY));
+ { const sol=openAIRequest('gpt-6.1-sol',{contents:[{role:'user',parts:[{text:'공통 지침'},{text:'유형'},{text:'문서 A'}]}]});
+   assert.deepEqual(sol.prompt_cache_options,{mode:'explicit'});assert.equal(sol.prompt_cache_key,undefined);
+   assert.deepEqual(sol.input,[{role:'developer',content:[{type:'input_text',text:'공통 지침',prompt_cache_breakpoint:{mode:'explicit'}},{type:'input_text',text:'유형',prompt_cache_breakpoint:{mode:'explicit'}}]},{role:'user',content:'문서 A'}]);
+   const plain=openAIRequest('gpt-6.1-sol',{contents:[{role:'user',parts:[{text:'검사'}]}]});assert.deepEqual(plain.prompt_cache_options,{mode:'explicit'});assert.deepEqual(plain.input,[{role:'user',content:'검사'}]); }
+ { const split=(first,rest)=>openAIRequest('gpt-5.2',{contents:[{role:'user',parts:[{text:first},{text:rest}]}]});
+   const a=split('공통 지침','문서 A'),b=split('공통 지침','문서 B'),c=split('다른 지침','문서 A');
+   assert.deepEqual(a.input,[{role:'developer',content:'공통 지침'},{role:'user',content:'문서 A'}]);assert(a.prompt_cache_key&&a.prompt_cache_key===b.prompt_cache_key&&a.prompt_cache_key!==c.prompt_cache_key);
+   assert(!JSON.stringify(a.prompt_cache_key).includes('공통'));assert.equal(openAIRequest('gpt-5.2',{contents:[{role:'user',parts:[{text:'하나'}]}]}).prompt_cache_key,undefined); }
  console.log('✓ OpenAI Responses queue/pipeline routing, thinking compatibility, JSON, refusal/limits, cache and reasoning accounting, server-key isolation; mocked API only');
 }finally{globalThis.fetch=original}

@@ -73,7 +73,7 @@ function answer(kind, p) {
 }
 async function route(r) {
   const body = JSON.parse(r.request().postData() || "{}");
-  const prompt = body.contents?.[0]?.parts?.[0]?.text || "";
+  const prompt = body.contents?.[0]?.parts?.map(p=>p.text).join("") || "";
   const kind = kindOf(prompt), model = decodeURIComponent((/models\/([^:]+):/.exec(r.request().url()) || [])[1] || "");
   calls.push({ kind, prompt, model, think: body.generationConfig?.thinkingConfig?.thinkingLevel || "" });
   if (kind === "chapterPlan" && ctl.planDelay) await new Promise(res => setTimeout(res, ctl.planDelay));

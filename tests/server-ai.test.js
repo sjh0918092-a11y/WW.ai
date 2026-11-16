@@ -1,4 +1,5 @@
 /* 실제 브라우저 → 기존 Worker 인증 → 영구 큐 → 제공자 대체 응답. 유료 API 호출 없음. */
+const cacheCalls=[];
 const assert = require("node:assert/strict"), { chromium } = require("playwright");
 const { appServer } = require("./helpers/app");
 const server = appServer();
@@ -30,11 +31,12 @@ const until = async fn => { for (let i = 0; i < 300; i++) { if (await fn()) retu
    },
  } };
  const textResult = body => {
-   const prompt = body.contents?.[0]?.parts?.[0]?.text || "";
+   const prompt = body.contents?.[0]?.parts?.map(p=>p.text).join("") || "";
    if (prompt.includes("## 작성할 문서:")) return { title: "새 인물", type: "인물", summary: "새 문서의 정의", infobox: [], sections: [{ heading: "개요", level: 1, body: "서버에서 받은 새 문서 본문이다." }], facts: [], newEntities: [], timeline: [], relations: [] };
    return { issues: [] };
  };
  globalThis.fetch = async (url, options) => {
+ if(String(url).includes("/cachedContents")){cacheCalls.push({url:String(url),method:(options||{}).method,body:(options||{}).body});return Response.json({name:"cachedContents/test-cache",expireTime:new Date(Date.now()+900000).toISOString()})}if(String(url).endsWith(":countTokens"))return Response.json({totalTokens:5000});
    const current = mode, call = { url, options, mode: current }; providerCalls.push(call);
    assert(!options.headers["X-WW-Pass"] && !options.headers["Authorization"]?.includes("session-test"));
    if (current === "hold") await new Promise((resolve, reject) => {

@@ -19,7 +19,7 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
   const page = await ctx.newPage(), calls = [], errors = []; let pageType = '인물', motifs;
   page.on('pageerror', e => { errors.push(e.message); console.error('Browser:', e.message); });
   await ctx.route('**/v1beta/models/**', async r => {
-    const prompt = JSON.parse(r.request().postData()).contents[0].parts[0].text, kind = prompt.includes('## 작성할 문서:') ? 'page' : 'other'; calls.push({ kind, prompt });
+    const prompt = JSON.parse(r.request().postData()).contents[0].parts.map(p=>p.text).join(""), kind = prompt.includes('## 작성할 문서:') ? 'page' : 'other'; calls.push({ kind, prompt });
     if (kind !== 'page') { try { await r.fulfill({ status: 404, json: { error: { message: 'model missing' } } }); } catch {} return; }
     const title = /## 작성할 문서: 「([^」]+)」/.exec(prompt)[1];
     const out = { title, type: pageType, summary: title + '의 정의', infobox: [], sections: [{ heading: '개요', level: 1, body: title + '은 [[항구 도시]]와 이어져 있다.' }, { heading: '특징', level: 1, body: '' }, { heading: title + '의 버릇', level: 2, body: '일화.' }],

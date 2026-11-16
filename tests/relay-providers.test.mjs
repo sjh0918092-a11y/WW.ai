@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { AiJobs } from "../relay/jobs.js";
-import { mergeGeminiStream, mergeClaudeStream, mergeOpenAIStream } from "../relay/providers.js";
+import { mergeGeminiStream, mergeClaudeStream, mergeOpenAIStream, runProvider } from "../relay/providers.js";
 import worker from "../relay/worker.js";
 import { JobStorage, jobRequest as request, fireAlarm } from "./helpers/jobs.mjs";
 const original = globalThis.fetch;
@@ -98,8 +98,9 @@ try {
 
   const largeIndexStore = new JobStorage(), largeIndex = new AiJobs({ storage: largeIndexStore }, env);
   largeIndexStore.data.set("jobs", Array.from({ length: 400 }, (_, i) => ({ id: "index-job-" + String(i).padStart(8, "0"), type: "gemini.generate", model: "m".repeat(100), fingerprint: "f".repeat(64), runId: "r".repeat(36), status: "failed", receivedAt: Date.now(), expiresAt: Date.now() + 100000, error: { code: "bad_key", message: "오류".repeat(60) } })));
-  r = await request(largeIndex); assert.equal(r.json.jobs.length, 400); assert(largeIndexStore.data.get("jobs").chunks > 1);
-  assert.equal((await request(new AiJobs({ storage: largeIndexStore }, env))).json.jobs.length, 400);
+  r = await request(largeIndex); assert.equal(r.json.jobs.length, 400); assert(Array.isArray(largeIndexStore.data.get("jobs")), "조회는 저장소에 쓰지 않는다");
+  globalThis.fetch = async () => success(); await request(largeIndex, "", textBody("index-migrate-0001")); assert(largeIndexStore.data.get("jobs").chunks > 1);
+  assert.equal((await request(new AiJobs({ storage: largeIndexStore }, env))).json.jobs.length, 401);
   ok("많은 완료 기록도 KV 값 크기를 넘지 않고 재기동 뒤 목록을 읽을 수 있다");
 
   const db = { prepare: () => ({ bind: token => ({ first: async () => token === "valid" ? { uid: "personal" } : null }) }), batch: async () => [] };
@@ -157,5 +158,88 @@ try {
     assert.throws(() => mergeOpenAIStream(sse({ type: "response.output_text.delta", delta: "{" })), e => e.code === "incomplete_response");
     assert.throws(() => mergeOpenAIStream(sse({ type: "response.failed", response: { status: "failed" } })), e => e.code === "upstream_error" && e.definite);
     ok("Claude·OpenAI 스트림을 일괄 응답 형태로 되살리고, 끊긴 스트림은 성공으로 저장하지 않는다");
+  }
+  {
+    // 서버 무응답 감시: 첫 응답 없음·도중 멈춤·10분 제한을 구분하고 시간 기록을 남긴다.
+    const job = { keyMode: "server", input: { type: "gemini.generate", model: "custom-check", input: textBody("x").input } };
+    const fast = { GEMINI_KEY: "k", AI_FIRST_BYTE_MS: 60, AI_STREAM_IDLE_MS: 60 };
+    const enc = new TextEncoder();
+    const hang = (first) => async (url, options) => new Response(new ReadableStream({ start(c) {
+      if (first) c.enqueue(enc.encode(first));
+      options.signal.addEventListener("abort", () => c.error(new DOMException("abort", "AbortError")), { once: true });
+    } }), { headers: { "Content-Type": "text/event-stream" } });
+    globalThis.fetch = hang("");
+    let t = {}; await assert.rejects(runProvider(job, fast, null, undefined, t), e => e.code === "no_first_response" && e.definite);
+    assert.equal(t.first, null); assert.equal(t.code, "no_first_response"); assert(t.end >= 50 && t.headers !== null);
+    globalThis.fetch = hang('data: {"candidates":[{"content":{"parts":[{"text":"{"}]}}]}\n\n');
+    t = {}; await assert.rejects(runProvider(job, fast, null, undefined, t), e => e.code === "stream_stalled" && e.definite);
+    assert(t.first !== null && t.bytes > 0 && t.end - t.last >= 50);
+    globalThis.fetch = (url, options) => new Promise((_, rej) => options.signal.addEventListener("abort", () => rej(new DOMException("abort", "AbortError"))));
+    const ctl = new AbortController(); setTimeout(() => ctl.abort("deadline"), 20);
+    t = {}; await assert.rejects(runProvider(job, { GEMINI_KEY: "k" }, null, ctl.signal, t), e => e.code === "deadline_exceeded" && !e.definite);
+    const user = new AbortController(); setTimeout(() => user.abort(), 20);
+    await assert.rejects(runProvider(job, { GEMINI_KEY: "k" }, null, user.signal, {}), e => e?.name === "AbortError");
+    globalThis.fetch = async () => success(); t = {};
+    await runProvider(job, fast, null, undefined, t); assert(t.first !== null && t.end !== null && !t.code);
+    // 상태 조회는 쓰기 0회, 바뀐 것 없는 갱신은 큰 목록 조각을 다시 쓰지 않는다.
+    const wStore = new JobStorage(), wObj = new AiJobs({ storage: wStore }, env); let puts = 0;
+    wStore.data.set("jobs", Array.from({ length: 400 }, (_, i) => ({ id: "write-job-" + String(i).padStart(8, "0"), type: "gemini.generate", model: "m".repeat(100), status: "failed", receivedAt: Date.now(), expiresAt: Date.now() + 100000, error: { code: "bad_key", message: "오류".repeat(60) } })));
+    await request(wObj, "", textBody("write-count-00001")); const chunks = wStore.data.get("jobs").chunks; assert(chunks > 2);
+    const tx0 = wStore.transaction.bind(wStore);
+    wStore.transaction = fn => tx0(tx => fn({ ...tx, put: async (k, v) => { puts++; return tx.put(k, v); }, delete: async k => { puts++; return tx.delete(k); } }));
+    for (let i = 0; i < 5; i++) { await request(wObj); await request(wObj, "write-count-00001"); }
+    assert.equal(puts, 0, "상태 조회는 쓰지 않는다");
+    await request(wObj, "write-count-00001/cancel", {}); assert(puts > 0 && puts < chunks, `취소는 바뀐 조각만 쓴다(${puts}/${chunks})`);
+    wStore.transaction = tx0;
+    // 파이프라인 단계 저장은 앞쪽의 세계관 스냅샷 조각을 다시 쓰지 않는다(재기동 뒤 캐시가 없어도).
+    for (const fresh of [false, true]) {
+      const pStore = new JobStorage(); let pObj = new AiJobs({ storage: pStore }, env); let pPuts = 0;
+      pStore.data.set("jobs", [{ id: "pipe-job-000000001", type: "document.pipeline", status: "running", runId: "run-1", expiresAt: Date.now() + 100000 }]);
+      const state = { input: { key: "a" }, at: 1, engine: "e", steps: [], snapshot: { world: { id: "w", body: "세계관".repeat(60000) } } };
+      await pObj.savePipeline({ id: "pipe-job-000000001", runId: "run-1" }, state, "generate", false);
+      const total = pStore.data.get("jobs")[0].pipelineChunks; assert(total > 10);
+      if (fresh) pObj = new AiJobs({ storage: pStore }, env);
+      const tx1 = pStore.transaction.bind(pStore);
+      pStore.transaction = fn => tx1(tx => fn({ ...tx, put: async (k, v) => { if (k.startsWith("pipe:")) pPuts++; return tx.put(k, v); } }));
+      state.steps.push({ kind: "page", status: "done", response: { candidates: [{ content: { parts: [{ text: "본문".repeat(500) }] } }] } });
+      await pObj.savePipeline({ id: "pipe-job-000000001", runId: "run-1" }, state, "generate", false);
+      pStore.transaction = tx1;
+      assert(pPuts <= 2, `바뀐 끝 조각만 쓴다(${pPuts}/${total})`);
+      assert.deepEqual(await pObj.pipelineState("pipe-job-000000001"), state);
+    }
+    // Gemini 명시적 캐시: 앞 조각을 한 번 저장해 재사용하고, 거절되면 캐시 없이 보낸다.
+    {
+      const big = "공통".repeat(4000), log = [];
+      const mk = tail => ({ keyMode: "server", input: { type: "gemini.generate", model: "gemini-3.8-flash", input: { contents: [{ role: "user", parts: [{ text: big }, { text: "세계" }, { text: tail }] }], generationConfig: { responseMimeType: "application/json" } } } });
+      let expire = Date.now() + 900000, genStatus = 200;
+      globalThis.fetch = async (url, o) => {
+        log.push({ url: String(url), method: o.method, body: o.body ? JSON.parse(o.body) : null });
+        if (String(url).endsWith("/cachedContents")) return Response.json({ name: "cachedContents/c1", expireTime: new Date(expire).toISOString() });
+        if (o.method === "PATCH") return Response.json({ expireTime: new Date(Date.now() + 900000).toISOString() });
+        if (genStatus !== 200 && JSON.parse(o.body).cachedContent) return Response.json({ error: { message: "CachedContent not found" } }, { status: 404 });
+        return success();
+      };
+      const env2 = { GEMINI_KEY: "k-explicit" };
+      await runProvider(mk("문서 A"), env2); await runProvider(mk("문서 B"), env2);
+      const gens = log.filter(l => l.url.includes(":streamGenerateContent"));
+      assert.equal(log.filter(l => l.url.endsWith("/cachedContents")).length, 1, "같은 앞부분은 캐시를 한 번만 만든다");
+      assert(gens.every(g => g.body.cachedContent === "cachedContents/c1" && g.body.contents.length === 1 && g.body.contents[0].parts.length === 1));
+      assert.deepEqual(gens.map(g => g.body.contents[0].parts[0].text), ["문서 A", "문서 B"]);
+      const created = log.find(l => l.url.endsWith("/cachedContents")).body; assert.equal(created.ttl, "900s"); assert.equal(created.contents[0].parts.length, 2); assert.equal(created.model, "models/gemini-3.8-flash");
+      // 만료가 10분 안으로 다가오면 연장한다.
+      log.length = 0; expire = Date.now() + 300000;
+      const env3 = { GEMINI_KEY: "k-refresh" }; await runProvider(mk("x"), env3); await runProvider(mk("y"), env3);
+      assert.equal(log.filter(l => l.method === "PATCH").length, 1);
+      // 캐시가 사라져 거절되면 캐시 없이 같은 요청을 보낸다.
+      log.length = 0; genStatus = 404; expire = Date.now() + 900000;
+      const env4 = { GEMINI_KEY: "k-gone" }; await runProvider(mk("z"), env4);
+      const tries = log.filter(l => l.url.includes(":streamGenerateContent")); assert.equal(tries.length, 2); assert(!tries[1].body.cachedContent && tries[1].body.contents[0].parts.length === 3);
+      // 끄기 설정과 Gemini 4는 쓰지 않는다.
+      log.length = 0; genStatus = 200;
+      await runProvider(mk("o"), { GEMINI_KEY: "k-off", GEMINI_EXPLICIT_CACHE: "off" });
+      await runProvider({ ...mk("g4"), input: { ...mk("g4").input, model: "gemini-4-carbon" } }, { GEMINI_KEY: "k-g4" });
+      assert(!log.some(l => l.url.endsWith("/cachedContents")));
+    }
+    ok("서버 AI 호출의 무응답을 구분해 빨리 끝내고, 상태 조회는 쓰지 않으며 단계 저장은 바뀐 조각만 쓴다");
   }
 } finally { globalThis.fetch = original; }
