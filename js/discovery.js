@@ -350,6 +350,7 @@ ${angle && direction ? "사용자 설명이 성격·태도·시선을 이미 정
 - 사용자 설명이 이미 있는 대상을 뜻하면 {"existing":"기존 항목의 정확한 제목"}만 출력한다. 중복 없이 만들 수 없다면 기존 대상을 새것이라고 우기지 않는다.
 ${rejected.length ? "## 이미 거절된 후보 — 다시 선택하지 않는다\n" + rejected.join("\n") : ""}
 연결 근거를 점검해 원안·규칙·작가 지침의 구체적인 특징에 직접 이어지면 fit을 strong, 연결이 막연하거나 부자연스러우면 weak로 쓴다. 근거가 약한데 strong이라고 우기지 않는다.
+${ENTITY_DEFINITION_RULE}
 새 후보는 JSON 하나: {"fit":"strong 또는 weak","title":"새 문서 제목(60자 이하)","type":"${TYPES.join(" 또는 ")}","summary":"대상이 무엇인지 한두 문장","connection":"이 세계관의 중심 특징과 어떻게 직접 이어지는지 구체적인 이유","direction":"문서 작성 시 지킬 대상의 정체성과 작성 방향","aliases":["같은 대상의 다른 이름이 있으면"],"angle":${angle ? `"${angle.id}" 또는 null(이번 각도를 따르지 못했을 때)` : "null"},"novelty":{"verdict":"novel 또는 overlap 또는 uncertain","reason":"개념 중복 판정 근거","comparisons":[{"key":"가장 가까운 기존 항목의 정확한 key","reason":"기존 개념과의 독립적인 차이 또는 겹치는 범위"}]}}
 기존 항목이 하나도 없을 때만 comparisons를 빈 배열로 둔다. 부적합하면 {"unsuitable":"이유"}.`;
 }

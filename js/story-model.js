@@ -372,6 +372,7 @@ ${relRefBlock(w, Object.keys(w.entities), "", pk, 30)}${eventBlock(w, pk, []).tr
 ${entityIndex(w, [pk])}
 
 ## 출력
+${ENTITY_DEFINITION_RULE}
 JSON 객체 하나만 출력:
 {"title":"이 장의 작중 사건명","era":"이 장의 작중 시점","summary":"공개 줄거리 3~5문장","timeline":[{"year":"연도","month":3,"day":14,"event":"..."}],"protagonistBlock":{"heading":"작중 사건명","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}],"infoboxPatch":[{"label":"상태","value":"..."}],"summaryPatch":""},"affected":[{"title":"항목 제목","change":"이번 장에서 이 항목에 일어난 일 한 문장","kind":"update 또는 new"}],"newEntities":[{"title":"...","type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의"}],"wove":[{"title":"탐험 항목 제목","how":"이 항목이 이번 장 사건에서 맡은 역할 한 문장"}],"facts":[{"about":"항목 제목","fact":"..."}],${REL_JSON},"spineRevise":[{"n":4,"intent":"..."}],"revealNow":[],"secretRevise":[],${STORY_CONTINUITY_OUTPUT},"nextChoices":["...","...","..."],"ending":${last ? '{"epilogue":"결말 이후 3~5문장"}' : "null"}}`;
 }
@@ -411,6 +412,7 @@ ${relRefBlock(w, Object.keys(w.entities), "", key, 20)}${eventBlock(w, key, []).
 ${entityIndex(w, [key], 60)}
 
 ## 출력
+${ENTITY_DEFINITION_RULE}
 JSON 객체 하나만 출력:
 {"blocks":[{"ch":${chs[0]},"heading":"작중 사건명","sections":[{"heading":"...","level":1,"body":"..."}]}],"infoboxPatch":[{"label":"...","value":"..."}],"summaryPatch":"","facts":[{"about":"항목 제목","fact":"..."}],${REL_JSON},"timeline":[{"year":"연도","month":3,"day":14,"event":"..."}],"newEntities":[{"title":"...","type":"...","summary":"..."}]}`;
 }
