@@ -183,7 +183,7 @@ let n = 0; const pass = msg => console.log(`  ✓ ${++n}. ${msg}`);
     const prompts = [];
     await ctx.route("**/v1beta/models/**", async route => {
       const body = route.request().postData() || ""; prompts.push(body);
-      const text = JSON.parse(body).contents?.[0]?.parts?.[0]?.text || "";
+      const text = JSON.parse(body).contents?.[0]?.parts?.map(p=>p.text).join("") || "";
       const answer = text.includes("## 작성할 문서:") ? { title: "테스트 인물", type: "인물", summary: "새 정의", categories: [], notices: [], infobox: [{ label: "성별", value: "여성" }], sections: [{ heading: "개요", level: 1, body: "AI가 다시 쓴 본문이다." }], facts: [], timeline: [], relations: [], navboxes: [], newEntities: [] }
         : text.includes("분위기 지침을 만든다") ? { label: "테스트", guide: ["담백하게 쓴다"] } : { issues: [] };
       const sse = `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(answer) }] }, finishReason: "STOP" }] })}\n\n`;

@@ -36,7 +36,7 @@ const read = (p, k) => p.evaluate(k => new Promise(resolve => { const r = indexe
     { kind: "repeat", severity: "high", title: "잠항 병기의 반복 침투", docs: ["해저 결투"], keywords: ["한서진"], detail: "두 문서가 같은 종류의 침투를 각자 지역 사건으로 다룬다.", link: "북해의 잠항 병기 침투는 모두 한 조직의 작전이다.", undecided: [], alts: ["각국 해군의 실험이 새어 나왔다."], fix: "서로의 사건을 언급하게 한다." },
     { kind: "first", title: "맨손 승리의 '최초' 주장", docs: ["한서진"], detail: "더 이른 기록이 있다.", link: "", fix: "'최초'를 '북해에서 처음'으로 좁힌다." }] };
   await ctx.route("**/v1beta/models/**", async r => {
-    const prompt = JSON.parse(r.request().postData()).contents[0].parts[0].text;
+    const prompt = JSON.parse(r.request().postData()).contents[0].parts.map(p=>p.text).join("");
     if (prompt.includes("## 세계 전체 점검")) { prompts.push(prompt); try { await r.fulfill({ contentType: "text/event-stream", body: "data: " + JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(wcReply) }] }, finishReason: "STOP" }] }) + "\n\n" }); } catch {} return; }
     if (prompt.startsWith("## 관련 문서 판단")) {   // 핵심어로 걸린 문서: 첫째는 yes, 나머지는 unsure
       prompts.push(prompt);

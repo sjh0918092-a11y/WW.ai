@@ -16,7 +16,7 @@ let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
  await ctx.route('https://fonts.googleapis.com/**',r=>r.abort());await ctx.route('https://fonts.gstatic.com/**',r=>r.abort());
  const requests=[],errors=[];let mode='ok',release,serial=0;
  await ctx.route('**/v1beta/models/**',async r=>{
-  const req=JSON.parse(r.request().postData()),prompt=req.contents[0].parts[0].text;requests.push(prompt);
+  const req=JSON.parse(r.request().postData()),prompt=req.contents[0].parts.map(p=>p.text).join("");requests.push(prompt);
   let out;
   if(prompt.includes('## 文서'))throw new Error('unexpected');
   if(prompt.includes('## 문서 기반 단편 소설')){

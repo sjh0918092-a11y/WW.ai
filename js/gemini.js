@@ -201,7 +201,9 @@ const gemini = {
     const model = selected.model.trim();
     let think = selected.think;
     const mk = (contents, json) => { const b = { contents, generationConfig: json ? { responseMimeType: "application/json" } : {} }; if (think) b.generationConfig.thinkingConfig = { thinkingLevel: think }; return b; };
-    const user = [{ role: "user", parts: [{ text: prompt }] }];
+    // 캐시 경계 표시가 있으면 텍스트 조각으로 나눈다. 이어 붙이면 원문과 같고, 앞 조각이 요청마다 같아 자동 캐시가 재사용한다.
+    const pieces = typeof PROMPT_CACHE_BREAK === "string" ? String(prompt).split(PROMPT_CACHE_BREAK).filter(Boolean) : [String(prompt)];
+    const user = [{ role: "user", parts: (pieces.length ? pieces : [""]).map(text => ({ text })) }];
     let acc = "", usage = null, retries = 0, contTried = 0;
     opts.onMeta?.({ model, think });
     for (;;) {
@@ -304,7 +306,7 @@ function pushLog(r) {
 const PK = "wwiki:lastPrompt";
 let LASTP = (() => { try { const v = JSON.parse(localStorage.getItem(PK) || "null"); return v && typeof v.text === "string" ? v : null; } catch { return null; } })();
 async function callJson(kind, prompt, opts = {}, meta = {}) {
-  if (kind === "page") { LASTP = { at: Date.now(), title: meta.title || "", type: meta.type || "", text: prompt }; try { localStorage.setItem(PK, JSON.stringify(LASTP)); } catch {} }
+  if (kind === "page") { LASTP = { at: Date.now(), title: meta.title || "", type: meta.type || "", text: typeof stripCacheBreaks === "function" ? stripCacheBreaks(prompt) : prompt }; try { localStorage.setItem(PK, JSON.stringify(LASTP)); } catch {} }
   const identityWorld=S.world;
   const t0 = performance.now(); let first = null, chars = 0;
   const user = opts.onText;

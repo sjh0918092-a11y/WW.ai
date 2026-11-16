@@ -37,7 +37,7 @@ const NAME_PROMPTS = {
   const page = await ctx.newPage(), calls = [], errors = [];
   page.on('pageerror', e => { errors.push(e.message); console.error('Browser:', e.message); });
   await ctx.route('**/v1beta/models/**', async r => {
-    const prompt = JSON.parse(r.request().postData()).contents[0].parts[0].text; calls.push(prompt);
+    const prompt = JSON.parse(r.request().postData()).contents[0].parts.map(p=>p.text).join(""); calls.push(prompt);
     if (!prompt.includes('## 작성할 문서:')) { try { await r.fulfill({ status: 404, json: { error: { message: 'model missing' } } }); } catch {} return; }
     const out = { title: code, type: '인물', summary: '코드명 인디펜던스로 불리는 조종사', infobox: [{ label: '본명', value: '조슬린 앤 케인' }, { label: '코드명', value: "'인디펜던스'" }, { label: '가명', value: '류도윤' }, { label: '성별', value: '여성' }],
       sections: [{ heading: '개요', level: 1, body: '인디펜던스는 [[기지]]의 조종사다.' }], facts: [], newEntities: [], relations: [], timeline: [] };

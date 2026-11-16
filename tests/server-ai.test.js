@@ -30,7 +30,7 @@ const until = async fn => { for (let i = 0; i < 300; i++) { if (await fn()) retu
    },
  } };
  const textResult = body => {
-   const prompt = body.contents?.[0]?.parts?.[0]?.text || "";
+   const prompt = body.contents?.[0]?.parts?.map(p=>p.text).join("") || "";
    if (prompt.includes("## 작성할 문서:")) return { title: "새 인물", type: "인물", summary: "새 문서의 정의", infobox: [], sections: [{ heading: "개요", level: 1, body: "서버에서 받은 새 문서 본문이다." }], facts: [], newEntities: [], timeline: [], relations: [] };
    return { issues: [] };
  };

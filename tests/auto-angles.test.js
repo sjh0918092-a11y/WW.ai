@@ -21,7 +21,7 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
   const page = await ctx.newPage(), calls = [], errors = []; let angleMode = 'fail', release = null;
   page.on('pageerror', e => { errors.push(e.message); console.error('Browser:', e.message); });
   await ctx.route('**/v1beta/models/**', async r => {
-    const prompt = JSON.parse(r.request().postData()).contents[0].parts[0].text;
+    const prompt = JSON.parse(r.request().postData()).contents[0].parts.map(p=>p.text).join("");
     const kind = prompt.includes('## 각도 목록 만들기') ? (prompt.includes('## 할 일 3: 6개 고르기') ? 'refill' : 'angles') : prompt.includes('## 작성할 문서:') ? 'page' : 'other'; calls.push(kind);
     const fail = async () => { try { await r.fulfill({ status: 404, json: { error: { message: 'model missing' } } }); } catch {} };
     let out;

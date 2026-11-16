@@ -7,7 +7,7 @@ const page={key:main,title:'기지',type:'지명',summary:'기지',infobox:[],se
 const snapshot={world,pages:{[main]:page}},original=JSON.stringify(snapshot);let count=0;
 const runtime={id:'identity-regression',at:Date.UTC(2026,10,16),input:{action:'generate',wid:world.id,key:target,settings:{main:'test-main',quick:'test-quick',preCheck:false}},snapshot,notes:[],failures:[],request:async(kind,model,body)=>{
  count++;assert.equal(kind,'page');
- assert(body.contents[0].parts[0].text.includes('인물 본인의 신체와 본명을 장비와 복무자·조종사로 나누지 않는다'));
+ assert(body.contents[0].parts.map(p=>p.text).join("").includes('인물 본인의 신체와 본명을 장비와 복무자·조종사로 나누지 않는다'));
  const out={title:'마리옹 카르티에',type:'물건',summary:'장비',infobox:[{label:'복무자',value:'마리옹 카르티에'}],sections:[{heading:'개요',level:1,body:'전략소녀를 기체로 오인한 잘못된 응답이다.'}]};
  return{candidates:[{content:{parts:[{text:JSON.stringify(out)}]},finishReason:'STOP'}]};
 }};

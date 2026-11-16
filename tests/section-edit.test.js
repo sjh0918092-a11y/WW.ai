@@ -9,7 +9,7 @@ let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch(),ctx=await browser.newContext({acceptDownloads:true});
  await ctx.route('https://fonts.googleapis.com/**',r=>r.abort());await ctx.route('https://fonts.gstatic.com/**',r=>r.abort());const page=await ctx.newPage(),calls=[],errors=[];let mode='ok',release;
  page.on('pageerror',e=>{errors.push(e.message);console.error('Browser error:',e.message);});
- await ctx.route('**/v1beta/models/**',async r=>{const req=JSON.parse(r.request().postData()),prompt=req.contents[0].parts[0].text;calls.push(prompt);let out;
+ await ctx.route('**/v1beta/models/**',async r=>{const req=JSON.parse(r.request().postData()),prompt=req.contents[0].parts.map(p=>p.text).join("");calls.push(prompt);let out;
  if(prompt.includes('## 선택한 문단 다시 쓰기')){if(mode==='delay')await new Promise(resolve=>release=resolve);if(mode==='bad')out={sections:[{heading:'침범',level:1,body:'잘못된 내용'},{heading:'다른 상위',level:1,body:'바꾸면 안 됨'}]};else out={sections:[{heading:'전환점',level:2,body:'그는 문 앞에서 발을 멈췄다.\n\n결말은 그대로였다.'}]};}
  else if(prompt.includes('사용자가 직접 수정한 최종본')){if(mode==='analyze-fail'){await r.fulfill({status:403,json:{error:{message:'denied'}}});return;}out={facts:mode==='scoped'?[{about:'문단 인물',fact:'고친 문단의 새 사실'}]:[],timeline:[],relations:[],events:[],removeRecords:mode==='scoped'?['S2','F1','S999']:[],newEntities:[],conflicts:mode==='conflict'?[{ref:"R1",claim:"규칙과 충돌하는 초안",old:"규칙 그대로",suggest:"새 규칙"}]:[]};}
  else throw new Error('Unexpected AI request');try{await r.fulfill({contentType:'text/event-stream',body:'data: '+JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify(out)}]},finishReason:'STOP'}]})+'\n\n'});}catch{}});

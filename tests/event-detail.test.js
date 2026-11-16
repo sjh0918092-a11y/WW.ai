@@ -23,7 +23,7 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
   page.on('pageerror', e => { errors.push(e.message); console.error('Browser:', e.message); });
   const EV = (detail, beats) => ({ name: '기지 요격전', kind: '요격전', date: '1979년 6월 14일', place: '북부 기지', nums: [{ name: '교전 시간', value: '40', unit: '분' }], participants: ['주인공', '동료', '신참'], result: '격퇴', detail, ...(beats ? { beats } : {}) });
   await ctx.route('**/v1beta/models/**', async r => {
-    const prompt = JSON.parse(r.request().postData()).contents[0].parts[0].text; calls.push(prompt);
+    const prompt = JSON.parse(r.request().postData()).contents[0].parts.map(p=>p.text).join(""); calls.push(prompt);
     if (!prompt.includes('## 작성할 문서:')) { try { await r.fulfill({ status: 404, json: { error: { message: 'model missing' } } }); } catch {} return; }
     const out = { title: '신참', type: '인물', summary: '신참 조종사', infobox: [{ label: '성별', value: '남성' }], sections: [{ heading: '개요', level: 1, body: '신참은 [[기지 요격전]]에 나갔다. 자세한 내용은 [[동료]] 문서 참조.' }], facts: [], newEntities: [], relations: [], timeline: [],
       events: [EV(false, [{ actor: '육군 사령부', action: '요격 명령' }, { actor: '신참', action: '엄호' }, { actor: '의무 헬기', action: '진정제 투여' }])] };

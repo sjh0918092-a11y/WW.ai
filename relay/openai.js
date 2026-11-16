@@ -17,11 +17,15 @@ export function openAIThinking(model,level=''){
  if(!levels.includes(effort))throw{code:'unsupported_thinking',definite:true,safeMessage:'이 OpenAI 모델이 지원하는 생각 수준을 선택해 주세요.'};
  return {reasoning:{effort}};
 }
+// 짧은 비암호 해시(FNV-1a). 캐시 라우팅용 이름일 뿐이며 본문을 드러내지 않는다.
+const cacheKey=text=>{let h=0x811c9dc5;for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;}return h.toString(36);};
 export function openAIRequest(model,input){
  const json=input.generationConfig?.responseMimeType==='application/json';
  const system=(input.systemInstruction?.parts||[]).map(p=>p.text).join('\n');
  return {model,store:false,service_tier:"default",max_output_tokens:/^gpt-4o/.test(model)?16384:32768,...openAIThinking(model,input.generationConfig?.thinkingConfig?.thinkingLevel),
-  input:input.contents.map(c=>({role:c.role==='model'?'assistant':'user',content:c.parts.map(p=>p.text).join('\n')})),
+  input:input.contents.map(c=>({role:c.role==='model'?'assistant':'user',content:c.parts.map(p=>p.text).join('')})),
+  // 캐시 경계로 나뉜 요청은 첫 조각(공통 지침)으로 같은 캐시 서버에 모이게 한다. 경계가 없으면 넣지 않는다.
+  ...(input.contents[0]?.parts?.length>1?{prompt_cache_key:'ww-'+cacheKey(input.contents[0].parts[0].text)}:{}),
   ...(system||json?{instructions:[system,json?'Return only a valid JSON value. Do not wrap it in Markdown fences.':''].filter(Boolean).join('\n\n')}:{}),
   ...(json?{text:{format:{type:'json_object'}}}:{})};
 }

@@ -18,9 +18,12 @@ const {chromium}=require('playwright'),{appServer}=require('./helpers/app');
      outputs.push({ty,historical,rewrite,preserved,prefix:pageWritingRules(w,ty).length,starts:current.startsWith(pageWritingRules(w,ty)),stable:pagePrompt(w,b,rewrite).startsWith(pageWritingRules(w,ty))});
     }
    }
-   return outputs;
+   const firsts=[];for(const ty of ['',...TYPES])for(const historical of [false,true])for(const stage of [null,{x:1}])firsts.push(pageWritingRules({stage,historical,entities:{}},ty).split(PROMPT_CACHE_BREAK)[0]);
+   const sample=pagePrompt(S.world,keyOf('대상하나'),null);
+   return {outputs,shared:firsts.every(f=>f===firsts[0])?firsts[0].length:0,pieces:sample.split(PROMPT_CACHE_BREAK).length,clean:!stripCacheBreaks(sample).includes(PROMPT_CACHE_BREAK)};
   });
-  for(const r of report){assert(r.preserved,JSON.stringify(r));assert(r.starts&&r.stable);assert(r.prefix>4000)}
-  console.log(`✓ ${report.length} prompt variants retain world/target facts and output contract; shared instructions precede changing targets, including rewrites; no AI requests`);
+  for(const r of report.outputs){assert(r.preserved,JSON.stringify(r));assert(r.starts&&r.stable);assert(r.prefix>4000)}
+  assert(report.shared>6000,'모든 유형·세계관이 공유하는 첫 조각 '+report.shared+'자');assert(report.pieces>=3&&report.clean);
+  console.log(`✓ ${report.outputs.length} prompt variants (shared first piece ${report.shared} chars) retain world/target facts and output contract; shared instructions precede changing targets, including rewrites; no AI requests`);
  }finally{await browser.close();await new Promise(r=>server.close(r))}
 })().catch(e=>{console.error(e);process.exitCode=1});
