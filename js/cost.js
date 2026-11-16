@@ -56,10 +56,29 @@ const DocumentCost = {
     }
     return r;
   },
+  reset(wid) {
+    if(!wid)return;
+    const ledger=this.ledger(wid), scope=JSON.parse(ledger.storageKey.slice(this.prefix.length));
+    // 초기화 경계는 남겨서 예전 서버 작업을 조회해도 비용이 되살아나지 않게 한다.
+    ledger.resetAt=ledger.rows.reduce((at,row)=>Math.max(at,row.requestAt||row.at||0),Date.now());ledger.rows=[];ledger.finished=true;this.save(ledger);
+    const keys=new Set(this.records.keys());
+    for(let i=0;i<localStorage.length;i++)keys.add(localStorage.key(i));
+    for(const key of keys){
+      if(!key?.startsWith(this.prefix)||key===ledger.storageKey)continue;
+      try{
+        const other=JSON.parse(key.slice(this.prefix.length));
+        if(other[0]!==scope[0]||other[1]!==scope[1]||other[2]!==wid)continue;
+        this.active.delete(this.records.get(key)?.id);this.records.delete(key);localStorage.removeItem(key);
+      }catch{}
+    }
+    if(this.creation?.storageKey && keys.has(this.creation.storageKey) && !this.records.has(this.creation.storageKey))this.creation=null;
+    this.render();
+  },
   mirror(r,row) {
     const ledger=this.ledger(r.wid,r.storageKey), id=r.id+":"+row.id;
+    if(ledger.resetAt && (!r.at || r.at<=ledger.resetAt))return;
     const found=ledger.rows.find(x=>x.id===id);
-    const value={...row,id,at:row.at||r.at};
+    const value={...row,id,at:row.at||r.at,requestAt:r.at};
     if(found)Object.assign(found,value);else ledger.rows.push(value);
     ledger.finished=!ledger.rows.some(x=>x.status==="running");this.save(ledger);
   },
@@ -70,6 +89,7 @@ const DocumentCost = {
   recovered(receipt,result) {
     const wid=receipt.meta?.wid;if(!wid)return;
     const ledger=this.ledger(wid);
+    if(ledger.resetAt && (!receipt.createdAt || receipt.createdAt<=ledger.resetAt))return;
     if(receipt.type==="document.pipeline"){
       this.server({id:receipt.id,wid,at:receipt.createdAt,rows:[]},result?.pipeline||receipt);return;
     }
@@ -88,7 +108,7 @@ const DocumentCost = {
   },
   start(wid, key) {
     if(key!=="@usage")this.ledger(wid);
-    const r = { id: crypto.randomUUID(), storageKey:this.key(wid,key), wid,key,at:Date.now(),finished:false,rows:[] };
+    const r = { id: crypto.randomUUID(), storageKey:this.key(wid,key), wid,key,at:Math.max(Date.now(),(this.ledger(wid).resetAt||0)+1),finished:false,rows:[] };
     this.records.set(r.storageKey,r); this.active.add(r.id); this.save(r); return r;
   },
   startWorld() {
@@ -117,7 +137,7 @@ const DocumentCost = {
     wid ||= "@unassigned";key ||= "@background";
     const r=this.get(wid,key);
     if(r && !r.finished && this.active.has(r.id))return this.beginSession(r,kind);
-    const record={id:crypto.randomUUID(),storageKey:this.key(wid,key),wid,at:Date.now(),rows:[]};
+    const record={id:crypto.randomUUID(),storageKey:this.key(wid,key),wid,at:Math.max(Date.now(),(this.ledger(wid).resetAt||0)+1),rows:[]};
     const row={id:crypto.randomUUID(),at:Date.now(),kind,model:"",status:"running",usage:null};
     record.rows.push(row);this.mirror(record,row);this.render();return {record,row};
   },
@@ -139,6 +159,8 @@ const DocumentCost = {
     this.save(r);this.render();
   },
   restore(wid,key,receipt,report) {
+    const ledger=this.ledger(wid);
+    if(ledger.resetAt && (!receipt.createdAt || receipt.createdAt<=ledger.resetAt))return;
     const previous=this.get(wid,key);
     if(previous && previous.at>(receipt.createdAt||0))return;
     const r={id:receipt.id,storageKey:this.key(wid,key),wid,key,at:receipt.createdAt||Date.now(),finished:true,rows:(report.steps||[]).map((s,i)=>({...s,id:String(i),usage:this.counts(s.usage)}))};
@@ -163,9 +185,9 @@ const DocumentCost = {
       const label=typeof KIND!=="undefined" ? KIND[row.kind]||row.kind : row.kind;
       return `<li><span>${esc(label)}${row.retries?` · 재시도 ${row.retries}회`:""}${row.title?` · ${esc(row.title)}`:""} · ${esc(row.model||"모델 확인 중")}${r.category==="total"?`<br><small class="note">${esc(new Date(row.at||r.at).toLocaleString("ko-KR"))} · ${esc(({running:"진행 중",done:"완료",succeeded:"완료",failed:"실패",unknown:"결과 미확인",cancelled:"취소"})[row.status]||row.status||"결과 미확인")}</small>`:""}${u?`<br><small class="note">입력 ${u.promptTokenCount.toLocaleString()} · 출력·생각 ${(u.candidatesTokenCount+u.thoughtsTokenCount).toLocaleString()} 토큰</small>`:""}</span><span>${cost===null ? u ? u.complete ? "요금 미등록" : "사용량 일부 미제공" : "사용량 집계 중/미제공" : this.money(cost)}</span></li>`;
     }).join("");
-    const amount=known?this.money(total):"산정 대기";
+    const amount=known || (r.category==="total" && !r.rows.length)?this.money(total):"산정 대기";
     const partial=missing || !r.finished;
-    return `<summary>${r.category==="total"?"이 세계관 누적 AI 비용":r.category==="world"?"세계관 초기 생성 비용":"문서 생성 비용"} · ${amount}${partial&&known?" + 미집계":""} <span class="note">${r.finished?"완료된 요청 기준":"집계 중"}</span></summary><div class="cost-body"><p>${r.rows.some(row=>this.counts(row.usage))?`확인된 입력 ${input.toLocaleString()} · 출력·생각 ${(output+thought).toLocaleString()} 토큰`:"확인된 사용량이 아직 없습니다."}</p><p class="note">캐시 재사용 ${cached.toLocaleString()} 토큰${saved?` · 일반 입력 요금 대비 ${this.money(saved)} 절감 (합계에 반영됨)`:cached?" · 할인액 산정 대기":" · 확인된 캐시 할인 없음"}</p>${rows?`<ul>${rows}</ul>`:"<p>제공자 사용량을 기다리는 중입니다.</p>"}<p class="note">${r.category==="total"?`전체 호출 ${r.rows.length.toLocaleString()}건 · 세계관 생성·문서 작성·직접 수정 대조·사실 정리·백그라운드 작업·이미지 집계 · 이 브라우저에서 추적한 내역`:r.category==="world"?"기본 설정·초기 연표·날짜 보완 집계 · 문서 생성 비용 별도":"문서 작성·검사·수정 집계 · 별도 호출은 세계관 누적 비용에서 확인"} · API 사용량 수신 시 갱신 · 유료 표준 단가의 원화 예상액입니다. 보수적 고정 환율 $1 = ₩${this.exchangeRate.toLocaleString("ko-KR")} (실시간 환율 아님). 이미지 단가가 없으면 미집계로 남깁니다. 미수신·실패 요청, 세금·할인·저장 비용은 실제 청구와 다를 수 있습니다. Claude가 생각 토큰을 따로 보고하지 않으면 출력에 포함됩니다.</p><p class="note">단가 확인 2026-11-16 · <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener noreferrer">Gemini 요금</a> · <a href="https://developers.openai.com/api/docs/pricing" target="_blank" rel="noopener noreferrer">OpenAI 요금</a> · <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noopener noreferrer">Claude 요금</a></p></div>`;
+    return `<summary>${r.category==="total"?"이 세계관 누적 AI 비용":r.category==="world"?"세계관 초기 생성 비용":"문서 생성 비용"} · ${amount}${partial&&known?" + 미집계":""} <span class="note">${r.finished?"완료된 요청 기준":"집계 중"}</span></summary><div class="cost-body">${r.category==="total"?`<div class="tools"><button type="button" class="btn dng" data-cost-reset="${esc(r.wid)}">비용·로그 초기화</button></div><p class="note">${r.resetAt?`${esc(new Date(r.resetAt).toLocaleString("ko-KR"))} 초기화 이후 시작한 요청을 집계합니다.`:"이 세계관의 비용·호출 로그를 이 브라우저에서 초기화할 수 있습니다."}</p>`:""}<p>${r.rows.some(row=>this.counts(row.usage))?`확인된 입력 ${input.toLocaleString()} · 출력·생각 ${(output+thought).toLocaleString()} 토큰`:"확인된 사용량이 아직 없습니다."}</p><p class="note">캐시 재사용 ${cached.toLocaleString()} 토큰${saved?` · 일반 입력 요금 대비 ${this.money(saved)} 절감 (합계에 반영됨)`:cached?" · 할인액 산정 대기":" · 확인된 캐시 할인 없음"}</p>${rows?`<ul>${rows}</ul>`:"<p>제공자 사용량을 기다리는 중입니다.</p>"}<p class="note">${r.category==="total"?`전체 호출 ${r.rows.length.toLocaleString()}건 · 세계관 생성·문서 작성·직접 수정 대조·사실 정리·백그라운드 작업·이미지 집계 · 이 브라우저에서 추적한 내역`:r.category==="world"?"기본 설정·초기 연표·날짜 보완 집계 · 문서 생성 비용 별도":"문서 작성·검사·수정 집계 · 별도 호출은 세계관 누적 비용에서 확인"} · API 사용량 수신 시 갱신 · 유료 표준 단가의 원화 예상액입니다. 보수적 고정 환율 $1 = ₩${this.exchangeRate.toLocaleString("ko-KR")} (실시간 환율 아님). 이미지 단가가 없으면 미집계로 남깁니다. 미수신·실패 요청, 세금·할인·저장 비용은 실제 청구와 다를 수 있습니다. Claude가 생각 토큰을 따로 보고하지 않으면 출력에 포함됩니다.</p><p class="note">단가 확인 2026-11-16 · <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener noreferrer">Gemini 요금</a> · <a href="https://developers.openai.com/api/docs/pricing" target="_blank" rel="noopener noreferrer">OpenAI 요금</a> · <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noopener noreferrer">Claude 요금</a></p></div>`;
   },
   mount(root,r,id) {
     let panel=document.getElementById(id);

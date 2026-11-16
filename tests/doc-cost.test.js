@@ -29,3 +29,15 @@ const pending=C.begin('cumulative','page','factSync');ctx.GS.relay='https://new-
 ctx.GS.relay='https://ledger.test';assert.equal(C.ledger('cumulative').rows.length,4);assert.equal(C.ledger('cumulative').rows[3].status,'done');
 C.records.clear();assert.equal(C.ledger('cumulative').rows.length,4);assert(C.money(.009).startsWith('₩13.50'));
 console.log('✓ Cumulative background/edit usage, polling/recovery deduplication, persistence and in-flight account isolation');
+// 초기화 범위를 격리하고 오래된 응답·서버 복구의 재집계를 막는다.
+const other=C.begin('untouched','page','page');C.update(other,'claude-sonnet-4-5',{promptTokenCount:1000,candidatesTokenCount:100},'done');
+const late=C.begin('cumulative','page','factSync'), oldAt=late.record.at;
+C.reset('cumulative');assert.equal(C.ledger('cumulative').rows.length,0);assert.equal(C.get('cumulative','page'),undefined);assert(C.content(C.ledger('cumulative')).includes('₩0.00'));
+C.update(late,'claude-sonnet-4-5',{promptTokenCount:1000,candidatesTokenCount:100},'done');assert.equal(C.ledger('cumulative').rows.length,0);
+const receipt={id:'old-job',createdAt:oldAt,type:'document.pipeline',meta:{wid:'cumulative'}};
+C.recovered(receipt,{pipeline:{steps}});C.restore('cumulative','page',receipt,{steps});assert.equal(C.ledger('cumulative').rows.length,0);assert.equal(C.get('cumulative','page'),undefined);
+C.records.clear();assert.equal(C.ledger('cumulative').rows.length,0);assert.equal(C.ledger('untouched').rows.length,1);
+const after=C.begin('cumulative','page','analyze');C.update(after,'claude-sonnet-4-5',{promptTokenCount:1000,candidatesTokenCount:100},'done');assert.equal(C.ledger('cumulative').rows.length,1);
+ctx.GS.relay='https://new-account.test';assert.equal(C.ledger('cumulative').rows.length,0);
+console.log('✓ Manual reset scope, zero display, persistence, late usage exclusion and new usage after reset');
+ctx.GS.relay='https://ledger.test';C.reset('cumulative');C.update(after,'claude-sonnet-4-5',{promptTokenCount:1000,candidatesTokenCount:100},'done');assert.equal(C.ledger('cumulative').rows.length,0);

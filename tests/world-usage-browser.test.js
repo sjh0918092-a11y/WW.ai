@@ -27,6 +27,17 @@ const assert=require('node:assert/strict'),{chromium}=require('playwright'),{app
  await page.reload();await page.waitForSelector('#worldUsagePanel');assert((await page.locator('#worldUsagePanel summary').innerText()).includes('₩268.50'));assert.equal(await page.evaluate(()=>DocumentCost.ledger(S.world.id).rows.length),11);
  await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  await page.screenshot({path:'/tmp/ww-ai-world-usage-mobile.png',fullPage:true});
- await page.evaluate(()=>{Sync.acct={id:'another-account',token:'test'};DocumentCost.render();});assert(!(await page.locator('#worldUsagePanel summary').innerText()).includes('₩268.50'));
+ // 초기화 취소·승인·새로고침과 문서 보존을 실제 버튼으로 확인한다.
+ const reset=page.locator('[data-cost-reset]');
+ if(!(await reset.isVisible()))await page.locator('#worldUsagePanel summary').click();
+ page.once('dialog',d=>d.dismiss());await reset.click();assert((await page.locator('#worldUsagePanel summary').innerText()).includes('₩268.50'));
+ page.once('dialog',d=>d.accept());await reset.click();await page.waitForFunction(()=>DocumentCost.ledger(S.world.id).rows.length===0);
+ assert((await page.locator('#worldUsagePanel summary').innerText()).includes('₩0.00'));
+ assert.equal(await page.locator('#docCostPanel').count(),0);
+ assert.equal(await page.evaluate(async()=>(await Store.getPage(S.world.id,'person')).sections[0].body),'선장이다.');
+ await page.reload();await page.waitForSelector('#worldUsagePanel');assert((await page.locator('#worldUsagePanel summary').innerText()).includes('₩0.00'));
+ await page.evaluate(()=>{const c=DocumentCost.begin(S.world.id,'person','analyze');DocumentCost.update(c,'claude-sonnet-4-5',{promptTokenCount:1000,candidatesTokenCount:100},'done');});
+ assert((await page.locator('#worldUsagePanel summary').innerText()).includes('₩6.75'));
+ await page.evaluate(()=>{Sync.acct={id:'another-account',token:'test'};DocumentCost.render();});assert(!(await page.locator('#worldUsagePanel summary').innerText()).includes('₩6.75'));
  assert.deepEqual(errors,[]);console.log('✓ All background/edit/image calls, cumulative regeneration costs, KRW, reload, mobile, account isolation');
 }finally{await browser.close();await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exitCode=1});
