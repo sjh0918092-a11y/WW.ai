@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { AiJobs } from "../relay/jobs.js";
+import { mergeGeminiStream } from "../relay/providers.js";
 import worker from "../relay/worker.js";
 import { JobStorage, jobRequest as request, fireAlarm } from "./helpers/jobs.mjs";
 const original = globalThis.fetch;
@@ -22,7 +23,7 @@ try {
   await fireAlarm(obj);
   let r = await request(obj, b.id); assert.equal(r.json.job.status, "succeeded");
   assert.equal(calls[0].options.headers["x-goog-api-key"], b.credential.key);
-  assert.deepEqual(JSON.parse(calls[0].options.body), b.input); assert(calls[0].url.endsWith("/custom-check:generateContent"));
+  assert.deepEqual(JSON.parse(calls[0].options.body), b.input); assert(calls[0].url.endsWith("/custom-check:streamGenerateContent?alt=sse"));
   assert(!storage.data.has("key:" + b.id)); assert(!JSON.stringify(r.json).includes(b.credential.key));
   ok("개인 Gemini 키·모델·생각 깊이를 유지하고 종료 뒤 키를 지운다");
 
@@ -131,4 +132,13 @@ try {
   assert.equal((await request(metadataObj, "", metadataBody)).status, 200);
   ok("제한된 복구 대상 정보를 보관하고 완료 확인 뒤에도 번호와 원본 결과를 유지한다");
   console.log(`\n모두 통과 (${n}개). 유료 API 호출 0회.`);
+  {
+    const sse = c => "data: " + JSON.stringify(c) + "\r\n\r\n";
+    const merged = mergeGeminiStream(sse({ candidates: [{ content: { role: "model", parts: [{ text: "생각 요약", thought: true }] } }] }) + sse({ candidates: [{ content: { parts: [{ text: '{"a":' }] } }] }) +
+      sse({ candidates: [{ content: { parts: [{ text: "1}" }] }, finishReason: "STOP" }], usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 3, thoughtsTokenCount: 9 } }));
+    assert.equal(merged.candidates[0].content.parts[0].text, '{"a":1}'); assert.equal(merged.candidates[0].finishReason, "STOP"); assert.equal(merged.usageMetadata.thoughtsTokenCount, 9);
+    assert.throws(() => mergeGeminiStream(sse({ candidates: [{ content: { parts: [{ text: '{"a":' }] } }] })), e => e.code === "incomplete_response" && !e.definite);
+    assert.throws(() => mergeGeminiStream(sse({ error: { code: 500, message: "boom" } })), e => e.code === "upstream_error" && e.definite);
+    ok("Gemini 스트림 조각을 사고 요약 없이 합치고, 완료 신호 없는 응답은 성공으로 저장하지 않는다");
+  }
 } finally { globalThis.fetch = original; }

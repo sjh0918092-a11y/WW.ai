@@ -73,7 +73,7 @@ const until = async fn => { for (let i = 0; i < 300; i++) { if (await fn()) retu
    const json = tier => page.evaluate(tier => callJson("check", "원래 검사 입력", { modelTier: tier }), tier);
    let r = await json("check"); assert.deepEqual(r, { issues: [] });
    let call = providerCalls.at(-1), payload = JSON.parse(call.options.body);
-   assert(call.url.endsWith("/custom-check:generateContent")); assert.equal(payload.generationConfig.thinkingConfig.thinkingLevel, "high");
+   assert(call.url.endsWith("/custom-check:streamGenerateContent?alt=sse")); assert.equal(payload.generationConfig.thinkingConfig.thinkingLevel, "high");
    assert.equal(call.options.headers["x-goog-api-key"], "server-gemini-key"); assert.equal(directCalls.length, 0);
    assert(await page.evaluate(() => LOG.at(-1).transport === "server" && LOG.at(-1).tok.i === 12));
    const receipts = await page.evaluate(() => AIJobs.receipts());

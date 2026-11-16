@@ -130,14 +130,18 @@ export async function runProvider(job, env, personalKey, signal) {
     const json = input.generationConfig?.responseMimeType === "application/json";
     body = JSON.stringify({ model, max_tokens: 16384, ...claudeThinking(model, input.generationConfig?.thinkingConfig?.thinkingLevel), messages, ...(system || json ? { system: [system, json ? "Return only a valid JSON value. Do not wrap it in Markdown fences." : ""].filter(Boolean).join("\n\n") } : {}) });
   } else {
-    url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent";
+    // 텍스트는 스트리밍으로 받는다. 일괄 응답은 생성이 끝날 때까지 응답 헤더가 없어
+    // 긴 본문·사고가 100초를 넘으면 Cloudflare가 연결을 끊고 HTTP 524를 돌려준다.
+    const streamed = type === "gemini.generate";
+    url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + (streamed ? ":streamGenerateContent?alt=sse" : ":generateContent");
     headers = { "Content-Type": "application/json", "x-goog-api-key": key }; body = JSON.stringify(input);
   }
   const res = await fetch(url, { method: "POST", headers, body, signal });
   if (!res.ok) throw await providerError(res, model);
   const text = await boundedText(res.body, type.endsWith(".image") ? 20 * 1024 * 1024 : 4 * 1024 * 1024);
   let result;
-  try { result = JSON.parse(text); } catch { throw { code: "invalid_response" }; }
+  if (/:streamGenerateContent/.test(url)) result = mergeGeminiStream(text);
+  else try { result = JSON.parse(text); } catch { throw { code: "invalid_response" }; }
   if (openai) result = normalizeOpenAI(result);
   if (claude) {
     if (!Array.isArray(result?.content) || !result.content.some(p => p.type === "text" && p.text)) throw { code: "empty_response", definite: true };
@@ -154,6 +158,40 @@ export async function runProvider(job, env, personalKey, signal) {
   }
   if (!result || (type === "openai.image" ? !Array.isArray(result.data) || !result.data.length : (!Array.isArray(result.candidates) || !result.candidates.length) && !result.promptFeedback?.blockReason)) throw { code: "empty_response", definite: true };
   return result;
+}
+
+// SSE(또는 JSON 배열) 조각을 generateContent 한 번의 응답 형태로 합친다. 사고 요약 조각은 버린다.
+export function mergeGeminiStream(text) {
+  let chunks;
+  const trimmed = text.trim();
+  if (/^[\[{]/.test(trimmed)) { try { chunks = [].concat(JSON.parse(trimmed)); } catch { throw { code: "invalid_response" }; } }
+  else {
+    chunks = [];
+    for (const line of text.split(/\r?\n/)) {
+      if (!line.startsWith("data:")) continue;
+      const raw = line.slice(5).trim(); if (!raw || raw === "[DONE]") continue;
+      try { chunks.push(JSON.parse(raw)); } catch { throw { code: "invalid_response" }; }
+    }
+  }
+  if (!chunks.length) throw { code: "invalid_response" };
+  let out = "", finishReason = "", candidate = null, promptFeedback, usageMetadata, modelVersion;
+  for (const c of chunks) {
+    if (c?.error) throw { code: "upstream_error", definite: true, safeMessage: "AI 서버가 응답 도중 오류를 보냈습니다. 잠시 뒤 다시 시도해 주세요." };
+    if (c?.promptFeedback) promptFeedback = c.promptFeedback;
+    if (c?.usageMetadata) usageMetadata = c.usageMetadata;
+    if (c?.modelVersion) modelVersion = c.modelVersion;
+    const cand = c?.candidates?.[0]; if (!cand) continue;
+    candidate = cand;
+    if (cand.finishReason) finishReason = cand.finishReason;
+    for (const p of cand.content?.parts || []) if (typeof p.text === "string" && !p.thought) out += p.text;
+  }
+  // 완료 신호 없이 끊긴 응답은 과금 여부와 내용 완결을 알 수 없으므로 성공으로 저장하지 않는다.
+  if (!finishReason && !promptFeedback?.blockReason) throw { code: "incomplete_response", safeMessage: "AI 응답이 완료 신호 없이 끊겼습니다. 중복 실행을 피하려고 자동으로 다시 보내지 않았습니다." };
+  const { content, ...rest } = candidate || {};
+  return {
+    ...(candidate ? { candidates: [{ ...rest, content: { role: content?.role || "model", parts: [{ text: out }] }, finishReason }] } : {}),
+    ...(promptFeedback ? { promptFeedback } : {}), ...(usageMetadata ? { usageMetadata } : {}), ...(modelVersion ? { modelVersion } : {}),
+  };
 }
 
 function validPipeline(i) {
