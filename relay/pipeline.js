@@ -88,6 +88,8 @@ export async function processPipeline(host, job, signal) {
     const batch = selected.map(({ body, ...step }) => { step.status = "running"; state.steps.push(step); return { body, step }; });
     // 네트워크 요청 전에 전체 실행 기록을 남긴다. 재시작 시 미확인 요청은 재전송하지 않는다.
     if (!await host.savePipeline(job, state, phase, false)) return;
+    // 실행 중 진단: 진행 중인 단계의 시간 기록을 메모리로만 공유해 상태 조회에 실어 보낸다(저장소 쓰기 없음).
+    host.live = { id: job.id, steps: state.steps };
     let persistence = Promise.resolve(), stopped = false;
     await Promise.allSettled(batch.map(async ({ body, step }) => {
       try {
@@ -104,6 +106,7 @@ export async function processPipeline(host, job, signal) {
       persistence = persistence.then(async () => { if (!stopped) stopped = !await host.savePipeline(job, state, phase, false); });
       await persistence;
     }));
+    if (host.live?.id === job.id) host.live = null;
     try { await persistence; if (!stopped) await host.savePipeline(job, state, phase, true); }
     catch (e) { if (!e.definite) throw e; await finish("failed",safeError(e),output); }
     return;

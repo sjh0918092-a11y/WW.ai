@@ -600,13 +600,29 @@ function promiseHtml(w, e, head) {
   if (!items.length) return `<div class="promise"><h5>${esc(head)}</h5><span class="note">아직 확정된 내용이 없는 새 항목입니다. 핵심 규칙과 연표만 지키며 자유롭게 작성합니다.</span></div>`;
   return `<div class="promise"><h5>${esc(head)} · ${items.length}건</h5><ul>${items.join("")}</ul></div>`;
 }
+/* 서버가 알려 준 실행 중 AI 호출의 진행: 아직 아무것도 안 왔는지(생각 중), 받는 중인지, 멈췄는지. */
+function liveAIText(live) {
+  const t = live?.steps?.find(s => s.status === "running" && Number.isFinite(s.timing?.at))?.timing;
+  if (!t) return "";
+  const now = live.now + (performance.now() - live.at), sec = ms => Math.max(0, Math.round(ms / 1000));
+  const kb = n => n >= 1024 ? (n / 1024).toFixed(1) + "KB" : (n || 0) + "B";
+  if (t.first === null || t.first === undefined) return ` · AI 응답 대기 ${sec(now - t.at)}초(아직 받은 내용 없음, 240초에 끊김)`;
+  return ` · AI 응답 받는 중 ${kb(t.bytes)} · 마지막 수신 ${sec(now - t.at - t.last)}초 전(90초 멈추면 끊김)`;
+}
 function updateGenLive() {
   if (!S.gen || S.view.name !== "article" || S.view.key !== S.gen.key) return;
   const c = $("#genCount"), h = $("#genHeads"); if (!c || !h) return;
   const raw = S.gen.raw;
   const el = Math.floor((performance.now() - (S.gen.t0 || performance.now())) / 1000);
   const rt = S.gen.retry ? ` · 연결이 끊겨 ${S.gen.retry.mode === "continue" ? "이어 받는 중" : "다시 받는 중"}(${S.gen.retry.n}/${G_RETRY})` : "";
-  if (S.gen.serverPipeline) { c.textContent = `${({generate:"서버에서 문서 작성 중",check:"서버에서 설정 검사 중",fix:"서버에서 자동 수정 중",saving:"서버에 저장 중"}[S.gen.phase] || "서버 작업 확인 중")} · ${el}초`; return; }
+  if (S.gen.serverPipeline) {
+    // 대기열에서 기다리는 시간과 이번 단계의 실제 실행 시간을 나눠 보여 준다(서버는 계정당 작업을 하나씩 실행한다).
+    const label = {generate:"서버에서 문서 작성 중",check:"서버에서 설정 검사 중",fix:"서버에서 자동 수정 중",saving:"서버에 저장 중"}[S.gen.phase] || "서버 작업 확인 중";
+    const step = S.gen.stepT0 ? Math.max(0, Math.floor((performance.now() - S.gen.stepT0) / 1000)) : null;
+    c.textContent = S.gen.serverStatus === "queued" || S.gen.serverStatus === "submitting" ? `서버 대기열에서 기다리는 중(앞 작업이 끝나면 시작) · 전체 ${el}초`
+      : (step !== null && step < el ? `${label} · 이번 단계 ${step}초 · 전체 ${el}초` : `${label} · ${el}초`) + liveAIText(S.gen.live);
+    return;
+  }
   c.textContent = S.gen.phase === "check" ? `설정과 맞춰 보는 중 · ${el}초` : S.gen.phase === "fix" ? `설정과 어긋난 ${S.gen.nFix}곳을 고치는 중 · ${el}초`
     : (raw ? `문서를 작성하는 중 · ${raw.length.toLocaleString()}자 · ${el}초` : `생각하는 중 · ${el}초`) + rt;
   const heads = [...raw.matchAll(/"heading"\s*:\s*"([^"]*)"/g)].map(m => m[1]);

@@ -45,7 +45,7 @@ const DocumentPipeline = {
     let result;
     try { result = await AIJobs.run("document.pipeline",GS.main,input,{signal:ctl?.signal,jobMeta:meta,
       onJob: j => { id = j.id; if(costSession){DocumentCost.active.delete(costSession.id);costSession.id=j.id;costSession.title=meta.title||"";DocumentCost.active.add(j.id);} if (S.gen?.wid === w.id) S.gen.jobId = j.id; },
-      onStatus: j => { if(typeof DocumentCost!=="undefined")DocumentCost.server(costSession,j); if (S.gen?.wid === w.id) { S.gen.phase = j.phase || "generate"; S.gen.serverPhase = j.phase; updateGenLive(); } },
+      onStatus: j => { if(typeof DocumentCost!=="undefined")DocumentCost.server(costSession,j); if (S.gen?.wid === w.id) { S.gen.phase = j.phase || "generate"; S.gen.serverPhase = j.phase; S.gen.serverStatus = j.status; S.gen.live = Array.isArray(j.liveSteps) && j.serverNow ? { steps: j.liveSteps, now: j.serverNow, at: performance.now() } : null; if (j.status === "running" && j.startedAt && S.gen.stepStartedAt !== j.startedAt) { S.gen.stepStartedAt = j.startedAt; S.gen.stepT0 = performance.now() - Math.max(0, Date.now() - j.startedAt); } updateGenLive(); } },
     }); } finally { if(costSession)DocumentCost.finish(costSession); }
     if(costSession){DocumentCost.server(costSession,result.pipeline||{});DocumentCost.finish(costSession);}
     await this.receive(result,w,ctx); await AIRecovery.handled(id);

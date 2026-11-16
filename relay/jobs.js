@@ -145,6 +145,9 @@ export class AiJobs {
     if (request.method === "GET" && parts.length === 1) return this.read(async (jobs, tx) => {
       const j = jobs.find(j => j.id === id); if (!j) return error(404, "not_found", "작업을 찾을 수 없습니다.");
       const out = { job: publicJob(j) };
+      // 실행 중인 단계의 진행(첫 수신·마지막 수신·받은 양)은 메모리 값으로 덧붙인다. serverNow로 시계 차이 없이 경과를 계산한다.
+      if (j.status === "running" && this.live?.id === id) out.job.liveSteps = this.live.steps.map(s => ({ kind: s.kind, status: s.status, model: s.model, ...(s.timing ? { timing: { ...s.timing } } : {}) }));
+      out.job.serverNow = Date.now();
       if (terminal(j) && j.resultChunks) out.result = JSON.parse(await readText(tx, "out:" + id + ":", j.resultChunks));
       return reply(out);
     });
@@ -264,7 +267,7 @@ export class AiJobs {
     }
     const image = (job.input.type || "").endsWith(".image");
     const timeout = setTimeout(() => controller.abort(image ? undefined : "deadline"), job.input.type === "openai.image" ? 300000 : image ? 180000 : DEADLINE);
-    let result, failure; const timing = {};
+    let result, failure; const timing = {}; this.live = { id: job.id, steps: [{ kind: job.input.type, model: job.input.model, status: "running", timing }] };
     try {
       result = await runProvider(job, this.env, job.personalKey, controller.signal, timing);
     } catch (e) {
@@ -274,7 +277,7 @@ export class AiJobs {
         ...(e?.status ? { httpStatus: e.status } : {}),
         ...(e?.code === "model_not_found" && e.model ? {model:e.model} : {}),
       } };
-    } finally { clearTimeout(timeout); job.personalKey = null; if (this.active?.id === job.id) this.active = null; }
+    } finally { clearTimeout(timeout); job.personalKey = null; if (this.active?.id === job.id) this.active = null; if (this.live?.id === job.id) this.live = null; }
     await this.update(async (jobs, tx) => {
       const j = jobs.find(j => j.id === job.id); if (!j || j.status !== "running" || j.runId !== job.runId) return; // 중단한 작업의 늦은 응답은 버린다.
       j.timing = timing;

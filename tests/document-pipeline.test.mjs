@@ -29,12 +29,13 @@ const originalFetch=globalThis.fetch;
 const response=(kind)=> kind==='page'?{title:'선장',type:'인물',summary:'해양 탐험가',infobox:[{label:'성별',value:'남성'}],sections:[{heading:'개요',level:1,body:'선장은 푸른 바다를 항해한다.'}],categories:['소속:항구','유형:인물'],facts:[],newEntities:[],relations:[],timeline:behavior==='dedupe'?[{year:'1900',month:1,day:1,about:'선장',event:'선장이 참여한 항구 항해법 공표가 이루어지다.'}]:[]}:kind==='check'&&behavior==='dedupe'?{issues:[],timelineSame:[1]}:kind==='fix'?{edits:fixEdits||[{field:'body',old:'푸른',new:'붉은',memo:1}]}:kind==='factSync'?{facts:[{about:'선장',fact:'붉은 바다를 항해한다.'}],relations:[],timeline:[]}:kind==='check'&&['fix','timeout-fix','parallel'].includes(behavior)?{issues:[{claim:fixClaim,evidence:'세계의 바다는 붉다.',conflict:'붉은 바다여야 한다.',severity:'high'},...extraIssues]}:{issues:[]};
 // 스텝 종류는 큐의 공개 상태로 확인한다. 프롬프트 문구 변경에 테스트가 의존하지 않는다.
 let activeEntry;
-let tokenCounts=0;
+let tokenCounts=0, liveSeen=null;
 globalThis.fetch=async(url,opts)=>{
  if (String(url).endsWith(':countTokens')) { tokenCounts++; return Response.json({totalTokens:5000}); }
  const job=activeEntry.storage.data.get('jobs').find(j=>j.status==='running');
  const step=job.steps.find(s=>s.status==='running'&&!calls.some(c=>c.slot===s.slot)), kind=step.kind;
  calls.push({slot:step.slot,kind,url,body:JSON.parse(opts.body)});
+ if (kind==='page'&&!liveSeen) { const g=await activeEntry.obj.fetch(new Request('https://jobs.test/'+job.id)); liveSeen=(await g.json()).job; }
  if (url==='https://api.openai.com/v1/responses') {assert.equal(opts.headers.Authorization,'Bearer private-openai-key');return Response.json({model:step.model,status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(response(kind))}]}],usage:{input_tokens:1000,output_tokens:120,input_tokens_details:{cached_tokens:200,cache_write_tokens:100},output_tokens_details:{reasoning_tokens:20}}});}
  if (url.includes('anthropic.com')) {
   assert.equal(opts.headers['x-api-key'], 'private-claude-key');
@@ -73,6 +74,7 @@ const storedPage=k=>JSON.parse(db.sqlite.prepare('SELECT data FROM pages WHERE u
 try {
  let e=await reset();let r=await request(e,'',e.body);assert.equal(r.status,202);await request(e,'',e.body);r=await run(e);
  assert(r.job.steps.some(s=>s.usage?.promptTokenCount===1000));assert(r.result.pipeline.steps.some(s=>s.usage?.thoughtsTokenCount===20));assert(!JSON.stringify(r.job.steps).includes('private-server-key'));
+ assert(liveSeen?.serverNow&&liveSeen.liveSteps?.some(s=>s.kind==='page'&&s.status==='running'&&Number.isFinite(s.timing?.at)&&s.timing.headers===null),JSON.stringify(liveSeen?.liveSteps));
  { const page=r.result.pipeline.steps.find(s=>s.kind==='page'); assert(page.cache.chars>7000&&page.cache.hashes.length===2&&page.cache.tokens===5000&&tokenCounts===1,JSON.stringify(page.cache)); assert(r.job.steps.find(s=>s.kind==='page').cache.hash===page.cache.hash); }
  assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert(r.result.pipeline.saved);assert(r.result.pipeline.checked);assert(storedPage(B)?.check);assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page','check','read']);assert(calls[0].url.includes('custom-main'));assert(calls[1].url.includes('custom-check'));assert.equal(calls[1].body.generationConfig.thinkingConfig.thinkingLevel,'high');
  assert(!JSON.stringify(r).includes('private-server-key'));assert(![...e.storage.data.keys()].some(k=>/^(key:|in:|pipe:)/.test(k)));pass('매 alarm마다 서버 객체를 재생성해도 생성·두 검사·D1 저장까지 완료하며 완료된 호출은 재실행하지 않는다');
