@@ -852,7 +852,7 @@ async function runChecks(w, k, opts, label) {
   if (S.world === w && S.pages[k] === p && !p.editedAt && !opts?.signal?.aborted && rs[0].status === "fulfilled") applyTimelineMatches(w, timelinePairs, rs[0].value);
   const num = detIssues(w, k);
   if (rs.every(r => r.status === "rejected") && !num.length) throw rs[0].reason;   // AI 검사가 모두 실패해도 숫자 대조 결과는 쓴다
-  return mergeIssues([...num, ...rs.filter(r => r.status === "fulfilled").flatMap(r => parseIssues(r.value))]);
+  return mergeIssues([...num, ...rs.filter(r => r.status === "fulfilled").flatMap(r => parseIssues(r.value, w, k))]);
 }
 /* 다른 문서에 단 자동 대조 표시를 저장한다 */
 function saveRouted(w, keys) { for (const x of keys || []) if (S.pages[x]) Store.savePage(w.id, S.pages[x]).catch(() => {}); }
@@ -865,9 +865,19 @@ function refreshOnOpen(k) {
   try { routed = refreshNumeric(w, k); } catch (e) { console.warn("[숫자 대조 갱신]", e); p.check.numV = numStamp(w); }
   Store.savePage(w.id, p).catch(() => {}); saveRouted(w, routed);
 }
-function parseIssues(r) {
+function parseIssues(r, w = null, k = null) {
   return (Array.isArray(r?.issues) ? r.issues : []).filter(i => i && i.claim && (i.evidence || i.conflict)).slice(0, 8)   // 근거 없는 지적은 버린다
-    .map(i => ({ claim: String(i.claim).replace(/^\s*#+\s*/, "").replace(/^\[(인포박스|본문)\]\s*/, "").slice(0, 300), conflict: [i.evidence ? `근거: ${stripMarks(i.evidence)}` : "", stripMarks(i.conflict || "")].filter(Boolean).join(" · ").slice(0, 400), severity: i.severity === "high" ? "high" : "low" }));
+    .map(i => ownerTarget(w, k, i, { claim: String(i.claim).replace(/^\s*#+\s*/, "").replace(/^\[(인포박스|본문)\]\s*/, "").slice(0, 300), conflict: [i.evidence ? `근거: ${stripMarks(i.evidence)}` : "", stripMarks(i.conflict || "")].filter(Boolean).join(" · ").slice(0, 400), severity: i.severity === "high" ? "high" : "low" }));
+}
+/* 주인 문서 원칙: 검사가 고칠 쪽으로 다른 문서를 지목하면 그 문서에 수정 요청으로 보낸다.
+   이야기 모드, 사용자가 직접 고친 문서, 이 문서가 직접 고친 문서인데 상대는 아닌 경우, 근거 구절이 그 문서에 없는 경우는 받지 않는다 */
+function ownerTarget(w, k, raw, issue) {
+  if (!w || !k || !raw?.fixDoc || isStory(w)) return issue;
+  const x = kOf(w, String(raw.fixDoc).replace(/^「|」$/g, "").trim()), P = S.pages[x], here = S.pages[k];
+  if (!P || x === k || !w.entities[x] || P.editedAt || !here) return issue;
+  const ev = stripMarks(raw.evidence || "").replace(/\s+/g, " ").trim(), body = pageTexts(P).join("\n").replace(/\s+/g, " ");
+  if (!ev || !body.includes(ev.slice(0, Math.min(ev.length, 40)))) return issue;   // 상대 문서에서 글자 그대로 찾을 수 있는 구절만 수정 요청이 된다
+  return { ...issue, severity: "low", target: x, targetOld: ev.slice(0, 300), targetClaim: `「${here.title}」(이 항목의 단독 문서) 서술: ${stripMarks(raw.claim)}`.slice(0, 400), conflict: `${issue.conflict} · 고칠 쪽: 「${P.title}」`.slice(0, 400) };
 }
 /* 작성 직후, 문서를 보여 주기 전에 설정 검사를 돌리고 '다듬을 곳'은 자동으로 고친다.
    실패하거나 사용자가 건너뛰면 작성된 문서를 그대로 쓴다. 고쳤으면 { page: 고친 문서, fixed, keep: 남은 지적 } */

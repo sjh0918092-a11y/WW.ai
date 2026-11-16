@@ -271,6 +271,23 @@ function sourceBatches(w, key, focus, outgoing = [], eligible = () => true) {
   }
   return batches.map(batch => batch.join("\n\n"));
 }
+/* 작성 입력: 관련 항목의 단독 문서에서 이 항목이 나오는 문단(그 항목이 주인인 경위). 다시 서술할 때 세부를 지어내지 않게 한다 */
+const OWNER_PARA_MAX = 700, OWNER_PER_DOC = 2;
+function ownerExcerptBlock(w, key, rel, n = 8) {
+  if (n <= 0) return "";
+  const e = w.entities[key], names = namesOf(e.title), out = [];
+  for (const k of rel) {
+    const p = S.pages[k]; if (!p || k === key || out.length >= n) continue;
+    if (isStory(w) && (p.syncedTo || p.baseAsOf || 1) > (S.pages[key]?.syncedTo || w.story.chapter)) continue;
+    const paras = p.sections.flatMap(s => String(s.body).split(/\n{2,}/).map(t => ({ h: s.heading, t: stripMarks(t).trim() }))).filter(x => x.t && names.some(nm => hasName(x.t, nm)));
+    for (const x of paras.slice(0, OWNER_PER_DOC)) { if (out.length >= n) break; out.push(`- 「${p.title}」 / ${x.h}${p.editedAt ? " [사용자 수정]" : ""}: ${x.t.length > OWNER_PARA_MAX ? x.t.slice(0, OWNER_PARA_MAX) + "…" : x.t}`); }
+  }
+  return out.length ? `## 관련 항목 문서의 해당 대목 (그 항목이 주인인 경위)
+아래는 관련 항목의 단독 문서가 이 항목과 얽힌 일을 서술한 문단이다. 그 항목의 행적, 날짜, 장소, 방향, 수치, 국적·소속을 이 문서에서 다시 말할 때는 이 대목을 따르고, 여기에 없는 세부는 지어내지 않는다.
+${out.join("\n")}
+
+` : "";
+}
 function sourceBlock(text) {
   return text ? `## 연결된 문서 원문
 ${text}
@@ -364,6 +381,7 @@ ${showFor(ty, ["인물"]) ? `## 인물의 성격과 특징\n${TRAIT_RULE}\n\n## 
 - 구성: ${structureFor(st.structure, ty)}
 - 하이퍼링크: 다른 항목은 [[제목]] 또는 [[제목|본문에 보일 말]]로 감싼다. 링크는 공격적으로 건다. 본문과 인포박스에서 따로 문서가 될 만한 이름을 쓸 때마다 링크한다. 앞에서 링크한 이름도 다시 나오면 링크한다. 이름 있는 인물, 장소, 조직, 사건, 문서나 기록, 물건, 제도, 그리고 이 세계에만 있는 용어(예: 어떤 존재들의 방언, 고유한 직업이나 의식)가 여기에 해당한다. 본문에 이름이 나온 인물, 조직, 장소, 사건은 매번 빠짐없이 링크한다. 그 밖의 용어까지 합친 서로 다른 링크 대상의 목표는 문서당 12~18개이고, 꼭 눌러 보고 싶은 것부터 건다. 이미 있는 항목도 본문에 자연스럽게 나왔다면 위 목록의 제목을 글자 그대로 써서 링크한다. ${linkNameRule()} 같은 대상을 다른 이름으로 링크해 새 항목을 만들지 않는다. 다만 링크하려고 기존 항목을 "~의 사례로 꼽힌다", "~와도 관련이 있다"처럼 억지로 끌어오지는 않는다. 현실의 일반 명사(소, 정오, 철도)는 이 세계에서 특별한 의미가 없으면 링크하지 않는다. 자기 자신은 링크하지 않는다.
 - 인포박스: 유형에 맞는 4~8개 항목(label/value). value에도 [[링크]]를 쓸 수 있다. 인물이면 '성별' 줄을 반드시 넣는다(남성 또는 여성. 그 인물이나 세계 설정상 의미가 있을 때만 논바이너리나 그 세계의 표현을 쓰고, 사람이 아닌 존재는 '해당 없음'이나 그 존재에 맞는 말을 쓴다). 본문의 대명사와 서술도 이 성별과 맞춘다. 인물이면 해당하는 경우 배우자, 자녀 같은 가족 항목을 넣는다. 전투나 전쟁이면 기간, 장소, 교전 세력, 지휘관(전사한 사람은 이름 뒤에 †), 전력, 피해, 결과를 넣고, 양측이 있는 항목은 value 안에서 "진영 A: … / 진영 B: …"로 나란히 쓴다.
+- 다시 서술: 단독 문서가 있는 다른 항목(인물, 사건, 개념 등)의 경위를 이 문서에서 다시 말할 때는 '관련 항목 문서의 해당 대목', 확정 사실, 언급에 있는 내용까지만 쓴다. 거기에 없는 세부(날짜, 방향과 경로, 누가 안에 있었고 누가 밖에서 왔는지, 부상 부위, 수치, 국적·소속의 변화, 결정의 이유)는 지어내지 않고 요약 수준에서 멈춘다. 그 항목에 관한 세부의 주인은 그 항목의 문서이며, 다르게 쓰면 이 문서가 고칠 쪽이 된다. 이 문서가 새로 정하는 것은 이 항목 자신이 한 일과 그 결과다.
 - 위의 확정 사실, 언급, 핵심 규칙, 연표, 사용자 확정 설정과 모순되는 내용은 쓰지 않는다. "[사용자 확정]"이 붙은 사실은 다른 문서의 언급과 엇갈리면 이쪽을 따른다. 날짜, 생몰과 나이, 소속, 사건의 결과를 특히 주의한다.
 - 본문 서식: 문단은 빈 줄로 구분, 목록은 "- ", 하위 목록은 "  - ", 인용문은 "> ", 강조는 **굵게**. 각주와 취소선은 쓰지 않는다.
 - 안내 틀(notices)은 빈 배열로 둔다.`;
@@ -416,7 +434,7 @@ ${rewriteDir ? `사용자가 요청한 방향: ${rewriteDir}\n이 방향을 최�
 다른 문서에 이미 기록된 말이다. 같은 사람이 같은 날 같은 자리에서 한 말을 이 문서에서 다시 다룰 때는 아래를 글자 그대로 옮기거나, 인용하지 않고 간접 서술로 쓴다. 같은 자리의 말을 새로 지어내지 않는다.
 ${qi}
 
-` : ""; })()}${inputs.events ? eventBlock(w, key, rel, inputs.eventsCount) : ""}${inputs.sameEvents ? sameKindBlock(w, key, rel, guide || "", inputs.sameEventsCount) : ""}${inputs.life && ty === "인물" ? lifeFlowBlock(w, key, rel, inputs.lifeCount) : ""}## 관련 항목의 확정 설정 (모순 금지)
+` : ""; })()}${inputs.ownerText ? ownerExcerptBlock(w, key, rel, inputs.ownerTextCount) : ""}${inputs.events ? eventBlock(w, key, rel, inputs.eventsCount) : ""}${inputs.sameEvents ? sameKindBlock(w, key, rel, guide || "", inputs.sameEventsCount) : ""}${inputs.life && ty === "인물" ? lifeFlowBlock(w, key, rel, inputs.lifeCount) : ""}## 관련 항목의 확정 설정 (모순 금지)
 ${staged ? "아래는 모순을 피하기 위한 참고 자료다. 이 항목이 새로 더하는 사실과 장면을 중심으로 쓰고, 이미 기록된 경위는 연결에 필요한 만큼만 쓴다." : "아래는 모순을 피하기 위한 참고 자료다. 여기 있는 항목과 사실을 본문에 모두 언급할 필요는 없고, 같은 사고, 같은 절차, 같은 규정을 이 문서에서 되풀이하지 않는다. 다만 세계의 큰 사건을 이 항목의 자리에서 보여 주는 것은 되풀이가 아니다."}
 ${relText}
 
@@ -438,7 +456,7 @@ facts에는 이 문서가 링크한 항목 중 중요한 것(인물, 조직, 사
 /* 제목의 표기들: "白頭(백두)"는 "白頭"와 "백두"로도 찾는다 */
 const namesOf = t => { const m = String(t).match(/^(.+?)\((.+)\)$/); return [t, ...(m ? [m[1].trim(), m[2].trim()] : [])].filter(x => x.length >= 2); };
 function checkBrief(w, k, key, focus) {
-  const o = w.entities[k], p = S.pages[key], ok = src => refOK(src, p);
+  const o = w.entities[k], p = S.pages[key], ok = src => refOK(src, p) || (!isStory(w) && src === k);   // 항목 자신의 문서가 정한 사실과 정의는 그 항목의 기준이다
   const ms = pickRelevant(w, k, o.mentions.filter(m => m.from !== key && live(m) && ok(m.from)), m => m.text, 2, focus).map(m => `- 「${w.entities[m.from]?.title || "?"}」의 서술: ${m.text}`);
   const rs = pickRelevant(w, k, relationsOf(w, k).filter(x => x.src !== key && live(x) && ok(x.src)), x => relLine(w, x), 3, focus).map(x => "- 관계: " + relLine(w, x));
   return [entityBrief(w, k, key, ok, focus), ...ms, ...rs].join("\n");
@@ -475,9 +493,22 @@ function docForCheck(p, marks = stripMarks) {
 const NUMBER_CHECK_RULE = "숫자는 주체·속성·사건·단위·시점·범위가 같은지 먼저 확인한다. 한 문장에 이름이 언급됐다는 이유만으로 다른 주체의 숫자를 연결하지 않는다. 예: 약제 A의 최초 도입 연도와 그 약제를 사용하는 부대 B의 창설 연도는 다른 대상의 다른 사건이므로 모순이 아니다. 같은 대상이어도 개발·도입·창설·제정·시행은 서로 다른 속성이다. 1960년대 같은 범위·대략적인 시기는 특정 연도와 같아야 하는 값이 아니다. 귀속 대상이나 범위가 불명확하면 숫자를 맞추라는 지적을 하지 않는다.";
 const ISSUE_JSON = `JSON 객체 하나만 출력: {"issues":[{"claim":"문서의 해당 서술(문서에서 글자 그대로)","evidence":"근거가 된 확정 설정이나 문서 안의 다른 서술(글자 그대로)","conflict":"둘이 왜 동시에 참일 수 없는지 한 문장","severity":"high 또는 low"}]}
 문제가 없으면 issues는 빈 배열.`;
+const CHECK_ISSUE_JSON = ISSUE_JSON.replace('"severity":"high 또는 low"}', '"severity":"high 또는 low","fixDoc":"고칠 쪽이 이 문서가 아니라 다른 문서이면 그 문서 제목(글자 그대로), 이 문서면 빈 문자열"}');
+function ownerCheckRule(w, p) {
+  return isStory(w) ? "" : `- 주인 문서 원칙: 어떤 항목의 경위, 이력, 국적·소속, 날짜, 수치는 그 항목의 단독 문서가 주인이다. 이 문서가 다른 항목에 대해 쓴 서술이 그 항목의 단독 문서와 어긋나면 이 문서가 고칠 쪽이다(fixDoc은 빈 문자열). 이 문서가 「${p.title}」 자신에 대해 쓴 서술이 다른 문서(국가·사건·개념 문서 등)의 재서술과 어긋나고 그 문서가 [사용자 수정]이 아니면, 고칠 쪽은 그 다른 문서이므로 fixDoc에 그 문서 제목을 쓴다. 사용자 확정 설정, 핵심 규칙, 연표와 어긋나면 언제나 이 문서가 고칠 쪽이다.
+- 재서술의 세부: 다른 문서가 이 문서의 항목을 다시 서술하면서 날짜, 방향, 장소, 경로, 부위, 수치, 누가 안에 있었고 누가 밖에서 왔는지 같은 세부를 다르게 썼으면 모두 대조한다. 요약 수준의 차이(세부 생략)는 지적하지 않는다.
+`;
+}
+/* 주인 문서 원칙(일반 모드): 어떤 항목의 경위·이력·수치는 그 항목의 단독 문서가 주인이다.
+   이 문서가 링크하거나 이름을 적은 항목의 단독 문서는 쓴 순서와 관계없이 그 항목에 관한 기준이 된다. 이야기 모드는 장 순서가 기준이다 */
+function ownerRefOK(w, p, focus = null) {
+  if (isStory(w)) return src => refOK(src, p);
+  const text = focus ?? docForCheck(p, t => t);
+  return src => refOK(src, p) || (!!S.pages[src] && w.entities[src] && ((p.links || []).includes(src) || hasName(text, w.entities[src].title)));
+}
 function checkSourceBatches(w, key) {
-  const p = S.pages[key];
-  return sourceBatches(w, key, docForCheck(p, t => t), p.links, src => refOK(src, p));
+  const p = S.pages[key], focus = docForCheck(p, t => t);
+  return sourceBatches(w, key, focus, p.links, ownerRefOK(w, p, focus));
 }
 /* 검사 1: 설정 대조. 문서가 세계관의 확정 설정과 어긋나는지만 엄격하게 본다 */
 function checkPrompt(w, key, timelinePairs = timelineMatchPairs(w, key), sourceText = null) {
@@ -505,7 +536,7 @@ function checkPrompt(w, key, timelinePairs = timelineMatchPairs(w, key), sourceT
 - ${NUMBER_CHECK_RULE}
 - [[대상|표시명]]에서는 대상과 표시명을 각각 확인한다. 직접 경험은 해당 시점의 현장 참석 근거를 확인한다. 생년월일과 사건 시점이 주어지면 가능한 만 나이 또는 날짜 범위를 계산한다.
 - 원문끼리 엇갈리면 사용자 확정 설정과 사용자 수정 기록을 먼저 따른다.
-- 같은 사건의 값·순서가 양립할 수 없거나, 지목한 조항의 내용과 초안이 그 조항에 귀속시킨 제한이 명백히 다르면 high. 예를 들어 명시된 상시 배치 상한을 해외 파견 상한이라고 단정한 경우가 그렇다.
+${ownerCheckRule(w, p)}- 같은 사건의 값·순서가 양립할 수 없거나, 지목한 조항의 내용과 초안이 그 조항에 귀속시킨 제한이 명백히 다르면 high. 예를 들어 명시된 상시 배치 상한을 해외 파견 상한이라고 단정한 경우가 그렇다.
 - 시점이나 범위를 확인하면 양립할 수 있거나, 제시된 기록만으로 인용 근거를 확정할 수 없으면 low로 쓰고 무엇을 더 확인해야 하는지 적는다. 한쪽에 서술이 빠졌다는 이유만으로 high로 올리지 않는다. 기존 기록과 양립하는 새 세부 내용은 지적하지 않는다.
 - 같은 조직·제도·기구를 관련 항목이나 연결된 문서와 다른 이름으로 부르면(예: 다른 문서는 '유엔 전략사찰단'인데 이 문서는 '유엔 전략소녀통제위원회') 같은 대상인지 역할·시기·구성으로 확인하고, 같은 대상이면 기존 이름으로 맞추라고 high로 지적한다. 실제로 다른 기구이면 지적하지 않는다.
 - 지적할 것이 없는 것이 정상이다. 개수를 채우려고 지적하지 않는다.
@@ -526,7 +557,7 @@ ${timelinePairs.length ? `## 연표 대조
 다음 각 쌍이 같은 한 번의 발생을 가리키는지 판단한다. 동일 사건의 다른 표현·관점이면 쌍 번호를 timelineSame에 넣는다. 별개 행위나 후속 사건이거나 확신할 수 없으면 넣지 않는다. 중복 자체는 모순 지적(issues)이 아니다. timelineSame에는 번호를 숫자로 쓰고, 없으면 빈 배열로 둔다.
 ${timelinePairs.map((x, i) => `${i + 1}. ${tlWhen(x.keep)}\n기존: ${x.keep.event}\n이 문서: ${x.drop.event}`).join("\n")}
 
-${ISSUE_JSON.replace('}]}', '}],"timelineSame":[1]}')}` : ISSUE_JSON}`;
+${CHECK_ISSUE_JSON.replace('}]}', '}],"timelineSame":[1]}')}` : CHECK_ISSUE_JSON}`;
 }
 /* 검사 2: 문서 읽기. 설정 자료 없이 문서만 주고 편집자처럼 읽어 앞뒤가 안 맞는 곳을 찾게 한다 */
 function readPrompt(w, key) {
