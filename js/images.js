@@ -149,22 +149,30 @@ async function requestDocImage(w, p, o, signal, customPrompt = "") {
   const geminiBody = { contents: [{ role: "user", parts }], generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: o.ratio, ...(model === "gemini-3.1-flash-lite-image" ? {} : { imageSize: "1K" }) } } };
   const send = () => gFetch(`/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", ...gAuth() }, body: JSON.stringify(geminiBody), signal });
   const t0 = performance.now();
+  const costCall=typeof DocumentCost!=="undefined"?DocumentCost.begin(w.id,p.key,customPrompt?"illustration":"image"):null;
+  if(costCall){costCall.row.title=p.title;DocumentCost.update(costCall,model);}
   try {
     let j;
     if (serverImageJob(model)) {
       const input = openAIImage(model) ? { prompt, size: imageSizeFor(o.ratio), quality: o.quality || "high", ...(m ? { reference: { mimeType: m[1], data: m[2] } } : {}) } : geminiBody;
       const jobMeta = await AIRecovery.capture(customPrompt ? "illustration" : "image", w, p.key, o.recoveryMeta || {});
-      j = await AIJobs.run(openAIImage(model) ? "openai.image" : "gemini.image", model, input, { signal, onJob: o.onJob, jobMeta });
+      j = await AIJobs.run(openAIImage(model) ? "openai.image" : "gemini.image", model, input, { signal, onJob: j=>{if(costCall)DocumentCost.link(costCall,j.id);o.onJob?.(j);}, jobMeta });
     } else {
       if (openAIImage(model)) throw { code: "job_unavailable", message: imageSetupHint(model) };
       const res = await send();   // 공급자에 맞는 API로 한 번만 요청한다.
       if (!res.ok) throw await gError(res, model);
       j = await res.json();
     }
+    if(costCall){
+      // 이미지 출력은 텍스트 출력 단가를 적용하지 않는다. 등록된 1K 장당 단가만 사용한다.
+      costCall.row.imageCost=IMAGE_MODELS.find(x=>x.id===model)?.price;
+      DocumentCost.update(costCall,model,j.usageMetadata,"done");
+    }
     const src = await imageResultSrc(j, openAIImage(model));
     pushLog({ at: Date.now(), kind: "image", title: p.title, model, in: prompt.length, total: Math.round(performance.now() - t0), out: src.length, ok: true });
     return src;
   } catch (e) {
+    if(costCall)DocumentCost.update(costCall,model,null,"failed");
     pushLog({ at: Date.now(), kind: "image", title: p.title, model, in: prompt.length, total: Math.round(performance.now() - t0), out: 0, ok: false, err: e.code || e.name || "image", msg: e.message });
     throw e;
   }

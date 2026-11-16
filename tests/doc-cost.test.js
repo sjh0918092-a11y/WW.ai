@@ -11,10 +11,21 @@ near(C.rate('gpt-5.4-mini',at)[0],.75);near(C.rate('gpt-5.5',at,300000)[1],45);a
 const r=C.start('world','page');const job={steps:[{slot:'page:1',kind:'page',model:'claude-sonnet-4-5',status:'done',usage:{promptTokenCount:1000,candidatesTokenCount:100}},{slot:'check:1',kind:'check',model:'claude-haiku-4-5',status:'running'}]};
 C.server(r,job);const once=C.content(r);C.server(r,job);assert.equal(C.content(r),once);assert(once.includes('$0.0045'));assert(once.includes('미집계'));
 const cacheRecord={at,finished:true,rows:[{kind:'page',model:'gemini-3.8-flash',usage:{promptTokenCount:28782,candidatesTokenCount:3686,cachedContentTokenCount:10000}}]};
-const cacheHtml=C.content(cacheRecord);assert(cacheHtml.includes('캐시 재사용 10,000 토큰'));assert(cacheHtml.includes('$0.0067 절감'));assert(cacheHtml.includes('합계에 반영됨'));near(C.estimate(cacheRecord.rows[0],at),0.028659);
+const cacheHtml=C.content(cacheRecord);assert(cacheHtml.includes('캐시 재사용 10,000 토큰'));assert(cacheHtml.includes('₩10.13 ($0.0067) 절감'));assert(cacheHtml.includes('합계에 반영됨'));near(C.estimate(cacheRecord.rows[0],at),0.028659);
 assert(C.content({...cacheRecord,rows:[{...cacheRecord.rows[0],usage:{promptTokenCount:1,candidatesTokenCount:1}}]}).includes('확인된 캐시 할인 없음'));
 C.finish(r);assert.equal(r.rows[1].status,'unknown');assert(C.content(r).includes('사용량 집계 중/미제공'));assert(!JSON.stringify(r).includes('prompt"'));
 const world=C.startWorld(), original=world.storageKey;const call=C.beginSession(world,'bible');C.update(call,'gemini-3.8-flash',{promptTokenCount:1000,candidatesTokenCount:200},'done');C.bindWorld(world,'new-world');assert.equal(C.get('new-world','@world'),world);assert(!values.has(original));C.finish(world);assert(C.content(world).includes('세계관 초기 생성 비용'));
-const stale=C.start('world','stale');C.active.clear();assert.equal(C.begin('world','stale','check'),null);
+const stale=C.start('world','stale');C.active.clear();assert(C.begin('world','stale','check'));
 ctx.GS.relay='https://other.test';assert.equal(C.get('world','page'),undefined);
 console.log('✓ USD arithmetic, caches, thinking, date-based rates, unknown usage, polling deduplication, and server scope');
+// 완료된 생성과 독립 실행은 같은 세계관 원장에 누적되고, 재조회는 중복되지 않는다.
+ctx.GS.relay='https://ledger.test';
+const doc=C.start('cumulative','page'), first=C.beginSession(doc,'page');C.update(first,'claude-sonnet-4-5',{promptTokenCount:1000,candidatesTokenCount:100},'done');C.finish(doc);
+const bg=C.begin('cumulative','page','analyze');C.update(bg,'claude-sonnet-4-5',{promptTokenCount:1000,candidatesTokenCount:100},'done');
+C.start('cumulative','page');assert.equal(C.ledger('cumulative').rows.length,2);near(C.ledger('cumulative').rows.reduce((n,row)=>n+C.estimate(row,row.at),0),.009);
+const pipe={id:'job-1',wid:'cumulative',at,rows:[]}, steps=[{slot:'check:1',kind:'check',model:'claude-sonnet-4-5',status:'done',usage:{promptTokenCount:1000,candidatesTokenCount:100}}];
+C.server(pipe,{steps});C.server(pipe,{steps});C.recovered({id:'job-1',type:'document.pipeline',meta:{wid:'cumulative'},createdAt:at},{pipeline:{steps}});assert.equal(C.ledger('cumulative').rows.length,3);
+const pending=C.begin('cumulative','page','factSync');ctx.GS.relay='https://new-account.test';C.update(pending,'claude-sonnet-4-5',{promptTokenCount:1000,candidatesTokenCount:100},'done');assert.equal(C.ledger('cumulative').rows.length,0);
+ctx.GS.relay='https://ledger.test';assert.equal(C.ledger('cumulative').rows.length,4);assert.equal(C.ledger('cumulative').rows[3].status,'done');
+C.records.clear();assert.equal(C.ledger('cumulative').rows.length,4);assert(C.money(.009).startsWith('₩13.50'));
+console.log('✓ Cumulative background/edit usage, polling/recovery deduplication, persistence and in-flight account isolation');

@@ -246,9 +246,9 @@ const gemini = {
 };
 function sumUsage(a, b) {
   if (!a) return { ...b };
-  const out = { promptTokenCount: (a.promptTokenCount || 0) + (b.promptTokenCount || 0), candidatesTokenCount: (a.candidatesTokenCount || 0) + (b.candidatesTokenCount || 0), thoughtsTokenCount: (a.thoughtsTokenCount || 0) + (b.thoughtsTokenCount || 0) };
+  const complete = u => typeof u.complete === "boolean" ? u.complete : Number.isFinite(u.promptTokenCount) && Number.isFinite(u.candidatesTokenCount);
+  const out = { complete:complete(a)&&complete(b), promptTokenCount: (a.promptTokenCount || 0) + (b.promptTokenCount || 0), candidatesTokenCount: (a.candidatesTokenCount || 0) + (b.candidatesTokenCount || 0), thoughtsTokenCount: (a.thoughtsTokenCount || 0) + (b.thoughtsTokenCount || 0) };
   for(const key of ["cachedContentTokenCount","cacheCreationInputTokenCount","cacheCreation5mInputTokenCount","cacheCreation1hInputTokenCount","cacheCreation30mInputTokenCount","cacheCreation12hInputTokenCount"]) if(a[key]!==undefined||b[key]!==undefined)out[key]=(a[key]||0)+(b[key]||0);
-  if(a.complete===false||b.complete===false)out.complete=false;
   return out;
 }
 async function listGeminiModels() {
@@ -310,11 +310,12 @@ async function callJson(kind, prompt, opts = {}, meta = {}) {
   const rec = { at: Date.now(), kind, tier: opts.modelTier || "default", model: "", effort: "", in: prompt.length, ...meta };
   const target = opts.recoveryTarget || { wid: S.world?.id, key: S.gen?.key || S.checking || S.proseGen?.key || S.edit?.key || S.view?.key };
   const costCall = typeof DocumentCost !== "undefined" ? (opts.costSession ? DocumentCost.beginSession(opts.costSession,kind) : DocumentCost.begin(target.wid,target.key,kind)) : null;
+  if(costCall){costCall.row.title=meta.title||"";DocumentCost.update(costCall);}
   const recoveryMeta = typeof AIRecovery !== "undefined" && AIJobs.enabled("gemini") && S.world?.id === target.wid ? await AIRecovery.capture(kind, S.world, target.key, opts.recoveryMeta || (S.gen?.recovery ? { group: S.gen.recovery.group } : {})) : null;
   const jobMeta = { kind, title: meta.title || "", wid: target.wid || "", key: target.key || "", ...(recoveryMeta || {}), ...(opts.jobMeta || {}) };
   const o = { progressWatch: ["page", "check", "read", "prose", "section", "discovery"].includes(kind), ...opts, jobMeta, taskKind: kind,
-    onJob: j => { rec.transport = "server"; (rec.jobs ||= []).push(j.id); opts.onJob?.(j); }, onText: u => { if (first === null) first = performance.now(); chars = u.text.length; if (user) user(u); },
-    onRetry: r => { rec.retry = r.n; (rec.retries ||= []).push(r.reason ? String(r.reason).slice(0, 120) : r.mode); opts.onRetry?.(r); },
+    onJob: j => { if(typeof DocumentCost!=="undefined")DocumentCost.link(costCall,j.id); rec.transport = "server"; (rec.jobs ||= []).push(j.id); opts.onJob?.(j); }, onText: u => { if (first === null) first = performance.now(); chars = u.text.length; if (user) user(u); },
+    onRetry: r => { if(costCall){costCall.row.retries=r.n;DocumentCost.update(costCall);} rec.retry = r.n; (rec.retries ||= []).push(r.reason ? String(r.reason).slice(0, 120) : r.mode); opts.onRetry?.(r); },
     onUsage: u => { if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,rec.model,u); opts.onUsage?.(u); },
     onMeta: m => { if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,m.model,m.usage); rec.model = m.model; rec.effort = m.think || ""; if (m.retries) rec.retry = m.retries; if (m.usage) rec.tok = { i: m.usage.promptTokenCount || 0, o: m.usage.candidatesTokenCount || 0, t: m.usage.thoughtsTokenCount || 0 }; } };
   const done = () => { rec.first = first === null ? null : Math.round(first - t0); rec.total = Math.round(performance.now() - t0); rec.out = chars; };

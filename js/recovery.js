@@ -73,6 +73,7 @@ const AIRecovery = {
         const old = local.get(j.id), r = { ...old, ...j, meta: old?.meta || j.meta || {}, owner: ctx.owner, base: ctx.base };
         if (!old && !j.meta) continue; // 이전 버전에서 대상 정보 없이 만든 기록은 자동으로 가져오지 않는다.
         AIJobs.save(r); local.set(r.id, r);
+        if(typeof DocumentCost!=="undefined")DocumentCost.recovered(r);
       }
       const next = [...local.values()].sort((a, b) => b.createdAt - a.createdAt);
       changed = JSON.stringify(next) !== JSON.stringify(this.items) || !!this.networkError;
@@ -96,10 +97,11 @@ const AIRecovery = {
     if (S.view.name === "jobs" && S.view.job && !this.detail) this.preview(S.view.job);
   },
   async result(r, ctx) {
-    const local = await this.cached(r); if (local !== undefined) return local;
+    const local = await this.cached(r); if (local !== undefined) { if(typeof DocumentCost!=="undefined")DocumentCost.recovered(r,local);return local; }
     const response = await AIJobs.req(ctx, "/" + r.id);
     if (!AIJobs.current(ctx)) throw new Error("로그인 계정이나 서버가 바뀌었습니다.");
     Object.assign(r, response.job); AIJobs.save(r);
+    if(typeof DocumentCost!=="undefined")DocumentCost.recovered(r,response.result);
     if (response.result !== undefined) {
       if (await AIJobs.cache(r, response.result)) AIJobs.ack(ctx, r);
       return response.result;

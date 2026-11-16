@@ -38,12 +38,14 @@ const DocumentPipeline = {
       ...(pending ? { entity: { title: pending.title,type:pending.type || "",summary:pending.summary || "", ...(pending.src ? {src:pending.src}:{}), ...(pending.searched ? {searched:true}:{}) } } : {}),
       worldHash:await AIRecovery.hash(stored),pageHash:await AIRecovery.hash(this.sourcePage(page)) };
     const meta = await AIRecovery.capture(action === "check" ? "check" : "page",w,k,{rewrite:!!rewrite,direction:(direction || "").slice(0,300)});
-    const costSession = action === "generate" && typeof DocumentCost!=="undefined" ? DocumentCost.get(w.id,k) : null;
+    const costSession = typeof DocumentCost!=="undefined" ? (action==="generate"?DocumentCost.get(w.id,k):DocumentCost.start(w.id,k)) : null;
     let id;
-    const result = await AIJobs.run("document.pipeline",GS.main,input,{signal:ctl?.signal,jobMeta:meta,
-      onJob: j => { id = j.id; if (S.gen?.wid === w.id) S.gen.jobId = j.id; },
+    let result;
+    try { result = await AIJobs.run("document.pipeline",GS.main,input,{signal:ctl?.signal,jobMeta:meta,
+      onJob: j => { id = j.id; if(costSession){DocumentCost.active.delete(costSession.id);costSession.id=j.id;costSession.title=meta.title||"";DocumentCost.active.add(j.id);} if (S.gen?.wid === w.id) S.gen.jobId = j.id; },
       onStatus: j => { if(typeof DocumentCost!=="undefined")DocumentCost.server(costSession,j); if (S.gen?.wid === w.id) { S.gen.phase = j.phase || "generate"; S.gen.serverPhase = j.phase; updateGenLive(); } },
-    });
+    }); } finally { if(costSession)DocumentCost.finish(costSession); }
+    if(costSession){DocumentCost.server(costSession,result.pipeline||{});DocumentCost.finish(costSession);}
     await this.receive(result,w,ctx); await AIRecovery.handled(id);
     return result.pipeline;
   },

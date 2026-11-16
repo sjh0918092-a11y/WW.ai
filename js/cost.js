@@ -1,6 +1,7 @@
 "use strict";
 /* 문서별 토큰·비용. 제공자가 보고한 사용량만 계산하며 키·본문은 보관하지 않는다. */
 const DocumentCost = {
+  exchangeRate: 1500,
   prefix: "wwiki:docCost:", records: new Map(), active: new Set(), creation: null,
   tokenKeys: ["promptTokenCount", "candidatesTokenCount", "thoughtsTokenCount", "cachedContentTokenCount", "cacheCreationInputTokenCount", "cacheCreation5mInputTokenCount", "cacheCreation1hInputTokenCount", "cacheCreation30mInputTokenCount", "cacheCreation12hInputTokenCount"],
   counts(raw) {
@@ -21,6 +22,7 @@ const DocumentCost = {
     return null;
   },
   estimate(row, at) {
+    if (row.kind === "image" || row.kind === "illustration") return Number.isFinite(row.imageCost) ? row.imageCost : null;
     const u = this.counts(row.usage), p = this.rate(row.model, at, u?.promptTokenCount || 0);
     if (!u || !p || !u.complete) return null;
     const read = Math.min(u.promptTokenCount, u.cachedContentTokenCount), write = Math.min(u.promptTokenCount-read, u.cacheCreationInputTokenCount);
@@ -29,11 +31,63 @@ const DocumentCost = {
   },
   key(wid, key) { return this.prefix + JSON.stringify([typeof Sync !== "undefined" ? Sync.base() : GS.relay, typeof Sync !== "undefined" ? Sync.acct?.id || "local" : "local",wid,key]); },
   get(wid, key) {
-    const id = this.key(wid,key);
-    if (!this.records.has(id)) { try { const r = JSON.parse(localStorage.getItem(id) || "null"); if (r && Array.isArray(r.rows)) { r.rows=r.rows.filter(row=>row && typeof row === "object").slice(0,100); this.records.set(id, r); } } catch {} }
+    return this.load(this.key(wid,key),key);
+  },
+  load(id,key) {
+    if (!this.records.has(id)) { try { const r = JSON.parse(localStorage.getItem(id) || "null"); if (r && Array.isArray(r.rows)) { r.rows=r.rows.filter(row=>row && typeof row === "object"); if(key==="@usage")for(const row of r.rows)if(row.status==="running")row.status="unknown"; this.records.set(id, r); } } catch {} }
     return this.records.get(id);
   },
+  ledger(wid,sourceKey) {
+    wid ||= "@unassigned";
+    let id=this.key(wid,"@usage");
+    if(sourceKey){const scope=JSON.parse(sourceKey.slice(this.prefix.length));scope[2]=wid;scope[3]="@usage";id=this.prefix+JSON.stringify(scope);}
+    let r=this.load(id,"@usage");
+    if(!r){
+      r={id:crypto.randomUUID(),storageKey:id,wid,key:"@usage",at:Date.now(),rows:[],category:"total",finished:true};this.records.set(id,r);
+      // 이전 버전의 문서/세계관 기록도 한 번 가져온다. 원문이나 키는 포함하지 않는다.
+      try{for(let i=0;i<localStorage.length;i++){
+        const key=localStorage.key(i);if(!key?.startsWith(this.prefix)||key===r.storageKey)continue;
+        const scope=JSON.parse(key.slice(this.prefix.length)),mine=JSON.parse(r.storageKey.slice(this.prefix.length));
+        if(scope[0]!==mine[0]||scope[1]!==mine[1]||scope[2]!==wid)continue;
+        const old=JSON.parse(localStorage.getItem(key));
+        for(const row of old.rows||[])r.rows.push({...row,id:old.id+":"+row.id,at:row.at||old.at});
+      }}catch{}
+      this.save(r);
+    }
+    return r;
+  },
+  mirror(r,row) {
+    const ledger=this.ledger(r.wid,r.storageKey), id=r.id+":"+row.id;
+    const found=ledger.rows.find(x=>x.id===id);
+    const value={...row,id,at:row.at||r.at};
+    if(found)Object.assign(found,value);else ledger.rows.push(value);
+    ledger.finished=!ledger.rows.some(x=>x.status==="running");this.save(ledger);
+  },
+  link(call,id) {
+    if(!call)return;
+    (call.row.jobs ||= []).push(id);this.save(call.record);this.mirror(call.record,call.row);
+  },
+  recovered(receipt,result) {
+    const wid=receipt.meta?.wid;if(!wid)return;
+    const ledger=this.ledger(wid);
+    if(receipt.type==="document.pipeline"){
+      this.server({id:receipt.id,wid,at:receipt.createdAt,rows:[]},result?.pipeline||receipt);return;
+    }
+    const linked=ledger.rows.find(x=>x.jobs?.includes(receipt.id));
+    if(linked){
+      if(linked.jobs.length===1){
+        const usage=this.counts(result?.usageMetadata||receipt.usage);if(usage)linked.usage=usage;
+        linked.status=receipt.status;ledger.finished=!ledger.rows.some(x=>x.status==="running");this.save(ledger);this.render();
+      }
+      return;
+    }
+    const row={id:"recovered",kind:receipt.meta?.kind||(receipt.type?.endsWith(".image")?"image":"unknown"),model:receipt.model,status:receipt.status,
+      usage:this.counts(result?.usageMetadata||receipt.usage),title:receipt.meta?.title};
+    if(receipt.status==="succeeded" && receipt.type?.endsWith(".image") && typeof IMAGE_MODELS!=="undefined")row.imageCost=IMAGE_MODELS.find(x=>x.id===receipt.model)?.price;
+    this.mirror({id:receipt.id,wid,at:receipt.createdAt},row);this.render();
+  },
   start(wid, key) {
+    if(key!=="@usage")this.ledger(wid);
     const r = { id: crypto.randomUUID(), storageKey:this.key(wid,key), wid,key,at:Date.now(),finished:false,rows:[] };
     this.records.set(r.storageKey,r); this.active.add(r.id); this.save(r); return r;
   },
@@ -43,9 +97,11 @@ const DocumentCost = {
   bindWorld(r,wid) {
     if(!r)return;
     const previous=r.storageKey, scope=JSON.parse(previous.slice(this.prefix.length));scope[2]=wid;
+    const oldLedger=this.get(r.wid,"@usage");
     r.wid=wid;r.storageKey=this.prefix+JSON.stringify(scope);
     this.records.delete(previous);this.records.set(r.storageKey,r);
     try{localStorage.removeItem(previous);}catch{}
+    if(oldLedger){for(const row of oldLedger.rows)this.mirror(r,{...row,id:row.id.startsWith(r.id+":")?row.id.slice(r.id.length+1):row.id});this.records.delete(oldLedger.storageKey);try{localStorage.removeItem(oldLedger.storageKey);}catch{}}
     this.save(r);this.render();
   },
   save(r) {
@@ -53,62 +109,70 @@ const DocumentCost = {
     try {
       localStorage.setItem(r.storageKey,JSON.stringify(r));
       const keys = [];
-      for (let i=0;i<localStorage.length;i++) { const k=localStorage.key(i); if (k.startsWith(this.prefix)) keys.push(k); }
+      for (let i=0;i<localStorage.length;i++) { const k=localStorage.key(i); if (k.startsWith(this.prefix) && !k.endsWith(',"@usage"]')) keys.push(k); }
       if (keys.length>20) keys.map(k=>{try{return [k,JSON.parse(localStorage.getItem(k)).at||0]}catch{return[k,0]}}).sort((a,b)=>b[1]-a[1]).slice(20).forEach(([k])=>{localStorage.removeItem(k);this.records.delete(k)});
     } catch {}
   },
   begin(wid,key,kind) {
-    return this.beginSession(this.get(wid,key),kind);
+    wid ||= "@unassigned";key ||= "@background";
+    const r=this.get(wid,key);
+    if(r && !r.finished && this.active.has(r.id))return this.beginSession(r,kind);
+    const record={id:crypto.randomUUID(),storageKey:this.key(wid,key),wid,at:Date.now(),rows:[]};
+    const row={id:crypto.randomUUID(),at:Date.now(),kind,model:"",status:"running",usage:null};
+    record.rows.push(row);this.mirror(record,row);this.render();return {record,row};
   },
   beginSession(r,kind) {
     if (!r || r.finished || !this.active.has(r.id)) return null;
-    const row={id:crypto.randomUUID(),kind,model:"",status:"running",usage:null}; r.rows.push(row); this.save(r);this.render();return {record:r,row};
+    const row={id:crypto.randomUUID(),at:Date.now(),kind,model:"",status:"running",usage:null}; r.rows.push(row); this.mirror(r,row); this.save(r);this.render();return {record:r,row};
   },
   update(call, model, usage, status) {
     if (!call) return;
     if (model) call.row.model=model;
     if (usage) call.row.usage=this.counts(usage);
     if (status) call.row.status=status;
-    this.save(call.record);this.render();
+    this.mirror(call.record,call.row);this.save(call.record);this.render();
   },
   server(r, job) {
     if (!r) return;
-    if (Array.isArray(job.steps)) r.rows=job.steps.map((s,i)=>({id:s.slot||String(i),kind:s.kind,model:s.model||job.model,status:s.status,usage:this.counts(s.usage)}));
+    if (Array.isArray(job.steps)) r.rows=job.steps.map((s,i)=>({id:String(i),kind:s.kind,model:s.model||job.model,title:r.title||"",status:s.status,usage:this.counts(s.usage)}));
+    for(const row of r.rows)this.mirror(r,row);
     this.save(r);this.render();
   },
   restore(wid,key,receipt,report) {
     const previous=this.get(wid,key);
     if(previous && previous.at>(receipt.createdAt||0))return;
     const r={id:receipt.id,storageKey:this.key(wid,key),wid,key,at:receipt.createdAt||Date.now(),finished:true,rows:(report.steps||[]).map((s,i)=>({...s,id:String(i),usage:this.counts(s.usage)}))};
+    for(const row of r.rows)this.mirror(r,row);
     this.records.set(r.storageKey,r);this.save(r);this.render();
   },
   finish(r) {
     if (!r) return; this.active.delete(r.id); r.finished=true;
     for (const row of r.rows) if (row.status === "running") row.status="unknown";
+    for(const row of r.rows)this.mirror(r,row);
     this.save(r);this.render();
   },
-  money(n) { return n === null ? "산정 대기" : n === 0 ? "$0.000000" : "$" + n.toFixed(n<.001?6:4); },
+  money(n) { return n === null ? "산정 대기" : `₩${(n*this.exchangeRate).toLocaleString("ko-KR",{minimumFractionDigits:2,maximumFractionDigits:2})} ($${n.toFixed(n<.001?6:4)})`; },
   content(r) {
     let total=0, known=0, input=0, output=0, thought=0, missing=0, cached=0, saved=0;
     const rows=r.rows.map(row=>{
-      const u=this.counts(row.usage), cost=this.estimate(row,r.at);
+      const u=this.counts(row.usage), cost=this.estimate(row,row.at||r.at);
       if (u) {input+=u.promptTokenCount; output+=u.candidatesTokenCount; thought+=u.thoughtsTokenCount;}
-      const read=u?Math.min(u.promptTokenCount,u.cachedContentTokenCount):0, rate=this.rate(row.model,r.at,u?.promptTokenCount||0);
+      const read=u?Math.min(u.promptTokenCount,u.cachedContentTokenCount):0, rate=this.rate(row.model,row.at||r.at,u?.promptTokenCount||0);
       cached+=read;if(rate&&cost!==null)saved+=read*(rate[0]-rate[2])/1e6;
       if(cost!==null){total+=cost;known++;} else missing++;
       const label=typeof KIND!=="undefined" ? KIND[row.kind]||row.kind : row.kind;
-      return `<li><span>${esc(label)} · ${esc(row.model||"모델 확인 중")}${u?`<br><small class="note">입력 ${u.promptTokenCount.toLocaleString()} · 출력·생각 ${(u.candidatesTokenCount+u.thoughtsTokenCount).toLocaleString()} 토큰</small>`:""}</span><span>${cost===null ? u ? u.complete ? "요금 미등록" : "사용량 일부 미제공" : "사용량 집계 중/미제공" : this.money(cost)}</span></li>`;
+      return `<li><span>${esc(label)}${row.retries?` · 재시도 ${row.retries}회`:""}${row.title?` · ${esc(row.title)}`:""} · ${esc(row.model||"모델 확인 중")}${r.category==="total"?`<br><small class="note">${esc(new Date(row.at||r.at).toLocaleString("ko-KR"))} · ${esc(({running:"진행 중",done:"완료",succeeded:"완료",failed:"실패",unknown:"결과 미확인",cancelled:"취소"})[row.status]||row.status||"결과 미확인")}</small>`:""}${u?`<br><small class="note">입력 ${u.promptTokenCount.toLocaleString()} · 출력·생각 ${(u.candidatesTokenCount+u.thoughtsTokenCount).toLocaleString()} 토큰</small>`:""}</span><span>${cost===null ? u ? u.complete ? "요금 미등록" : "사용량 일부 미제공" : "사용량 집계 중/미제공" : this.money(cost)}</span></li>`;
     }).join("");
     const amount=known?this.money(total):"산정 대기";
     const partial=missing || !r.finished;
-    return `<summary>${r.category==="world"?"세계관 초기 생성 비용":"문서 생성 비용"} · ${amount}${partial&&known?" + 미집계":""} <span class="note">${r.finished?"완료된 요청 기준":"집계 중"}</span></summary><div class="cost-body"><p>${r.rows.some(row=>this.counts(row.usage))?`확인된 입력 ${input.toLocaleString()} · 출력·생각 ${(output+thought).toLocaleString()} 토큰`:"확인된 사용량이 아직 없습니다."}</p><p class="note">캐시 재사용 ${cached.toLocaleString()} 토큰${saved?` · 일반 입력 요금 대비 ${this.money(saved)} 절감 (합계에 반영됨)`:cached?" · 할인액 산정 대기":" · 확인된 캐시 할인 없음"}</p>${rows?`<ul>${rows}</ul>`:"<p>제공자 사용량을 기다리는 중입니다.</p>"}<p class="note">${r.category==="world"?"기본 설정·초기 연표·날짜 보완 집계 · 문서 생성 비용 별도":"문서 작성·검사·수정 집계 · 이미지 비용 별도"} · API 사용량 수신 시 갱신 · 유료 표준 단가의 USD 예상액입니다. 미수신·실패 요청, 세금·할인·저장 비용은 실제 청구와 다를 수 있습니다. Claude가 생각 토큰을 따로 보고하지 않으면 출력에 포함됩니다.</p><p class="note">단가 확인 2026-11-16 · <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener noreferrer">Gemini 요금</a> · <a href="https://developers.openai.com/api/docs/pricing" target="_blank" rel="noopener noreferrer">OpenAI 요금</a> · <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noopener noreferrer">Claude 요금</a></p></div>`;
+    return `<summary>${r.category==="total"?"이 세계관 누적 AI 비용":r.category==="world"?"세계관 초기 생성 비용":"문서 생성 비용"} · ${amount}${partial&&known?" + 미집계":""} <span class="note">${r.finished?"완료된 요청 기준":"집계 중"}</span></summary><div class="cost-body"><p>${r.rows.some(row=>this.counts(row.usage))?`확인된 입력 ${input.toLocaleString()} · 출력·생각 ${(output+thought).toLocaleString()} 토큰`:"확인된 사용량이 아직 없습니다."}</p><p class="note">캐시 재사용 ${cached.toLocaleString()} 토큰${saved?` · 일반 입력 요금 대비 ${this.money(saved)} 절감 (합계에 반영됨)`:cached?" · 할인액 산정 대기":" · 확인된 캐시 할인 없음"}</p>${rows?`<ul>${rows}</ul>`:"<p>제공자 사용량을 기다리는 중입니다.</p>"}<p class="note">${r.category==="total"?`전체 호출 ${r.rows.length.toLocaleString()}건 · 세계관 생성·문서 작성·직접 수정 대조·사실 정리·백그라운드 작업·이미지 집계 · 이 브라우저에서 추적한 내역`:r.category==="world"?"기본 설정·초기 연표·날짜 보완 집계 · 문서 생성 비용 별도":"문서 작성·검사·수정 집계 · 별도 호출은 세계관 누적 비용에서 확인"} · API 사용량 수신 시 갱신 · 유료 표준 단가의 원화 예상액입니다. 보수적 고정 환율 $1 = ₩${this.exchangeRate.toLocaleString("ko-KR")} (실시간 환율 아님). 이미지 단가가 없으면 미집계로 남깁니다. 미수신·실패 요청, 세금·할인·저장 비용은 실제 청구와 다를 수 있습니다. Claude가 생각 토큰을 따로 보고하지 않으면 출력에 포함됩니다.</p><p class="note">단가 확인 2026-11-16 · <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener noreferrer">Gemini 요금</a> · <a href="https://developers.openai.com/api/docs/pricing" target="_blank" rel="noopener noreferrer">OpenAI 요금</a> · <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noopener noreferrer">Claude 요금</a></p></div>`;
   },
   mount(root,r,id) {
     let panel=document.getElementById(id);
     if(!root||!r){panel?.remove();return;}
     if(!panel){
       panel=document.createElement("details");panel.id=id;panel.className="doc-cost memo";
-      const pref=id==="worldCostPanel"?"wwiki:worldCostExpanded":"wwiki:costExpanded";
+      const pref=id==="worldUsagePanel"?"wwiki:worldUsageExpanded":id==="worldCostPanel"?"wwiki:worldCostExpanded":"wwiki:costExpanded";
       try{panel.open=localStorage.getItem(pref)==="true";}catch{}
       let open=panel.open;panel.addEventListener("toggle",()=>{if(open===panel.open)return;open=panel.open;try{localStorage.setItem(pref,String(open));}catch{}});
       const heading=root.querySelector("h1,h2");if(heading)heading.after(panel);else root.prepend(panel);
@@ -117,6 +181,7 @@ const DocumentCost = {
   },
   render() {
     if(typeof S==="undefined")return;
+    this.mount(document.querySelector("#main .sheet"),S.world && S.view.name!=="home"?this.ledger(S.world.id):null,"worldUsagePanel");
     if(S.view.name==="home"){
       const r=this.creation, mine=r&&r.storageKey===this.key(r.wid,r.key);
       this.mount(document.getElementById("worldCostMount"),mine?r:null,"worldCostPanel");return;
