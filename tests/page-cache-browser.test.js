@@ -10,12 +10,12 @@ const {chromium}=require('playwright'),{appServer}=require('./helpers/app');
    for(const ty of ['인물','사건','지명',''])for(const historical of [false,true]){
     const a=keyOf('대상하나'),b=keyOf('대상둘');
     const w={kind:'world',id:'test',title:'시험세계',seed:'보존해야 할 원안',era:'1900년',rules:['보존해야 할 규칙'],userCanon:'보존해야 할 확정 설정',guide:'사용자 방향',historical,timeline:[],relations:[],events:[],navboxes:{},aliases:{},glossary:[],entities:{}};
-    for(const [k,title]of [[a,'대상하나'],[b,'대상둘']])w.entities[k]={title,type:ty,summary:'항목 요약',facts:[{t:'항목의 확정 사실',src:'user'}],mentions:[],page:false,box:''};
+    for(const [k,title,type]of [[a,'대상하나',ty],[b,'대상둘',ty==='인물'?'사건':'인물']])w.entities[k]={title,type,summary:'항목 요약',facts:[{t:'항목의 확정 사실',src:'user'}],mentions:[],page:false,box:''};
     S.world=w;S.pages={};
     for(const rewrite of [null,'새로운 방향']){
      const current=pagePrompt(w,a,rewrite);
      const preserved=['보존해야 할 원안','보존해야 할 규칙','보존해야 할 확정 설정','항목의 확정 사실','사용자 방향','## 출력','## 작성할 문서: 「대상하나」'].every(x=>current.includes(x));
-     outputs.push({ty,historical,rewrite,preserved,prefix:pageWritingRules(w,ty).length,starts:current.startsWith(pageWritingRules(w,ty)),stable:pagePrompt(w,b,rewrite).startsWith(pageWritingRules(w,ty))});
+     outputs.push({ty,historical,rewrite,preserved,prefix:pageCommonRules().length,starts:current.startsWith(pageCommonRules()+PROMPT_CACHE_BREAK),stable:current.split(PROMPT_CACHE_BREAK).slice(0,2).join('|')===pagePrompt(w,b,rewrite).split(PROMPT_CACHE_BREAK).slice(0,2).join('|')&&current.split(PROMPT_CACHE_BREAK)[1].includes('보존해야 할 확정 설정')});
     }
    }
    const firsts=[];for(const ty of ['',...TYPES])for(const historical of [false,true])for(const stage of [null,{x:1}])firsts.push(pageWritingRules({stage,historical,entities:{}},ty).split(PROMPT_CACHE_BREAK)[0]);

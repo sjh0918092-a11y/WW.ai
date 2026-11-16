@@ -19,8 +19,8 @@ export function openAIThinking(model,level=''){
 }
 // 짧은 비암호 해시(FNV-1a). 캐시 라우팅용 이름일 뿐이며 본문을 드러내지 않는다.
 const cacheKey=text=>{let h=0x811c9dc5;for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;}return h.toString(36);};
-// GPT-5.6 이후는 메시지 끝에서만 캐시를 찾는다. 공통 지침(첫 조각)을 앞쪽 developer 메시지로 떼어
-// 그 끝이 캐시 조회 지점이 되게 한다. 나머지 조각은 원래 사용자 메시지로 이어 붙인다.
+// GPT-5.6 이후는 메시지 끝이나 명시 지점에서만 캐시를 찾는다. 마지막 조각을 뺀 앞 조각들(공통 지침·세계관 고정 자료)을
+// 앞쪽 developer 메시지로 떼고, 문서별 자료인 마지막 조각은 원래 사용자 메시지로 보낸다.
 const split=contents=>contents?.[0]?.role!=='model'&&contents?.[0]?.parts?.length>1;
 // GPT-5.6 이후는 기본(암묵) 모드가 매 요청의 프롬프트 전체를 1.25배 쓰기 요금으로 캐시에 쓴다.
 // 명시 모드로 바꾸고 공통 지침 끝에만 캐시 지점을 두어, 문서마다 다른 뒷부분은 일반 단가로 낸다.
@@ -28,8 +28,8 @@ const explicitCache=model=>/^gpt-(?:5\.[6-9]|[6-9])/.test(model);
 const openAIInput=(contents,explicit)=>{
  const msg=c=>({role:c.role==='model'?'assistant':'user',content:c.parts.map(p=>p.text).join('')});
  if(!split(contents))return contents.map(msg);
- const [first,...rest]=contents[0].parts;
- return [{role:'developer',content:explicit?[{type:'input_text',text:first.text,prompt_cache_breakpoint:{mode:'explicit'}}]:first.text},msg({...contents[0],parts:rest}),...contents.slice(1).map(msg)];
+ const parts=contents[0].parts,stable=parts.slice(0,-1),last=parts.slice(-1);
+ return [{role:'developer',content:explicit?stable.map(p=>({type:'input_text',text:p.text,prompt_cache_breakpoint:{mode:'explicit'}})):stable.map(p=>p.text).join('')},msg({...contents[0],parts:last}),...contents.slice(1).map(msg)];
 };
 export function openAIRequest(model,input){
  const json=input.generationConfig?.responseMimeType==='application/json';

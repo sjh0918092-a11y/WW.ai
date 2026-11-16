@@ -29,7 +29,7 @@ try{
  globalThis.fetch=async()=>Response.json({error:{message:env.OPENAI_API_KEY}},{status:404});await assert.rejects(runProvider({keyMode:'relay',input:body},env),e=>e.code==='model_not_found'&&e.model===body.model&&!JSON.stringify(e).includes(env.OPENAI_API_KEY));
  { const sol=openAIRequest('gpt-6.1-sol',{contents:[{role:'user',parts:[{text:'공통 지침'},{text:'유형'},{text:'문서 A'}]}]});
    assert.deepEqual(sol.prompt_cache_options,{mode:'explicit'});assert.equal(sol.prompt_cache_key,undefined);
-   assert.deepEqual(sol.input,[{role:'developer',content:[{type:'input_text',text:'공통 지침',prompt_cache_breakpoint:{mode:'explicit'}}]},{role:'user',content:'유형문서 A'}]);
+   assert.deepEqual(sol.input,[{role:'developer',content:[{type:'input_text',text:'공통 지침',prompt_cache_breakpoint:{mode:'explicit'}},{type:'input_text',text:'유형',prompt_cache_breakpoint:{mode:'explicit'}}]},{role:'user',content:'문서 A'}]);
    const plain=openAIRequest('gpt-6.1-sol',{contents:[{role:'user',parts:[{text:'검사'}]}]});assert.deepEqual(plain.prompt_cache_options,{mode:'explicit'});assert.deepEqual(plain.input,[{role:'user',content:'검사'}]); }
  { const split=(first,rest)=>openAIRequest('gpt-5.2',{contents:[{role:'user',parts:[{text:first},{text:rest}]}]});
    const a=split('공통 지침','문서 A'),b=split('공통 지침','문서 B'),c=split('다른 지침','문서 A');

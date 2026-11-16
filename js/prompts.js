@@ -299,8 +299,8 @@ ${text}
 const PROMPT_CACHE_BREAK = "\u2063\u2063";
 const stripCacheBreaks = text => String(text).split(PROMPT_CACHE_BREAK).join("");
 /* 모든 유형·세계관이 공유하는 지침을 맨 앞에, 세계관(무대·대체역사)·유형별 지침을 그 뒤에 둔다. */
-function pageWritingRules(w, ty) {
-  const staged = !!w.stage && !isStory(w), st = STYLES.encyc;
+function pageCommonRules() {
+  const st = STYLES.encyc;
   return `## 절제 (아래 모든 규칙에 먼저 적용한다)
 아래 규칙들은 방향이지 최대치가 아니다. 규칙 하나를 극단까지 밀어붙이지 않는다. 사건의 크기, 피해 규모, 숫자, 수식어, 극적인 장치는 이 항목에 맞는 만큼만 쓴다. 문서 전체가 같은 강도로 고조되지 않게, 담담한 설명과 강한 장면이 섞이게 한다.
 
@@ -343,9 +343,12 @@ function pageWritingRules(w, ty) {
 - 다시 서술: 단독 문서가 있는 다른 항목(인물, 사건, 개념 등)의 경위를 이 문서에서 다시 말할 때는 '관련 항목 문서의 해당 대목', 확정 사실, 언급에 있는 내용까지만 쓴다. 거기에 없는 세부(날짜, 방향과 경로, 누가 안에 있었고 누가 밖에서 왔는지, 부상 부위, 수치, 국적·소속의 변화, 결정의 이유)는 지어내지 않고 요약 수준에서 멈춘다. 그 항목에 관한 세부의 주인은 그 항목의 문서이며, 다르게 쓰면 이 문서가 고칠 쪽이 된다. 이 문서가 새로 정하는 것은 이 항목 자신이 한 일과 그 결과다.
 - 위의 확정 사실, 언급, 핵심 규칙, 연표, 사용자 확정 설정과 모순되는 내용은 쓰지 않는다. "[사용자 확정]"이 붙은 사실은 다른 문서의 언급과 엇갈리면 이쪽을 따른다. 날짜, 생몰과 나이, 소속, 사건의 결과를 특히 주의한다.
 - 본문 서식: 문단은 빈 줄로 구분, 목록은 "- ", 하위 목록은 "  - ", 인용문은 "> ", 강조는 **굵게**. 각주와 취소선은 쓰지 않는다.
-- 안내 틀(notices)은 빈 배열로 둔다.
-
-${PROMPT_CACHE_BREAK}## 이 문서의 엔진 (가장 중요)
+- 안내 틀(notices)은 빈 배열로 둔다.`;
+}
+/* 세계관(무대·대체역사)과 문서 유형에 따라 달라지는 지침. 세계관 고정 자료 뒤에 둔다. */
+function pageTypedRules(w, ty) {
+  const staged = !!w.stage && !isStory(w), st = STYLES.encyc;
+  return `## 이 문서의 엔진 (가장 중요)
 쓰기 전에 아래 네 가지를 먼저 정하고, 문서 전체를 이것을 중심으로 짠다. 그 아래의 규칙들은 이 엔진을 해치지 않는 범위에서 지키는 품질 기준이다.
 1. 훅: 이 문서를 읽은 사람이 친구에게 "그거 알아?" 하고 전할 만한 사실 하나. 개요의 첫 문장은 이 항목이 무엇인지 밝히는 정의이고, 훅은 그 뒤 둘째 문장 안에 사실로 둔다. 농담이나 수사로 문서를 시작하지 않는다.
 2. 절정: 이 항목이 걸린 가장 극적인 순간 하나. 절정에서는 실제로 무언가가 벌어져야 한다. 긴장만 쌓다가 행정 처리나 협상으로 넘어가지 말고, 이 장르의 핵심 행동(전투, 결투, 능력의 발현, 결정적 결단이나 배신)이 일어나는 순간을 고른다. 이 항목이 인물이면 그 인물이 직접 행동하거나 말하는 순간을 고르고, 주변 인물이 주인공을 대신하게 하지 않는다. 사건의 크기는 이 항목에 맞게 정한다. 장면을 키우려고 피해 규모, 희생자 수, 숫자를 부풀리지 않으며, 작은 항목의 절정은 작은 사건이어도 된다. 문서에서 가장 넉넉한 분량을 이 순간에 주고, 그때 무엇이 보이고 들렸는지, 그 자리의 사람들이 무엇을 했는지 장면으로 쓴다. 당시의 기록을 직접 인용할 만한 말이 있다면 여기에 두지만, 인용 없이 써도 된다. 문서의 나머지는 이 순간으로 가는 길과 그 뒤의 여파다.
@@ -390,6 +393,7 @@ ${w.historical ? `## 실존 인물
 ` : ""}## 이 유형의 구성
 - 구성: ${structureFor(st.structure, ty)}`;
 }
+function pageWritingRules(w, ty) { return pageCommonRules() + PROMPT_CACHE_BREAK + pageTypedRules(w, ty); }
 function pagePrompt(w, key, rewriteDir = null, guide = "", angle = null, angleMode = "section", birthday = null, persona = null) {   // angleMode: section(대상이 정해진 문서에 얹기) · novel(랜덤 서핑이 방향에 넣어 보낸 각도)
   const e = w.entities[key], inputs = writingOptions();
   const ty = TYPES.includes(e.type) ? e.type : "";
@@ -409,15 +413,19 @@ function pagePrompt(w, key, rewriteDir = null, guide = "", angle = null, angleMo
     : e.src === "guided" ? "사용자가 방향을 정해 새로 만들기로 한 항목이다. 아래 '사용자가 요청한 방향'에 맞춰 정의한다. 현실에도 있는 말이면 방향이 달리 말하지 않는 한 현실의 의미를 바탕으로 이 세계에서의 모습을 쓴다."
     : e.src === "force" ? "사용자가 이 이름으로 항목을 새로 만들기로 했다. 의미 없는 문자열처럼 보여도 이 세계 안의 고유명사(암호명, 인물의 별칭, 지명, 조직명, 제품명 등)로 해석해 창작하고, 그 이름이 왜 그렇게 붙었는지도 설명한다."
     : "아직 아무 문서에서도 언급되지 않은 새 항목이다. 세계관에 자연스럽게 녹아들도록 정의하라.";
-  return `${inputs.guidelines ? pageWritingRules(w, ty) + PROMPT_CACHE_BREAK : ""}\n\n너는 가상 세계관 위키 「${w.title}」의 집필자다. 이 위키는 실존하지 않는 세계를 다루며, 작중 기준 시점은 ${w.era}이다. 현실 세계, AI, '설정'이라는 단어 등 세계 바깥의 시선은 언급하지 말고 작중의 백과사전처럼 쓴다.
+  const focus = [e.title, e.summary, ...e.facts.filter(live).map(f => f.t), ...e.mentions.filter(live).map(m => m.text)].join("\n");
+  // 캐시 순서: 공통 지침 → 세계관 고정 자료(원안·규칙·무대·확정 설정·분위기·작가 지침) → 유형별 지침·연표·용어·대상 자료.
+  // 같은 세계관에서 연달아 쓰는 문서는 앞의 두 덩어리를 그대로 공유한다. 연표·용어집은 문서가 늘면 바뀌므로 뒤에 둔다.
+  return `${inputs.guidelines ? pageCommonRules() + PROMPT_CACHE_BREAK : ""}\n\n너는 가상 세계관 위키 「${w.title}」의 집필자다. 이 위키는 실존하지 않는 세계를 다루며, 작중 기준 시점은 ${w.era}이다. 현실 세계, AI, '설정'이라는 단어 등 세계 바깥의 시선은 언급하지 말고 작중의 백과사전처럼 쓴다.
 
-${canonBlock(w, [e.title, e.summary, ...e.facts.filter(live).map(f => f.t), ...e.mentions.filter(live).map(m => m.text)].join("\n"), inputs)}
-${isStory(w) ? "\n" + storyBlock(w, key, true) + "\n" : ""}
+${canonBlock(w, focus, { ...inputs, timeline: false, glossary: false })}
 ${toneBlock(w)}${w.guide ? `## 작가 지침 (사용자 지정)
 ${w.guide}
 이 지침은 아래의 문체, 구성, 분량, 기법 규칙보다 우선한다. 다만 핵심 규칙, 연표, 사용자 확정 설정, 다른 문서가 확정한 사실과 부딪히면 그쪽을 따른다.
 
-` : ""}## 작성할 문서: 「${e.title}」
+` : ""}${PROMPT_CACHE_BREAK}${inputs.guidelines ? pageTypedRules(w, ty) + "\n\n" : ""}${canonBlock(w, focus, { ...inputs, seed: false, rules: false, stage: false, canon: false })}
+${isStory(w) ? "\n" + storyBlock(w, key, true) + "\n" : ""}
+## 작성할 문서: 「${e.title}」
 ${target}
 ${rewriteDir === null ? redirectBlock(w, key) : ""}
 ${(() => { const nbs = (inputs.nav ? navboxesFor(w, key).slice(0, inputs.navCount) : []).filter(([, nb]) => nb.src !== key); return nbs.length ? `\n이 항목은 아래 예전 틀에 실려 있다. 이름, 번호, 역할, 전·현직 여부와 다른 구성원과의 관계를 틀과 일치시킨다.\n${nbs.map(([, nb]) => navboxText(nb, inputs.navCount)).join("\n\n")}` : ""; })()}

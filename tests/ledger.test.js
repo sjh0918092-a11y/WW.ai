@@ -103,7 +103,7 @@ test("연표를 프롬프트에 넣을 때 고른다: 원안·직접 수정한 �
 test("연표 상한 삭제가 없어지고 문서 작성·설정 대조가 고른 연표를 쓴다", () => {
   assert(!html.includes("w.timeline.length > 48"));
   assert(html.includes("promptTimeline(w, focus, timeline, options ? options.timelineCount : TIMELINE_PROMPT_N)"));
-  assert(html.includes("${canonBlock(w, [e.title, e.summary"));
+  assert(html.includes("const focus = [e.title, e.summary") && html.includes("${canonBlock(w, focus, { ...inputs, seed: false"));
   assert(html.includes("ok(t.src)) }, focus)}"));
 });
 
