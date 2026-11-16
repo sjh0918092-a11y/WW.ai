@@ -18,7 +18,7 @@ db.sqlite.exec("INSERT INTO users VALUES('alice','s','h',1); INSERT INTO session
 const ent=(title,type,page=false)=>({title,type,summary:'',facts:[],mentions:[],page,box:''});
 const world=()=>({kind:'world',id:'test-world',title:'항구',seed:'항구 세계',era:'1900년',guide:'',rules:[],userCanon:'',timeline:[],relations:[],events:[],navboxes:{},aliases:{},toneTried:true,angleOff:true,relMigrated:true,entities:{[A]:ent('항구','지명',true),[B]:ent('선장','인물')},mainKey:A,updatedAt:100,createdAt:1});
 const page=()=>({key:A,title:'항구',type:'지명',summary:'항구 도시',infobox:[],sections:[{heading:'개요',level:1,body:'거대한 항구이다.'}],links:[],savedAt:100,createdAt:1});
-let fixClaim='푸른 바다를 항해한다.', fixEdits=null;
+let fixClaim='푸른 바다를 항해한다.', fixEdits=null, extraIssues=[];
 let calls=[],behavior='ok',gate,release,n=0;
 let checkHolds=[],inFlight=0,peakChecks=0;
 const waitFor=async fn=>{const end=Date.now()+3000;while(!await fn()){if(Date.now()>end)throw Error('검사 대기 시간 초과');await new Promise(r=>setTimeout(r,5));}};
@@ -26,7 +26,7 @@ const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
 // 두 검사는 병렬로 준비하므로 둘 사이의 접수 순서만 정규화한다.
 const orderedChecks=rows=>{const out=[...rows];for(let i=0;i<out.length-1;i++)if(out[i].kind==='read'&&out[i+1].kind==='check')[out[i],out[i+1]]=[out[i+1],out[i]];return out;};
 const originalFetch=globalThis.fetch;
-const response=(kind)=> kind==='page'?{title:'선장',type:'인물',summary:'해양 탐험가',infobox:[{label:'성별',value:'남성'}],sections:[{heading:'개요',level:1,body:'선장은 푸른 바다를 항해한다.'}],categories:['소속:항구','유형:인물'],facts:[],newEntities:[],relations:[],timeline:behavior==='dedupe'?[{year:'1900',month:1,day:1,about:'선장',event:'선장이 참여한 항구 항해법 공표가 이루어지다.'}]:[]}:kind==='check'&&behavior==='dedupe'?{issues:[],timelineSame:[1]}:kind==='fix'?{edits:fixEdits||[{field:'body',old:'푸른',new:'붉은',memo:1}]}:kind==='factSync'?{facts:[{about:'선장',fact:'붉은 바다를 항해한다.'}],relations:[],timeline:[]}:kind==='check'&&['fix','timeout-fix','parallel'].includes(behavior)?{issues:[{claim:fixClaim,evidence:'세계의 바다는 붉다.',conflict:'붉은 바다여야 한다.',severity:'high'}]}:{issues:[]};
+const response=(kind)=> kind==='page'?{title:'선장',type:'인물',summary:'해양 탐험가',infobox:[{label:'성별',value:'남성'}],sections:[{heading:'개요',level:1,body:'선장은 푸른 바다를 항해한다.'}],categories:['소속:항구','유형:인물'],facts:[],newEntities:[],relations:[],timeline:behavior==='dedupe'?[{year:'1900',month:1,day:1,about:'선장',event:'선장이 참여한 항구 항해법 공표가 이루어지다.'}]:[]}:kind==='check'&&behavior==='dedupe'?{issues:[],timelineSame:[1]}:kind==='fix'?{edits:fixEdits||[{field:'body',old:'푸른',new:'붉은',memo:1}]}:kind==='factSync'?{facts:[{about:'선장',fact:'붉은 바다를 항해한다.'}],relations:[],timeline:[]}:kind==='check'&&['fix','timeout-fix','parallel'].includes(behavior)?{issues:[{claim:fixClaim,evidence:'세계의 바다는 붉다.',conflict:'붉은 바다여야 한다.',severity:'high'},...extraIssues]}:{issues:[]};
 // 스텝 종류는 큐의 공개 상태로 확인한다. 프롬프트 문구 변경에 테스트가 의존하지 않는다.
 let activeEntry;
 globalThis.fetch=async(url,opts)=>{
@@ -143,6 +143,14 @@ try {
  }
  fixEdits=null;fixClaim='푸른 바다를 항해한다.';
  pass('메모의 일부 표현이 남거나 저장 시 링크·줄바꿈이 정리되거나 문장을 삭제해도 적용한 수정의 메모를 닫는다');
+
+ for (const [edit, fixed] of [[{field:'body',old:'푸른 바다',new:'붉은 바다'},1],[{field:'body',old:'푸른',new:'붉은'},0]]) {
+  e=await reset({rewrite:true});behavior='fix';fixEdits=[edit];extraIssues=[{claim:'선장은 푸른 옷을 입는다.',evidence:'제복은 검다.',conflict:'제복 색이 다르다.',severity:'high'}];
+  await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));
+  assert.equal(r.result.pipeline.fixed,fixed,JSON.stringify(edit));assert.equal(storedPage(B).check.issues.length,2-fixed);
+ }
+ fixEdits=null;extraIssues=[];
+ pass('메모 번호가 빠진 수정은 고친 구절과 겹치는 메모가 하나뿐일 때만 그 메모를 닫는다');
 
  for (const edits of [
   [{field:'body',old:'원문에 없는 구절',new:'붉은',memo:1}],
