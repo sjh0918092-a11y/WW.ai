@@ -259,6 +259,14 @@ function diagnoseTiming(t, status, code) {
   if (t.first !== null && t.first >= SLOW_FIRST_MS) return { level: "warn", text: `첫 응답까지 ${s(t.first)} — 생각 시간이 깁니다. 생각 수준을 낮추면 빨라집니다` };
   return { level: "ok", text: "정상" };
 }
+/* 프롬프트 캐시 진단: 캐시 대상 앞부분의 크기와 해시. 해시가 문서마다 같아야 재사용될 수 있다. */
+const cacheMinTokens = model => /^gemini-2\.5/.test(model || "") ? 2048 : /^gemini-/.test(model || "") ? 4096 : /^gpt-/.test(model || "") ? 1024 : 0;
+function cacheDiagHtml(x) {
+  const c = x.cache; if (!c) return "";
+  const read = x.usage?.cachedContentTokenCount || 0, min = cacheMinTokens(x.model);
+  const verdict = read ? `캐시 재사용 ${read.toLocaleString()}토큰` : Number.isFinite(c.tokens) && min && c.tokens < min ? `앞부분이 최소 ${min.toLocaleString()}토큰보다 짧아 캐시되지 않습니다` : "캐시 재사용 없음 — 직전 문서와 해시가 같은지, 몇 분 안에 이어 썼는지 확인";
+  return `<br><small>캐시 대상 앞부분 ${c.chars.toLocaleString()}자${Number.isFinite(c.tokens) ? ` · ${c.tokens.toLocaleString()}토큰` : ""}${min ? ` (최소 ${min.toLocaleString()})` : ""} · 해시 <code>${esc((c.hashes || [c.hash]).join("-"))}</code> · ${esc(verdict)}</small>`;
+}
 function jobDiagnosisHtml(r, report, open) {
   const rows = (Array.isArray(report?.steps) ? report.steps : Array.isArray(r?.steps) ? r.steps : r?.timing ? [{ kind: r.meta?.kind, model: r.model, status: r.status === "succeeded" ? "done" : r.status, timing: r.timing, code: r.error?.code }] : [])
     .map(x => ({ ...x, d: diagnoseTiming(x.timing, x.status, x.code || x.error?.code) }));
@@ -270,7 +278,7 @@ function jobDiagnosisHtml(r, report, open) {
   const total = Array.isArray(report?.steps) || Array.isArray(r?.steps) ? rows.reduce((n, x) => n + (x.timing?.end || 0), 0) : 0;
   return `<details class="job-diag memo"${open || bad ? " open" : ""}><summary>실행 진단${bad ? ` · ${esc(stepLabel(bad.kind))}: ${esc(bad.d.text.split(" — ")[0])}` : " · 이상 없음"}</summary><div class="cost-body">
     <p class="note">${slow ? `가장 오래 걸린 호출: ${esc(stepLabel(slow.kind))} ${s(slow.timing.end)}` : "시간 기록이 없습니다."}${total ? ` · AI 호출 합계 ${s(total)}(검사는 동시에 실행)` : ""}. 서버 감시 기준: 첫 응답 240초, 도중 멈춤 90초, 전체 10분.</p>
-    <ul>${rows.map(x => `<li class="diag-${x.d.level}"><span><b>${esc(stepLabel(x.kind))}</b> · ${esc(x.model || "")} · ${esc(STEP_STATUS[x.status] || x.status || "")}<br><small>${esc(x.d.text)}</small></span><span>${x.timing ? `첫 응답 ${s(x.timing.first)} · 총 ${s(x.timing.end)}${x.timing.last !== null && x.timing.end !== null ? ` · 마지막 수신 후 ${s(x.timing.end - x.timing.last)}` : ""} · ${kb(x.timing.bytes)}` : "-"}</span></li>`).join("")}</ul>
+    <ul>${rows.map(x => `<li class="diag-${x.d.level}"><span><b>${esc(stepLabel(x.kind))}</b> · ${esc(x.model || "")} · ${esc(STEP_STATUS[x.status] || x.status || "")}<br><small>${esc(x.d.text)}</small>${cacheDiagHtml(x)}</span><span>${x.timing ? `첫 응답 ${s(x.timing.first)} · 총 ${s(x.timing.end)}${x.timing.last !== null && x.timing.end !== null ? ` · 마지막 수신 후 ${s(x.timing.end - x.timing.last)}` : ""} · ${kb(x.timing.bytes)}` : "-"}</span></li>`).join("")}</ul>
   </div></details>`;
 }
 

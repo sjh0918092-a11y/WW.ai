@@ -216,7 +216,7 @@ export class AiJobs {
       const prev = this.pipeText?.id === j.id && this.pipeText.chunks === (j.pipelineChunks || 0) ? this.pipeText.text : undefined;
       j.pipelineChunks = await writeText(tx, "pipe:" + j.id + ":", text, j.pipelineChunks || 0, prev);
       written = { id: j.id, chunks: j.pipelineChunks, text };
-      j.phase = phase; j.steps = state.steps.map(s => ({kind:s.kind,status:s.status,model:s.model,slot:s.slot,usage:usageCounts(s.response?.usageMetadata),...(s.timing ? {timing:s.timing} : {}),...(s.error?.code ? {code:s.error.code} : {})}));
+      j.phase = phase; j.steps = state.steps.map(s => ({kind:s.kind,status:s.status,model:s.model,slot:s.slot,usage:usageCounts(s.response?.usageMetadata),...(s.timing ? {timing:s.timing} : {}),...(s.cache ? {cache:s.cache} : {}),...(s.error?.code ? {code:s.error.code} : {})}));
       if (queued) { j.status = "queued"; await tx.setAlarm(Date.now()+1000); }
       return true;
     });

@@ -192,6 +192,19 @@ async function callProvider(job, env, personalKey, signal, trace, since, onChunk
   return result;
 }
 
+// 캐시 진단용: 앞부분(캐시 대상)의 실제 토큰 수. Gemini countTokens는 생성 요금이 없다. 실패하면 null.
+export async function countGeminiTokens(model, text, env, keyMode, personalKey, signal) {
+  const key = keyMode === "personal" ? personalKey : env.GEMINI_KEY;
+  if (!key || /^claude-/.test(model) || isOpenAITextModel(model)) return null;
+  try {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":countTokens", {
+      method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, signal,
+      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text }] }] }) });
+    if (!res.ok) return null;
+    const n = (await res.json())?.totalTokens; return Number.isFinite(n) ? n : null;
+  } catch { return null; }
+}
+
 // SSE의 data 줄을 JSON으로 읽는다. 스트림이 아닌 JSON 본문이면 null을 돌려 호출자가 그대로 쓰게 한다.
 function sseEvents(text) {
   if (/^[\[{]/.test(text.trim())) return null;
