@@ -246,7 +246,7 @@ function numericIssues(w, k) {
 /* ---------- 나이 규칙: 핵심 규칙의 나이 제한으로 출생·기간 연도를 맞춰 본다 ---------- */
 /* 숫자 대조 로직(numericIssues, quoteIssues, ageRuleIssues, 성별 규칙)을 바꿀 때마다 올린다.
    문서를 열 때 p.check.numV가 이 값과 다르면 결정론 지적만 다시 계산해 바꿔 끼운다 */
-const NUMERIC_VERSION = 12;
+const NUMERIC_VERSION = 13;
 /* 규칙 문장은 세계관마다 표현이 달라 코드로 읽지 않는다. 핵심 규칙이 바뀌었을 때만 AI가 한 번 구조로 뽑고(w.ageRules),
    판정은 그 구조로 코드가 한다. 그래서 검사할 때마다 결과가 같다 */
 const rulesText = w => (w.rules || []).join("\n");
@@ -781,7 +781,7 @@ function detIssues(w, k) {
 }
 function detIssuesInContext(w, k) {
   let num = [];
-  for (const [name, fn] of [["숫자 대조", numericIssues], ["나이 규칙", ageRuleIssues], ["인용 대조", quoteIssues], ["성별 규칙", genderIssues], ["사건 장부", (w, k) => [...eventIssues(w, k), ...timelineIssues(w, k)]], ["텍스트 결함", textIssues]]) {
+  for (const [name, fn] of [["숫자 대조", numericIssues], ["나이 규칙", ageRuleIssues], ["인용 대조", quoteIssues], ["성별 규칙", genderIssues], ["사건 장부", (w, k) => [...eventIssues(w, k), ...timelineIssues(w, k), ...episodeIssues(w, k)]], ["텍스트 결함", textIssues]]) {
     try { num = num.concat(fn(w, k)); } catch (e) { console.warn(`[${name}]`, e); }
   }
   return num.map(i => ({ ...i, by: "num" }));

@@ -556,6 +556,37 @@ ${parts.join("\n\n")}
 
 `;
 }
+/* ---------- 다른 문서들이 기록한 이 항목의 일 ----------
+   이 항목을 언급한 다른 문서 둘 이상이 같은 사건(사건 항목)과 엮어 기록했으면, 이 항목의 문서가 그 일을 다뤄야 한다.
+   사건 문서 자신에서 나온 언급은 그 사건과 엮인 것으로 센다 */
+const isEventEntity = (w, k) => ((S.pages[k]?.type) || w.entities[k]?.type) === "사건";
+function recordedEpisodes(w, key, min = 2) {
+  const e = w.entities[key]; if (!e) return [];
+  const events = Object.keys(w.entities).filter(k => k !== key && isEventEntity(w, k)), eps = new Map();
+  for (const m of e.mentions.filter(m => live(m) && m.from !== key && S.pages[m.from])) {
+    const hit = new Set(events.filter(k => namesOf(w.entities[k].title).some(n => hasName(m.text, n))));
+    if (isEventEntity(w, m.from)) hit.add(m.from);
+    for (const k of hit) { const x = eps.get(k) || eps.set(k, { k, docs: new Set(), text: m.text }).get(k); x.docs.add(m.from); }
+  }
+  return [...eps.values()].filter(x => x.docs.size >= min).sort((a, b) => b.docs.size - a.docs.size).slice(0, 8);
+}
+function episodeBlock(w, key) {
+  const eps = recordedEpisodes(w, key); if (!eps.length) return "";
+  return `## 다른 문서들이 기록한 이 항목의 일 (빠뜨리지 않는다)
+아래 일은 다른 문서 둘 이상이 이 항목의 행적으로 기록했다. 이 문서의 생애나 경과에서 적어도 한두 문장으로 다루고, 기록과 다르게 쓰지 않는다.
+${eps.map(x => `- 「${w.entities[x.k].title}」 (${[...x.docs].map(d => `「${S.pages[d].title}」`).join(", ")}): ${stripMarks(x.text).slice(0, 200)}`).join("\n")}
+
+`;
+}
+/* 결정론 지적: 위 일을 이 문서가 이름조차 적지 않았으면 다듬을 곳이 아니라 참고로 띄운다 */
+function episodeIssues(w, k) {
+  const p = S.pages[k]; if (!p || isStory(w)) return [];
+  const text = pageTexts(p).join("\n");
+  return recordedEpisodes(w, k).filter(x => !namesOf(w.entities[x.k].title).some(n => text.includes(n))).slice(0, 3).map(x => ({
+    claim: `${p.title}: 「${w.entities[x.k].title}」에 대한 서술 없음`, severity: "low", advisory: true, issueKey: "episode:" + x.k, by: "num",
+    conflict: `근거: ${[...x.docs].map(d => `「${S.pages[d].title}」`).join(", ")} · 사건 장부: 다른 문서 ${x.docs.size}곳이 이 항목의 「${w.entities[x.k].title}」 행적을 기록했지만 이 문서에는 없다. 생애나 경과에 그 일을 한두 문장 더한다. 예: ${stripMarks(x.text).slice(0, 160)}`.slice(0, 500),
+  }));
+}
 /* 문서에 나온 대상들의 기간표: 공존 서술(함께 복무, 같은 시설 사용, 교전, 인계)이 두 기간 안에 들어가는지 계산할 재료 */
 const PERIOD_LABEL = /출생|사망|생몰|발현|퇴역|은퇴|전역|복무|재임|재위|활동|현역|취역|퇴역|진수|해체|창설|설립|폐지|해산|건조|폐기|운용|존속|기간/;
 function periodBlock(w, keys, max = 16) {

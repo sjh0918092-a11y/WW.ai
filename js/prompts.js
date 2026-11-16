@@ -434,7 +434,7 @@ ${rewriteDir ? `사용자가 요청한 방향: ${rewriteDir}\n이 방향을 최�
 다른 문서에 이미 기록된 말이다. 같은 사람이 같은 날 같은 자리에서 한 말을 이 문서에서 다시 다룰 때는 아래를 글자 그대로 옮기거나, 인용하지 않고 간접 서술로 쓴다. 같은 자리의 말을 새로 지어내지 않는다.
 ${qi}
 
-` : ""; })()}${inputs.ownerText ? ownerExcerptBlock(w, key, rel, inputs.ownerTextCount) : ""}${inputs.roster ? rosterBlock(w, [key, ...(e.affil?.list || []).map(a => a.org), ...(e.cats || []).filter(c => c.axis === "소속").map(c => kOf(w, c.name)), ...rel], inputs.rosterCount) : ""}${inputs.events ? eventBlock(w, key, rel, inputs.eventsCount) : ""}${inputs.sameEvents ? sameKindBlock(w, key, rel, guide || "", inputs.sameEventsCount) : ""}${inputs.life && ty === "인물" ? lifeFlowBlock(w, key, rel, inputs.lifeCount) : ""}## 관련 항목의 확정 설정 (모순 금지)
+` : ""; })()}${inputs.ownerText ? ownerExcerptBlock(w, key, rel, inputs.ownerTextCount) : ""}${inputs.mentions ? episodeBlock(w, key) : ""}${inputs.roster ? rosterBlock(w, [key, ...(e.affil?.list || []).map(a => a.org), ...(e.cats || []).filter(c => c.axis === "소속").map(c => kOf(w, c.name)), ...rel], inputs.rosterCount) : ""}${inputs.events ? eventBlock(w, key, rel, inputs.eventsCount) : ""}${inputs.sameEvents ? sameKindBlock(w, key, rel, guide || "", inputs.sameEventsCount) : ""}${inputs.life && ty === "인물" ? lifeFlowBlock(w, key, rel, inputs.lifeCount) : ""}## 관련 항목의 확정 설정 (모순 금지)
 ${staged ? "아래는 모순을 피하기 위한 참고 자료다. 이 항목이 새로 더하는 사실과 장면을 중심으로 쓰고, 이미 기록된 경위는 연결에 필요한 만큼만 쓴다." : "아래는 모순을 피하기 위한 참고 자료다. 여기 있는 항목과 사실을 본문에 모두 언급할 필요는 없고, 같은 사고, 같은 절차, 같은 규정을 이 문서에서 되풀이하지 않는다. 다만 세계의 큰 사건을 이 항목의 자리에서 보여 주는 것은 되풀이가 아니다."}
 ${relText}
 
@@ -571,6 +571,7 @@ function readPrompt(w, key) {
 - 같은 인물이나 관계를 섹션마다 다르게 소개한 곳(만난 시기, 헤어진 이유, 생사, 직위).
 - 한 줄 정의, 분류, 인포박스, 섹션 제목이 본문과 어긋나는 곳(예: 분류는 '주요 조직원'인데 인포박스는 '무소속', 제목은 '산탄총잡이'인데 본문은 권총만 씀).
 - 앞에서 정한 능력, 한계, 제약과 뒤의 실제 행적이 맞지 않는 곳(예: 120km 넘게 걷지 못한다고 해 놓고 사막을 크게 우회하는 대기동을 손실 없이 해냄, 장갑 구성에 없던 부품이 다른 섹션에 나옴).
+- 그 시점 대상의 크기, 무게, 몸 상태로는 불가능한 장소, 도구, 이동, 치료(예: 신장 80m인 상태로 일반 병원 중환자실에 옮겨짐, 거체가 건물 안 회의실에 들어감). 크기가 바뀌는 대상이면 그 장면에서 어느 크기였는지 문서의 서술로 확인하고, 아래 핵심 규칙과 공통 값도 함께 본다.
 - 이 세계의 용어를 아래 '용어 정의'와 다른 뜻으로 쓴 곳(예: 정의는 대대로 물려받는 칭호인데 한 사람의 이름처럼 씀, 번호 체계가 정의와 다름). evidence에는 정의를 옮긴다.
 - 연도·나이·학년·기수·재직 기간이 서로 맞지 않는 곳(예: 기준 시점에 1학년인 인물이 그보다 2년 전에 이미 그 학교 학생으로 활동함).
 - 날짜·나이·시간이 나오면 먼저 그 시점의 상태를 말하는지, 그 시점에 상태가 바뀌었다고 말하는지 읽는다. 생일이 주어졌으면 사건 당시 나이와 그 나이가 된 날짜를 구분해 계산한다.
@@ -592,7 +593,7 @@ ${crossRefs(w, p) || "(없음)"}
 - 둘 다 참일 수는 있지만 독자가 모순으로 읽기 쉬운 곳은 severity low로 쓰고, conflict에 어떻게 읽으면 둘 다 참이 되는지도 적는다.
 - 지적할 것이 없는 것이 정상이다. 개수를 채우려고 지적하지 않는다.
 
-${eventBeatsCheckBlock(w, key)}${(() => { const g = glossaryBlock(w, docForCheck(p)); return g ? g + "\n\n" : ""; })()}## 문서
+${eventBeatsCheckBlock(w, key)}${(w.rules || []).length ? `## 핵심 규칙 (크기·능력·제약을 맞춰 볼 때만 쓴다. 규칙과 문서의 대조 자체는 다른 검사가 한다)\n${w.rules.map(r => "- " + r).join("\n")}\n\n` : ""}${(() => { const g = glossaryBlock(w, docForCheck(p)); return g ? g + "\n\n" : ""; })()}## 문서
 ${docForCheck(p)}
 
 ${ISSUE_JSON}`;
