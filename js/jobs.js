@@ -96,7 +96,7 @@ const AIJobs = {
           accepted = true;
           if (opts.signal?.aborted) { await cancel(); throw { code: "cancelled", serverJob: true }; }
           if (!this.current(ctx)) throw { code: "job_account_changed", serverJob: true, message: "원래 계정에서 서버 작업 결과를 다시 확인해 주세요." };
-          receipt.status = r.job.status; receipt.updatedAt = Date.now(); this.save(receipt);
+          receipt.status = r.job.status; receipt.updatedAt = Date.now(); if (r.job.timing) receipt.timing = r.job.timing; if (Array.isArray(r.job.steps)) receipt.steps = r.job.steps; this.save(receipt);
           opts.onStatus?.(r.job);
           if (r.job.status === "succeeded") {
             if (r.result === undefined) throw { code: "job_result_collected", serverJob: true, message: "이미 받은 오래된 결과입니다. 이 브라우저의 작업 결과 캐시를 확인해 주세요." };

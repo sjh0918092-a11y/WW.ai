@@ -51,13 +51,13 @@ export function usageCounts(raw) {
   return {...Object.fromEntries(keys.filter(k => Number.isFinite(raw[k])).map(k => [k, Math.max(0, raw[k])])), ...(raw.complete === false ? {complete:false} : {})};
 }
 
-export async function boundedText(stream, limit) {
+export async function boundedText(stream, limit, onChunk) {
   if (!stream) return "";
   const reader = stream.getReader(), dec = new TextDecoder(); let size = 0, text = "";
   try {
     for (;;) {
       const { done, value } = await reader.read(); if (done) break;
-      size += value.byteLength;
+      size += value.byteLength; onChunk?.(value.byteLength);
       if (size > limit) { await reader.cancel(); throw { code: "too_large" }; }
       text += dec.decode(value, { stream: true });
     }
@@ -100,7 +100,36 @@ export function claudeThinking(model, level = "") {
   throw { code: "unsupported_thinking", definite: true, safeMessage: "이 모델의 생각 깊이 설정은 아직 지원하지 않습니다. 기본값이나 Claude 4.5 모델을 선택해 주세요." };
 }
 
-export async function runProvider(job, env, personalKey, signal) {
+// 서버 AI 호출의 무응답 감시. 브라우저 경로처럼 첫 응답과 도중 멈춤을 따로 본다.
+// 10분 전체 제한까지 기다리지 않고, 멈춘 스트림은 확정 실패로 빨리 끝낸다. env로 조정할 수 있다.
+export const FIRST_BYTE_MS = 240000, STREAM_IDLE_MS = 90000;
+const watchMs = (v, d) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : d; };
+const stalledError = (first, ms) => ({ code: first ? "no_first_response" : "stream_stalled", definite: true, safeMessage: first
+  ? `AI가 ${Math.round(ms / 1000)}초 동안 첫 응답을 보내지 않아 연결을 끊었습니다. 생각 수준을 낮추거나 잠시 뒤 다시 실행해 주세요.`
+  : `AI 응답이 도중에 ${Math.round(ms / 1000)}초 동안 멈춰 연결을 끊었습니다. 잠시 뒤 다시 실행해 주세요.` });
+const deadlineError = () => ({ code: "deadline_exceeded", safeMessage: "서버 실행 제한(10분)을 넘어 AI 호출을 중단했습니다. 생각 수준을 낮추거나 잠시 뒤 다시 실행해 주세요." });
+
+// trace에는 진단용 시각(시작 기준 ms)과 받은 크기만 남긴다. 본문·키는 넣지 않는다.
+export async function runProvider(job, env, personalKey, signal, trace = {}) {
+  const at = Date.now(), since = () => Date.now() - at;
+  Object.assign(trace, { at, headers: null, first: null, last: null, end: null, bytes: 0 });
+  const watched = ["gemini.generate", "claude.generate", "openai.generate"].includes(job.input?.type || "gemini.generate");
+  const firstMs = watchMs(env?.AI_FIRST_BYTE_MS, FIRST_BYTE_MS), idleMs = watchMs(env?.AI_STREAM_IDLE_MS, STREAM_IDLE_MS);
+  const ctl = new AbortController(), forward = () => ctl.abort(signal.reason);
+  if (signal?.aborted) forward(); else signal?.addEventListener("abort", forward, { once: true });
+  let stalled = null, timer = null;
+  const arm = ms => { clearTimeout(timer); if (watched) timer = setTimeout(() => { stalled = stalledError(trace.first === null, ms); ctl.abort("stalled"); }, ms); };
+  const onChunk = bytes => { const t = since(); if (trace.first === null) trace.first = t; trace.last = t; trace.bytes += bytes; arm(idleMs); };
+  arm(firstMs);
+  try { return await callProvider(job, env, personalKey, ctl.signal, trace, since, onChunk); }
+  catch (e) {
+    const out = stalled || (signal?.aborted && signal.reason === "deadline" ? deadlineError() : e);
+    trace.code = out?.code || (signal?.aborted ? "cancelled" : "outcome_unknown");
+    throw out;
+  } finally { clearTimeout(timer); signal?.removeEventListener("abort", forward); trace.end = since(); }
+}
+
+async function callProvider(job, env, personalKey, signal, trace, since, onChunk) {
   const { type = "gemini.generate", model, input } = job.input;
   const claude = type === "claude.generate" || type === "gemini.generate" && /^claude-/.test(model);
   const openai = type === "openai.generate" || type === "gemini.generate" && isOpenAITextModel(model);
@@ -137,8 +166,9 @@ export async function runProvider(job, env, personalKey, signal) {
     headers = { "Content-Type": "application/json", "x-goog-api-key": key }; body = JSON.stringify(input);
   }
   const res = await fetch(url, { method: "POST", headers, body, signal });
+  trace.headers = since(); trace.httpStatus = res.status;
   if (!res.ok) throw await providerError(res, model);
-  const text = await boundedText(res.body, type.endsWith(".image") ? 20 * 1024 * 1024 : 4 * 1024 * 1024);
+  const text = await boundedText(res.body, type.endsWith(".image") ? 20 * 1024 * 1024 : 4 * 1024 * 1024, onChunk);
   let result;
   if (/:streamGenerateContent/.test(url)) result = mergeGeminiStream(text);
   else if (openai) result = mergeOpenAIStream(text);

@@ -14,7 +14,7 @@ const resultFor = (state, output, saved, error) => {
     version: 1, saved, wid: state.snapshot?.world.id, targetKey: output?.targetKey || state.input.key, checked: !!output?.checked,
     fixed: output?.fixed || 0, remaining: output?.remaining || 0, notFound: !!output?.notFound, redirectTo: output?.redirectTo || null,
     sceneUsed: output?.sceneUsed || "", angleRecorded: !!state.input.novel && saved,
-    steps: state.steps.map(({ kind, model, status, error, response }) => ({ kind, model, status, usage:usageCounts(response?.usageMetadata), ...(error ? { error: safeError(error) } : {}) })), ...(error ? { error } : {}),
+    steps: state.steps.map(({ kind, model, status, error, response, timing }) => ({ kind, model, status, usage:usageCounts(response?.usageMetadata), ...(timing ? { timing } : {}), ...(error ? { error: safeError(error) } : {}) })), ...(error ? { error } : {}),
   } };
 };
 
@@ -77,7 +77,8 @@ export async function processPipeline(host, job, signal) {
     let persistence = Promise.resolve(), stopped = false;
     await Promise.allSettled(batch.map(async ({ body, step }) => {
       try {
-        step.response = await runProvider({ keyMode: job.keyMode, input: { type: "gemini.generate", model: step.model, input: body } }, host.env, job.personalKey, signal);
+        step.timing = {};
+        step.response = await runProvider({ keyMode: job.keyMode, input: { type: "gemini.generate", model: step.model, input: body } }, host.env, job.personalKey, signal, step.timing);
         step.status = "done";
       } catch (e) {
         step.error = { code: e?.code || "outcome_unknown", safeMessage: safeError(e).message, serverJob: true, definite: !!e?.definite, ...(e?.code === "model_not_found" ? {model:step.model,phase:step.kind} : {}), ...(e?.status ? { status: e.status } : {}) };

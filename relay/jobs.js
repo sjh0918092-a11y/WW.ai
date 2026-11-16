@@ -190,7 +190,7 @@ export class AiJobs {
       const old = j.pipelineChunks || 0;
       j.pipelineChunks = await writeText(tx, "pipe:" + j.id + ":", text);
       for (let i = j.pipelineChunks; i < old; i++) await tx.delete("pipe:" + j.id + ":" + i);
-      j.phase = phase; j.steps = state.steps.map(s => ({kind:s.kind,status:s.status,model:s.model,slot:s.slot,usage:usageCounts(s.response?.usageMetadata)}));
+      j.phase = phase; j.steps = state.steps.map(s => ({kind:s.kind,status:s.status,model:s.model,slot:s.slot,usage:usageCounts(s.response?.usageMetadata),...(s.timing ? {timing:s.timing} : {}),...(s.error?.code ? {code:s.error.code} : {})}));
       if (queued) { j.status = "queued"; await tx.setAlarm(Date.now()+1000); }
       return true;
     });
@@ -229,15 +229,16 @@ export class AiJobs {
     if (!job) return;
     const controller = new AbortController(); this.active = { id: job.id, controller };
     if (job.input.type === "document.pipeline") {
-      const timer = setTimeout(() => controller.abort(), DEADLINE);
+      const timer = setTimeout(() => controller.abort("deadline"), DEADLINE);
       try { await processPipeline(this, job, controller.signal); }
       finally { clearTimeout(timer); job.personalKey = null; if (this.active?.id === job.id) this.active = null; }
       return;
     }
-    const timeout = setTimeout(() => controller.abort(), job.input.type === "openai.image" ? 300000 : job.input.type === "gemini.image" ? 180000 : DEADLINE);
-    let result, failure;
+    const image = (job.input.type || "").endsWith(".image");
+    const timeout = setTimeout(() => controller.abort(image ? undefined : "deadline"), job.input.type === "openai.image" ? 300000 : image ? 180000 : DEADLINE);
+    let result, failure; const timing = {};
     try {
-      result = await runProvider(job, this.env, job.personalKey, controller.signal);
+      result = await runProvider(job, this.env, job.personalKey, controller.signal, timing);
     } catch (e) {
       failure = { status: e?.definite ? "failed" : "interrupted", error: {
         code: e?.code || "outcome_unknown",
@@ -248,6 +249,7 @@ export class AiJobs {
     } finally { clearTimeout(timeout); job.personalKey = null; if (this.active?.id === job.id) this.active = null; }
     await this.update(async (jobs, tx) => {
       const j = jobs.find(j => j.id === job.id); if (!j || j.status !== "running" || j.runId !== job.runId) return; // 중단한 작업의 늦은 응답은 버린다.
+      j.timing = timing;
       if (failure) Object.assign(j, failure);
       else { j.usage = usageCounts(result.usageMetadata); j.resultChunks = await writeText(tx, "out:" + j.id + ":", JSON.stringify(result)); j.status = "succeeded"; }
       await deleteText(tx, "in:" + j.id + ":", j.inputChunks); j.inputChunks = 0;

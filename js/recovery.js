@@ -242,6 +242,38 @@ const AIRecovery = {
   },
 };
 
+const STEP_STATUS = { done: "완료", failed: "실패", unknown: "결과 확인 불가", running: "실행 중" };
+const stepLabel = kind => ({ page: "초안 생성", check: "설정 대조", read: "문서 내부 검사", fix: "자동 수정", analyze: "직접 편집 설정 대조", factSync: "수정 후 사실 정리", ageRule: "나이 규칙 해석" }[kind] || KIND[kind] || kind || "AI 호출");
+/* 서버가 남긴 단계별 시각(호출 시작 기준 ms)으로 어디서 늘어졌는지 판정한다. AI를 다시 부르지 않는다. */
+const SLOW_FIRST_MS = 120000;
+function diagnoseTiming(t, status, code) {
+  if (!t || !Number.isFinite(t.at)) return { level: "", text: "시간 기록 없음(이전 버전 작업)" };
+  code = t.code || code || "";
+  const s = ms => (ms / 1000).toFixed(1) + "초";
+  if (code === "no_first_response") return { level: "bad", text: `첫 응답 없이 ${s(t.end)} 대기 후 차단 — 모델이 생각 단계에서 멈췄거나 생각이 지나치게 깁니다` };
+  if (code === "stream_stalled") return { level: "bad", text: `응답 ${s(t.last)}부터 멈춤 — 제공자 스트림이 도중에 끊기지 않고 멎었습니다` };
+  if (code === "deadline_exceeded") return { level: "bad", text: t.first === null ? "서버 10분 제한 도달 — 끝까지 첫 응답이 없었습니다" : "서버 10분 제한 도달 — 응답은 오고 있었지만 너무 길었습니다" };
+  if (t.end === null) return { level: "warn", text: "아직 실행 중이거나 서버가 도중에 종료됐습니다" };
+  if (t.headers === null) return { level: "bad", text: "AI 서버 연결 단계에서 실패했습니다" };
+  if (status === "failed" || status === "unknown") return { level: "bad", text: "응답을 받았지만 처리에 실패했습니다" + (code ? ` (${code})` : "") };
+  if (t.first !== null && t.first >= SLOW_FIRST_MS) return { level: "warn", text: `첫 응답까지 ${s(t.first)} — 생각 시간이 깁니다. 생각 수준을 낮추면 빨라집니다` };
+  return { level: "ok", text: "정상" };
+}
+function jobDiagnosisHtml(r, report, open) {
+  const rows = (Array.isArray(report?.steps) ? report.steps : Array.isArray(r?.steps) ? r.steps : r?.timing ? [{ kind: r.meta?.kind, model: r.model, status: r.status === "succeeded" ? "done" : r.status, timing: r.timing, code: r.error?.code }] : [])
+    .map(x => ({ ...x, d: diagnoseTiming(x.timing, x.status, x.code || x.error?.code) }));
+  if (!rows.length) return "";
+  const s = ms => ms === null || ms === undefined ? "-" : (ms / 1000).toFixed(1) + "초";
+  const kb = n => n >= 1024 ? (n / 1024).toFixed(1) + "KB" : (n || 0) + "B";
+  const timed = rows.filter(x => Number.isFinite(x.timing?.end)), slow = timed.sort((a, b) => b.timing.end - a.timing.end)[0];
+  const bad = rows.find(x => x.d.level === "bad") || rows.find(x => x.d.level === "warn");
+  const total = Array.isArray(report?.steps) || Array.isArray(r?.steps) ? rows.reduce((n, x) => n + (x.timing?.end || 0), 0) : 0;
+  return `<details class="job-diag memo"${open || bad ? " open" : ""}><summary>실행 진단${bad ? ` · ${esc(stepLabel(bad.kind))}: ${esc(bad.d.text.split(" — ")[0])}` : " · 이상 없음"}</summary><div class="cost-body">
+    <p class="note">${slow ? `가장 오래 걸린 호출: ${esc(stepLabel(slow.kind))} ${s(slow.timing.end)}` : "시간 기록이 없습니다."}${total ? ` · AI 호출 합계 ${s(total)}(검사는 동시에 실행)` : ""}. 서버 감시 기준: 첫 응답 240초, 도중 멈춤 90초, 전체 10분.</p>
+    <ul>${rows.map(x => `<li class="diag-${x.d.level}"><span><b>${esc(stepLabel(x.kind))}</b> · ${esc(x.model || "")} · ${esc(STEP_STATUS[x.status] || x.status || "")}<br><small>${esc(x.d.text)}</small></span><span>${x.timing ? `첫 응답 ${s(x.timing.first)} · 총 ${s(x.timing.end)}${x.timing.last !== null && x.timing.end !== null ? ` · 마지막 수신 후 ${s(x.timing.end - x.timing.last)}` : ""} · ${kb(x.timing.bytes)}` : "-"}</span></li>`).join("")}</ul>
+  </div></details>`;
+}
+
 function jobsHtml() {
   if (!Sync.acct) return `<div class="sheet"><h1 class="t">AI 작업</h1><p>작업을 접수한 계정으로 로그인하면 결과를 이어받을 수 있습니다.</p><button class="btn pri" data-act="gset">로그인하기</button></div>`;
   const R = AIRecovery, all = R.items.length ? R.items : R.local(), list = R.all ? all : all.filter(r => !R.closed(r));
@@ -251,17 +283,14 @@ function jobsHtml() {
   const report = d?.result?.pipeline, failure = r?.error || report?.error;
   const supported = r?.type === "document.pipeline" ? !!d.result?.pipeline?.saved : r && (r.type?.endsWith(".image") || ["page", "check", "read", "prose"].includes(m.kind));
   const body = d?.src ? imageZoomHtml(d.src, (m.title || "복구") + " 이미지", true) : Array.isArray(parsed?.sections) ? parsed.sections.filter(s => typeof s?.body === "string").map(s => `<h3>${esc(s.heading || "본문")}</h3><div class="job-text">${esc(s.body)}</div>`).join("") : Array.isArray(parsed?.issues) ? `<p>${parseIssues(parsed).length ? "복구한 검사 지적입니다." : "이 검사 응답에는 지적이 없습니다."}</p>${parseIssues(parsed).map(i => `<article class="job-issue"><b>${esc(i.claim)}</b><p>${esc(i.conflict)}</p></article>`).join("")}` : `<div class="job-text">${esc((typeof parsed?.body === "string" ? parsed.body : d?.text || "").slice(0, 120000))}</div>`;
-  const steps = failure && Array.isArray(report?.steps) ? report.steps.map(s => {
-    const label = { page: "초안 생성", check: "설정 대조", read: "문서 내부 검사", fix: "자동 수정", analyze: "직접 편집 설정 대조", factSync: "수정 후 사실 정리", ageRule: "나이 규칙 해석" }[s.kind] || KIND[s.kind] || s.kind;
-    const status = { done: "완료", failed: "실패", unknown: "결과 확인 불가", running: "실행 중" }[s.status] || s.status;
-    return esc(label) + " " + esc(status);
-  }).join(" · ") : "";
+  const steps = failure && Array.isArray(report?.steps) ? report.steps.map(s => esc(stepLabel(s.kind)) + " " + esc(STEP_STATUS[s.status] || s.status)).join(" · ") : "";
   const result = R.busy ? `<p class="note" role="status">결과를 불러오는 중…</p>` : d ? `<section class="job-detail"><h2>${esc(m.title || "작업 결과")}</h2><p class="note">${esc(labels[r.status] || "상태 확인 필요")} · ${esc(r.model || "")}</p>
     ${typeof DocumentCost!=="undefined" ? DocumentCost.jobHtml(r,report) : ""}
     ${report ? `<p class="banner ${report.saved ? "" : "warn"}">${report.saved ? "서버에 저장된 결과입니다. 문서 열기는 AI를 다시 실행하지 않습니다." : d.text ? "초안을 보관했습니다. 문서는 자동 저장되지 않았습니다." : "문서가 저장되지 않았습니다."}</p>` : ""}
     ${d.error || failure?.message ? `<p class="banner warn" role="alert">${esc(d.error || failure.message)}</p>` : ""}
     ${failure?.code ? `<p class="note">오류 코드 <code>${esc(failure.code)}</code>${failure.httpStatus ? " · HTTP " + esc(failure.httpStatus) : ""}</p>` : ""}
     ${steps ? `<p class="note">${steps}</p>` : ""}
+    ${jobDiagnosisHtml(r, report, !!failure)}
     ${R.pending(r) ? `<p>서버에서 작업을 계속하고 있습니다. 이 화면을 닫아도 작업은 유지됩니다.</p><button class="btn" data-job-cancel="${esc(r.id)}">작업 중단</button>` : ""}
     ${d.result !== undefined ? body : ""}
     ${d.result !== undefined || r.error ? `<div class="row">${d.result !== undefined && supported && m.recoveryV === 1 && !R.closed(r) ? `<button class="btn pri" data-job-apply="${esc(r.id)}" ${R.applying ? "disabled" : ""}>${r.type === "document.pipeline" ? "저장된 문서 열기" : r.type.endsWith(".image") ? "이 이미지 적용" : m.kind === "page" ? "문서로 저장 (자동 검사 전)" : m.kind === "prose" ? "이 단편 보관" : "검사 결과 반영"}</button>` : ""}<button class="btn" data-job-download="${esc(r.id)}">결과 내려받기</button></div>` : ""}

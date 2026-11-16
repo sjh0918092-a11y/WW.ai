@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { AiJobs } from "../relay/jobs.js";
-import { mergeGeminiStream, mergeClaudeStream, mergeOpenAIStream } from "../relay/providers.js";
+import { mergeGeminiStream, mergeClaudeStream, mergeOpenAIStream, runProvider } from "../relay/providers.js";
 import worker from "../relay/worker.js";
 import { JobStorage, jobRequest as request, fireAlarm } from "./helpers/jobs.mjs";
 const original = globalThis.fetch;
@@ -157,5 +157,29 @@ try {
     assert.throws(() => mergeOpenAIStream(sse({ type: "response.output_text.delta", delta: "{" })), e => e.code === "incomplete_response");
     assert.throws(() => mergeOpenAIStream(sse({ type: "response.failed", response: { status: "failed" } })), e => e.code === "upstream_error" && e.definite);
     ok("Claude·OpenAI 스트림을 일괄 응답 형태로 되살리고, 끊긴 스트림은 성공으로 저장하지 않는다");
+  }
+  {
+    // 서버 무응답 감시: 첫 응답 없음·도중 멈춤·10분 제한을 구분하고 시간 기록을 남긴다.
+    const job = { keyMode: "server", input: { type: "gemini.generate", model: "custom-check", input: textBody("x").input } };
+    const fast = { GEMINI_KEY: "k", AI_FIRST_BYTE_MS: 60, AI_STREAM_IDLE_MS: 60 };
+    const enc = new TextEncoder();
+    const hang = (first) => async (url, options) => new Response(new ReadableStream({ start(c) {
+      if (first) c.enqueue(enc.encode(first));
+      options.signal.addEventListener("abort", () => c.error(new DOMException("abort", "AbortError")), { once: true });
+    } }), { headers: { "Content-Type": "text/event-stream" } });
+    globalThis.fetch = hang("");
+    let t = {}; await assert.rejects(runProvider(job, fast, null, undefined, t), e => e.code === "no_first_response" && e.definite);
+    assert.equal(t.first, null); assert.equal(t.code, "no_first_response"); assert(t.end >= 60 && t.headers !== null);
+    globalThis.fetch = hang('data: {"candidates":[{"content":{"parts":[{"text":"{"}]}}]}\n\n');
+    t = {}; await assert.rejects(runProvider(job, fast, null, undefined, t), e => e.code === "stream_stalled" && e.definite);
+    assert(t.first !== null && t.bytes > 0 && t.end - t.last >= 60);
+    globalThis.fetch = (url, options) => new Promise((_, rej) => options.signal.addEventListener("abort", () => rej(new DOMException("abort", "AbortError"))));
+    const ctl = new AbortController(); setTimeout(() => ctl.abort("deadline"), 20);
+    t = {}; await assert.rejects(runProvider(job, { GEMINI_KEY: "k" }, null, ctl.signal, t), e => e.code === "deadline_exceeded" && !e.definite);
+    const user = new AbortController(); setTimeout(() => user.abort(), 20);
+    await assert.rejects(runProvider(job, { GEMINI_KEY: "k" }, null, user.signal, {}), e => e?.name === "AbortError");
+    globalThis.fetch = async () => success(); t = {};
+    await runProvider(job, fast, null, undefined, t); assert(t.first !== null && t.end !== null && !t.code);
+    ok("서버 AI 호출의 첫 응답 없음·도중 멈춤·10분 제한을 구분해 빨리 끝내고 시간 기록을 남긴다");
   }
 } finally { globalThis.fetch = original; }
