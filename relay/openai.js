@@ -19,13 +19,22 @@ export function openAIThinking(model,level=''){
 }
 // 짧은 비암호 해시(FNV-1a). 캐시 라우팅용 이름일 뿐이며 본문을 드러내지 않는다.
 const cacheKey=text=>{let h=0x811c9dc5;for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;}return h.toString(36);};
+// GPT-5.6 이후는 메시지 끝에서만 캐시를 찾는다. 공통 지침(첫 조각)을 앞쪽 developer 메시지로 떼어
+// 그 끝이 캐시 조회 지점이 되게 한다. 나머지 조각은 원래 사용자 메시지로 이어 붙인다.
+const split=contents=>contents?.[0]?.role!=='model'&&contents?.[0]?.parts?.length>1;
+const openAIInput=contents=>{
+ const msg=c=>({role:c.role==='model'?'assistant':'user',content:c.parts.map(p=>p.text).join('')});
+ if(!split(contents))return contents.map(msg);
+ const [first,...rest]=contents[0].parts;
+ return [{role:'developer',content:first.text},msg({...contents[0],parts:rest}),...contents.slice(1).map(msg)];
+};
 export function openAIRequest(model,input){
  const json=input.generationConfig?.responseMimeType==='application/json';
  const system=(input.systemInstruction?.parts||[]).map(p=>p.text).join('\n');
  return {model,store:false,service_tier:"default",max_output_tokens:/^gpt-4o/.test(model)?16384:32768,...openAIThinking(model,input.generationConfig?.thinkingConfig?.thinkingLevel),
-  input:input.contents.map(c=>({role:c.role==='model'?'assistant':'user',content:c.parts.map(p=>p.text).join('')})),
-  // 캐시 경계로 나뉜 요청은 첫 조각(공통 지침)으로 같은 캐시 서버에 모이게 한다. 경계가 없으면 넣지 않는다.
-  ...(input.contents[0]?.parts?.length>1?{prompt_cache_key:'ww-'+cacheKey(input.contents[0].parts[0].text)}:{}),
+  input:openAIInput(input.contents),
+  // 캐시 경계로 나뉜 요청은 첫 조각(공통 지침)으로 같은 캐시 서버에 모이게 한다(GPT-5.6 이전 모델의 라우팅). 경계가 없으면 넣지 않는다.
+  ...(split(input.contents)?{prompt_cache_key:'ww-'+cacheKey(input.contents[0].parts[0].text)}:{}),
   ...(system||json?{instructions:[system,json?'Return only a valid JSON value. Do not wrap it in Markdown fences.':''].filter(Boolean).join('\n\n')}:{}),
   ...(json?{text:{format:{type:'json_object'}}}:{})};
 }

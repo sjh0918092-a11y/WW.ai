@@ -29,7 +29,7 @@ try{
  globalThis.fetch=async()=>Response.json({error:{message:env.OPENAI_API_KEY}},{status:404});await assert.rejects(runProvider({keyMode:'relay',input:body},env),e=>e.code==='model_not_found'&&e.model===body.model&&!JSON.stringify(e).includes(env.OPENAI_API_KEY));
  { const split=(first,rest)=>openAIRequest('gpt-5.2',{contents:[{role:'user',parts:[{text:first},{text:rest}]}]});
    const a=split('공통 지침','문서 A'),b=split('공통 지침','문서 B'),c=split('다른 지침','문서 A');
-   assert.equal(a.input[0].content,'공통 지침문서 A');assert(a.prompt_cache_key&&a.prompt_cache_key===b.prompt_cache_key&&a.prompt_cache_key!==c.prompt_cache_key);
+   assert.deepEqual(a.input,[{role:'developer',content:'공통 지침'},{role:'user',content:'문서 A'}]);assert(a.prompt_cache_key&&a.prompt_cache_key===b.prompt_cache_key&&a.prompt_cache_key!==c.prompt_cache_key);
    assert(!JSON.stringify(a.prompt_cache_key).includes('공통'));assert.equal(openAIRequest('gpt-5.2',{contents:[{role:'user',parts:[{text:'하나'}]}]}).prompt_cache_key,undefined); }
  console.log('✓ OpenAI Responses queue/pipeline routing, thinking compatibility, JSON, refusal/limits, cache and reasoning accounting, server-key isolation; mocked API only');
 }finally{globalThis.fetch=original}
