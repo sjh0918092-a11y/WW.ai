@@ -748,7 +748,8 @@ function saveRouted(w, keys) { for (const x of keys || []) if (S.pages[x]) Store
 /* 문서를 열 때: 옛 버전 숫자 대조 결과면 결정론 지적만 다시 계산해 저장한다 (AI 호출 없음) */
 function refreshOnOpen(k) {
   const w = S.world, p = w && S.pages[k];
-  if (!p?.check || p.check.numV === numStamp(w) || S.checking === k || (S.gen && S.gen.key === k) || isHeld(k)) return;
+  // 다른 문서의 자동 저장도 서버 작업의 원본 버전을 바꾸므로 작업 중에는 갱신을 미룬다.
+  if (!p?.check || S.checking || S.gen || p.check.numV === numStamp(w) || isHeld(k)) return;
   let routed = null;
   try { routed = refreshNumeric(w, k); } catch (e) { console.warn("[숫자 대조 갱신]", e); p.check.numV = numStamp(w); }
   Store.savePage(w.id, p).catch(() => {}); saveRouted(w, routed);
