@@ -69,6 +69,16 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
     assert.deepStrictEqual(await page.locator("#side .genr .gq-t").allInnerTexts(), [titles[3], titles[2], titles[0], "주인공"]);
     await page.locator("#side .genr .gq-t", { hasText: titles[2] }).click(); await page.waitForFunction(() => document.querySelector("h1.t")?.textContent === "검은 탑");
     pass("최근 생성 칸에 새로 만든 문서가 최근 순으로 보이고, 누르면 그 문서를 연다");
+    await home(); await red(titles[1]); await page.waitForFunction(() => window.__calls.length === 5);
+    await page.evaluate(() => goSearch("남쪽 항구"));
+    assert.deepStrictEqual(await page.evaluate(() => S.genQ.map(q => q.title)), ["남쪽 항구"]);
+    await ctx.route("https://**", () => {});   // 새로고침 뒤 실제 AI 요청은 응답 없이 붙잡아 둔다
+    await page.reload(); await page.waitForFunction(() => S.world?.id === "q" && S.gen?.title === "푸른 함선");
+    assert.deepStrictEqual(await page.evaluate(() => S.genQ.map(q => q.title)), ["남쪽 항구"]);
+    assert.deepStrictEqual(await page.locator("#side .genq .gq-t").allInnerTexts(), ["푸른 함선", "남쪽 항구"]);
+    await page.click(`#side .genq [data-unq="${key("남쪽 항구")}"]`); await page.click('#side .genq [data-act="stop"]'); await page.waitForFunction(() => !S.gen);
+    assert.strictEqual(await page.evaluate(() => localStorage.getItem("wwiki:genq")), null);
+    pass("새로고침하거나 화면이 꺼져도 작성 중이던 문서와 대기 문서(검색 항목 포함)를 세계관을 다시 열면 이어서 작성한다");
     assert.deepStrictEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 })().catch(e => { console.error(e); process.exit(1); });

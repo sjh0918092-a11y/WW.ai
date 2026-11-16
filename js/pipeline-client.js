@@ -54,7 +54,7 @@ const DocumentPipeline = {
   async generate(k,rewrite,direction,novel,angle,opts = {}) {
     const w = S.world, e = w.entities[k], ctl = new AbortController();
     const costSession = typeof DocumentCost!=="undefined" ? DocumentCost.start(w.id,k) : null;
-    S.gen = {key:k,wid:w.id,title:e.title,raw:"",t0:performance.now(),ctl,rewrite:!!rewrite,direction:direction || "",phase:"generate",serverPipeline:true};
+    S.gen = {key:k,wid:w.id,title:e.title,raw:"",t0:performance.now(),ctl,rewrite:!!rewrite,novel:!!novel,direction:direction || "",phase:"generate",serverPipeline:true};
     S.genErr = null; S.confirmRewrite = null; if (!opts.queued) S.view = {name:"article",key:k}; renderAll();
     try {
       const r = await this.request("generate",k,{rewrite,direction,novel,angle,ctl});
