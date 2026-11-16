@@ -180,15 +180,17 @@ try {
 
  e=await reset({rewrite:true,settings:{taskModels:{page:{model:'gpt-6.1-terra',think:'low'},check:{model:'claude-sonnet-4-6',think:'high'},read:{model:'gpt-6-luna',think:'none'},fix:{model:'gemini-3.8-flash',think:''},factSync:{model:'gpt-6-luna',think:'low'}}}});behavior='fix';await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert(storedPage(B).sections[0].body.includes('붉은'));for(const kind of ['page','read','factSync'])assert.equal(calls.find(c=>c.kind===kind).url,'https://api.openai.com/v1/responses');assert.equal(calls.find(c=>c.kind==='page').body.reasoning.effort,'low');assert.equal(calls.find(c=>c.kind==='read').body.reasoning.effort,'none');assert.equal(r.job.steps.find(s=>s.kind==='factSync').usage.thoughtsTokenCount,20);pass('OpenAI 작성·읽기·추출을 Claude 검사·Gemini 수정과 섞어 실행하고 비용 사용량과 문서를 저장한다');
 
- for(const mutation of ['edit','pageEdit','noop']){
+ for(const mutation of ['edit','pageEdit','noop','ledger']){
   e=await reset();await request(e,'',e.body);await fireAlarm(e.obj);assert.equal(calls.length,1);
   if(mutation==='edit')db.sqlite.prepare('UPDATE worlds SET data=json_set(data,\'$.guide\',\'수동 변경\',\'$.updatedAt\',110),updated=110 WHERE uid=?').run('alice');
   else if(mutation==='pageEdit')db.sqlite.prepare("UPDATE pages SET data=json_set(data,'$.summary','참고 문서 변경'),updated=110 WHERE pkey=?").run(A);
+  else if(mutation==='ledger'){const cur=JSON.parse(db.sqlite.prepare('SELECT data FROM worlds WHERE uid=?').get('alice').data);(cur.timeline||=[]).push({year:'1999',event:'동시에 끝난 다른 작업의 사건',src:'other-doc'});for(const o of Object.values(cur.entities))(o.mentions||=[]).push({from:'other-doc',text:'동시에 끝난 다른 작업의 언급'});db.sqlite.prepare('UPDATE worlds SET data=?,updated=110 WHERE uid=?').run(JSON.stringify(cur),'alice');}
   else db.sqlite.prepare('UPDATE worlds SET updated=110 WHERE uid=?').run('alice');
   r=await run(e);assert.equal(r.job.status,'succeeded',mutation+JSON.stringify(r.job.error));assert(r.result.pipeline.saved);assert(storedPage(B));
   const w=JSON.parse(db.sqlite.prepare('SELECT data FROM worlds WHERE uid=?').get('alice').data);assert(w.entities[B].page);
-  if(mutation==='edit')assert.equal(w.guide,'수동 변경');if(mutation==='pageEdit')assert.equal(storedPage(A).summary,'참고 문서 변경');}
- pass('작업 중 다른 설정·참고 문서 변경이나 내용 없는 재저장은 합쳐서 저장한다');
+  if(mutation==='edit')assert.equal(w.guide,'수동 변경');if(mutation==='pageEdit')assert.equal(storedPage(A).summary,'참고 문서 변경');
+  if(mutation==='ledger'){assert(w.timeline.some(t=>t.src==='other-doc'));assert(Object.values(w.entities).every(o=>o.mentions.some(m=>m.from==='other-doc')));}}
+ pass('작업 중 다른 설정·참고 문서 변경, 다른 작업이 장부에 더한 항목, 내용 없는 재저장은 합쳐서 저장한다');
  for(const mutation of ['delete','entity','target']){
   e=await reset();await request(e,'',e.body);await fireAlarm(e.obj);
   if(mutation==='delete')db.sqlite.prepare('UPDATE worlds SET deleted=1 WHERE uid=?').run('alice');
