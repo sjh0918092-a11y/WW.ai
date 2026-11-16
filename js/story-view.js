@@ -215,14 +215,14 @@ function canonHtml() {
     <label class="lb" for="wImageGuide">세계관 공통 이미지 지침</label><textarea id="wImageGuide" rows="4" maxlength="2000" placeholder="예: 1990년대 셀 애니메이션 화풍, 푸른 회색 팔레트, 시대에 맞는 복장, 글자 없는 그림">${esc(w.imageGuide || "")}</textarea>
     <p class="note">이 세계관의 모든 문서에서 이미지를 생성할 때 공통으로 참고합니다. 지침 저장만으로 기존 이미지를 바꾸지는 않습니다.</p>
     <h2>작가 지침</h2>
-    <label class="lb" for="wGuide">세계관 전체에 걸쳐 지킬 방향 <span class="note" style="font-weight:400">문체 지침을 만들 때 반영합니다. 문서 작성에는 원문을 보내지 않습니다. 1,000자까지</span></label>
+    <label class="lb" for="wGuide">세계관 전체에 걸쳐 지킬 방향 <span class="note" style="font-weight:400">문체와 구성 규칙보다 우선하고, 확정 설정보다는 뒤에 옵니다. 1,000자까지</span></label>
     <textarea id="wGuide" rows="4" maxlength="1000" placeholder="예: 양산기 바리에이션을 풍부하게. 개그는 줄이고 전쟁물처럼 쓴다.">${esc(w.guide || "")}</textarea>
     <h2>분위기</h2>
     <label class="lb" for="toneLabel">장르와 문화권</label>
     <input id="toneLabel" class="txt" maxlength="60" value="${esc(w.tone?.label || "")}" placeholder="아직 판별하지 않았습니다. 예: 일본 거대 로봇 메카닉 SF">
     <label class="lb" for="toneGuide">문체 지침 <span class="note" style="font-weight:400">한 줄에 하나</span></label>
     <textarea id="toneGuide" rows="${Math.min(10, (w.tone?.guide.length || 4) + 1)}">${esc((w.tone?.guide || []).join("\n"))}</textarea>
-    <div class="row"><button type="button" class="btn" data-act="tone-detect" id="toneBtn" ${!S.sample ? "disabled" : ""}>지침 다시 만들기</button><span class="note">현재 작가 지침과 장르·문화권을 반영해 지침을 만듭니다. 작가 지침을 바꾼 뒤에는 다시 만들어 주세요. 비워 두면 원안에서 판별합니다. 결과를 확인한 뒤 아래 '설정 저장'을 눌러 주세요.</span></div>
+    <div class="row"><button type="button" class="btn" data-act="tone-detect" id="toneBtn" ${!S.sample ? "disabled" : ""}>지침 다시 만들기</button><span class="note">장르와 문화권 칸에 적힌 분위기로 지침을 만듭니다. 비워 두면 원안에서 판별합니다. 결과를 확인한 뒤 아래 '설정 저장'을 눌러 주세요.</span></div>
     ${stageEditorHtml(w)}
     <h2>핵심 규칙</h2>
     <label class="lb" for="rulesTa">한 줄에 하나씩</label>

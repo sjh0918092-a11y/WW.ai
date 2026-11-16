@@ -36,9 +36,7 @@ const AIRecovery = {
   async cached(r) {
     let record;
     try { record = Store.mode === "idb" ? await IDB.get("job:" + r.id) : LS.get("job:" + r.id); } catch {}
-    const result = record && this.mine(record.receipt) && record.receipt.id === r.id ? record.result : undefined;
-    if (typeof importPipelineLogs === "function") importPipelineLogs(r, result);
-    return result;
+    return record && this.mine(record.receipt) && record.receipt.id === r.id ? record.result : undefined;
   },
   render() {
     if (!S.ready) return;

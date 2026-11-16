@@ -247,15 +247,15 @@ test('기존 중복은 세계를 열 때 한 번 정리하고 원안·직접 수
     await c.openWorld(w.id); assert.equal(w.timeline.length, 2); assert.equal(saves, 1);
   }
 });
-test('집필 자료는 유지하고 설정 대조는 나가는 문서의 대상 언급 문단만 읽는다', () => {
+test('집필에는 확정 사실과 언급을 주고, 설정 대조에서는 양방향 연결 문서의 전문을 읽는다', () => {
   const city = c.keyOf('유리 도시'), river = c.keyOf('은빛 강'), port = c.keyOf('검은 항구'), far = c.keyOf('먼 섬');
   const pages = {
     [river]: doc('은빛 강', '첫 절에는 관문이 있다.', { createdAt: 1, links: [city] }),
-    [port]: doc('검은 항구', '검은 항구는 강어귀에 있다.\n\n[[유리 도시]]는 항구 북쪽에 있다.\n\n관계없는 항구 묘사다.', { createdAt: 1 }),
+    [port]: doc('검은 항구', '검은 항구는 강어귀에 있다.', { createdAt: 1 }),
     [far]: doc('먼 섬', '관련 없는 섬의 원문이다.', { createdAt: 1 }),
   };
   pages[river].sections.push({ heading: '두 번째 절', body: '앞 절의 기록은 우기에만 적용된다.' });
-  pages[port].sections.push({ heading: '폐문', body: '유리 도시는 다음 날 폐문했다.\n\n항구의 뒷이야기다.' });
+  pages[port].sections.push({ heading: '폐문', body: '폐문은 다음 날 이루어졌다.' });
   const w = world(pages);
   w.entities[city] = c.newEntity('유리 도시', '지명', '');
   w.entities[city].facts.push({ t: '유리 도시는 둑 안쪽에 있다.', src: river });
@@ -268,22 +268,13 @@ test('집필 자료는 유지하고 설정 대조는 나가는 문서의 대상 
   assert(!generation.includes('폐문은 다음 날 이루어졌다.'));
   c.S.pages[city] = doc('유리 도시', '[[검은 항구|밤의 관문]]에서 출발했다.', { links: [port] });
   const check = c.checkPrompt(w, city, []);
-  assert(!check.includes('첫 절에는 관문이 있다.'));
-  assert(!check.includes('앞 절의 기록은 우기에만 적용된다.'));
-  assert(check.includes('[[유리 도시]]는 항구 북쪽에 있다.'));
-  assert(check.includes('유리 도시는 다음 날 폐문했다.'));
-  assert(check.includes('문서 「검은 항구」 / 2절 「폐문」 / 1문단'));
-  assert(!check.includes('검은 항구는 강어귀에 있다.'));
-  assert(!check.includes('관계없는 항구 묘사다.'));
-  assert(!check.includes('항구의 뒷이야기다.'));
-  assert(check.includes('제공된 근거에 없는 구체적 사실이나 묘사는 모두 검증 실패로 판정하라.'));
-  assert(check.includes('다른 사건·인물의 정보를 가져오거나 추측으로 보완하지 마라.'));
-  assert(!check.includes('기존 기록과 양립하는 새 세부 내용은 지적하지 않는다.'));
+  assert(check.includes('첫 절에는 관문이 있다.'));
+  assert(check.includes('앞 절의 기록은 우기에만 적용된다.'));
+  assert(check.includes('폐문은 다음 날 이루어졌다.'));
   assert(check.includes('[[검은 항구|밤의 관문]]'));
   assert(!check.includes(pages[far].sections[0].body));
   pages[far].infobox = [{ label: '이명', value: '밤의 관문 (Night Gate / Nachtpforte)' }];
-  pages[far].sections[0].body = '유리 도시는 이 섬과 교역했다.';
-  assert(c.checkPrompt(w, city, []).includes(pages[far].sections[0].body), '표시명으로 언급한 문서도 대상 언급 문단만 비교한다');
+  assert(c.checkPrompt(w, city, []).includes(pages[far].sections[0].body), '표시명이 다른 문서의 별칭이면 그 원문도 비교한다');
 });
 test('이미 링크한 이름도 본문과 인포박스에서 다시 나올 때마다 링크한다', () => {
   const river = c.keyOf('은빛 강'), port = c.keyOf('검은 항구'), street = c.keyOf('비단 거리'), key = c.keyOf('도시 안내');
@@ -307,22 +298,9 @@ test('인포박스는 표시 글자 한도 안의 반복 링크를 모두 보존
   assert.equal(c.limitInfoboxValue(links), links);
   assert.equal(c.limitInfoboxValue('가'.repeat(299) + '[[은빛 강|빛줄기]]'), '가'.repeat(299));
 });
-test('이름만 언급한 문서와 별칭 문단을 포함하고 역방향·나중 문서는 제외한다', () => {
-  const key = c.keyOf('도시 안내'), a = c.keyOf('은빛 강'), b = c.keyOf('검은 항구'), later = c.keyOf('새 항구');
-  const w = world({ [key]: doc('도시 안내', '은빛 강과 새 항구를 설명한다.', { infobox: [{ label: '별칭', value: '도시 길잡이' }] }),
-    [a]: doc('은빛 강', '도시 안내의 첫 기록이다.\n\n다른 문단이다.\n\n도시 길잡이의 두 번째 기록이다.', { createdAt: 1 }),
-    [b]: doc('검은 항구', '도시 안내를 언급하기만 한 역방향 문서다.', { links: [key], createdAt: 1 }),
-    [later]: doc('새 항구', '도시 안내의 미래 기록이다.', { createdAt: 3 }) });
-  const text = c.checkSourceBatches(w, key).join('\n');
-  assert(text.includes('도시 안내의 첫 기록이다.'));
-  assert(text.includes('도시 길잡이의 두 번째 기록이다.'));
-  assert(!text.includes('다른 문단이다.'));
-  assert(!text.includes('역방향 문서다.'));
-  assert(!text.includes('미래 기록이다.'));
-});
 test('연결 문서가 많으면 검사 입력을 문서 경계에서 나눈다', () => {
   const key = c.keyOf('도시 안내'), a = c.keyOf('은빛 강'), b = c.keyOf('검은 항구');
-  const first = '도시 안내에 따르면 ' + '강의 기록'.repeat(6000), second = '도시 안내에 따르면 ' + '항구의 기록'.repeat(5500);
+  const first = '강의 기록'.repeat(6000), second = '항구의 기록'.repeat(5500);
   const w = world({ [key]: doc('도시 안내', '출발했다.', { links: [a, b] }),
     [a]: doc('은빛 강', first, { createdAt: 1 }), [b]: doc('검은 항구', second, { createdAt: 1 }) });
   const batches = c.checkSourceBatches(w, key);

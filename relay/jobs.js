@@ -190,7 +190,7 @@ export class AiJobs {
       const old = j.pipelineChunks || 0;
       j.pipelineChunks = await writeText(tx, "pipe:" + j.id + ":", text);
       for (let i = j.pipelineChunks; i < old; i++) await tx.delete("pipe:" + j.id + ":" + i);
-      j.phase = phase; j.steps = state.steps.map(s => ({kind:s.kind,status:s.status,model:s.model,slot:s.slot,inputChars:s.input?.chars,usage:usageCounts(s.response?.usageMetadata)}));
+      j.phase = phase; j.steps = state.steps.map(s => ({kind:s.kind,status:s.status,model:s.model,slot:s.slot,usage:usageCounts(s.response?.usageMetadata)}));
       if (queued) { j.status = "queued"; await tx.setAlarm(Date.now()+1000); }
       return true;
     });

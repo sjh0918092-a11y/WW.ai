@@ -4,7 +4,6 @@
 async function createWorld() {
   const seed = S.seed.trim();
   if (seed.length < 10) { toast("원안을 한두 문장 이상 적어 주세요."); return; }
-  if (seed.length > 2000) { toast("원안은 2,000자까지 입력할 수 있습니다."); return; }
   if (!S.sample) { S.createErr = ERR.no_sample; renderMain(); return; }
   const worldCost = typeof DocumentCost!=="undefined" ? DocumentCost.startWorld() : null;
   let timelineWork;

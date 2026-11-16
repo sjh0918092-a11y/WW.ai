@@ -14,7 +14,6 @@ const TONE_SPEC = `분위기 지침(tone)은 이 세계관이 어떤 장르와 �
   - 수치 표현을 피한다면 크기와 정도를 대신 보여 줄 방법(지형 변화, 희생 규모, 비교 대상, 사람들의 반응)을 guide에 함께 쓴다. "제원을 표로 축적"과 "수치화 금지"처럼 서로 부딪히는 지침을 두지 않는다.
   - 주된 결과 대비되는 디테일을 어디서 쓸지 정한다. 장중한 세계라면 일상적·관료적 디테일(성문 옆 분실물 창구), 가벼운 세계라면 현실적인 무게(동네 꽃집의 임대료)를 문서의 결을 해치지 않는 곁가지 한두 군데로 한정한다.
   - 이 분위기에 어울리지 않아 피할 요소
-  - 작가 지침이 주어지면 문체뿐 아니라 소재·구성·묘사·금지 사항에 관한 요구도 빠뜨리지 않고 guide에 통합한다. 문서 집필자에게 작가 지침 원문은 별도로 전달되지 않으므로, 이 문체 지침만으로 그 요구를 따를 수 있게 구체적으로 쓴다.
   위키는 한국어로 쓴다는 점을 전제로 한다.`;
 function normTone(t, label) {
   if (!t || typeof t !== "object") return null;
@@ -25,7 +24,7 @@ function normTone(t, label) {
 function toneBlock(w) {
   if (!w.tone) return "";
   return `## 세계관의 분위기: ${w.tone.label}
-문서의 형식(백과사전 구조, 3인칭, '~이다'체)은 그대로 두고, 작명, 어휘, 문장의 결, 어떤 디테일을 다룰지, 인용의 말투를 아래 지침에 맞춘다. 이 지침은 공통 문체·구성·분량·기법 규칙보다 우선하되, 핵심 규칙·연표·사용자 확정 설정·다른 문서의 확정 사실을 따른다. 이미 확정된 고유명사는 바꾸지 않는다.
+문서의 형식(백과사전 구조, 3인칭, '~이다'체)은 그대로 두고, 작명, 어휘, 문장의 결, 어떤 디테일을 다룰지, 인용의 말투를 아래 지침에 맞춘다. 이미 확정된 고유명사는 바꾸지 않는다.
 ${w.tone.guide.map(g => "- " + g).join("\n")}
 
 `;
@@ -229,41 +228,34 @@ ${CAT_AXIS_RULES}
 ${have.length ? `이 세계관에 이미 있는 분류(축별, 괄호는 붙은 문서 수, 많이 쓰인 순):
 ${have.map(([ax, t]) => `- ${ax}: ${t}`).join("\n")}` : "이 세계관에는 아직 분류가 없다. 다른 문서에도 두루 쓰일 넓은 분류로 만든다."}`;
 }
-/* A가 언급한 문서에서 A를 언급한 문단만 출처와 함께 보낸다. */
+/* 설정 대조에서 링크로 이어진 문서의 전문을 읽는다. 큰 묶음만 문서 경계에서 나눈다. */
 const SOURCE_TEXT_BUDGET = 48000;
 function sourceBatches(w, key, focus, outgoing = [], eligible = () => true) {
-  const links = new Set(outgoing), owners = documentNameOwners(w);
+  const links = new Set(outgoing);
+  let owners;
   for (const m of focus.matchAll(LINK_RE)) {
     links.add(kOf(w, m[1]));
-    if (m[2]) for (const k of owners.get(identityName(m[2]))?.keys() || []) links.add(k);
+    if (m[2]) {
+      owners ||= documentNameOwners(w);
+      for (const k of owners.get(identityName(m[2]))?.keys() || []) links.add(k);
+    }
   }
-  for (const [k, e] of Object.entries(w.entities)) {
-    if (namesOf(e.title).some(n => hasName(focus, n))) links.add(k);
-  }
-  for (const group of owners.values()) if (group.size === 1) {
-    const [[k, name]] = group;
-    if (hasName(focus, name)) links.add(k);
-  }
-  const selfNames = new Set(namesOf(w.entities[key].title));
-  for (const group of owners.values()) if (group.size === 1 && group.has(key)) selfNames.add(group.get(key));
-  const mentionsSelf = text => {
-    for (const m of text.matchAll(LINK_RE)) if (kOf(w, m[1]) === key) return true;
-    return [...selfNames].some(n => hasName(stripMarks(text), n));
-  };
+  const mentions = new Set(w.entities[key].mentions.filter(live).map(m => m.from));
+  const names = new Set();
+  for (const [k, p] of Object.entries(S.pages)) if ((p.links || []).includes(key) || mentions.has(k)) names.add(k);
+  for (const k of Object.keys(S.pages)) if (w.entities[k] && hasName(focus, w.entities[k].title)) names.add(k);
   const batches = [[]];
   let size = 0;
-  for (const k of links) {
+  for (const k of new Set([...links, ...names])) {
     const p = S.pages[k];
     if (k === key || !p || !eligible(k)) continue;
     if (isStory(w) && (p.syncedTo || p.baseAsOf || 1) > (S.pages[key]?.syncedTo || w.story.chapter)) continue;
     const label = `문서 「${p.title}」${p.editedAt ? " [사용자 수정]" : ""}`;
-    const pieces = [];
-    const collect = (text, location) => String(text || "").split(/\r?\n[ \t]*\r?\n+/).forEach((paragraph, i) => {
-      if (paragraph.trim() && mentionsSelf(paragraph)) pieces.push(`${label} / ${location} / ${i + 1}문단\n${paragraph}`);
-    });
-    collect(p.summary, "한 줄 정의");
-    for (const r of p.infobox || []) collect(r.value, `인포박스 「${r.label}」`);
-    (p.sections || []).forEach((s, i) => collect(s.body, `${i + 1}절 「${s.heading}」`));
+    const text = label + "\n" + docForCheck(p, t => t);
+    const pieces = text.length <= SOURCE_TEXT_BUDGET ? [text] : [
+      label + "\n" + docForCheck({ ...p, sections: [] }, t => t),
+      ...p.sections.map(s => `${label} / 「${s.heading}」\n${s.body}`),
+    ];
     for (const piece of pieces) {
       if (size && size + piece.length > SOURCE_TEXT_BUDGET) { batches.push([]); size = 0; }
       batches.at(-1).push(piece);
@@ -273,7 +265,7 @@ function sourceBatches(w, key, focus, outgoing = [], eligible = () => true) {
   return batches.map(batch => batch.join("\n\n"));
 }
 function sourceBlock(text) {
-  return text ? `## 연결된 문서의 대상 언급 문단 (출처 포함)
+  return text ? `## 연결된 문서 원문
 ${text}
 
 ` : "";
@@ -392,7 +384,11 @@ function pagePrompt(w, key, rewriteDir = null, guide = "", angle = null, angleMo
 
 ${canonBlock(w, [e.title, e.summary, ...e.facts.filter(live).map(f => f.t), ...e.mentions.filter(live).map(m => m.text)].join("\n"), inputs)}
 ${isStory(w) ? "\n" + storyBlock(w, key, true) + "\n" : ""}
-${toneBlock(w)}## 작성할 문서: 「${e.title}」
+${toneBlock(w)}${w.guide ? `## 작가 지침 (사용자 지정)
+${w.guide}
+이 지침은 아래의 문체, 구성, 분량, 기법 규칙보다 우선한다. 다만 핵심 규칙, 연표, 사용자 확정 설정, 다른 문서가 확정한 사실과 부딪히면 그쪽을 따른다.
+
+` : ""}## 작성할 문서: 「${e.title}」
 ${target}
 ${rewriteDir === null ? redirectBlock(w, key) : ""}
 ${(() => { const nbs = (inputs.nav ? navboxesFor(w, key).slice(0, inputs.navCount) : []).filter(([, nb]) => nb.src !== key); return nbs.length ? `\n이 항목은 아래 예전 틀에 실려 있다. 이름, 번호, 역할, 전·현직 여부와 다른 구성원과의 관계를 틀과 일치시킨다.\n${nbs.map(([, nb]) => navboxText(nb, inputs.navCount)).join("\n\n")}` : ""; })()}
@@ -493,18 +489,17 @@ function checkPrompt(w, key, timelinePairs = timelineMatchPairs(w, key), sourceT
 ## 대조 순서
 1. 두 기록이 가리키는 대상·사건·조항을 맞춘다. 날짜나 이름 표현이 달라도 당사자·장소·경위·결과를 보면 같은 사건일 수 있다. 날짜가 다르다는 이유만으로 처음부터 별개로 보지 않는다.
 2. 초안의 문장이 실제로 무엇을 주장하는지 확인한다. 값과 상태뿐 아니라 변화의 방향, 앞선 대상에서 이어받았다는 관계, 원인과 결과, 전체와 일부의 범위를 읽는다. 예를 들어 '어떤 값까지 내려갔다'는 말은 직전 값이 더 높았다는 주장을 포함한다. 평상시 값과 직전 값을 같다고 추정하지 않는다.
-3. 기존 사건에 새 장면이 들어가면, 그 장면을 기존 시간순 기록에 끼워 넣는다. 시작·중단·재개 시점과 경과 시간을 맞춰 보고, 새 장면이 이미 확정된 이동·교전·결과를 바꾸는지 확인한다. 장면에 담긴 구체적 사실과 묘사도 제공된 근거가 뒷받침하는지 확인한다.
+3. 기존 사건에 새 장면이 들어가면, 그 장면을 기존 시간순 기록에 끼워 넣는다. 시작·중단·재개 시점과 경과 시간을 맞춰 보고, 새 장면이 이미 확정된 이동·교전·결과를 바꾸는지 확인한다. 앞 문서에서 장면을 생략했다는 사실만으로는 지적하지 않는다.
 4. 초안이 특정 조항·결정·기록을 근거로 들면, 해당 원문이 그 의무·금지·상한·인과관계를 실제로 뒷받침하는지 따로 대조한다. 실제로 한 선택, 다른 조건과 합쳐 추론한 결과, 규정 자체가 강제한 것을 구분한다.
 
 ## 지적 기준
-- 제공된 근거에 없는 구체적 사실이나 묘사는 모두 검증 실패로 판정하라. 다른 사건·인물의 정보를 가져오거나 추측으로 보완하지 마라. 검사할 문서 자체는 근거가 아니다. claim에는 검사할 문서의 실제 구절을 인용한다. 근거 없음은 high로 지적하고, evidence에는 "제공된 근거에 없음"이라고 쓰며 conflict에 근거가 없는 내용을 명시한다.
-- 근거와 모순되는 경우 claim과 evidence에 초안과 근거의 실제 구절을 인용한다. 출처가 주장을 뒷받침하지 않는 경우에는 초안이 지목한 조항이나 기록의 실제 내용을 evidence에 인용한다. 기억이나 짐작, 현실 역사에 기댄 지적은 하지 않는다.
+- claim과 evidence에 초안과 근거의 실제 구절을 인용한다. 출처가 주장을 뒷받침하지 않는 경우에는 초안이 지목한 조항이나 기록의 실제 내용을 evidence에 인용한다. 기억이나 짐작, 현실 역사에 기댄 지적은 하지 않는다.
 - ${NUMBER_CHECK_RULE}
 - [[대상|표시명]]에서는 대상과 표시명을 각각 확인한다. 직접 경험은 해당 시점의 현장 참석 근거를 확인한다. 생년월일과 사건 시점이 주어지면 가능한 만 나이 또는 날짜 범위를 계산한다.
 - 원문끼리 엇갈리면 사용자 확정 설정과 사용자 수정 기록을 먼저 따른다.
 - 같은 사건의 값·순서가 양립할 수 없거나, 지목한 조항의 내용과 초안이 그 조항에 귀속시킨 제한이 명백히 다르면 high. 예를 들어 명시된 상시 배치 상한을 해외 파견 상한이라고 단정한 경우가 그렇다.
-- 시점이나 범위를 확인하면 양립할 수 있거나, 제시된 기록만으로 인용 근거를 확정할 수 없으면 low로 쓰고 무엇을 더 확인해야 하는지 적는다. 이 기준은 제공된 근거에 없는 구체적 사실·묘사에는 적용하지 않는다. 기존 기록과 양립하더라도 근거가 없으면 검증 실패로 지적한다.
-- 근거가 있는 서술까지 개수를 채우려고 지적하지 않는다.
+- 시점이나 범위를 확인하면 양립할 수 있거나, 제시된 기록만으로 인용 근거를 확정할 수 없으면 low로 쓰고 무엇을 더 확인해야 하는지 적는다. 한쪽에 서술이 빠졌다는 이유만으로 high로 올리지 않는다. 기존 기록과 양립하는 새 세부 내용은 지적하지 않는다.
+- 지적할 것이 없는 것이 정상이다. 개수를 채우려고 지적하지 않는다.
 
 ${canonBlock({ ...w, timeline: (w.timeline || []).filter(t => t.src !== key && ok(t.src)) }, focus)}
 ${isStory(w) ? `\n${storyBlock(w, key)}\n${secretsBlock(w, "check")}\n이 문서는 ${p.baseAsOf || 1}~${p.syncedTo || p.baseAsOf || 1}장 시점에 작성되었다. 이 문서가 그 시점 이후의 일을 아는 것처럼 서술하면 모순으로 본다. 제목 앞에 [n장]이 붙은 섹션은 그 장에 일어난 일을 기록한 섹션이다.\n` : ""}

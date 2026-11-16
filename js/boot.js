@@ -9,7 +9,6 @@
   if (inv) { const u = normRelay(decodeURIComponent(inv[1])); if (/^https:\/\//i.test(u)) { const same = GS.mode === "relay" && GS.relay === u; GS = { ...GS, mode: "relay", relay: u, pass: same ? GS.pass : "" }; saveGS(); invited = !GS.pass; } history.replaceState(null, "", location.pathname + location.search); }
   S.sample = gReady() ? gemini : null; S.sampleReady = true;
   await Store.init();
-  await loadLogs();
   try { S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)); }
   catch (e) { toast("세계관 목록을 불러오지 못했습니다. " + errMsg(e)); }
   if (Sync.acct) { Sync.load(); await Sync.pull(); S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)); Sync.push(); }   // 로그인되어 있으면 서버에서 바뀐 것을 받고 남은 변경을 올린다

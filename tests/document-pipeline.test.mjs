@@ -61,14 +61,6 @@ async function run(e,limit=45){for(let i=0;i<limit;i++){const r=await request(e,
 const storedPage=k=>JSON.parse(db.sqlite.prepare('SELECT data FROM pages WHERE uid=? AND pkey=? AND deleted=0').get('alice',k)?.data||'null');
 try {
  let e=await reset();let r=await request(e,'',e.body);assert.equal(r.status,202);await request(e,'',e.body);r=await run(e);
- for (const step of r.result.pipeline.steps) {
-   assert(step.input?.messages?.length, step.kind + ' 입력 전문 누락');
-   assert.equal(step.input.sections.reduce((n,s)=>n+s.chars,0),step.input.chars);
-   const sent=calls.find(c=>c.kind===step.kind)?.body.contents;
-   assert.deepEqual(step.input.messages.map(m=>m.text),sent.map(m=>m.parts.map(p=>p.text).join('\n')));
- }
- assert(r.job.steps.every(s=>s.inputChars>0));
- assert(!JSON.stringify(r.job.steps).includes('너는 가상 세계관'), '상태 조회에는 입력 전문을 싣지 않는다');
  assert(r.job.steps.some(s=>s.usage?.promptTokenCount===1000));assert(r.result.pipeline.steps.some(s=>s.usage?.thoughtsTokenCount===20));assert(!JSON.stringify(r.job.steps).includes('private-server-key'));
  assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert(r.result.pipeline.saved);assert(r.result.pipeline.checked);assert(storedPage(B)?.check);assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page','check','read']);assert(calls[0].url.includes('custom-main'));assert(calls[1].url.includes('custom-check'));assert.equal(calls[1].body.generationConfig.thinkingConfig.thinkingLevel,'high');
  assert(!JSON.stringify(r).includes('private-server-key'));assert(![...e.storage.data.keys()].some(k=>/^(key:|in:|pipe:)/.test(k)));pass('매 alarm마다 서버 객체를 재생성해도 생성·두 검사·D1 저장까지 완료하며 완료된 호출은 재실행하지 않는다');
@@ -123,14 +115,7 @@ try {
 
  e=await reset();await request(e,'',e.body);await fireAlarm(e.obj);
  // 다음 호출의 running 기록만 남긴 재시작: 제공자 결과를 모르므로 재전송 금지.
- await e.storage.transaction(async tx=>{
-  const jobs=await tx.get('jobs'), job=jobs[0], prefix='pipe:'+e.id+':';job.status='running';
-  let text='';for(let i=0;i<job.pipelineChunks;i++)text+=await tx.get(prefix+i);
-  const s=JSON.parse(text);s.steps.push({slot:'check:1',kind:'check',model:'custom-check',status:'running',fingerprint:'unknown'});
-  text=JSON.stringify(s);job.pipelineChunks=Math.ceil(text.length/16000);
-  for(let i=0;i<job.pipelineChunks;i++)await tx.put(prefix+i,text.slice(i*16000,(i+1)*16000));
-  await tx.put('jobs',jobs);
- });
+ await e.storage.transaction(async tx=>{const jobs=await tx.get('jobs');jobs[0].status='running';const key='pipe:'+e.id+':0',s=JSON.parse(await tx.get(key));s.steps.push({slot:'check:1',kind:'check',model:'custom-check',status:'running',fingerprint:'unknown'});await tx.put(key,JSON.stringify(s));await tx.put('jobs',jobs)});
  r=await run(e);assert.equal(r.job.status,'interrupted');assert.equal(calls.length,1);assert(!r.result.pipeline.saved);pass('요청 진행 중 서버가 종료되면 해당 호출과 후속 호출을 보내지 않는다');
 
  e=await reset();await request(e,'',e.body);await fireAlarm(e.obj);const before=calls.length;await request(e,e.id+'/cancel',{});r=await run(e);assert.equal(r.job.status,'cancelled');assert.equal(calls.length,before);assert.equal(storedPage(B),null);assert(![...e.storage.data.keys()].some(k=>/^(key:|in:|pipe:)/.test(k)));pass('단계 사이 취소는 후속 호출과 저장을 막고 임시 기록을 정리한다');

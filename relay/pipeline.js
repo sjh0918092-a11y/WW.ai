@@ -12,7 +12,7 @@ const resultFor = (state, output, saved, error) => {
     version: 1, saved, wid: state.snapshot?.world.id, targetKey: output?.targetKey || state.input.key, checked: !!output?.checked,
     fixed: output?.fixed || 0, remaining: output?.remaining || 0, notFound: !!output?.notFound, redirectTo: output?.redirectTo || null,
     sceneUsed: output?.sceneUsed || "", angleRecorded: !!state.input.novel && saved,
-    steps: state.steps.map(({ kind, model, status, error, response, slot, at, finishedAt, input }) => ({ kind, model, status, slot, at, finishedAt, input, usage:usageCounts(response?.usageMetadata), ...(error ? { error: safeError(error) } : {}) })), ...(error ? { error } : {}),
+    steps: state.steps.map(({ kind, model, status, error, response }) => ({ kind, model, status, usage:usageCounts(response?.usageMetadata), ...(error ? { error: safeError(error) } : {}) })), ...(error ? { error } : {}),
   } };
 };
 
@@ -48,7 +48,7 @@ export async function processPipeline(host, job, signal) {
   if (running) { running.status = "unknown"; running.error = { code: "outcome_unknown", safeMessage: "실행 도중 서버가 중단되어 해당 AI 호출을 다시 보내지 않았습니다.", serverJob: true }; }
   let selected = null, output, engineError;
   const counts = {}, runtime = { id: job.id, at: state.at, input, snapshot: state.snapshot, failures: [], notes: [], yielded: false,
-    async request(kind, model, body, audit) {
+    async request(kind, model, body) {
       const slot = kind + ":" + (counts[kind] = (counts[kind] || 0) + 1);
       const fingerprint = await digest({ kind,model,body }), old = state.steps.find(s => s.slot === slot);
       if (old) {
@@ -58,7 +58,7 @@ export async function processPipeline(host, job, signal) {
       }
       if (state.steps.some(s => s.status === "unknown")) throw { code: "outcome_unknown", serverJob: true };
       if (state.steps.length >= 32) throw { code: "step_limit", serverJob: true };
-      if (!selected) selected = { slot, kind, model, fingerprint, body, input: audit, at: Date.now() };
+      if (!selected) selected = { slot, kind, model, fingerprint, body };
       runtime.yielded = true; throw yieldError();
     },
   };
@@ -74,7 +74,6 @@ export async function processPipeline(host, job, signal) {
     catch (e) { failure = { code: e?.code || "outcome_unknown", safeMessage: safeError(e).message, serverJob: true, definite: !!e?.definite, ...(e?.code === "model_not_found" ? {model:step.model,phase:step.kind} : {}), ...(e?.status ? { status: e.status } : {}) }; }
     if (failure) { step.error = failure; step.status = failure.definite ? "failed" : "unknown"; }
     else { step.response = response; step.status = "done"; }
-    step.finishedAt = Date.now();
     // 완료 기록과 다음 예약을 함께 저장한다. 응답이 불명확한 호출은 재전송하지 않는다.
     try { await host.savePipeline(job, state, phaseFor(step.kind), true); }
     catch (e) { if (!e.definite) throw e; await finish("failed",safeError(e),output); }

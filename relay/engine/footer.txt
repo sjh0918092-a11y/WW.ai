@@ -22,7 +22,7 @@
   const drain = async () => { let count = 0; while (deferred.length && count++ < 12) await deferred.shift()(); };
   S.pipelineDrain = drain;
   gemini.stream = async (model, body, opts, prefix) => {
-    const j = await runtime.request(opts.jobMeta?.kind || "unknown", model, body, inputAudit(body, model)), c = j.candidates?.[0];
+    const j = await runtime.request(opts.jobMeta?.kind || "unknown", model, body), c = j.candidates?.[0];
     const text = (c?.content?.parts || []).filter(p => typeof p.text === "string" && !p.thought).map(p => p.text).join("");
     if (text) opts.onText?.({ text: prefix ? joinCont(prefix, text) : text });
     return { text, finish: c?.finishReason || "", block: j.promptFeedback?.blockReason || "", usage: j.usageMetadata, serverJob: true };
