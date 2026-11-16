@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { AiJobs } from "../relay/jobs.js";
-import { mergeGeminiStream } from "../relay/providers.js";
+import { mergeGeminiStream, mergeClaudeStream, mergeOpenAIStream } from "../relay/providers.js";
 import worker from "../relay/worker.js";
 import { JobStorage, jobRequest as request, fireAlarm } from "./helpers/jobs.mjs";
 const original = globalThis.fetch;
@@ -140,5 +140,22 @@ try {
     assert.throws(() => mergeGeminiStream(sse({ candidates: [{ content: { parts: [{ text: '{"a":' }] } }] })), e => e.code === "incomplete_response" && !e.definite);
     assert.throws(() => mergeGeminiStream(sse({ error: { code: 500, message: "boom" } })), e => e.code === "upstream_error" && e.definite);
     ok("Gemini 스트림 조각을 사고 요약 없이 합치고, 완료 신호 없는 응답은 성공으로 저장하지 않는다");
+    const claude = mergeClaudeStream([
+      { type: "message_start", message: { id: "m", role: "assistant", model: "claude-x", usage: { input_tokens: 10, cache_read_input_tokens: 4, output_tokens: 1 } } },
+      { type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "" } },
+      { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "생각" } },
+      { type: "content_block_start", index: 1, content_block: { type: "text", text: "" } },
+      { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: '{"b":' } },
+      { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "2}" } },
+      { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 42 } },
+      { type: "message_stop" }].map(sse).join(""));
+    assert.deepEqual(claude.content, [{ type: "text", text: '{"b":2}' }]); assert.equal(claude.stop_reason, "end_turn");
+    assert.equal(claude.usage.output_tokens, 42); assert.equal(claude.usage.cache_read_input_tokens, 4);
+    assert.throws(() => mergeClaudeStream(sse({ type: "message_start", message: { usage: {} } })), e => e.code === "incomplete_response");
+    const response = { status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "{}" }] }], usage: { input_tokens: 3, output_tokens: 2 } };
+    assert.deepEqual(mergeOpenAIStream(sse({ type: "response.created", response: { status: "in_progress" } }) + sse({ type: "response.output_text.delta", delta: "{}" }) + sse({ type: "response.completed", response })), response);
+    assert.throws(() => mergeOpenAIStream(sse({ type: "response.output_text.delta", delta: "{" })), e => e.code === "incomplete_response");
+    assert.throws(() => mergeOpenAIStream(sse({ type: "response.failed", response: { status: "failed" } })), e => e.code === "upstream_error" && e.definite);
+    ok("Claude·OpenAI 스트림을 일괄 응답 형태로 되살리고, 끊긴 스트림은 성공으로 저장하지 않는다");
   }
 } finally { globalThis.fetch = original; }
