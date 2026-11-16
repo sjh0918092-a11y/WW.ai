@@ -85,6 +85,7 @@ function renderSide() {
     </ul></section>
     <section class="stat"><h4>문서 현황</h4><span>작성된 문서 <em>${done}</em></span><span>미작성 항목 <em>${ents.length - done}</em></span><span>연표 사건 <em>${w.timeline.length}</em></span></section>
     ${genQueueHtml(w)}
+    ${fixReqHtml(w)}
     ${recentGenHtml(w)}
     <section><h4>도구</h4><ul><li><button type="button" data-act="gset" class="${S.view.name === "gset" ? "cur" : ""}">AI 연결 설정${gReady() ? "" : " ⚠"}</button></li>${jobTool()}<li><button type="button" data-act="log" class="${S.view.name === "log" ? "cur" : ""}">로그 보기 (${LOG.length})</button></li></ul></section>
     ${S.syncing ? `<section><h4>장 반영 중</h4><div class="genpill"><span class="dot"></span><button type="button" class="btn" data-k="${S.syncing}" style="padding:2px 8px">${esc(w.entities[S.syncing]?.title || "")}</button></div></section>` : ""}
@@ -98,6 +99,14 @@ function genQueueHtml(w) {
   const cur = S.gen ? `<li class="genpill"><span class="dot"></span><span class="gq-st">작성 중</span><button type="button" class="btn gq-t" data-k="${S.gen.key}">${esc(S.gen.title)}</button><button type="button" class="btn gq-x" data-act="stop" title="${checking ? "검사를 건너뛰고 지금까지 쓴 문서를 보여 줍니다" : "이 문서 작성을 멈춥니다"}">${checking ? "검사 건너뛰기" : "취소"}</button></li>` : "";
   const wait = q.map((x, i) => `<li class="genpill"><span class="gq-n">${i + 1}</span><span class="gq-st">대기</span><button type="button" class="btn gq-t" data-k="${x.key}">${esc(w.entities[x.key].title)}</button><button type="button" class="btn gq-x" data-unq="${x.key}" title="대기열에서 뺍니다">취소</button></li>`).join("");
   return `<section class="genq"><h4>작성 대기열${q.length ? ` · 대기 ${q.length}` : ""}</h4><ul>${cur}${wait}</ul></section>`;
+}
+/* 수정 요청: 다른 문서의 직접 수정·자동 대조로 충돌 표시가 붙어 고쳐야 하는 문서 */
+const fixReqs = (w, P) => [...(P.conflicts || []), ...(P.autoConflicts || []).filter(c => w.entities[c.by])];
+function fixReqHtml(w) {
+  const ks = Object.keys(S.pages).filter(k => w.entities[k] && fixReqs(w, S.pages[k]).length);
+  if (!ks.length) return "";
+  const cur = S.view.name === "article" ? S.view.key : null;
+  return `<section class="genr fixreq"><h4>수정 요청 · ${ks.length}</h4><ul>${ks.slice(0, 8).map(k => { const cs = fixReqs(w, S.pages[k]); return `<li><button type="button" class="gq-t${k === cur ? " cur" : ""}" data-k="${k}" title="「${esc(cs[0].byTitle)}」${cs.length > 1 ? " 등" : ""} 문서와 맞지 않는 서술 ${cs.length}곳">${esc(w.entities[k].title)} <span class="src">${cs.length}곳</span></button></li>`; }).join("")}${ks.length > 8 ? `<li class="src">외 ${ks.length - 8}개</li>` : ""}</ul></section>`;
 }
 /* 최근 생성: 작성(다시 쓰기 포함) 시각이 최근인 문서 */
 function recentGenHtml(w) {
@@ -428,6 +437,7 @@ function articleHtml(k) {
       return `<div class="banner warn"><b>「${esc(ac[0].byTitle)}」${ac.some(c => c.byTitle !== ac[0].byTitle) ? " 등" : ""} 문서와 맞지 않는 서술 ${ac.length}곳 (자동 대조)</b>
       <ul>${ac.map(c => `<li>${esc(c.old)} <span class="src">→ ${linkHtml(c.byTitle)}: ${esc(c.claim)}</span></li>`).join("")}</ul>
       <div class="row" style="margin-top:4px"><button type="button" class="btn pri" data-cfix="${k}" data-cfield="autoConflicts" ${S.gen || S.fixing || !S.sample ? "disabled" : ""}>AI로 고치기</button><button type="button" class="btn" data-edit="${k}">편집해서 고치기</button><button type="button" class="btn" data-dismiss="${k}" data-field="autoConflicts">표시 지우기</button></div></div>`; })()}
+    ${(() => { const sent = Object.keys(S.pages).filter(x => x !== k && w.entities[x] && fixReqs(w, S.pages[x]).some(c => c.by === k)); return sent.length ? `<p class="memo-line">이 문서와 맞지 않아 수정 요청을 보낸 문서: ${sent.map(x => `${linkHtml(w.entities[x].title)} <span class="src">${fixReqs(w, S.pages[x]).filter(c => c.by === k).length}곳</span>`).join(" · ")}</p>` : ""; })()}
     ${p.pending?.length ? `<div class="banner warn"><b>이 문서의 수정 내용이 직접 정한 설정과 충돌한 채 저장되었습니다.</b>
       <ul>${p.pending.map(c => `<li><span class="sev">${esc(c.label)}</span>${esc(c.old)} <span class="src">↔ 수정본: ${esc(c.claim)}</span></li>`).join("")}</ul>
       <div class="row" style="margin-top:4px"><button type="button" class="btn" data-edit="${k}">편집</button><button type="button" class="btn" data-act="canon">설정 노트 열기</button><button type="button" class="btn" data-dismiss="${k}" data-field="pending">표시 지우기</button></div></div>` : ""}

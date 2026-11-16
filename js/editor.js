@@ -292,7 +292,7 @@ async function commitEdit(ed, out, r, conflicts, ch) {
   } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); return; }
   const parts = [];
   if (!r) parts.push("설정과 대조하지 않았습니다");
-  if (auto) parts.push(`다른 문서의 서술 ${auto}곳을 이 수정으로 대체하고 표시했습니다`);
+  if (auto) { const req = [...touched].filter(x => x !== k && S.pages[x]?.conflicts?.some(c => c.by === k)).map(x => `「${w.entities[x]?.title || "?"}」`); parts.push(`다른 문서의 서술 ${auto}곳을 이 수정으로 대체하고 ${req.length ? req.slice(0, 3).join(", ") + (req.length > 3 ? ` 외 ${req.length - 3}개` : "") + " 문서에 수정 요청을 표시했습니다" : "표시했습니다"}`); }
   if (ruled) parts.push(`핵심 규칙 ${ruled}개를 고쳤습니다`);
   if (pending.length) parts.push(`해결하지 않은 충돌 ${pending.length}건이 남아 있습니다`);
   toast("저장했습니다." + (parts.length ? " " + parts.join(". ") + "." : ""));
@@ -364,7 +364,7 @@ async function deleteMemo(k, idx) {
 async function dismissNotes(k, field) {
   const p = S.pages[k]; if (!p) return;
   if (field === "autoConflicts") p.autoDismissed = [...(p.autoDismissed || []), ...(p.autoConflicts || []).map(c => ({ by: c.by, old: c.old }))].slice(-50);   // 다시 검사해도 같은 표시를 달지 않게
-  p[field] = []; renderMain();
+  p[field] = []; renderMain(); renderSide();
   try { await Store.savePage(S.world.id, p); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
 }
 
