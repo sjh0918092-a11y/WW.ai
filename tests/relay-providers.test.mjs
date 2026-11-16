@@ -207,6 +207,39 @@ try {
       assert(pPuts <= 2, `바뀐 끝 조각만 쓴다(${pPuts}/${total})`);
       assert.deepEqual(await pObj.pipelineState("pipe-job-000000001"), state);
     }
+    // Gemini 명시적 캐시: 앞 조각을 한 번 저장해 재사용하고, 거절되면 캐시 없이 보낸다.
+    {
+      const big = "공통".repeat(4000), log = [];
+      const mk = tail => ({ keyMode: "server", input: { type: "gemini.generate", model: "gemini-3.8-flash", input: { contents: [{ role: "user", parts: [{ text: big }, { text: "세계" }, { text: tail }] }], generationConfig: { responseMimeType: "application/json" } } } });
+      let expire = Date.now() + 900000, genStatus = 200;
+      globalThis.fetch = async (url, o) => {
+        log.push({ url: String(url), method: o.method, body: o.body ? JSON.parse(o.body) : null });
+        if (String(url).endsWith("/cachedContents")) return Response.json({ name: "cachedContents/c1", expireTime: new Date(expire).toISOString() });
+        if (o.method === "PATCH") return Response.json({ expireTime: new Date(Date.now() + 900000).toISOString() });
+        if (genStatus !== 200 && JSON.parse(o.body).cachedContent) return Response.json({ error: { message: "CachedContent not found" } }, { status: 404 });
+        return success();
+      };
+      const env2 = { GEMINI_KEY: "k-explicit" };
+      await runProvider(mk("문서 A"), env2); await runProvider(mk("문서 B"), env2);
+      const gens = log.filter(l => l.url.includes(":streamGenerateContent"));
+      assert.equal(log.filter(l => l.url.endsWith("/cachedContents")).length, 1, "같은 앞부분은 캐시를 한 번만 만든다");
+      assert(gens.every(g => g.body.cachedContent === "cachedContents/c1" && g.body.contents.length === 1 && g.body.contents[0].parts.length === 1));
+      assert.deepEqual(gens.map(g => g.body.contents[0].parts[0].text), ["문서 A", "문서 B"]);
+      const created = log.find(l => l.url.endsWith("/cachedContents")).body; assert.equal(created.ttl, "900s"); assert.equal(created.contents[0].parts.length, 2); assert.equal(created.model, "models/gemini-3.8-flash");
+      // 만료가 10분 안으로 다가오면 연장한다.
+      log.length = 0; expire = Date.now() + 300000;
+      const env3 = { GEMINI_KEY: "k-refresh" }; await runProvider(mk("x"), env3); await runProvider(mk("y"), env3);
+      assert.equal(log.filter(l => l.method === "PATCH").length, 1);
+      // 캐시가 사라져 거절되면 캐시 없이 같은 요청을 보낸다.
+      log.length = 0; genStatus = 404; expire = Date.now() + 900000;
+      const env4 = { GEMINI_KEY: "k-gone" }; await runProvider(mk("z"), env4);
+      const tries = log.filter(l => l.url.includes(":streamGenerateContent")); assert.equal(tries.length, 2); assert(!tries[1].body.cachedContent && tries[1].body.contents[0].parts.length === 3);
+      // 끄기 설정과 Gemini 4는 쓰지 않는다.
+      log.length = 0; genStatus = 200;
+      await runProvider(mk("o"), { GEMINI_KEY: "k-off", GEMINI_EXPLICIT_CACHE: "off" });
+      await runProvider({ ...mk("g4"), input: { ...mk("g4").input, model: "gemini-4-carbon" } }, { GEMINI_KEY: "k-g4" });
+      assert(!log.some(l => l.url.endsWith("/cachedContents")));
+    }
     ok("서버 AI 호출의 무응답을 구분해 빨리 끝내고, 상태 조회는 쓰지 않으며 단계 저장은 바뀐 조각만 쓴다");
   }
 } finally { globalThis.fetch = original; }

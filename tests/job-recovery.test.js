@@ -1,4 +1,5 @@
 /* 새로고침·탭 종료 뒤 서버 작업 복구와 원본 보호. 제공자 호출은 전부 대체한다. */
+const cacheCalls=[];
 const assert = require("node:assert/strict"), fs = require("node:fs");
 const { chromium } = require("playwright"), { appServer } = require("./helpers/app");
 const server = appServer(), entries = new Map(), gates = new Map(), calls = [], api = [];
@@ -24,6 +25,7 @@ const until = async fn => { for (let i = 0; i < 400; i++) { if (await fn()) retu
  } };
  const jobs = () => entries.get("account:account-a")?.storage.data.get("jobs") || [];
  globalThis.fetch = async (url, options) => {
+ if(String(url).includes("/cachedContents")){cacheCalls.push({url:String(url),method:(options||{}).method,body:(options||{}).body});return Response.json({name:"cachedContents/test-cache",expireTime:new Date(Date.now()+900000).toISOString()})}if(String(url).endsWith(":countTokens"))return Response.json({totalTokens:5000});
    const r = jobs().find(j => j.status === "running"); assert(r); calls.push({ id: r.id, kind: r.meta?.kind, url });
    if (mode === "hold") await new Promise((resolve, reject) => { gates.set(r.id, resolve); options.signal.addEventListener("abort", () => { gates.delete(r.id); reject(new DOMException("abort", "AbortError")); }, { once: true }); });
    let out;

@@ -136,7 +136,7 @@ async function callProvider(job, env, personalKey, signal, trace, since, onChunk
   if ((claude || openai) && job.keyMode === "personal") throw { code: "server_key_missing", definite: true };
   const key = job.keyMode === "personal" ? personalKey : env[serverKeyName(type, model)];
   if (!key) throw { code: "server_key_missing", definite: true };
-  let url, headers, body;
+  let url, headers, body, explicit = null;
   if (type === "openai.image") {
     const { reference: ref, ...values } = input;
     const fields = { ...values, model, n: 1, output_format: "png" };
@@ -164,8 +164,15 @@ async function callProvider(job, env, personalKey, signal, trace, since, onChunk
     const streamed = type === "gemini.generate";
     url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + (streamed ? ":streamGenerateContent?alt=sse" : ":generateContent");
     headers = { "Content-Type": "application/json", "x-goog-api-key": key }; body = JSON.stringify(input);
+    if (streamed) explicit = await geminiExplicitCache(model, input, key, job.keyMode, env, signal);
   }
-  const res = await fetch(url, { method: "POST", headers, body, signal });
+  let res = await fetch(url, { method: "POST", headers, body: explicit ? explicit.body : body, signal });
+  // 명시적 캐시가 만료·삭제됐거나 거절되면 캐시를 버리고 같은 요청을 캐시 없이 한 번 보낸다(생성 전 거절이라 중복 과금이 없다).
+  if (explicit && !res.ok && [400, 403, 404].includes(res.status)) {
+    const text = await res.text().catch(() => "");
+    if (res.status === 404 || /cach/i.test(text)) { explicit.drop(); res = await fetch(url, { method: "POST", headers, body, signal }); }
+    else res = new Response(text, { status: res.status, headers: res.headers });   // 캐시와 무관한 거절(생각 설정 등)은 원래 오류 처리로 넘긴다
+  }
   trace.headers = since(); trace.httpStatus = res.status;
   if (!res.ok) throw await providerError(res, model);
   const text = await boundedText(res.body, type.endsWith(".image") ? 20 * 1024 * 1024 : 4 * 1024 * 1024, onChunk);
@@ -190,6 +197,43 @@ async function callProvider(job, env, personalKey, signal, trace, since, onChunk
   }
   if (!result || (type === "openai.image" ? !Array.isArray(result.data) || !result.data.length : (!Array.isArray(result.candidates) || !result.candidates.length) && !result.promptFeedback?.blockReason)) throw { code: "empty_response", definite: true };
   return result;
+}
+
+// Gemini 명시적 캐시. 자동(암묵) 캐시는 같은 앞부분이어도 적중이 보장되지 않아,
+// 캐시 경계로 나뉜 요청의 앞 조각들을 cachedContents로 저장하고 요청은 마지막 조각만 보낸다.
+// 15분 유지, 쓸 때 남은 시간이 10분 아래면 15분으로 연장. 키·모델·내용 해시별로 이 실행 환경 메모리에 둔다.
+// 만들거나 쓰다 실패하면 일반 요청으로 보낸다. env.GEMINI_EXPLICIT_CACHE = "off"이면 쓰지 않는다.
+const geminiCaches = new Map(), cacheRefused = new Map();   // cacheRefused: 캐시를 만들 수 없던 모델은 10분간 다시 시도하지 않는다
+const CACHE_TTL_S = 900, GEMINI_API = "https://generativelanguage.googleapis.com/v1beta/";
+const sha = async text => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))].map(n => n.toString(16).padStart(2, "0")).join("").slice(0, 24);
+async function geminiExplicitCache(model, input, key, keyMode, env, signal) {
+  const parts = input?.contents?.[0]?.parts;
+  if (env?.GEMINI_EXPLICIT_CACHE === "off" || /^gemini-4/.test(model) || (cacheRefused.get(model) || 0) > Date.now() || input.systemInstruction || input.contents[0].role === "model" || !Array.isArray(parts) || parts.length < 2) return null;
+  const stable = parts.slice(0, -1), text = stable.map(p => p.text || "").join("");
+  if (text.length < 6000) return null;
+  const id = (await sha(keyMode + ":" + key)).slice(0, 10) + ":" + model + ":" + await sha(text);   // 키가 다르면(개인 키·서버 키 교체) 캐시를 섞지 않는다
+  const headers = { "Content-Type": "application/json", "x-goog-api-key": key };
+  const create = async () => {
+    const res = await fetch(GEMINI_API + "cachedContents", { method: "POST", headers, signal,
+      body: JSON.stringify({ model: "models/" + model, contents: [{ role: "user", parts: stable }], ttl: CACHE_TTL_S + "s" }) });
+    if (!res.ok) { try { await res.body?.cancel(); } catch {} throw new Error("cache " + res.status); }
+    const out = await res.json(); if (typeof out?.name !== "string") throw new Error("cache name");
+    return { name: out.name, expiresAt: Date.parse(out.expireTime) || Date.now() + CACHE_TTL_S * 1000 };
+  };
+  let entry = geminiCaches.has(id) ? await geminiCaches.get(id).catch(() => null) : null;
+  if (!entry || entry.expiresAt - Date.now() < 60000) {
+    const pending = create(); geminiCaches.set(id, pending);
+    while (geminiCaches.size > 50) geminiCaches.delete(geminiCaches.keys().next().value);
+    entry = await pending.catch(() => null);
+    if (!entry) { geminiCaches.delete(id); cacheRefused.set(model, Date.now() + 600000); return null; }
+  } else if (entry.expiresAt - Date.now() < 600000) {
+    try {
+      const res = await fetch(GEMINI_API + entry.name + "?updateMask=ttl", { method: "PATCH", headers, signal, body: JSON.stringify({ ttl: CACHE_TTL_S + "s" }) });
+      if (res.ok) { const out = await res.json().catch(() => ({})); entry.expiresAt = Date.parse(out.expireTime) || Date.now() + CACHE_TTL_S * 1000; } else { try { await res.body?.cancel(); } catch {} }
+    } catch {}
+  }
+  const rest = { ...input, contents: [{ role: "user", parts: parts.slice(-1) }, ...input.contents.slice(1)] };
+  return { body: JSON.stringify({ ...rest, cachedContent: entry.name }), drop: () => geminiCaches.delete(id) };
 }
 
 // 캐시 진단용: 앞부분(캐시 대상)의 실제 토큰 수. Gemini countTokens는 생성 요금이 없다. 실패하면 null.
