@@ -800,19 +800,16 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
     S.pages[k] = np;
     np.check = { at: Date.now(), issues, auto: true, numV: numStamp(w) };
     Object.assign(res, { page: np, keep: issues, patched: true });
-    // 수정 뒤에는 로컬 대조만 갱신한다. 요약된 claim도 적용된 원문과 메모 번호로 확인한다.
-    const before = docForCheck(page), after = docForCheck(np);
-    const beforeRaw = docForCheck(page, t => t), afterRaw = docForCheck(np, t => t);
+    // claim은 수정 후에도 남는 주어나 문장 일부일 수 있다. 메모 번호와 실제 원문 교체로 확인한다.
     const verified = detIssues(w, k);
     const finalSource = pageToSource(w, np);
-    const edited = new Set(fixedEdits.filter(e =>
-      f[e.field].includes(e.old) && !finalSource[e.field].includes(e.old) && finalSource[e.field].includes(e.new)
-    ).map(e => high[e.memo - 1]).filter(i => {
-      const links = i.claim.includes("[[");
-      const claim = links ? i.claim : stripMarks(i.claim);
-      return claim && (!(links ? beforeRaw : before).includes(claim) || !(links ? afterRaw : after).includes(claim))
-        && !verified.some(x => x.conflict === i.conflict);
-    }));
+    const edited = new Set(fixedEdits.filter(e => {
+      // 자동 링크와 원문 왕복의 공백 정리를 허용한다. 링크 대상만 고친 경우에는 원래 표기를 대조한다.
+      const marks = stripMarks(e.old) !== stripMarks(e.new) ? stripMarks : t => t;
+      const text = t => marks(t).replace(/\s+/g, " ").trim();
+      const old = text(e.old), nw = text(e.new), final = text(finalSource[e.field]);
+      return old && old !== nw && f[e.field].includes(e.old) && !final.includes(old) && final.includes(nw);
+    }).map(e => high[e.memo - 1]).filter(i => !verified.some(x => x.conflict === i.conflict)));
     const keep = mergeIssues([...verified, ...issues.filter(i => !edited.has(i) && !isNumIssue(i))]);
     const fixed = edited.size;
     np.check = { ...np.check, issues: keep, numV: numStamp(w) };

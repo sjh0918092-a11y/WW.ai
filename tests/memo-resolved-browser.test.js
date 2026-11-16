@@ -53,6 +53,28 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
     await page.waitForFunction(() => S.fixv?.phase === "pick" && S.fixv.err.includes("고칠 곳을 원문에서 찾지 못했습니다"));
     assert.deepEqual(await issues(), ["다른 이유로 지적했다."]);
     pass("원문에 그대로 있는 서술은 해결 신호 없이 닫지 않는다");
+
+    const auto = await page.evaluate(async ({ world, page0, base }) => {
+      S.world = world; S.pages = { [base]: page0 }; S.view = { name: "article", key: base };
+      const original = callJson, kinds = [];
+      callJson = async kind => {
+        kinds.push(kind);
+        if (kind === "check") return { issues: [{ claim: "북해 기지는", evidence: "확정 연표는 2015년이다.", conflict: "준공 연도를 고쳐야 한다.", severity: "high" }] };
+        if (kind === "read") return { issues: [] };
+        if (kind === "fix") return { edits: [{ memo: 1, field: "body", old: "2014년에 준공되었다", new: "2015년에 준공되었다" }] };
+        throw Error("예상하지 않은 호출: " + kind);
+      };
+      try {
+        const result = await preCheck(world, base, page0, { ctl: new AbortController() }, () => {});
+        renderMain();
+        return { fixed: result.fixed, issues: S.pages[base].check.issues, body: S.pages[base].sections[0].body, kinds };
+      } finally { callJson = original; }
+    }, { world, page0, base });
+    assert.equal(auto.fixed, 1); assert.deepEqual(auto.issues, []); assert(auto.body.includes("2015년에 준공되었다"));
+    assert.deepEqual(auto.kinds.sort(), ["check", "fix", "read"]);
+    assert((await page.locator("#main").textContent()).includes("자동으로 고쳤습니다"));
+    assert(!(await page.locator("#main").textContent()).includes("준공 연도를 고쳐야 한다."));
+    pass("작성 직후 자동 수정은 메모의 주어가 본문에 남아도 메모를 닫아 보여 주며 AI 재검사를 하지 않는다");
     assert.deepEqual(errors, []);
     console.log(`\n모두 통과 (${n}개). 유료 AI 호출 0회.`);
   } catch (e) { console.error("실패:", e); process.exitCode = 1; }

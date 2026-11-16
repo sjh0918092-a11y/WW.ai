@@ -129,6 +129,21 @@ try {
  fixClaim='푸른 바다를 항해한다.';
  pass('검사 메모가 원문을 요약했어도 실제로 적용한 자동 수정에 해당하는 경고는 닫고 재검사를 호출하지 않는다');
 
+ for (const [claim, old, replacement] of [
+  ['바다를 항해한다.', '선장은 푸른 바다를 항해한다.', '선장은 붉은 바다를 항해한다.'],
+  ['선장의 항해지', '푸른 바다', '항구 앞의 붉은 바다'],
+  ['선장의 항해지', '푸른 바다', '붉은 바다\n'],
+  ['푸른 바다를 항해한다.', '푸른 바다를 항해한다.', ''],
+ ]) {
+  e=await reset({rewrite:true});behavior='fix';fixClaim=claim;fixEdits=[{field:'body',old,new:replacement,memo:1}];
+  await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));
+  assert.equal(r.result.pipeline.fixed,1,JSON.stringify({claim,old,replacement}));assert.equal(r.result.pipeline.remaining,0);assert.deepEqual(storedPage(B).check.issues,[]);
+  if(replacement.includes('항구'))assert(storedPage(B).sections[0].body.includes('[[항구]]'));
+  assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page','check','read','fix','factSync']);
+ }
+ fixEdits=null;fixClaim='푸른 바다를 항해한다.';
+ pass('메모의 일부 표현이 남거나 저장 시 링크·줄바꿈이 정리되거나 문장을 삭제해도 적용한 수정의 메모를 닫는다');
+
  for (const edits of [
   [{field:'body',old:'원문에 없는 구절',new:'붉은',memo:1}],
   [{field:'body',old:'푸른',new:'붉은',memo:2}],
