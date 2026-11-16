@@ -434,7 +434,7 @@ ${rewriteDir ? `사용자가 요청한 방향: ${rewriteDir}\n이 방향을 최�
 다른 문서에 이미 기록된 말이다. 같은 사람이 같은 날 같은 자리에서 한 말을 이 문서에서 다시 다룰 때는 아래를 글자 그대로 옮기거나, 인용하지 않고 간접 서술로 쓴다. 같은 자리의 말을 새로 지어내지 않는다.
 ${qi}
 
-` : ""; })()}${inputs.ownerText ? ownerExcerptBlock(w, key, rel, inputs.ownerTextCount) : ""}${inputs.events ? eventBlock(w, key, rel, inputs.eventsCount) : ""}${inputs.sameEvents ? sameKindBlock(w, key, rel, guide || "", inputs.sameEventsCount) : ""}${inputs.life && ty === "인물" ? lifeFlowBlock(w, key, rel, inputs.lifeCount) : ""}## 관련 항목의 확정 설정 (모순 금지)
+` : ""; })()}${inputs.ownerText ? ownerExcerptBlock(w, key, rel, inputs.ownerTextCount) : ""}${inputs.roster ? rosterBlock(w, [key, ...(e.affil?.list || []).map(a => a.org), ...(e.cats || []).filter(c => c.axis === "소속").map(c => kOf(w, c.name)), ...rel], inputs.rosterCount) : ""}${inputs.events ? eventBlock(w, key, rel, inputs.eventsCount) : ""}${inputs.sameEvents ? sameKindBlock(w, key, rel, guide || "", inputs.sameEventsCount) : ""}${inputs.life && ty === "인물" ? lifeFlowBlock(w, key, rel, inputs.lifeCount) : ""}## 관련 항목의 확정 설정 (모순 금지)
 ${staged ? "아래는 모순을 피하기 위한 참고 자료다. 이 항목이 새로 더하는 사실과 장면을 중심으로 쓰고, 이미 기록된 경위는 연결에 필요한 만큼만 쓴다." : "아래는 모순을 피하기 위한 참고 자료다. 여기 있는 항목과 사실을 본문에 모두 언급할 필요는 없고, 같은 사고, 같은 절차, 같은 규정을 이 문서에서 되풀이하지 않는다. 다만 세계의 큰 사건을 이 항목의 자리에서 보여 주는 것은 되풀이가 아니다."}
 ${relText}
 
@@ -447,11 +447,11 @@ ${inputs.guidelines ? firstPageBlock(w, key, rewriteDir) : ""}${inputs.gaps ? wo
 ## 출력
 ${ENTITY_DEFINITION_RULE}
 JSON 객체 하나만 출력:
-{"title":"${e.title}",${angle && rewriteDir === null ? (angleMode === "section" ? '"angleUsed":"true 또는 false(이번 각도를 반영했는가)",' : "") + '"sceneUsed":"이번 각도로 실제로 쓴 장면 한 문장(쓰지 않았으면 빈 문자열)",' : ""}"type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의(링크 없이)","categories":{"소속":["..."],"유형":["..."],"사건":[],"기타":[]},"notices":["..."],"infobox":[{"label":"...","value":"..."}],"sections":[{"heading":"개요","level":1,"body":"..."},{"heading":"생애","level":1,"body":""},{"heading":"1959년 데뷔","level":2,"body":"..."}],${showFor(ty, ["인물"]) ? '"motifs":["' + (staged ? '이 인물의 특징 전체를 대표하는 중심 소재(짧은 명사)' : '이 인물 문서에서 성격을 보여 준 일화의 중심 소재(짧은 명사)') + '"],' : ""}"facts":[{"about":"항목 제목","fact":"이 문서에서 확정한, 그 항목에 관한 사실 한 문장"}],${REL_JSON},"newEntities":[{"title":"새로 링크한 항목 제목","type":"유형","summary":"한 문장 정의","소속":["아는 경우"],"유형":["아는 경우"]}],"timeline":[{"year":"연도","month":3,"day":14,"about":"사건의 주체가 되는 항목 제목","event":"이 문서에서 새로 확정한, 세계에 영향을 준 사건"}],${EVENTS_JSON},${TERMS_JSON}}
+{"title":"${e.title}",${angle && rewriteDir === null ? (angleMode === "section" ? '"angleUsed":"true 또는 false(이번 각도를 반영했는가)",' : "") + '"sceneUsed":"이번 각도로 실제로 쓴 장면 한 문장(쓰지 않았으면 빈 문자열)",' : ""}"type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의(링크 없이)","categories":{"소속":["..."],"유형":["..."],"사건":[],"기타":[]},"notices":["..."],"infobox":[{"label":"...","value":"..."}],"sections":[{"heading":"개요","level":1,"body":"..."},{"heading":"생애","level":1,"body":""},{"heading":"1959년 데뷔","level":2,"body":"..."}],${showFor(ty, ["인물"]) ? '"motifs":["' + (staged ? '이 인물의 특징 전체를 대표하는 중심 소재(짧은 명사)' : '이 인물 문서에서 성격을 보여 준 일화의 중심 소재(짧은 명사)') + '"],' : ""}"facts":[{"about":"항목 제목","fact":"이 문서에서 확정한, 그 항목에 관한 사실 한 문장"}],${REL_JSON},"newEntities":[{"title":"새로 링크한 항목 제목","type":"유형","summary":"한 문장 정의","소속":["아는 경우"],"유형":["아는 경우"]}],"timeline":[{"year":"연도","month":3,"day":14,"about":"사건의 주체가 되는 항목 제목","event":"이 문서에서 새로 확정한, 세계에 영향을 준 사건"}],${EVENTS_JSON},${TERMS_JSON},${AFFIL_JSON}}
 relations에는 이 문서에 나온 인물 사이의 관계를 넣는다. 이 항목이 인물이면 이 문서에 실제로 나온 인물과의 주요 관계를 넣는다. 관계를 채우려고 새 인물이나 연인을 지어내지 않는다. '기존 인물 관계'에 이미 있는 관계를 이 문서가 다시 다루면 same으로 그 번호만 쓰고, 관계의 성격이 실제로 바뀌었을 때만 next를 쓴다. a와 b는 이 문서의 제목이거나 이 문서가 링크한 항목의 제목을 글자 그대로 쓴다. 인물이 아닌 항목만 다룬 문서라면 빈 배열.
 ${REL_SPEC}
 ${showFor(ty, ["인물"]) ? `${staged ? 'motifs에는 인물의 성격·능력·습관 등 특징 전체의 중심 소재 1~3개를 쓴다. 기존 소재와 의미가 같으면 그 이름을 재사용한다. 인물이 아니면 빈 배열.' : 'motifs에는 이 항목이 인물이면 이 문서에서 성격을 보여 준 일화의 중심 소재 1~3개를 짧은 명사로 쓴다(예: "보급품", "규칙 위반", "음식", "동물", "음악", "가족"). 인물이 아니면 빈 배열.'}\n` : ""}${catGuide(w, key, inputs.categories ? inputs.categoriesCount : 0)} sections의 level은 1(큰 섹션) 또는 2(바로 앞 큰 섹션의 하위 섹션)이며, 섹션 번호는 쓰지 않는다.
-facts에는 이 문서가 링크한 항목 중 중요한 것(인물, 조직, 사건, 장소 위주) 6~10개에 대해 1개씩 넣되, 이 문서의 절정이나 큰 사건에 등장한 항목은 빠짐없이 포함해 그 사건에서 무엇을 했고 어떻게 되었는지(쓴 무기나 수단, 생사, 결과)를 사실로 남긴다. 그리고 「${e.title}」 자체에 대한 핵심 사실 3~6개를 넣는다. newEntities에는 위 '이미 존재하는 항목' 목록에 없던 링크 대상을 모두 넣되, summary는 40자 안팎의 한 문장으로 짧게 쓴다. newEntities의 소속과 유형은 이 문서에서 알 수 있는 범위에서 categories와 같은 규칙(기존 분류 이름 우선)으로 0~1개씩 쓰고, 모르면 빈 배열로 둔다. timeline에는 이 문서에서 새로 확정한 사건 중 세계에 영향을 준 것(전쟁, 조약, 창설, 해체, 발견, 사고, 정변처럼 그 해에 일어난 일)만 0~2개 넣는다. 넣을 사건이 없으면 빈 배열이 정상이며, 연표를 채우려고 사건을 만들지 않는다. ${TL_DATE_SPEC}${tlDateNote(w)} 현재 상태, 근황, 거주, 요양, 재직 중, 복무 중 같은 서술은 연표가 아니라 본문에 쓴다. event 문장에는 그 일을 한 주체의 고유명사를 넣고, 같은 이름을 about에 글자 그대로 쓴다. 이미 연표에 있는 사건은 다시 넣지 않는다. ${inputs.events || inputs.sameEvents ? eventsSpec(w) : EVENTS_SPEC_BASE} ${TERMS_SPEC}`;
+facts에는 이 문서가 링크한 항목 중 중요한 것(인물, 조직, 사건, 장소 위주) 6~10개에 대해 1개씩 넣되, 이 문서의 절정이나 큰 사건에 등장한 항목은 빠짐없이 포함해 그 사건에서 무엇을 했고 어떻게 되었는지(쓴 무기나 수단, 생사, 결과)를 사실로 남긴다. 그리고 「${e.title}」 자체에 대한 핵심 사실 3~6개를 넣는다. newEntities에는 위 '이미 존재하는 항목' 목록에 없던 링크 대상을 모두 넣되, summary는 40자 안팎의 한 문장으로 짧게 쓴다. newEntities의 소속과 유형은 이 문서에서 알 수 있는 범위에서 categories와 같은 규칙(기존 분류 이름 우선)으로 0~1개씩 쓰고, 모르면 빈 배열로 둔다. timeline에는 이 문서에서 새로 확정한 사건 중 세계에 영향을 준 것(전쟁, 조약, 창설, 해체, 발견, 사고, 정변처럼 그 해에 일어난 일)만 0~2개 넣는다. 넣을 사건이 없으면 빈 배열이 정상이며, 연표를 채우려고 사건을 만들지 않는다. ${TL_DATE_SPEC}${tlDateNote(w)} 현재 상태, 근황, 거주, 요양, 재직 중, 복무 중 같은 서술은 연표가 아니라 본문에 쓴다. event 문장에는 그 일을 한 주체의 고유명사를 넣고, 같은 이름을 about에 글자 그대로 쓴다. 이미 연표에 있는 사건은 다시 넣지 않는다. ${inputs.events || inputs.sameEvents ? eventsSpec(w) : EVENTS_SPEC_BASE} ${TERMS_SPEC} ${AFFIL_SPEC.replace("{T}", e.title)}`;
 }
 /* 제목의 표기들: "白頭(백두)"는 "白頭"와 "백두"로도 찾는다 */
 const namesOf = t => { const m = String(t).match(/^(.+?)\((.+)\)$/); return [t, ...(m ? [m[1].trim(), m[2].trim()] : [])].filter(x => x.length >= 2); };
@@ -536,6 +536,7 @@ function checkPrompt(w, key, timelinePairs = timelineMatchPairs(w, key), sourceT
 - ${NUMBER_CHECK_RULE}
 - [[대상|표시명]]에서는 대상과 표시명을 각각 확인한다. 직접 경험은 해당 시점의 현장 참석 근거를 확인한다. 생년월일과 사건 시점이 주어지면 가능한 만 나이 또는 날짜 범위를 계산한다.
 - 원문끼리 엇갈리면 사용자 확정 설정과 사용자 수정 기록을 먼저 따른다.
+- '용어 정의와 공통 값'에 있는 종류 전체의 값(크기와 무게, 등급별 효과, 한계 수치)과 다른 값을 쓰면 high다. 경계는 이상·초과·이하·미만까지 같은지 본다(예: 정의는 '3등급 이상이면 버틴다'인데 문서는 '3등급 이하면 무릎 꿇는다'). '수천 톤'처럼 범위로 쓴 값은 그 범위가 공통 값과 겹치지 않을 때만 지적한다.
 ${ownerCheckRule(w, p)}- 같은 사건의 값·순서가 양립할 수 없거나, 지목한 조항의 내용과 초안이 그 조항에 귀속시킨 제한이 명백히 다르면 high. 예를 들어 명시된 상시 배치 상한을 해외 파견 상한이라고 단정한 경우가 그렇다.
 - 시점이나 범위를 확인하면 양립할 수 있거나, 제시된 기록만으로 인용 근거를 확정할 수 없으면 low로 쓰고 무엇을 더 확인해야 하는지 적는다. 한쪽에 서술이 빠졌다는 이유만으로 high로 올리지 않는다. 기존 기록과 양립하는 새 세부 내용은 지적하지 않는다.
 - 같은 조직·제도·기구를 관련 항목이나 연결된 문서와 다른 이름으로 부르면(예: 다른 문서는 '유엔 전략사찰단'인데 이 문서는 '유엔 전략소녀통제위원회') 같은 대상인지 역할·시기·구성으로 확인하고, 같은 대상이면 기존 이름으로 맞추라고 high로 지적한다. 실제로 다른 기구이면 지적하지 않는다.
@@ -549,7 +550,7 @@ ${own || "(없음)"}
 ## 관련 항목의 확정 설정
 ${ctx || "(없음)"}
 
-${sources}${eventCheckBlock(w, key, ok)}
+${sources}${eventCheckBlock(w, key, ok)}${rosterBlock(w, [key, ...keys], 30, true)}${periodBlock(w, [key, ...keys])}
 ## 검사할 문서
 ${docForCheck(p, t => t)}
 

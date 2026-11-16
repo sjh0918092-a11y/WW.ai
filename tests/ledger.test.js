@@ -266,8 +266,8 @@ test("용어 정의가 모든 문서 프롬프트와 문서 읽기 검사에 들
   assert(html.includes("glossaryBlock(w, null, options ? options.glossaryCount : GLOSSARY_PROMPT_N)"), "canonBlock에 넣는다");
   assert(html.includes("이 세계의 용어를 아래 '용어 정의'와 다른 뜻으로 쓴 곳"));
   assert(html.includes("const g = glossaryBlock(w, docForCheck(p))"));
-  assert(html.includes(",${TERMS_JSON}}")); assert(html.includes("ingestTerms(w, key, out.terms)"));
-  assert(html.includes("if (w.glossary) purgeTerms(w, key);"));
+  assert(html.includes(",${TERMS_JSON},${AFFIL_JSON}}")); assert(html.includes("ingestTerms(w, key, out.terms)"));
+  assert(html.includes("  purgeTerms(w, key);"));
   assert(html.includes("data-term-pick=") && html.includes("어느 쪽으로 할까요?"));
 });
 

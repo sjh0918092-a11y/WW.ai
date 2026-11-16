@@ -97,7 +97,7 @@ const read = (p, k) => p.evaluate(k => new Promise(resolve => { const r = indexe
     await page.evaluate(k => openEntity(k), stub);
     await page.waitForFunction(k => !S.gen && S.pages[k], stub);
     const pr = prompts[prompts.length - 1];
-    assert(pr.includes("## 용어 정의 (이 세계의 용어는 이 뜻으로만 쓴다)")); assert(pr.includes("- Type-05: 소녀 한 명의 개인 이름 [사용자 확정]"));
+    assert(pr.includes("## 용어 정의와 공통 값 (이 세계의 용어는 이 뜻으로만 쓰고, 공통 값은 이 값과 경계를 그대로 따른다)")); assert(pr.includes("- Type-05: 소녀 한 명의 개인 이름 [사용자 확정]"));
     assert(pr.includes("## 사건 장부 (이 문서가 다룰 수 있는 사건의 확정 기록)")); assert(pr.includes("| 해저 결투 | 2015년 11월 4일 | 북해 | 거리 180해리; 수심 70m |"));
     assert(pr.includes('"events":[{') && pr.includes('"terms":[{'));
     await page.waitForFunction(() => S.world.events.length === 2);

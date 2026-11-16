@@ -540,6 +540,7 @@ function integrate(w, key, out, options = {}) {
   acceptPageTimeline(w, out.timeline, key);   // 주어 없는 항목, 같은 해·같은 대상의 중복은 받지 않는다
   if (!options.noAI) afterTimeline(w);
   if (Array.isArray(out.events)) ingestEvents(w, key, out.events);
+  if (Array.isArray(out.affiliations)) ingestAffil(w, key, out.affiliations);   // 이 항목 자신의 소속·상태·기간(구성원 현황의 재료)
   if (Array.isArray(out.terms)) ingestTerms(w, key, out.terms);   // 정의가 엇갈리는 후보는 고르지 않고 설정 노트에 띄운다   // 고친 본문처럼 events가 없는 결과는 이전 기록을 둔다
   w.navboxes ||= {};
   (Array.isArray(out.navboxes) ? out.navboxes : []).slice(0, 2).forEach((nb, i) => {

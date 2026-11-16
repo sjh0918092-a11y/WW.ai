@@ -464,10 +464,11 @@ function ingestTerms(w, src, list) {
   w.glossary ||= []; let n = 0;
   for (const x of list.slice(0, 6)) {
     if (!x || typeof x !== "object") continue;
-    const term = evText(x.term, 40), definition = evText(x.definition, 300);
+    const term = evText(x.term, 40), definition = evText(x.definition, 300), about = evText(x.about, 40);
     if (!term || !definition) continue;
     const g = findTerm(w, term);
-    if (!g) { if (w.glossary.length < GLOSSARY_MAX) { w.glossary.push({ term, definition, src, confirmed: false, at: Date.now() }); n++; } continue; }
+    if (!g) { if (w.glossary.length < GLOSSARY_MAX) { w.glossary.push({ term, definition, src, confirmed: false, at: Date.now(), ...(about && about !== term ? { about } : {}) }); n++; } continue; }
+    if (about && !g.about && about !== g.term) g.about = about;
     if (g.src === src && !g.confirmed) { g.definition = definition; continue; }   // 같은 문서가 다시 낸 정의는 바꿔 끼운다
     if (g.confirmed || defKey(g.definition) === defKey(definition)) continue;     // 확정된 정의는 후보를 받지 않는다(어긋난 쓰임은 문서 검사가 잡는다)
     g.alts ||= [];
@@ -478,6 +479,7 @@ function ingestTerms(w, src, list) {
 }
 /* 문서가 지워지거나 다시 쓰일 때: 그 문서가 낸 후보는 걷어 내고, 그 문서가 처음 정한 미확정 용어는 후보가 있으면 첫 후보로, 없으면 지운다 */
 function purgeTerms(w, src) {
+  if (w.entities?.[src]?.affil?.src === src) delete w.entities[src].affil;   // 그 문서가 정한 자기 소속도 함께 걷어 낸다
   if (!w.glossary) return;
   for (const g of w.glossary) if (g.alts) { g.alts = g.alts.filter(a => a.src !== src); if (!g.alts.length) delete g.alts; }
   w.glossary = w.glossary.filter(g => {
@@ -499,13 +501,77 @@ const termLine = (w, g) => `- ${g.term}: ${g.definition}${g.confirmed ? " [사�
 function glossaryBlock(w, text = null, max = GLOSSARY_PROMPT_N) {
   if (max <= 0) return "";
   let list = (w.glossary || []).filter(g => g.definition);
-  if (text !== null) list = list.filter(g => text.includes(g.term));   // 검사할 문서에 나온 용어만
+  if (text !== null) list = list.filter(g => text.includes(g.term) || (g.about && text.includes(g.about)));   // 검사할 문서에 나온 용어와, 문서가 다룬 대상에 걸린 공통 값만
   if (!list.length) return "";
   list = [...list.filter(g => g.confirmed), ...list.filter(g => !g.confirmed)].slice(0, max);
-  return `## 용어 정의 (이 세계의 용어는 이 뜻으로만 쓴다)\n${list.map(g => termLine(w, g)).join("\n")}`;
+  return `## 용어 정의와 공통 값 (이 세계의 용어는 이 뜻으로만 쓰고, 공통 값은 이 값과 경계를 그대로 따른다)\n${list.map(g => termLine(w, g)).join("\n")}`;
 }
-const TERMS_SPEC = `terms에는 이 문서가 처음 정한 명명 체계, 번호 체계, 이 세계의 핵심 개념만 0~3개 넣는다(예: 제식 번호가 개인의 이름인지 대대로 물려받는 칭호인지, 번호를 나라마다 매기는지 전 세계 일련번호인지). definition은 무엇을 가리키고 어떻게 붙는지 한두 문장으로 쓴다. '용어 정의'에 이미 있는 용어는 넣지 않고, 그 정의와 다른 뜻으로 쓰지 않는다. 처음 정한 것이 없으면 빈 배열.`;
-const TERMS_JSON = `"terms":[{"term":"용어","definition":"뜻과 붙는 방식"}]`;
+const TERMS_SPEC = `terms에는 이 문서가 처음 정한 것 가운데 두 가지만 합쳐 0~3개 넣는다. (1) 명명 체계, 번호 체계, 이 세계의 핵심 개념(예: 제식 번호가 개인의 이름인지 대대로 물려받는 칭호인지, 번호를 나라마다 매기는지 전 세계 일련번호인지). definition은 무엇을 가리키고 어떻게 붙는지 한두 문장으로 쓴다. (2) 한 개체가 아니라 같은 종류 전체에 적용되는 공통 값: 크기와 무게의 관계, 등급·단계별 효과, 한계 수치, 상한(예: 신장 80m급 개체의 체중 범위, 3등급 이상이면 무엇을 할 수 있는지). term은 '대상 + 속성'(예: 전략 소녀의 체중), about은 그 종류의 이름, definition에는 값과 단위, 경계가 이상·초과·이하·미만 중 무엇인지를 글자 그대로 쓴다. '용어 정의와 공통 값'에 이미 있는 것은 넣지 않고, 그 정의나 값과 다르게 쓰지 않는다. 처음 정한 것이 없으면 빈 배열.`;
+const TERMS_JSON = `"terms":[{"term":"용어 또는 대상의 속성","about":"공통 값이면 그 종류의 이름(아니면 빈 문자열)","definition":"뜻과 붙는 방식, 또는 값·단위·경계"}]`;
+
+/* ---------- 소속과 기간: 여러 문서에서 계산되는 집계(나라별 현역 수, 'N기 중 가장')의 재료 ----------
+   e.affil = { src, list: [{ org(항목 키), role, state, from, to }] } — 그 항목 자신의 문서가 정한다(주인 문서).
+   소속 구성원 현황은 저장하지 않고 이것으로 그때그때 계산한다 */
+const AFFIL_STATES = ["현역", "퇴역", "사망", "해제", "실종", "기타"];
+const AFFIL_SPEC = `affiliations에는 「{T}」 자신이 속했거나 속한 국가·조직·부대를 0~4개 넣는다(그 항목 자신의 소속만. 다른 항목의 소속은 넣지 않는다). org는 그 소속 항목의 제목을 글자 그대로, role은 그 안의 자리(예: 해군 전략 소녀, 지휘관, 회원국), state는 작중 기준 시점의 상태로 ${AFFIL_STATES.join("·")} 중 하나, from과 to는 그 소속이 시작하고 끝난 연도(진행 중이면 to는 빈 문자열, 모르면 빈 문자열)다.`;
+const AFFIL_JSON = `"affiliations":[{"org":"소속 항목 제목","role":"자리","state":"현역","from":"연도","to":""}]`;
+const yearText = v => { const m = /(\d{3,4})/.exec(String(v ?? "")); return m ? m[1] : ""; };
+function ingestAffil(w, key, list) {
+  const e = w.entities[key]; if (!e || !Array.isArray(list)) return;
+  const out = [];
+  for (const x of list.slice(0, 6)) {
+    if (!x || typeof x !== "object") continue;
+    const title = evText(x.org, 60); if (!title) continue;
+    const org = kOf(w, title); if (org === key || out.some(y => y.org === org)) continue;
+    if (!w.entities[org]) continue;   // 링크도 하지 않은 소속은 받지 않는다
+    out.push({ org, role: evText(x.role, 40), state: AFFIL_STATES.includes(x.state) ? x.state : "기타", from: yearText(x.from), to: yearText(x.to) });
+  }
+  if (out.length) e.affil = { src: key, list: out }; else if (e.affil?.src === key) delete e.affil;
+}
+const affilSpan = a => a.from || a.to ? `${a.from || "?"}~${a.to || (a.state === "현역" ? "현재" : "?")}` : "";
+/* 소속 org의 구성원: 그 항목 문서가 정한 소속과, 문서가 아직 없는 항목의 소속 분류 */
+function rosterOf(w, org) {
+  const t = w.entities[org]?.title, rows = [];
+  for (const [k, o] of Object.entries(w.entities)) {
+    if (k === org) continue;
+    const a = o.affil?.list?.find(x => x.org === org);
+    if (a) rows.push({ k, a });
+    else if (!S.pages[k] && t && (o.cats || []).some(c => c.axis === "소속" && c.name === t)) rows.push({ k, a: null });
+  }
+  return rows;
+}
+function rosterBlock(w, orgs, n = 30, check = false) {
+  if (n <= 0) return "";
+  const parts = [];
+  for (const org of [...new Set(orgs)]) {
+    const rows = rosterOf(w, org); if (!rows.length || !w.entities[org]) continue;
+    const count = {}; for (const r of rows) if (r.a) count[r.a.state] = (count[r.a.state] || 0) + 1;
+    parts.push(`### 「${w.entities[org].title}」 (문서가 정한 상태: ${Object.entries(count).map(([s, c]) => `${s} ${c}`).join(", ") || "없음"})\n${rows.slice(0, n).map(({ k, a }) => `- ${w.entities[k].title}${a ? `: ${[a.role, a.state, affilSpan(a)].filter(Boolean).join(", ")}` : ": (문서 없음, 상태 미정)"}`).join("\n")}`);
+    if (parts.length >= 4) break;
+  }
+  if (!parts.length) return "";
+  return `## 소속 구성원 현황 (각 항목의 문서가 정한 소속·상태·기간을 앱이 모은 표)
+${check ? "문서가 'N기 중', '유일', '0기', '모두', '가장 ~한' 같은 수·비교로 구성원을 말하면 이 표와 맞춰 본다. 표의 상태와 모순되면(예: 표에 현역이 있는데 현역 0기라고 씀, 현역이 1기뿐인데 현역 3기 중 하나라고 씀) high로 지적한다. 표보다 많은 수를 말했으면 이 문서가 그 구성원의 이름을 밝혔는지 보고, 밝혔으면 지적하지 않는다." : "구성원의 수, 현역 여부, '유일', '가장 ~한', 'N기 중' 같은 비교는 이 표와 맞춘다. 표에 있는 항목의 상태와 기간은 바꾸지 않는다. 표에 없는 구성원을 더할 때는 이름을 밝힌다."}
+${parts.join("\n\n")}
+
+`;
+}
+/* 문서에 나온 대상들의 기간표: 공존 서술(함께 복무, 같은 시설 사용, 교전, 인계)이 두 기간 안에 들어가는지 계산할 재료 */
+const PERIOD_LABEL = /출생|사망|생몰|발현|퇴역|은퇴|전역|복무|재임|재위|활동|현역|취역|퇴역|진수|해체|창설|설립|폐지|해산|건조|폐기|운용|존속|기간/;
+function periodBlock(w, keys, max = 16) {
+  const rows = [];
+  for (const k of keys) {
+    const o = w.entities[k], p = S.pages[k]; if (!o) continue;
+    const lines = (p?.infobox || []).filter(r => PERIOD_LABEL.test(r.label) && /\d{3,4}/.test(r.value)).map(r => `${r.label} ${stripMarks(r.value)}`.slice(0, 80));
+    for (const a of o.affil?.list || []) if (affilSpan(a)) lines.push(`${w.entities[a.org]?.title || "?"} ${a.role || ""} ${a.state} ${affilSpan(a)}`.replace(/\s+/g, " "));
+    if (lines.length) rows.push(`- ${o.title}: ${[...new Set(lines)].slice(0, 5).join(" · ")}`);
+    if (rows.length >= max) break;
+  }
+  return rows.length ? `## 등장 대상의 기간 (함께 복무했다, 같은 시설·장비를 썼다, 맞붙었다, 넘겨받았다처럼 둘이 같은 때에 있어야 하는 서술은 두 기간이 실제로 겹치는지 계산한다. 겹치지 않으면 high)
+${rows.join("\n")}
+
+` : "";
+}
 
 /* ---------- 세계 전체 점검 (사용자가 버튼을 눌렀을 때만) ----------
    문서 제목과 한 줄 정의, 문서별 확정 사실, 사건 장부, 용어 정의, 연표를 압축해 한 번 보내고, 문서끼리 서로 모르는 곳을 찾게 한다.

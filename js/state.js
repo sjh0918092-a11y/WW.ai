@@ -432,7 +432,7 @@ function purge(w, key) {
   w.relations.forEach(x => { if (x.sup?.by === key) delete x.sup; });
   w.timeline = w.timeline.filter(x => x.src !== key);
   if (w.events) w.events = w.events.filter(x => x.src !== key);
-  if (w.glossary) purgeTerms(w, key);
+  purgeTerms(w, key);   // 용어 후보와 이 문서가 정한 자기 소속
 }
 /* 다시 쓰기 준비: 이전 버전이 남긴 흔적을 모두 걷어낸다. 실패하면 restoreRewrite로 되돌린다. */
 function prepareRewrite(w, key) {

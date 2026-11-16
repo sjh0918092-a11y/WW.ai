@@ -16,7 +16,7 @@ const AI_PROMPT_FIELDS = [
  ["mentions","다른 문서의 대상 언급",true,"mentionsCount",30],
  ["related","관련 항목",true,"relatedCount",8],["relatedSummary","관련 항목 요약",true],["relatedBox","관련 항목 인포박스",true],
  ["relatedFacts","관련 항목의 사실",true,"relatedFactsCount",6],
- ["ownerText","관련 항목 문서의 해당 대목",true,"ownerTextCount",8],
+ ["ownerText","관련 항목 문서의 해당 대목",true,"ownerTextCount",8],["roster","소속 구성원 현황",true,"rosterCount",30],
  ["index","기존 항목 제목·요약 목록",true,"indexCount",60],
  ["relations","기존 인물 관계",true,"relationsCount",24],["events","사건 장부",true,"eventsCount",40],
  ["quotes","기록된 발언",true,"quotesCount",8],["glossary","용어 정의",true,"glossaryCount",40],
