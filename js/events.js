@@ -53,7 +53,7 @@ document.addEventListener("click", ev => {
   if (d.jobApply) { AIRecovery.apply(d.jobApply); return; }
   if (d.jobCancel) { AIRecovery.cancel(d.jobCancel); return; }
   if (d.jobDownload) { AIRecovery.download(d.jobDownload); return; }
-  if (d.jobDismiss) { AIRecovery.handled(d.jobDismiss, true).then(() => { AIRecovery.detail = null; AIRecovery.selected = null; S.view = { name: "jobs" }; renderAll(); }); return; }
+  if (d.jobDismiss) { AIRecovery.handled(d.jobDismiss, true).then(() => { AIRecovery.detail = null; AIRecovery.selected = null; S.view = { name: "jobs" }; renderAll(); drainGenQ(); }); return; }
   if (d.imageView !== undefined) { const img = el.querySelector("img"); if (img) openImageViewer(img.getAttribute("src"), img.alt, el); return; }
   if (el.matches("a.wl.new")) {
     ev.preventDefault();

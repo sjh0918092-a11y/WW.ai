@@ -1,0 +1,25 @@
+/* 작성 대기열 서버 저장: 로그인 확인, 계정 분리, 더 최근 것만 저장, 형식·크기 검사 */
+import assert from 'node:assert/strict';
+import worker from '../relay/worker.js';
+import {D1} from './helpers/d1.mjs';
+const env={DB:new D1()},origin='https://sjh0918092-a11y.github.io';
+const call=(token,body,query='')=>worker.fetch(new Request('https://relay.test/api/queues'+query,{method:body===undefined?'GET':'POST',headers:{Origin:origin,Authorization:'Bearer '+token},...(body!==undefined?{body:typeof body==='string'?body:JSON.stringify(body)}:{})}),env);
+assert.equal((await call('')).status,401);
+for(const id of ['alice','bob'])await env.DB.prepare('INSERT INTO users VALUES (?,?,?,?)').bind(id,'salt','hash',0).run();
+for(const [token,uid]of [['a1','alice'],['a2','alice'],['b','bob']])await env.DB.prepare('INSERT INTO sessions VALUES (?,?,?)').bind(token,uid,0).run();
+const q1={wid:'w1',items:[{key:'k1',title:'첫 문서'},{key:'k2',title:'검색 항목',ent:{title:'검색 항목',facts:[],mentions:[],searched:true}}],run:{dev:'pc',key:'k0',at:5},updated:100};
+let r=await call('a1',q1);assert.equal(r.status,200);assert.equal(r.headers.get('Cache-Control'),'no-store');
+assert.deepEqual((await r.json()).queue,{wid:'w1',items:q1.items,run:q1.run,updated:100});
+assert.deepEqual((await(await call('a2')).json()).queues,[{wid:'w1',items:q1.items,run:q1.run,updated:100}],'같은 계정의 다른 기기에서 받는다');
+assert.deepEqual((await(await call('b')).json()).queues,[],'다른 계정과 섞이지 않는다');
+const older={...q1,items:[],run:null,updated:90};
+assert.deepEqual((await(await call('a2',older)).json()).queue.items,q1.items,'더 오래된 기록은 덮어쓰지 않고 서버 기록을 돌려준다');
+const newer={...q1,items:[q1.items[0]],run:null,updated:120};
+assert.equal((await(await call('a2',newer)).json()).queue.updated,120);
+await call('a1',{wid:'w2',items:[],run:{dev:'pc',key:'',at:1},updated:1});
+assert.deepEqual((await(await call('a1',undefined,'?wid=w1')).json()).queues.map(q=>[q.wid,q.items.length,q.run]),[['w1',1,null]]);
+assert.equal((await(await call('a1')).json()).queues.length,2);
+for(const bad of [{...q1,extra:1},{...q1,wid:''},{...q1,updated:0},{...q1,items:[{key:'',title:'x'}]},{...q1,items:[{key:'k',title:'x',other:1}]},{...q1,items:[{key:'k',title:'x',ent:[]}]},{...q1,run:{dev:'pc',key:'k',at:'1'}},{...q1,items:Array.from({length:501},(_,i)=>({key:'k'+i,title:'t'}))}])assert.equal((await call('a1',bad)).status,400);
+assert.equal((await call('a1','{')).status,400);
+assert.equal((await call('a1',{...q1,items:[{key:'k',title:'x',ent:{pad:'x'.repeat(1100000)}}]})).status,413);
+console.log('✓ 작성 대기열 서버 저장: 로그인 확인, 계정 분리, 최근 기록 우선, 세계관별 조회, 형식·크기 검사');

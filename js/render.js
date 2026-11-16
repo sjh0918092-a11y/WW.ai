@@ -95,11 +95,13 @@ function renderSide() {
 /* 작성 대기열: 지금 작성 중인 문서와 기다리는 문서. 작성 중인 문서는 검사·수정 단계면 검사를 건너뛰고, 그 전이면 작성을 멈춘다 */
 function genQueueHtml(w) {
   const q = S.genQ.filter(x => x.wid === w.id && w.entities[x.key]);
+  const away = !S.gen && typeof GenQueue !== "undefined" ? GenQueue.elsewhere(w.id) : null;   // 다른 기기가 이 대기열을 처리하는 중
   if (!S.gen && !q.length) return "";
   const checking = S.gen && !S.gen.serverPipeline && !!S.gen.phase;   // 문서 화면의 중단 버튼과 같은 기준: 검사 단계에서 멈추면 쓴 문서를 그대로 보여 준다
   const cur = S.gen ? `<li class="genpill"><span class="dot"></span><span class="gq-st">작성 중</span><button type="button" class="btn gq-t" data-k="${S.gen.key}">${esc(S.gen.title)}</button><button type="button" class="btn gq-x" data-act="stop" title="${checking ? "검사를 건너뛰고 지금까지 쓴 문서를 보여 줍니다" : "이 문서 작성을 멈춥니다"}">${checking ? "검사 건너뛰기" : "취소"}</button></li>` : "";
+  const other = away ? `<li class="genpill"><span class="dot"></span><span class="gq-st">다른 기기</span><span class="gq-t">${esc(w.entities[away.key]?.title || "대기열 처리 중")}</span></li>` : "";
   const wait = q.map((x, i) => `<li class="genpill"><span class="gq-n">${i + 1}</span><span class="gq-st">대기</span><button type="button" class="btn gq-t" data-k="${x.key}">${esc(w.entities[x.key].title)}</button><button type="button" class="btn gq-x" data-unq="${x.key}" title="대기열에서 뺍니다">취소</button></li>`).join("");
-  return `<section class="genq"><h4>작성 대기열${q.length ? ` · 대기 ${q.length}` : ""}</h4><ul>${cur}${wait}</ul></section>`;
+  return `<section class="genq"><h4>작성 대기열${q.length ? ` · 대기 ${q.length}` : ""}</h4><ul>${cur}${other}${wait}</ul></section>`;
 }
 /* 진행 중인 작업: 문서별 교정(동시에 여러 개), 설정 검사, 확정 사실 정리. 문서 작성은 작성 대기열에 따로 보인다 */
 function workHtml(w) {

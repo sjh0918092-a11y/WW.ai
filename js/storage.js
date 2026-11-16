@@ -177,6 +177,7 @@ const Sync = {
     await this.pull();
     for (const w of S.worlds) { this.mark("w", w.id); for (const k of Object.keys(await Store.listPages(w.id))) this.mark("p", w.id, k); }   // 이 브라우저의 세계관도 올려서 합친다(서버에 더 최근 것이 있으면 그쪽이 남는다)
     await this.push();
+    if (typeof GenQueue !== "undefined") await GenQueue.login();
   },
   async logout() { if(typeof AISettingsSync!=="undefined")AISettingsSync.logout(); try { await this.req("/logout", { method: "POST" }); } catch {} this.acct = null; LS.del(AKEY); LS.del(DKEY); this.dirty = null; this.err = ""; },
   async push() {
@@ -239,6 +240,7 @@ const Sync = {
         more = !!j.more; since = more ? j.next : Math.max(0, j.next - 5e6);   // 끝에서는 5초를 겹쳐 받아 순서가 엇갈린 기록도 놓치지 않는다
       }
       this.acct.since = since; LS.set(AKEY, this.acct); this.lastAt = Date.now(); this.err = "";
+      if (typeof GenQueue !== "undefined") await GenQueue.pull();   // 다른 기기에서 바꾼 작성 대기열
     } catch (e) { this.err = e.message || "받아 오지 못했습니다."; }
     this.pulling = false;
     if (changed) await this.refresh();

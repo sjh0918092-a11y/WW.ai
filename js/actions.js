@@ -266,7 +266,7 @@ async function openWorld(wid, goKey, restoring = false) {
   if (S.syncing && S.world?.id !== wid) { toast("장의 변화를 문서에 반영하는 중입니다. 끝난 뒤 열어 주세요."); return; }
   if ([...S.fixJobs.values()].some(v => v.wid !== wid && v.phase === "busy")) { toast("다른 세계관의 교정안을 만드는 중입니다. 끝난 뒤 열어 주세요."); return; }
   for (const [k, v] of S.fixJobs) if (v.wid !== wid) S.fixJobs.delete(k);
-  S.world = w; S.pages = {}; S.recent = []; S.confirmDel = null; S.nf = new Set(); S.edit = null; S.confirmDelPage = null; S.confirmMerge = null; S.syncQ = []; S.genQ = []; S.syncErr = null; S.storyCard = null; S.adv = null;
+  S.world = w; S.pages = {}; S.recent = []; S.confirmDel = null; S.nf = new Set(); S.edit = null; S.confirmDelPage = null; S.confirmMerge = null; S.syncQ = []; S.genQ = typeof GenQueue !== "undefined" ? GenQueue.load(w) : []; S.syncErr = null; S.storyCard = null; S.adv = null;
   S.view = { name: "loading" }; renderAll();
   try { S.pages = await Store.listPages(w.id); } catch (e) { toast(errMsg(e)); }
   const merged = await autoMerge(w);
@@ -286,6 +286,7 @@ async function openWorld(wid, goKey, restoring = false) {
   else openEntity(goKey && (w.entities[goKey] || w.aliases?.[goKey]) ? goKey : w.mainKey);
   if (unbadged) setTimeout(() => toast(`AI 수정 때문에 잘못 붙어 있던 '설정과 맞지 않음' 경고 ${unbadged}건을 지웠습니다.`), merged ? 3800 : 0);
   if (merged) toast(`같은 대상을 가리키는데 따로 생긴 항목 ${merged}개를 원래 항목에 합쳤습니다. 예: "이름(인물)", 성이나 이름만 쓴 인물.`);
+  if (S.world === w) { restoreQueued(w); drainGenQ(); }   // 새로고침·다른 기기에서 남긴 대기열을 이어서 작성한다
 }
 
 function openEntity(k) {
@@ -329,6 +330,7 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
   if (S.gen) { toast(`「${S.gen.title}」 문서를 작성하는 중입니다.`); return; }
   if (S.storyGen) { toast("다음 장을 쓰는 중입니다. 끝난 뒤 작성해 주세요."); return; }
   if (rewrite && S.syncing === k) { toast("이 문서에 장의 변화를 반영하는 중입니다. 끝난 뒤 다시 써 주세요."); return; }
+  if (S.genQ.some(q => q.key === k)) { S.genQ = S.genQ.filter(q => q.key !== k); if (typeof GenQueue !== "undefined") GenQueue.save(w); }   // 대기 중인 문서를 직접 열어 작성하면 대기열에서 뺀다
   if (typeof DocumentPipeline !== "undefined" && DocumentPipeline.enabled()) return DocumentPipeline.generate(k, rewrite, direction, novel, novelAngle, opts);
   const recovery = typeof AIRecovery !== "undefined" && AIJobs.enabled("gemini") ? await AIRecovery.capture("page", w, k, { rewrite: !!rewrite, direction: (direction || "").slice(0, 300) }) : null;
   let backup = null, oldPage = null;
@@ -438,6 +440,7 @@ function afterGen(k, ok, failToast = false) {
 function queueGen(k) {
   const w = S.world, e = w?.entities[k]; if (!e || S.genQ.some(q => q.key === k)) return;
   S.genQ.push({ key: k, wid: w.id, title: e.title, ...(e.searched ? { ent: JSON.parse(JSON.stringify(e)) } : {}) });   // 검색창으로 만든 항목은 저장 전이라 담아 둔다
+  if (typeof GenQueue !== "undefined") GenQueue.claim(w);   // 지금 작성하는 이 기기가 대기열을 맡는다
   toast(`「${e.title}」 문서를 작성 대기열 ${S.genQ.length}번째에 넣었습니다.`);
 }
 /* 서버 작성이 끝나면 세계관을 저장본으로 바꾸므로, 대기 중인 검색 항목(저장 전)이 빠진다. 담아 둔 항목으로 되살린다 */
@@ -449,19 +452,34 @@ function restoreQueued(w) {
 const queuedUnsaved = (w, stored) => S.genQ.filter(q => q.ent && q.wid === w.id && w.entities[q.key] && !stored.entities[q.key]).map(q => q.key);
 function unqueueGen(k) {
   const q = S.genQ.find(x => x.key === k); if (!q) return;
-  S.genQ = S.genQ.filter(x => x !== q); renderAll(); toast(`「${q.title}」 문서 작성을 대기열에서 뺐습니다.`);
+  S.genQ = S.genQ.filter(x => x !== q); if (typeof GenQueue !== "undefined") GenQueue.save(S.world); renderAll(); toast(`「${q.title}」 문서 작성을 대기열에서 뺐습니다.`);
 }
-function drainGenQ() {
-  if (S.gen || S.storyGen || S.discovery?.busy) return;
-  const w = S.world;
+/* 대기열은 새로고침해도 남고(GenQueue), 로그인하면 다른 기기와 맞춘다. 다른 기기가 처리 중이면 그 기기에 맡긴다 */
+async function drainGenQ() {
+  if (S.gen || S.storyGen || S.discovery?.busy || S.genQPull) return;
+  const w = S.world, GQ = typeof GenQueue !== "undefined" ? GenQueue : null; if (!w) return;
+  if (GQ && Sync.acct) {
+    S.genQPull = true; try { await GQ.pull(w.id); } finally { S.genQPull = false; }
+    if (S.world !== w || S.gen || S.storyGen || S.discovery?.busy) return;
+    if (GQ.elsewhere(w.id)) return;
+  }
+  if (!S.genQ.length) { if (GQ) GQ.idle(w); return; }
+  if (!S.sample) return;   // AI 연결이 없으면 대기열을 그대로 둔다
+  const run = GQ?.read(w.id).run;   // 새로고침 전에 이 기기에서 작성하던 문서의 결과가 서버에 남아 있으면 먼저 확인하게 한다
+  if (run && GQ.mine({ run }) && w.entities[run.key] && !S.pages[run.key] && typeof AIRecovery !== "undefined" && AIRecovery.pendingFor(w.id, run.key)) {
+    if (S.genQHold !== run.key) { S.genQHold = run.key; toast(`새로고침 전에 작성하던 「${w.entities[run.key].title}」의 결과를 확인하면 대기열을 이어서 작성합니다.`, { label: "열기", fn: () => openEntity(run.key) }); }
+    return;
+  }
   while (S.genQ.length) {
     const q = S.genQ.shift();
     if (!w || q.wid !== w.id || !w.entities[q.key] || S.pages[q.key]) continue;   // 그사이 세계관이 바뀌었거나, 문서가 생겼거나, 항목이 합쳐진 경우
     if (typeof AIRecovery !== "undefined" && AIRecovery.pendingFor(w.id, q.key)) continue;   // 서버에 이어받을 결과가 있으면 직접 열 때 처리한다
     if (S.genErr?.key === q.key) S.genErr = null;
+    if (GQ) GQ.started(w, q.key);
     generatePage(q.key, false, "", false, null, { queued: true });
     return;
   }
+  if (GQ) GQ.idle(w);
 }
 
 /* 단어 중간에서 끊긴 링크를 푼다: "[[브리]]핑" → "브리핑". 링크 뒤에 붙은 한글이 조사·어미로 시작하면 그대로 둔다.

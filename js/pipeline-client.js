@@ -89,5 +89,6 @@ const DocumentPipeline = {
     await AIRecovery.handled(r.id);
     S.world = await Store.getWorld(world.id); S.pages = await Store.listPages(world.id); restoreQueued(S.world);
     S.view = report.notFound ? {name:"notfound",title:r.meta.title} : {name:"article",key:report.targetKey}; renderAll();
+    drainGenQ();
   },
 };

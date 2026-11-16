@@ -16,11 +16,14 @@
  *   POST /api/logout                   (Authorization: Bearer 토큰)
  *   GET  /api/sync?since=n             since 뒤에 바뀐 세계관과 문서
  *   POST /api/sync {worlds, pages}     올리기. 기기의 수정 시각(updated)이 더 최근인 것만 저장한다
+ *   GET  /api/queues[?wid=]            문서 작성 대기열
+ *   POST /api/queues {wid, items, run, updated}  대기열 저장. 더 최근 것만 저장한다
  */
 import { pipelineSchema } from "./pipeline-store.js";
 import { jobsApi } from "./jobs.js";
 import { claudeModels, openAIModels } from "./models.js";
 import { accountSettings } from "./account-settings.js";
+import { genQueues } from "./gen-queues.js";
 export { AiJobs } from "./jobs.js";
 
 const UPSTREAM = "https://generativelanguage.googleapis.com";
@@ -118,6 +121,7 @@ function ensureSchema(db) {
     db.prepare("CREATE INDEX IF NOT EXISTS worlds_stamp ON worlds (uid, stamp)"),
     db.prepare("CREATE INDEX IF NOT EXISTS pages_stamp ON pages (uid, stamp)"),
     db.prepare("CREATE TABLE IF NOT EXISTS account_settings (uid TEXT PRIMARY KEY, data TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1, updated INTEGER NOT NULL)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS gen_queues (uid TEXT NOT NULL, wid TEXT NOT NULL, data TEXT NOT NULL, updated INTEGER NOT NULL, PRIMARY KEY (uid, wid))"),
     ...pipelineSchema(db),
   ]).catch(e => { schema = null; throw e; });
   return schema;
@@ -164,6 +168,10 @@ async function api(request, env, url, cors, fail) {
     const uid = ses.uid;
     if (path === "/api/settings") {
       const response=await accountSettings(request,env,uid);
+      return new Response(response.body,{status:response.status,headers:{...cors,"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}});
+    }
+    if (path === "/api/queues") {
+      const response=await genQueues(request,env,uid,url);
       return new Response(response.body,{status:response.status,headers:{...cors,"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}});
     }
     if (path === "/api/jobs" || path.startsWith("/api/jobs/")) return jobsApi(request, env, url, cors, fail, uid, passOk);

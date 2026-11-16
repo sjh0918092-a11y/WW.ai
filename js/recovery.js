@@ -227,6 +227,7 @@ const AIRecovery = {
       if (!AIJobs.current(ctx)) return;
       S.world = saved.world; S.pages = await Store.listPages(saved.world.id); S.view = { name: "article", key: saved.page.key };
       this.detail = null; renderAll(); toast(m.kind === "page" ? "복구한 문서를 저장했습니다. 자동 검사는 실행하지 않았습니다." : "복구한 결과를 반영했습니다.");
+      if (m.kind === "page") drainGenQ();
     } catch (e) { if (AIJobs.current(ctx)) { this.error = e.message || errMsg(e); this.render(); } }
     finally { this.applying = false; if (AIJobs.current(ctx) && S.view.name === "jobs") this.render(); }
   },

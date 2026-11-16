@@ -1,7 +1,7 @@
 /* 브라우저의 같은 소스를 정적 함수로 묶는다. 런타임 eval/DOM/네트워크 권한은 쓰지 않는다. */
 const fs = require("node:fs"), path = require("node:path"), crypto = require("node:crypto");
 const root = path.join(__dirname, ".."), html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-const excluded = new Set(["cost", "jobs", "recovery", "pipeline-client", "settings-sync", "model-catalog", "render", "events", "boot", "link-select"]);
+const excluded = new Set(["cost", "jobs", "recovery", "pipeline-client", "settings-sync", "model-catalog", "render", "events", "boot", "link-select", "gen-queue"]);
 const files = [...html.matchAll(/<script src="(js\/([^/?]+)\.js)\?v=[^"]+"><\/script>/g)].filter(m => !excluded.has(m[2])).map(m => m[1]);
 const source = files.map(f => `/* shared: ${f} */\n${fs.readFileSync(path.join(root, f), "utf8")}\n`).join("\n");
 const header = fs.readFileSync(path.join(__dirname, "engine", "header.txt"), "utf8"), footer = fs.readFileSync(path.join(__dirname, "engine", "footer.txt"), "utf8");
