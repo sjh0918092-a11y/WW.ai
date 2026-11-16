@@ -121,23 +121,29 @@ export async function runProvider(job, env, personalKey, signal) {
   } else if (openai) {
     url = "https://api.openai.com/v1/responses";
     headers = { "Content-Type":"application/json", Authorization:"Bearer "+key };
-    body = JSON.stringify(openAIRequest(model,input));
+    body = JSON.stringify({ ...openAIRequest(model,input), stream: true });
   } else if (claude) {
     url = "https://api.anthropic.com/v1/messages";
     headers = { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" };
     const messages = input.contents.map(c => ({ role: c.role === "model" ? "assistant" : "user", content: c.parts.map(p => ({ type: "text", text: p.text })) }));
     const system = (input.systemInstruction?.parts || []).map(p => p.text).join("\n");
     const json = input.generationConfig?.responseMimeType === "application/json";
-    body = JSON.stringify({ model, max_tokens: 16384, ...claudeThinking(model, input.generationConfig?.thinkingConfig?.thinkingLevel), messages, ...(system || json ? { system: [system, json ? "Return only a valid JSON value. Do not wrap it in Markdown fences." : ""].filter(Boolean).join("\n\n") } : {}) });
+    body = JSON.stringify({ model, max_tokens: 16384, stream: true, ...claudeThinking(model, input.generationConfig?.thinkingConfig?.thinkingLevel), messages, ...(system || json ? { system: [system, json ? "Return only a valid JSON value. Do not wrap it in Markdown fences." : ""].filter(Boolean).join("\n\n") } : {}) });
   } else {
-    url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent";
+    // 텍스트는 스트리밍으로 받는다. 일괄 응답은 생성이 끝날 때까지 응답 헤더가 없어
+    // 긴 본문·사고가 100초를 넘으면 Cloudflare가 연결을 끊고 HTTP 524를 돌려준다.
+    const streamed = type === "gemini.generate";
+    url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + (streamed ? ":streamGenerateContent?alt=sse" : ":generateContent");
     headers = { "Content-Type": "application/json", "x-goog-api-key": key }; body = JSON.stringify(input);
   }
   const res = await fetch(url, { method: "POST", headers, body, signal });
   if (!res.ok) throw await providerError(res, model);
   const text = await boundedText(res.body, type.endsWith(".image") ? 20 * 1024 * 1024 : 4 * 1024 * 1024);
   let result;
-  try { result = JSON.parse(text); } catch { throw { code: "invalid_response" }; }
+  if (/:streamGenerateContent/.test(url)) result = mergeGeminiStream(text);
+  else if (openai) result = mergeOpenAIStream(text);
+  else if (claude) result = mergeClaudeStream(text);
+  else try { result = JSON.parse(text); } catch { throw { code: "invalid_response" }; }
   if (openai) result = normalizeOpenAI(result);
   if (claude) {
     if (!Array.isArray(result?.content) || !result.content.some(p => p.type === "text" && p.text)) throw { code: "empty_response", definite: true };
@@ -154,6 +160,87 @@ export async function runProvider(job, env, personalKey, signal) {
   }
   if (!result || (type === "openai.image" ? !Array.isArray(result.data) || !result.data.length : (!Array.isArray(result.candidates) || !result.candidates.length) && !result.promptFeedback?.blockReason)) throw { code: "empty_response", definite: true };
   return result;
+}
+
+// SSE의 data 줄을 JSON으로 읽는다. 스트림이 아닌 JSON 본문이면 null을 돌려 호출자가 그대로 쓰게 한다.
+function sseEvents(text) {
+  if (/^[\[{]/.test(text.trim())) return null;
+  const events = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.startsWith("data:")) continue;
+    const raw = line.slice(5).trim(); if (!raw || raw === "[DONE]") continue;
+    try { events.push(JSON.parse(raw)); } catch { throw { code: "invalid_response" }; }
+  }
+  if (!events.length) throw { code: "invalid_response" };
+  return events;
+}
+const plainJson = text => { try { return JSON.parse(text); } catch { throw { code: "invalid_response" }; } };
+const cutOff = () => ({ code: "incomplete_response", safeMessage: "AI 응답이 완료 신호 없이 끊겼습니다. 중복 실행을 피하려고 자동으로 다시 보내지 않았습니다." });
+const streamError = () => ({ code: "upstream_error", definite: true, safeMessage: "AI 서버가 응답 도중 오류를 보냈습니다. 잠시 뒤 다시 시도해 주세요." });
+
+// OpenAI Responses 스트림은 마지막 completed/incomplete 이벤트에 전체 응답을 담는다.
+export function mergeOpenAIStream(text) {
+  const events = sseEvents(text); if (!events) return plainJson(text);
+  let final = null;
+  for (const e of events) {
+    if (e?.type === "error" || e?.type === "response.failed") throw streamError();
+    if (["response.completed", "response.incomplete"].includes(e?.type) && e.response) final = e.response;
+  }
+  if (!final) throw cutOff();
+  return final;
+}
+
+// Claude Messages 스트림을 일괄 응답과 같은 message 객체로 되살린다. 사고 블록은 버린다.
+export function mergeClaudeStream(text) {
+  const events = sseEvents(text); if (!events) return plainJson(text);
+  let message = null, stopped = false; const blocks = [];
+  for (const e of events) {
+    if (e?.type === "error") throw streamError();
+    if (e?.type === "message_start" && e.message) message = { ...e.message, content: [], usage: { ...(e.message.usage || {}) } };
+    else if (e?.type === "content_block_start" && Number.isInteger(e.index)) blocks[e.index] = { ...e.content_block, ...(e.content_block?.type === "text" ? { text: e.content_block.text || "" } : {}) };
+    else if (e?.type === "content_block_delta" && e.delta?.type === "text_delta" && blocks[e.index]?.type === "text") blocks[e.index].text += e.delta.text || "";
+    else if (e?.type === "message_delta" && message) {
+      if (e.delta && "stop_reason" in e.delta) message.stop_reason = e.delta.stop_reason;
+      if (e.usage) for (const [k, v] of Object.entries(e.usage)) if (v !== null && v !== undefined) message.usage[k] = v;
+    } else if (e?.type === "message_stop") stopped = true;
+  }
+  if (!message || !stopped) throw cutOff();
+  message.content = blocks.filter(b => b?.type === "text");
+  return message;
+}
+
+// SSE(또는 JSON 배열) 조각을 generateContent 한 번의 응답 형태로 합친다. 사고 요약 조각은 버린다.
+export function mergeGeminiStream(text) {
+  let chunks;
+  const trimmed = text.trim();
+  if (/^[\[{]/.test(trimmed)) { try { chunks = [].concat(JSON.parse(trimmed)); } catch { throw { code: "invalid_response" }; } }
+  else {
+    chunks = [];
+    for (const line of text.split(/\r?\n/)) {
+      if (!line.startsWith("data:")) continue;
+      const raw = line.slice(5).trim(); if (!raw || raw === "[DONE]") continue;
+      try { chunks.push(JSON.parse(raw)); } catch { throw { code: "invalid_response" }; }
+    }
+  }
+  if (!chunks.length) throw { code: "invalid_response" };
+  let out = "", finishReason = "", candidate = null, promptFeedback, usageMetadata, modelVersion;
+  for (const c of chunks) {
+    if (c?.error) throw { code: "upstream_error", definite: true, safeMessage: "AI 서버가 응답 도중 오류를 보냈습니다. 잠시 뒤 다시 시도해 주세요." };
+    if (c?.promptFeedback) promptFeedback = c.promptFeedback;
+    if (c?.usageMetadata) usageMetadata = c.usageMetadata;
+    if (c?.modelVersion) modelVersion = c.modelVersion;
+    const cand = c?.candidates?.[0]; if (!cand) continue;
+    candidate = cand;
+    if (cand.finishReason) finishReason = cand.finishReason;
+    for (const p of cand.content?.parts || []) if (typeof p.text === "string" && !p.thought) out += p.text;
+  }
+  // 완료 신호 없이 끊긴 응답은 과금 여부와 내용 완결을 알 수 없으므로 성공으로 저장하지 않는다.
+  if (!finishReason && !promptFeedback?.blockReason) throw { code: "incomplete_response", safeMessage: "AI 응답이 완료 신호 없이 끊겼습니다. 중복 실행을 피하려고 자동으로 다시 보내지 않았습니다." };
+  const { content, ...rest } = candidate || {};
+  return {
+    ...(candidate ? { candidates: [{ ...rest, content: { role: content?.role || "model", parts: [{ text: out }] }, finishReason }] } : {}),
+    ...(promptFeedback ? { promptFeedback } : {}), ...(usageMetadata ? { usageMetadata } : {}), ...(modelVersion ? { modelVersion } : {}),
+  };
 }
 
 function validPipeline(i) {
