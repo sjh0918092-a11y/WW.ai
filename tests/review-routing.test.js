@@ -304,6 +304,21 @@ test('작성 직후 리뷰가 실패하면 진단 기록에 남긴다', async ()
   assert.equal(log.at(-1).event, '작성 직후 리뷰 실패'); assert.equal(log.at(-1).code, 'api_524');
 });
 
+test('작성 직후 리뷰에서 고칠 곳이 없어도 검사 요약을 진단 기록에 남긴다', async () => {
+  const ev = page('바르셀 사건', '사건', '사건이다.', 1);
+  const w = world([ev]); w.entities[K('바르셀 사건')].type = '사건';
+  vm.runInContext(`callJson = async (kind) => ({ issues: [] })`, c);
+  const res = await c.preCheck(w, K('바르셀 사건'), c.S.pages[K('바르셀 사건')], { ctl: new AbortController() }, () => {});
+  assert.equal(res.done, true);
+  const log = res.page.checkLog || [];
+  assert.equal(log.length, 1); assert.equal(log[0].issues, 0); assert.equal(log[0].fixed, 0);
+});
+test('자동 수정 지침: 지운 문단에 기대는 앞뒤 문장도 고치고, 참고 문장은 문서에서 한 번만 붙인다', () => {
+  const w = world([page('카일', '인물', '카일은 병사다.', 1)]);
+  const p = c.fixBatchPrompt(w, c.S.pages[K('카일')], { summary: '', cats: '', infobox: '', body: '카일은 병사다.' }, [{ claim: '카일은 병사다.', conflict: '재서술(지움): x', severity: 'high' }]);
+  assert.match(p, /참고 문장은 문서 전체에서 한 번만/); assert.match(p, /그 내용을 전제로 하는 앞뒤 문장/); assert.match(p, /되풀이하게 되면/);
+});
+
 let failed = 0;
 (async () => { for (const [n, f] of tests) { try { await f(); console.log('통과', n); } catch (e) { failed++; console.log('실패', n, '\n', e.message); } }
 if (failed) process.exit(1); })();

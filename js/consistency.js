@@ -1051,8 +1051,9 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
     Object.assign(res, { fixed, keep });
   } catch (err) {   // 건너뛰었거나 실패: 작성된 문서를 그대로 보여 주며 자동 재검사를 예약하지 않는다. 진단 기록에는 남긴다
     if (err?.code !== "pipeline_yield") noteEvent(res.page, res.done ? "자동 수정 실패" : "작성 직후 리뷰 실패", err);
+  } finally {   // 고칠 곳이 없어 일찍 끝난 경우도 남긴다
+    if (res.done) noteCheck(res.page);
   }
-  if (res.done) noteCheck(res.page);
   return res;
 }
 /* 작성 직후의 preCheck 외에는 사용자가 설정 검사 버튼을 눌렀을 때만 실행한다. */
