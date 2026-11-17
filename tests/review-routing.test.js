@@ -214,6 +214,13 @@ test('자동 수정: 같은 문단에 재서술(지움)과 다른 수정이 겹�
   assert.equal(res.fixed, 2);
 });
 
+test('설정 검사: 근거가 없다는 것만으로는 지적하지 않고, 조약 자체의 문서가 정한 조항은 대조하지 않는다', () => {
+  const w = world([page('제네바 협정', '제도', '제7조는 축소 저지를 금지한다.', 1)]);
+  const pr = c.checkPrompt(w, K('제네바 협정'), []);
+  assert.match(pr, /이 문서가 그 조약·제도·기록 자체의 문서이면 그 조항의 내용은 이 문서가 정하는 것이므로 대조 대상이 아니다/);
+  assert.match(pr, /확정 설정에 근거가 없다는 것만으로는 지적하지 않는다/); assert.doesNotMatch(pr, /인용 근거를 확정할 수 없으면 low로 쓰고/);
+});
+
 let failed = 0;
 (async () => { for (const [n, f] of tests) { try { await f(); console.log('통과', n); } catch (e) { failed++; console.log('실패', n, '\n', e.message); } }
 if (failed) process.exit(1); })();
