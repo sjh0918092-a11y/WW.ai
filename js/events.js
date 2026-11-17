@@ -42,6 +42,7 @@ document.addEventListener("click", ev => {
   if (!ev.target.closest(".search")) $("#sugg").hidden = true;
   const el = ev.target.closest("button, a"); if (!el) return;
   const d = el.dataset;
+  if(d.costMore){DocumentCost.expanded.add(d.costMore);DocumentCost.render();return;}
   if(d.costReset){
     if(d.costReset!==S.world?.id)return;
     if(window.confirm("이 세계관의 비용과 호출 로그를 이 브라우저에서 초기화하시겠습니까? 문서와 세계관 내용은 유지됩니다. 초기화 이전에 시작한 요청은 이후 완료되어도 집계하지 않습니다.")){
