@@ -82,6 +82,7 @@ const NAME_PROMPTS = {
     assert(disc.includes('대상이 인물이면 title은 본명 풀 네임으로 쓴다') && disc.includes('summary와 aliases에 쓴다'));
     pass('랜덤 서핑은 인물이면 title을 본명 풀 네임으로, 코드명은 summary에 쓰게 한다');
 
+    await page.evaluate(() => { window.autoRealNameTitle = async () => null; });   // 이 테스트는 기존 문서용 [제목을 본명으로 바꾸기] 버튼 흐름을 본다. 작성 직후 자동 변경은 review-routing 테스트가 본다
     await page.evaluate(k => openEntity(k), K(code)); await page.waitForFunction(k => S.pages[k] && !S.gen, K(code)); await page.evaluate(() => Store.q);
     await title(code);
     const st = await page.evaluate(([k, j, ind, ryu]) => ({ ind: S.world.aliases[ind], jo: S.world.aliases[j], joEnt: !!S.world.entities[j], kOf: kOf(S.world, '인디펜던스'), ryuPage: !!S.pages[ryu] && S.world.entities[ryu].title, twins: S.world.nameTwins, baseBody: S.pages[keyOf('기지')].sections[0].body, baseLinks: S.pages[keyOf('기지')].links, mentions: S.world.entities[k].mentions.map(m => m.from) }), [K(code), K('조슬린 앤 케인'), K('인디펜던스'), K('류도윤')]);

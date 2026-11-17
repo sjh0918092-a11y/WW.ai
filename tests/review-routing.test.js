@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,preWritePrompt,preWriteNeeded,runPreWrite,taskSelection,GS,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor,readPrompt,checkTimeline,timelineCheckPrompt,readTimelineForm,timelineEditHtml,promptTimeline});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,autoRealNameTitle,preWritePrompt,preWriteNeeded,runPreWrite,taskSelection,GS,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor,readPrompt,checkTimeline,timelineCheckPrompt,readTimelineForm,timelineEditHtml,promptTimeline});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -404,6 +404,19 @@ test('작성 전 점검의 모델·생각 수준은 따로 정하지 않으면 �
   assert.deepEqual({ ...c.taskSelection('preWrite', 'main', st) }, { model: 'm-page', think: 'high' });
   assert.deepEqual({ ...c.taskSelection('preWrite', 'main', { ...st, taskModels: { page: { model: 'm-page', think: 'high' }, preWrite: { model: '', think: 'minimal' } } }) }, { model: 'm-page', think: 'minimal' });
   assert.deepEqual({ ...c.taskSelection('preWrite', 'main', { ...st, taskModels: {} }) }, { model: 'm-main', think: 'low' });
+});
+
+test('작성 직후: 코드명 제목의 인물 문서는 본명으로 옮기고 옛 제목은 별칭으로 남기며, 바꾼 사실을 문서에 남긴다', async () => {
+  const p = { ...page('빅토리아', '인물', '빅토리아다.', 1), infobox: [{ label: '호출명', value: '빅토리아 (Victoria)' }, { label: '본명', value: '빅토리아 애들레이드 스펜서' }] };
+  const other = page('포츠머스', '지명', '[[빅토리아]]가 머문다.', 2);
+  const w = world([p, other]); w.entities[K('빅토리아')].type = '인물'; w.aliases = {};
+  const r = await c.autoRealNameTitle(w, K('빅토리아'));
+  assert.ok(r, '옮겼다'); assert.equal(r.to, K('빅토리아 애들레이드 스펜서'));
+  assert.ok(c.S.pages[r.to]); assert.equal(c.S.pages[r.to].title, '빅토리아 애들레이드 스펜서'); assert.equal(c.S.pages[r.to].renamedFrom.from, '빅토리아');
+  assert.ok(!c.S.pages[K('빅토리아')]); assert.equal(w.aliases[K('빅토리아')], r.to, '옛 제목은 별칭');
+  const plain = { ...page('한서진', '인물', '한서진이다.', 3), infobox: [{ label: '본명', value: '한서진' }] };
+  const w2 = world([plain]); w2.entities[K('한서진')].type = '인물';
+  assert.equal(await c.autoRealNameTitle(w2, K('한서진')), null, '코드명 제목이 아니면 바꾸지 않는다');
 });
 
 let failed = 0;

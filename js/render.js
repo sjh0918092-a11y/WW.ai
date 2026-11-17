@@ -458,7 +458,7 @@ function articleHtml(k) {
     ${p.pending?.length ? `<div class="banner warn"><b>이 문서의 수정 내용이 직접 정한 설정과 충돌한 채 저장되었습니다.</b>
       <ul>${p.pending.map(c => `<li><span class="sev">${esc(c.label)}</span>${esc(c.old)} <span class="src">↔ 수정본: ${esc(c.claim)}</span></li>`).join("")}</ul>
       <div class="row" style="margin-top:4px"><button type="button" class="btn" data-edit="${k}">편집</button><button type="button" class="btn" data-act="canon">설정 노트 열기</button><button type="button" class="btn" data-dismiss="${k}" data-field="pending">표시 지우기</button></div></div>` : ""}
-    ${rwBox}${syncHtml}${p.autoFixed && Date.now() - p.autoFixed.at < 864e5 ? `<p class="memo-line">작성 직후 설정과 어긋난 ${p.autoFixed.n}곳을 자동으로 고쳤습니다 <span class="src">${fmtDate(p.autoFixed.at)}</span></p>` : ""}${chkHtml}
+    ${rwBox}${syncHtml}${p.renamedFrom && Date.now() - p.renamedFrom.at < 864e5 ? `<p class="memo-line">제목을 「${esc(p.renamedFrom.from)}」에서 「${esc(p.title)}」(으)로 바꿨습니다. 옛 제목은 별칭으로 남아 링크가 이어집니다 <span class="src">${fmtDate(p.renamedFrom.at)}</span></p>` : ""}${p.autoFixed && Date.now() - p.autoFixed.at < 864e5 ? `<p class="memo-line">작성 직후 설정과 어긋난 ${p.autoFixed.n}곳을 자동으로 고쳤습니다 <span class="src">${fmtDate(p.autoFixed.at)}</span></p>` : ""}${chkHtml}
     ${p.rewrittenAt ? `<p class="src" style="margin:8px 0 0">${fmtDate(p.rewrittenAt)} 다시 씀</p>` : ""}
     <div class="article">${stNotice}${p.notices?.length ? `<div class="notice">${p.notices.map(n => `<div>${blocks(n, fns).replace(/^<p>|<\/p>$/g, "")}</div>`).join("")}</div>` : ""}${box}${toc}${secs}${fnHtml}</div>
     ${navboxesHtml(w, k)}
