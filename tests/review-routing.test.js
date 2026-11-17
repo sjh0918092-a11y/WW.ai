@@ -273,6 +273,8 @@ test('제목을 본명으로 바꾸기: 본명 칸의 링크 표시 이름과 �
   assert.equal(c.realNameFor(mk('[[Hailey Anne Jenkins|헤일리 앤 젠킨스]] (Hailey Anne Jenkins)'), K('네브래스카')), '헤일리 앤 젠킨스');
   assert.equal(c.realNameFor(mk('Hailey Anne Jenkins (헤일리 앤 젠킨스)'), K('네브래스카')), '헤일리 앤 젠킨스');
   assert.equal(c.realNameFor(mk('에밀리 앤 카터 (Emily Ann Carter)'), K('네브래스카')), '에밀리 앤 카터');
+  { const p = { ...page('빅토리아', '인물', '빅토리아다.', 1), infobox: [{ label: '호출명', value: '빅토리아 (Victoria)' }, { label: '본명', value: '빅토리아 애들레이드 스펜서' }] }; const w = world([p]); w.entities[K('빅토리아')].type = '인물';
+    assert.equal(c.realNameFor(w, K('빅토리아')), '빅토리아 애들레이드 스펜서', "'호출명' 칸도 호출부호로 읽는다"); }
 });
 
 test('참고 문구는 문서에서 한 번만: 중복은 참고 문장만 지우고, 개요 정의·인물 관계는 지키게 한다', () => {
