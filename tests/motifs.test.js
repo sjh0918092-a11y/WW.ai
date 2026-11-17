@@ -1,4 +1,4 @@
-/* 인물 일화의 소재(motifs): 응답 저장, 다른 인물 특징 목록의 소재 표시와 빈도 집계, 소재 없는 옛 문서, 프롬프트 지침. Gemini 응답은 모두 가로챈다(유료 호출 0회) */
+/* 인물 일화의 소재(motifs)와 목차 짜임: 응답 저장, 다른 인물 특징 목록의 소재 표시와 빈도 집계, 소재 없는 옛 문서, 프롬프트 지침. Gemini 응답은 모두 가로챈다(유료 호출 0회) */
 const assert = require('assert'), vm = require('vm');
 const { appServer, appSource } = require('./helpers/app');
 const { chromium } = require('playwright');
@@ -43,20 +43,22 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
     assert.deepStrictEqual(g.saved.motifs, ['배급 럼', '규칙 위반', '음악']);
     for (const t of ['"motifs":["이 인물 문서에서 성격을 보여 준 일화의 중심 소재(짧은 명사)"]', 'motifs에는 이 항목이 인물이면 이 문서에서 성격을 보여 준 일화의 중심 소재 1~3개를 짧은 명사로 쓴다',
       '원안과 핵심 규칙에 나오는 장치(그 세계의 기본 보급품, 기본 장비, 기본 제도 등)를 성격 일화의 중심 소재로 삼지 않는 것을 기본으로 한다', '성격은 그 인물의 생활, 취향, 사람, 장소, 습관, 일하는 방식에서 찾는다',
-      '성격 경향은 한 가지 방식으로만 드러내지 않는다', '원칙과 융통은 규칙 위반만이 아니라 일, 돈, 시간, 약속, 사람, 취향을 대하는 방식으로도 드러난다',
+      '성격 경향은 한 가지 방식으로만 드러내지 않는다', '다른 인물의 특징 목록에 나온 소재와 의미가 같으면 그 이름을 그대로 쓴다', '특징 1~3개를 구체적인 소제목으로',
+      '세계관이 정한 공통 과정(각성, 입대, 정해진 나이의 은퇴처럼 같은 처지의 인물이 모두 겪는 단계)은', '하위 섹션 수를 정해진 틀처럼 맞추지 않는다', '원칙과 융통은 규칙 위반만이 아니라 일, 돈, 시간, 약속, 사람, 취향을 대하는 방식으로도 드러난다',
       'Show concretely where and how the character lives, what they do, and their relationships', 'Do not summarize with phrases such as "without lasting injuries", "remaining healthy", or "a peaceful, comfortable, or difficult daily life", or deny misfortunes that never occurred'])
       assert(g.prompt.includes(t), t);
-    assert(g.prompt.includes('- 옛 서기: 장부 정리') && !g.prompt.includes('옛 서기: 장부 정리 (소재') && !g.prompt.includes('- 옛 선장:') && !g.prompt.includes('이미 많이 쓰인 소재'));
+    assert(g.prompt.includes('- 옛 서기: 장부 정리(장부를 매일 정리했다.)') && !g.prompt.includes('옛 서기: 장부 정리(장부를 매일 정리했다.) (소재') && !g.prompt.includes('- 옛 선장:') && !g.prompt.includes('이미 많이 쓰인 소재'));
     pass('인물 문서 응답의 motifs를 다듬어(링크 표시·중복·빈 값 제거, 3개까지) 저장하고, 프롬프트에 motifs 요청과 핵심 규칙 장치·한 가지 방식·처지 직역 금지 지침을 넣는다');
 
     g = await write('등대지기', '인물', ['배급럼', '동물']);
-    assert.deepStrictEqual(g.saved.motifs, ['배급럼', '동물']); assert(g.prompt.includes('- 바다 상인: 바다 상인의 버릇 (소재: 배급 럼, 규칙 위반, 음악)'));
+    assert.deepStrictEqual(g.saved.motifs, ['배급럼', '동물']); assert(g.prompt.includes('- 바다 상인: 바다 상인의 버릇(일화.) (소재: 배급 럼, 규칙 위반, 음악)'));
     g = await write('세관원', '인물', ['장부']);
     const start = g.prompt.indexOf('## 다른 인물의 특징'), end = g.prompt.indexOf('\n## ', start + 1);
     const ti = g.prompt.slice(start, end < 0 ? undefined : end);
-    for (const t of ['- 등대지기: 등대지기의 버릇 (소재: 배급럼, 동물)', '- 바다 상인: 바다 상인의 버릇 (소재: 배급 럼, 규칙 위반, 음악)', '- 옛 서기: 장부 정리\n', '- 이미 많이 쓰인 소재: 배급 럼(2명)\n',
+    for (const t of ['- 등대지기: 등대지기의 버릇(일화.) (소재: 배급럼, 동물)', '- 바다 상인: 바다 상인의 버릇(일화.) (소재: 배급 럼, 규칙 위반, 음악)', '- 옛 서기: 장부 정리(장부를 매일 정리했다.)\n', '- 이미 많이 쓰인 소재: 배급 럼(2명)\n',
       '이미 많이 쓰인 소재로 이 인물의 성격을 보여 주지 않는다. 확정 사실이 그 소재를 요구할 때만 예외다.']) assert(ti.includes(t), t + '\n' + ti);
     assert(!/이미 많이 쓰인 소재:.*(규칙 위반|동물|음악)/.test(ti));
+    assert(!g.prompt.includes('- 목차 짜임:') && !g.prompt.includes('"보급품"'));
     pass('다른 인물 특징 목록에 소재를 함께 보여 주고, 인물 2명 이상이 쓴 소재(띄어쓰기 차이 포함)만 "이미 많이 쓰인 소재" 줄에 모은다');
 
     g = await write('바다 상인', '인물', undefined, { rewrite: true }); assert.deepStrictEqual(g.saved.motifs, ['배급 럼', '규칙 위반', '음악']);
@@ -66,10 +68,22 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
 
     const plain = await page.evaluate(({ old, clerk }) => { const keep = {}; for (const k of Object.keys(S.pages)) if (k !== old && k !== clerk && S.pages[k].type === '인물') { keep[k] = S.pages[k]; delete S.pages[k]; }
       const r = traitIndex(S.world, null); Object.assign(S.pages, keep); return r; }, { old, clerk });
-    assert.equal(plain, '- 옛 서기: 장부 정리');
+    assert.equal(plain, '- 옛 서기: 장부 정리(장부를 매일 정리했다.)');
     const broken = await page.evaluate(k => { const p = S.pages[k], m = p.motifs; p.motifs = 'x'; const r = traitIndex(S.world, null); p.motifs = m; return r; }, key('등대지기'));
-    assert(broken.includes('- 등대지기: 등대지기의 버릇\n') && broken.includes('이미 많이 쓰인 소재: 배급 럼(2명)') === false);
+    assert(broken.includes('- 등대지기: 등대지기의 버릇(일화.)\n') && broken.includes('이미 많이 쓰인 소재: 배급 럼(2명)') === false);
     pass('motifs가 없거나 깨진 기존 문서가 섞여도 traitIndex가 깨지지 않는다');
+
+    const outline = await page.evaluate(() => { const mk = (t, f, l) => ({ key: t, title: t, type: '인물', sections: [{ heading: '개요', level: 1, body: '' }, { heading: '특징', level: 1, body: '' },
+        ...Array.from({ length: f }, (_, i) => ({ heading: 'f' + i, level: 2, body: '' })), { heading: '생애', level: 1, body: '' }, ...Array.from({ length: l }, (_, i) => ({ heading: 'l' + i, level: 2, body: '' }))] });
+      const keep = S.pages, w = { entities: {} }, r = [];
+      const run = list => { S.pages = {}; w.entities = {}; for (const p of list) { S.pages[p.key] = p; w.entities[p.key] = { title: p.title }; } return outlineNote(w, 'x'); };
+      r.push(run([mk('a', 2, 3), mk('b', 2, 3), mk('c', 2, 3), mk('d', 1, 4), mk('x', 2, 3)]));
+      r.push(run([mk('a', 2, 3), mk('b', 2, 3), mk('d', 1, 4)]));
+      r.push(run([mk('a', 2, 3), mk('b', 2, 3), mk('c', 2, 3), mk('d', 1, 4), mk('e', 3, 2), mk('f', 1, 2), mk('g', 2, 4)]));
+      S.pages = keep; return r; });
+    assert.equal(outline[0], "- 목차 짜임: 기존 인물 문서 4개 중 3개가 '특징' 하위 섹션 2개, '생애' 하위 섹션 3개로 같은 짜임이다. 이 인물은 실제로 겪은 일에 맞춰 하위 섹션 수를 다르게 잡고, 이 인물에게만 있는 일(특정 작전, 관계, 이후의 직업 등)은 큰 섹션으로 세울 수 있다.");
+    assert.equal(outline[1], ''); assert.equal(outline[2], '');
+    pass('특징 소제목에 첫 문장을 붙이고, 기존 인물 문서 3개 이상·절반 이상이 같은 하위 섹션 짜임이면 다른 짜임을 요구하는 줄을 만든다(지금 쓰는 문서는 세지 않는다)');
 
     assert.deepStrictEqual(errors, []); console.log(`\n모두 통과 (${n}개). 실제 유료 API 호출 0회.`);
   } finally { await browser.close(); await new Promise(r => server.close(r)); }

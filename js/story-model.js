@@ -134,9 +134,11 @@ function storyStyleRules() {
 const entityIndex = (w, skip, max = 80) => Object.entries(w.entities).filter(([k]) => !skip.includes(k)).sort((a, b) => (b[1].page ? 1 : 0) - (a[1].page ? 1 : 0)).slice(0, max)
   .map(([, o]) => `- ${o.title}${o.type ? " — " + o.type : ""}${o.summary ? ". " + o.summary.slice(0, 50) : ""}`).join("\n") || "(없음)";
 const firstPara = p => { const s = (p?.sections || []).find(x => !x.ch && x.body.trim()); return s ? stripMarks(s.body.split(/\n{2,}/)[0]).slice(0, 300) : ""; };
-/* 이미 쓰인 인물 문서의 '특징' 소제목들과 성격 일화의 소재. 성격의 중복을 금지하지 않고 표현과 일화의 기계적 반복을 피하는 참고로 쓴다.
-   인물 2명 이상이 쓴 소재는 코드로 세어 따로 모은다 */
+/* 이미 쓰인 인물 문서의 '특징' 소제목들과 그 첫 문장, 성격 일화의 소재. 성격의 중복을 금지하지 않고 표현과 일화의 기계적 반복을 피하는 참고로 쓴다.
+   소제목만으로는 표현이 다른 같은 일화(예: 배급품 불평)를 가려낼 수 없어 첫 문장을 짧게 붙인다. 인물 2명 이상이 쓴 소재는 코드로 세어 따로 모은다 */
 const motifKey = m => String(m).replace(/\s+/g, "");
+const traitGist = body => { const t = stripMarks(String(body || "").split(/\n{2,}/)[0]).replace(/\s+/g, " "), m = /^.*?[.!?](?=\s|$)/.exec(t), x = (m ? m[0] : t).trim(); return x.length > 60 ? x.slice(0, 60) + "…" : x; };
+const traitLabel = s => { const g = traitGist(s.body); return g ? `${s.heading}(${g})` : s.heading; };
 function traitIndex(w, exceptKey, max = 30) {
   const rows = [], seen = new Map(), staged = !!w.stage && !isStory(w);
   for (const [k, p] of Object.entries(S.pages)) {
@@ -147,9 +149,9 @@ function traitIndex(w, exceptKey, max = 30) {
       let feature = false;
       for (const s of p.sections || []) {
         if ((s.level || 1) === 1) feature = /특징|능력|특기|성격/.test(s.heading);
-        else if (s.level === 2 && feature) t.push(s.heading);
+        else if (s.level === 2 && feature) t.push(traitLabel(s));
       }
-    } else if (i >= 0) for (let j = i + 1; j < p.sections.length && (p.sections[j].level || 1) === 2; j++) t.push(p.sections[j].heading);
+    } else if (i >= 0) for (let j = i + 1; j < p.sections.length && (p.sections[j].level || 1) === 2; j++) t.push(traitLabel(p.sections[j]));
     const ms = Array.isArray(p.motifs) ? p.motifs.filter(x => typeof x === "string" && x.trim()) : [];
     for (const m of new Set(ms.map(motifKey))) { const o = seen.get(m) || { name: ms.find(x => motifKey(x) === m).trim(), n: 0 }; o.n++; seen.set(m, o); }
     if (t.length || ms.length) rows.push({ at: p.createdAt || 0, line: `- ${p.title}: ${t.length ? t.join(" / ") : "(특징 소제목 없음)"}${ms.length ? ` (소재: ${ms.join(", ")})` : ""}` });
@@ -157,6 +159,24 @@ function traitIndex(w, exceptKey, max = 30) {
   const many = [...seen.values()].filter(x => x.n >= 2).sort((a, b) => b.n - a.n);
   const body = rows.sort((a, b) => b.at - a.at).slice(0, max).map(x => x.line).join("\n");
   return body + (many.length ? `\n- 이미 많이 쓰인 소재: ${many.map(x => `${x.name}(${x.n}명)`).join(", ")}\n${staged ? "소재의 의미와 쓰임을 비교해 이 인물만의 특징을 고른다. 확정 설정이 요구하는 공통 요소는 유지한다." : "이미 많이 쓰인 소재로 이 인물의 성격을 보여 주지 않는다. 확정 사실이 그 소재를 요구할 때만 예외다."}` : "");
+}
+/* 기존 인물 문서의 짜임('특징'·'생애' 하위 섹션 수)이 한 모양으로 굳었는지 코드로 센다. 3개 이상이면서 절반 이상이 같으면 다른 짜임을 요구한다 */
+function outlineNote(w, exceptKey) {
+  const sig = new Map(); let n = 0;
+  for (const [k, p] of Object.entries(S.pages)) {
+    if (k === exceptKey || p.type !== "인물" || !w.entities[k]) continue;
+    const c = { 특징: -1, 생애: -1 }; let cur = null;
+    for (const s of p.sections || []) {
+      if ((s.level || 1) === 1) { cur = /특징|능력|특기/.test(s.heading) ? "특징" : /생애|행적|경력/.test(s.heading) ? "생애" : null; if (cur && c[cur] < 0) c[cur] = 0; else if (cur) cur = null; }
+      else if (cur) c[cur]++;
+    }
+    if (c.특징 < 0 || c.생애 < 0) continue;
+    n++; const key = c.특징 + "/" + c.생애; sig.set(key, (sig.get(key) || 0) + 1);
+  }
+  const [top, m] = [...sig.entries()].sort((a, b) => b[1] - a[1])[0] || [];
+  if (!top || m < 3 || m * 2 < n) return "";
+  const [a, b] = top.split("/");
+  return `- 목차 짜임: 기존 인물 문서 ${n}개 중 ${m}개가 '특징' 하위 섹션 ${a}개, '생애' 하위 섹션 ${b}개로 같은 짜임이다. 이 인물은 실제로 겪은 일에 맞춰 하위 섹션 수를 다르게 잡고, 이 인물에게만 있는 일(특정 작전, 관계, 이후의 직업 등)은 큰 섹션으로 세울 수 있다.`;
 }
 const TRAIT_RULE = `성격은 무작위로 정한 성격 경향이 주어지면 그 값을 출발점으로 삼고, 인물이 맡은 역할, 살아온 경험, 주변 사람과의 관계에 맞게 다듬어 자연스럽게 드러나게 한다. 사용자가 정한 특징과 이미 확정된 설정을 우선한다. 서로 다른 인물의 성격이나 성향이 겹쳐도 된다. 아래 특징 목록은 성격의 중복을 금지하는 목록이 아니라 표현 반복을 살피는 참고다. 같은 문구와 일화를 기계적으로 되풀이하거나, 차별화하려고 억지 기벽이나 집착을 붙이지 않는다. 장르의 전형적인 성격도 역할과 경험에 맞으면 쓸 수 있지만, 장르만 보고 모든 인물에게 일괄적으로 입히지 않는다. 원안과 핵심 규칙에 나오는 장치(그 세계의 기본 보급품, 기본 장비, 기본 제도 등)를 성격 일화의 중심 소재로 삼지 않는 것을 기본으로 한다. 성격은 그 인물의 생활, 취향, 사람, 장소, 습관, 일하는 방식에서 찾는다. 성격 경향은 한 가지 방식으로만 드러내지 않는다. 예를 들어 원칙과 융통은 규칙 위반만이 아니라 일, 돈, 시간, 약속, 사람, 취향을 대하는 방식으로도 드러난다.`;
 /* 그 장이 뼈대의 어느 구간인지: 절정과 결말에는 새 인물을 들이지 않는다 */
