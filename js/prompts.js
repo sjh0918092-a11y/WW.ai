@@ -438,7 +438,58 @@ function memberBlock(w, key) {
 - 아래 이미 있는 인물을 먼저 넣고, 모자라는 자리는 새 인물로 채워 링크한다. 한 인물의 본명·호출부호·코드명·이명은 한 자리로 세며, 이미 있는 인물의 다른 이름을 다른 사람처럼 따로 적지 않는다. 아는 인물 수에 맞춰 규모를 줄이지 않는다.
 이 항목에 속한다고 기록된 인물: ${ms.length ? "\n" + ms.map(r => memberLine(w, r)).join("\n") : "(없음)"}`;
 }
-function pagePrompt(w, key, rewriteDir = null, guide = "", angle = null, angleMode = "section", birthday = null, persona = null) {   // angleMode: section(대상이 정해진 문서에 얹기) · novel(랜덤 서핑이 방향에 넣어 보낸 각도)
+/* ---------- 작성 전 점검 ----------
+   작성 모델이 낮은 생각 수준에서 놓치는 추론을 짧은 호출로 먼저 해 글로 적어 넘긴다. 유형마다 묻는 질문이 다르고, 질문이 없는 유형은 호출하지 않는다.
+   이름은 정하지 않는다(작성 모델이 정한다). 확정 사실·사용자 확정 설정이 이미 정한 것은 그대로 따른다 */
+const PRE_WRITE_QUESTIONS = {
+  "조직": "이 항목은 주요 구성원이 있는 집단인가? 그렇다면 이 세계에서 기대할 구성원 수는 몇인가?",
+  "국가": "이 항목은 주요 구성원이 있는 집단인가? 그렇다면 이 세계에서 기대할 구성원 수는 몇인가?",
+};
+/* 유형: 항목에 정해진 유형, 없으면 다시 쓰기 전 문서의 유형(hint) */
+const preWriteType = (w, key, hint = "") => { const t = w.entities[key]?.type; return TYPES.includes(t) ? t : TYPES.includes(hint) ? hint : ""; };
+const preWriteNeeded = (w, key, hint = "") => !isStory(w) && (() => { const t = preWriteType(w, key, hint); return !t || !!PRE_WRITE_QUESTIONS[t]; })();
+function preWritePrompt(w, key, hint = "") {
+  const e = w.entities[key], ty = preWriteType(w, key, hint);
+  const facts = e.facts.filter(live).slice(0, 30).map(f => "- " + factLine(f)).join("\n") || "- (없음)";
+  const ments = e.mentions.filter(live).slice(0, 20).map(m => `- ${m.text}`).join("\n") || "- (없음)";
+  const ms = memberRows(w, key);
+  const qs = Object.entries(PRE_WRITE_QUESTIONS).filter(([t]) => !ty || t === ty);
+  return `## 작성 전 점검
+가상 세계관 위키 「${w.title}」(작중 기준 시점 ${w.era})에 「${e.title}」 문서를 쓰기 전에, 아래 자료만 보고 질문에 답한다. 문서는 쓰지 않는다.
+
+## 세계관 원안
+${w.seed || "(없음)"}
+
+## 핵심 규칙
+${(w.rules || []).map(r => "- " + r).join("\n") || "- (없음)"}
+${w.userCanon ? `\n## 사용자 확정 설정 (최우선)\n${w.userCanon}\n` : ""}${stageBlock(w)}
+
+## 이 항목
+제목: ${e.title}
+유형: ${ty || "미정"}${e.summary ? `\n요약: ${e.summary}` : ""}
+다른 문서가 확정한 사실:
+${facts}
+다른 문서의 언급:
+${ments}
+이 항목 소속으로 기록된 인물:
+${ms.length ? ms.map(r => memberLine(w, r)).join("\n") : "- (없음)"}
+
+## 질문
+${ty ? `- 유형은 '${ty}'로 정해져 있다. type에 그대로 쓴다.` : `- 이 항목의 유형을 ${TYPES.join(", ")} 중 하나로 정한다.`}
+${qs.map(([t, q]) => `- 유형이 '${t}'이면: ${q}`).join("\n")}
+- 확정 사실이나 사용자 확정 설정이 이미 정한 것은 그대로 답한다. 정해진 것이 없을 때만 세계관의 전제(이 세계에서 그것이 얼마나 중요한지, 경쟁 구도, 제약)에서 독자가 기대할 답을 정한다. 이미 기록된 인물 수에 맞추지 않는다. 이름은 정하지 않는다.
+- 질문이 없는 유형이거나 해당하지 않으면 notes는 빈 문자열이다.
+
+JSON 객체 하나만 출력: {"type":"유형","notes":"문서 작성자에게 넘길 답. 한두 문장. 예: '이 집단의 기대 구성원 수: N명. 이유: …'"}`;
+}
+function preWriteBlock(notes) {
+  const t = String(notes || "").trim();
+  return t ? `
+
+## 작성 전 점검 결과 (따른다. 다른 문서가 확정한 사실이나 사용자 확정 설정과 다르면 그쪽을 따른다)
+${t.slice(0, 600)}` : "";
+}
+function pagePrompt(w, key, rewriteDir = null, guide = "", angle = null, angleMode = "section", birthday = null, persona = null, preNotes = "") {   // angleMode: section(대상이 정해진 문서에 얹기) · novel(랜덤 서핑이 방향에 넣어 보낸 각도)
   const e = w.entities[key], inputs = writingOptions();
   const ty = TYPES.includes(e.type) ? e.type : "";
   const staged = !!w.stage && !isStory(w);
@@ -498,7 +549,7 @@ ${relText}
 이 목록은 이름이 겹치거나 엇갈리지 않게 하려는 색인이다. 목록에 있다는 이유로 본문에 끌어오지 않는다. 각 줄의 "—" 앞까지가 제목이며, 뒤의 유형과 정의는 제목이 아니다. 제목에 "(인물)" 같은 유형을 붙이지 않는다.
 ${idx}
 
-${inputs.guidelines ? firstPageBlock(w, key, rewriteDir) : ""}${inputs.gaps ? worldGaps(w) : ""}${showFor(ty, ["인물"]) ? personaBlock(persona) + (() => { const ti = inputs.traits ? [traitIndex(w, key, inputs.traitsCount), staged ? "" : outlineNote(w, key)].filter(Boolean).join("\n") : ""; return ti ? `## 다른 인물의 특징 (표현 반복 참고)\n${ti}\n\n` : ""; })() : ""}${["인물", "사건", "지명"].includes(ty) ? "" : memberBlock(w, key)}
+${inputs.guidelines ? firstPageBlock(w, key, rewriteDir) : ""}${inputs.gaps ? worldGaps(w) : ""}${showFor(ty, ["인물"]) ? personaBlock(persona) + (() => { const ti = inputs.traits ? [traitIndex(w, key, inputs.traitsCount), staged ? "" : outlineNote(w, key)].filter(Boolean).join("\n") : ""; return ti ? `## 다른 인물의 특징 (표현 반복 참고)\n${ti}\n\n` : ""; })() : ""}${preWriteBlock(preNotes)}${["인물", "사건", "지명"].includes(ty) ? "" : memberBlock(w, key)}
 
 ## 출력
 ${ENTITY_DEFINITION_RULE}

@@ -317,6 +317,16 @@ async function followRedirect(w, k, to) {
   toast(`「${from}」은(는) 「${title}」의 다른 이름입니다. 기존 문서로 연결했습니다.`);
   drainGenQ();   // afterGen을 거치지 않으므로 대기열을 여기서 잇는다
 }
+/* 작성 전 점검: 실패하거나 건너뛰면 점검 결과 없이 쓴다. 유형이 비어 있던 항목은 점검이 정한 유형으로 프롬프트를 고른다 */
+async function runPreWrite(w, k, signal, hint = "") {
+  if (!preWriteNeeded(w, k, hint)) return { notes: "" };
+  try {
+    const r = await callJson("preWrite", preWritePrompt(w, k, hint), { signal, modelTier: "default" }, { title: w.entities[k].title + " · 작성 전 점검" });
+    const e = w.entities[k];
+    if (e && !TYPES.includes(e.type) && TYPES.includes(r?.type)) e.type = r.type;
+    return { notes: typeof r?.notes === "string" ? r.notes.trim().slice(0, 600) : "", type: r?.type || "" };
+  } catch (err) { if (err?.code === "cancelled" || signal?.aborted) throw err; return { notes: "" }; }
+}
 async function generatePage(k, rewrite, direction, novel = false, novelAngle = null, opts = {}) {
   if (S.discovery?.busy && !novel) { toast("새 문서 탐색을 마치거나 중단한 뒤 작성해 주세요."); return; }
   const w = S.world; const e = w.entities[k];
@@ -351,7 +361,9 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
       try { const t = await detectTone(w); if (t) { w.tone = t; toast(`분위기를 「${t.label}」(으)로 판별했습니다. 설정 노트에서 고칠 수 있습니다.`); } } catch {}
       if (ctl.signal.aborted) throw { code: "cancelled" };
     }
-    const out = await callJson("page", pagePrompt(w, k, rewrite ? (direction || "") : null, rewrite ? "" : (direction || ""), angle || (novel ? novelAngle : null), angle ? "section" : "novel", birthday, persona), { signal: ctl.signal, modelTier: "default", ...(recovery ? { jobMeta: recovery } : {}), ...PAGE_MODEL, onRetry: r => { if (S.gen) { S.gen.retry = r; updateGenLive(); } }, onText: ({ text }) => { if (S.gen) { S.gen.raw = text; updateGenLive(); } } }, { title: e.title, type: TYPES.includes(e.type) ? e.type : "", ents: Object.keys(w.entities).length });
+    const preWrite = await runPreWrite(w, k, ctl.signal, oldPage?.type || "");
+    if (ctl.signal.aborted) throw { code: "cancelled" };
+    const out = await callJson("page", pagePrompt(w, k, rewrite ? (direction || "") : null, rewrite ? "" : (direction || ""), angle || (novel ? novelAngle : null), angle ? "section" : "novel", birthday, persona, preWrite.notes), { signal: ctl.signal, modelTier: "default", ...(recovery ? { jobMeta: recovery } : {}), ...PAGE_MODEL, onRetry: r => { if (S.gen) { S.gen.retry = r; updateGenLive(); } }, onText: ({ text }) => { if (S.gen) { S.gen.raw = text; updateGenLive(); } } }, { title: e.title, type: TYPES.includes(e.type) ? e.type : "", ents: Object.keys(w.entities).length });
     if (out && Object.prototype.hasOwnProperty.call(out, "redirect")) {
       if (novel) throw { code: "discovery_duplicate", existing: out.redirect };
       if (ctl.signal.aborted) throw { code: "cancelled" };

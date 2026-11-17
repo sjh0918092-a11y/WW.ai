@@ -25,7 +25,7 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
     // AI 호출을 손으로 끝낼 수 있게 바꾼다
     await page.evaluate(() => {
       window.__calls = []; 
-      window.callJson = (kind, prompt, opts, meta) => meta?.title === "없는 이름" ? Promise.resolve({ notFound: true }) : meta?.title === "다른 이름" ? Promise.resolve({ redirect: "붉은 격납고" }) : new Promise((res, rej) => {
+      window.callJson = (kind, prompt, opts, meta) => kind === "preWrite" ? Promise.resolve({ type: "", notes: "" }) : meta?.title === "없는 이름" ? Promise.resolve({ notFound: true }) : meta?.title === "다른 이름" ? Promise.resolve({ redirect: "붉은 격납고" }) : new Promise((res, rej) => {
         opts?.signal?.addEventListener("abort", () => rej({ code: "cancelled" }));
         window.__calls.push({ title: meta?.title, done: () => res({ title: meta.title, type: "장소", summary: meta.title + " 요약", categories: ["장소", "대기열 세계 장소"], infobox: [{ label: "소속", value: "대기열 세계" }], sections: [{ heading: "개요", level: 1, body: meta.title + "은 오래된 곳이다." }] }) });
       });

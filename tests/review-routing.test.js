@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor,readPrompt,checkTimeline,timelineCheckPrompt,readTimelineForm,timelineEditHtml,promptTimeline});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,preWritePrompt,preWriteNeeded,runPreWrite,taskSelection,GS,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor,readPrompt,checkTimeline,timelineCheckPrompt,readTimelineForm,timelineEditHtml,promptTimeline});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -380,6 +380,30 @@ test('구성원 목록: 소속 장부로 구성원(다른 이름·자리·상태
   assert.match(c.pagePrompt(w, K('라데니아')), /- 엘라 무어 .*· 「해안 수비대」 소속/, '국가는 소속 조직의 구성원까지 따라간다');
   assert.doesNotMatch(c.pagePrompt(w, K('엘라 무어')), /## 구성원 목록/);
 });
+test('작성 전 점검: 조직·국가·유형 미정 항목만 묻고, 확정 사실과 소속 인물을 넘기며, 답을 작성 프롬프트에 넣고 빈 유형을 채운다', async () => {
+  const org = page('해안 수비대', '조직', '수비대는 해안을 지킨다.', 1);
+  const w = world([org, page('엘라 무어', '인물', '엘라는 병사다.', 2)], { seed: '섬나라들이 해안 수비대를 경쟁적으로 키운다.' });
+  w.entities[K('해안 수비대')].type = '조직'; w.entities[K('엘라 무어')].type = '인물';
+  w.entities[K('해안 수비대')].facts = [{ t: '수비대는 1990년에 창설되었다.', src: K('엘라 무어') }];
+  assert.equal(c.preWriteNeeded(w, K('해안 수비대')), true); assert.equal(c.preWriteNeeded(w, K('엘라 무어')), false);
+  w.entities[K('새 항목')] = c.newEntity('새 항목', '', ''); assert.equal(c.preWriteNeeded(w, K('새 항목')), true, '유형 미정은 묻는다'); assert.equal(c.preWriteNeeded(w, K('새 항목'), '인물'), false, '다시 쓰기 전 문서가 인물이면 묻지 않는다');
+  const pp = c.preWritePrompt(w, K('해안 수비대'));
+  assert.match(pp, /섬나라들이 해안 수비대를/); assert.match(pp, /수비대는 1990년에 창설되었다/); assert.match(pp, /기대할 구성원 수는 몇인가/); assert.match(pp, /이름은 정하지 않는다/);
+  vm.runInContext(`callJson = async (kind) => kind === 'preWrite' ? { type: '조직', notes: '이 집단의 기대 구성원 수: 5명. 이유: 경쟁.' } : {}`, c);
+  const r = await c.runPreWrite(w, K('새 항목'), new AbortController().signal);
+  assert.equal(r.notes, '이 집단의 기대 구성원 수: 5명. 이유: 경쟁.'); assert.equal(w.entities[K('새 항목')].type, '조직');
+  const wp = c.pagePrompt(w, K('해안 수비대'), null, '', null, 'section', null, null, r.notes);
+  assert.match(wp, /## 작성 전 점검 결과[^\n]*\n이 집단의 기대 구성원 수: 5명/);
+  vm.runInContext(`callJson = async () => { throw { code: 'api_500' }; }`, c);
+  assert.equal((await c.runPreWrite(w, K('해안 수비대'), new AbortController().signal)).notes, '', '실패하면 점검 없이 쓴다');
+});
+test('작성 전 점검의 모델·생각 수준은 따로 정하지 않으면 문서 작성의 배정을 따른다', () => {
+  const st = { main: 'm-main', mainThink: 'low', check: 'm-check', taskModels: { page: { model: 'm-page', think: 'high' } } };
+  assert.deepEqual({ ...c.taskSelection('preWrite', 'main', st) }, { model: 'm-page', think: 'high' });
+  assert.deepEqual({ ...c.taskSelection('preWrite', 'main', { ...st, taskModels: { page: { model: 'm-page', think: 'high' }, preWrite: { model: '', think: 'minimal' } } }) }, { model: 'm-page', think: 'minimal' });
+  assert.deepEqual({ ...c.taskSelection('preWrite', 'main', { ...st, taskModels: {} }) }, { model: 'm-main', think: 'low' });
+});
+
 let failed = 0;
 (async () => { for (const [n, f] of tests) { try { await f(); console.log('통과', n); } catch (e) { failed++; console.log('실패', n, '\n', e.message); } }
 if (failed) process.exit(1); })();

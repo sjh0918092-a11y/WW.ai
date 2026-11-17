@@ -1,7 +1,7 @@
 "use strict";
 /* 작업 배정과 문서 작성 입력의 사용자 설정. 브라우저·서버 엔진에서 함께 사용한다. */
 const AI_TASKS = [
- ["bible","세계관 기본 설정"],["storyBible","스토리 기본 설정"],["page","문서 작성"],
+ ["bible","세계관 기본 설정"],["storyBible","스토리 기본 설정"],["page","문서 작성"],["preWrite","작성 전 점검"],
  ["check","설정 검사"],["read","문서 내부 검사"],["fix","충돌 고치기"],
  ["factSync","수정 후 사실·연표·관계 추출"],["analyze","직접 편집한 문서의 설정 대조"],
  ["section","문단 다시 쓰기"],["discovery","새 대상 탐색"],["angles","각도 목록"],
@@ -48,9 +48,12 @@ function normalizePromptOptions(raw={}) {
  }return out;
 }
 function writingOptions(){return normalizePromptOptions(GS.prompt)}
+/* 따로 정하지 않으면 다른 작업의 배정을 따르는 작업: 작성 전 점검은 문서 작성과 같은 모델·생각 수준 */
+const TASK_INHERIT={preWrite:"page"};
 function taskSelection(kind,tier="main",settings=GS){
  tier=tier==="quick"?"quick":tier==="check"?"check":"main";
- const task=normalizeTaskModels(settings.taskModels)[kind]||{};
+ const tasks=normalizeTaskModels(settings.taskModels),own=tasks[kind]||{},parent=TASK_INHERIT[kind]?tasks[TASK_INHERIT[kind]]||{}:{};
+ const task={model:own.model||parent.model||"",think:own.think&&own.think!=="inherit"?own.think:parent.think&&parent.think!=="inherit"?parent.think:own.think??parent.think};
  return {model:task.model||(tier==="check"?settings.check||settings.main||GDEF.main:settings[tier]||GDEF[tier]),think:task.think&&task.think!=="inherit"?task.think:task.think===""?"":(tier==="check"?settings.checkThink??GDEF.checkThink:settings[tier+"Think"])||""};
 }
 function normalizeModelCatalog(raw={}) {
