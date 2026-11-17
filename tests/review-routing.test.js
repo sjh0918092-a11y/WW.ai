@@ -239,6 +239,16 @@ test('같은 이명: 처음 연결은 유지하고 나중 인물에게 이명(�
   c.sharedNames(w2); assert.equal(w2.aliases[K('블랙버드(한서진)')], K('한서진'));   // 기존 세계관도 링크용 이명이 생긴다
 });
 
+test('문서 내부 검사: 링크 표기를 살리고 인물의 이명을 넘기며, 오타·잘못 쓴 낱말은 자동으로 고치게 한다', () => {
+  const sara = { ...page('사라 밀러', '인물', '사라다.', 1), infobox: [{ label: '본명', value: '사라 밀러' }, { label: '호출부호', value: '새러토가' }] };
+  const doc = page('조약 위반 사건', '사건', '[[사라 밀러|새러토가]]를 이송했다. 사라 밀러는 주저앉아 있었다.', 2);
+  const w = world([sara, doc]); w.entities[K('사라 밀러')].type = '인물';
+  const rp = c.readPrompt(w, K('조약 위반 사건'));
+  assert.match(rp, /\[\[사라 밀러\|새러토가\]\]를 이송했다/);
+  assert.match(rp, /## 이 문서에 나온 인물의 다른 이름 \(같은 인물이다\)\n- 사라 밀러: 새러토가/);
+  assert.match(rp, /이런 곳은 severity high로 써서 작성 직후 자동으로 고치게 한다/);
+});
+
 let failed = 0;
 (async () => { for (const [n, f] of tests) { try { await f(); console.log('통과', n); } catch (e) { failed++; console.log('실패', n, '\n', e.message); } }
 if (failed) process.exit(1); })();
