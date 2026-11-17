@@ -108,6 +108,7 @@ const ID_RE = /^[A-Za-z0-9가-힣_.-]{2,24}$/;
 const PBKDF2_ITER = 20000;           // 무료 플랜의 CPU 시간 한도 안에서 도는 횟수
 const MAX_SYNC = 20 * 1024 * 1024;   // 올리기 한 번의 본문 상한 20MB
 const PAGE_LIMIT = 1500;             // 받아 오기 한 번에 내려 주는 문서 수
+const SYNC_BYTES = 8 * 1024 * 1024;  // 받아 오기 한 번에 표 하나당 내려 주는 크기 목표(D1 조회 한도 50MB보다 넉넉히 작게)
 let schema = null;
 function ensureSchema(db) {
   schema ||= db.batch([
@@ -178,11 +179,22 @@ async function api(request, env, url, cors, fail) {
     if (path === "/api/logout" && m === "POST") { await db.prepare("DELETE FROM sessions WHERE token = ?").bind(tok).run(); return json({ ok: true }); }
     if (path === "/api/sync" && m === "GET") {
       const since = Number(url.searchParams.get("since") || 0) || 0;
-      const worlds = (await db.prepare("SELECT wid, data, updated, deleted, stamp FROM worlds WHERE uid = ? AND stamp > ? ORDER BY stamp").bind(uid, since).all()).results || [];
-      const pages = (await db.prepare("SELECT wid, pkey, data, updated, deleted, stamp FROM pages WHERE uid = ? AND stamp > ? ORDER BY stamp LIMIT ?").bind(uid, since, PAGE_LIMIT).all()).results || [];
-      const more = pages.length >= PAGE_LIMIT;
-      const top = more ? pages.at(-1).stamp : Math.max(since, ...worlds.map(x => x.stamp), ...pages.map(x => x.stamp));
-      return json({ id: uid, worlds, pages, next: top, more });
+      // D1은 한 번의 조회 결과가 50MB를 넘으면 실패하므로 건수와 함께 누적 크기로도 끊어 내려 준다(한도를 넘기는 첫 줄까지 포함)
+      const sized = (table, cols) => `SELECT ${cols}, data, updated, deleted, stamp, acc FROM (SELECT ${cols}, data, updated, deleted, stamp, SUM(COALESCE(length(CAST(data AS BLOB)), 0)) OVER (ORDER BY stamp ROWS UNBOUNDED PRECEDING) AS acc, COALESCE(length(CAST(data AS BLOB)), 0) AS n FROM ${table} WHERE uid = ? AND stamp > ? ORDER BY stamp LIMIT ?) WHERE acc - n <= ? ORDER BY stamp`;
+      const take = async (table, cols) => {
+        const rows = (await db.prepare(sized(table, cols)).bind(uid, since, PAGE_LIMIT + 1, SYNC_BYTES).all()).results || [];
+        const cut = rows.length > PAGE_LIMIT || (rows.length > 0 && rows.at(-1).acc > SYNC_BYTES);
+        rows.length = Math.min(rows.length, PAGE_LIMIT);
+        for (const r of rows) delete r.acc;
+        return { rows, end: cut ? rows.at(-1).stamp : null };
+      };
+      const w = await take("worlds", "wid"), p = await take("pages", "wid, pkey");
+      const ends = [w.end, p.end].filter(x => x != null);
+      const more = ends.length > 0;
+      // 덜 받은 쪽의 마지막 순번까지만 확정하고, 그 뒤의 기록은 다음 차례에 받는다
+      const top = more ? Math.min(...ends) : Math.max(since, ...w.rows.map(x => x.stamp), ...p.rows.map(x => x.stamp));
+      const upTo = list => more ? list.filter(x => x.stamp <= top) : list;
+      return json({ id: uid, worlds: upTo(w.rows), pages: upTo(p.rows), next: top, more });
     }
     if (path === "/api/sync" && m === "POST") {
       const { worlds = [], pages = [] } = await body();
