@@ -1052,4 +1052,5 @@ async function checkPage(k) {
   S.checking = null;
   const here = S.view.name === "article" && S.view.key === k;
   if (here) renderMain();
+  renderSide();   // 편집자 메모가 바뀌면 수정 요청 목록도 바뀐다
 }
