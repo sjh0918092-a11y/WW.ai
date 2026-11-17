@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -78,7 +78,7 @@ test('검사 요약이 진단 기록(checkLog)에 쌓이고 수정 요청·못 �
 
 test('백업 진단 도구가 앱 함수로 보고서를 만든다 (읽기 전용 내보내기는 거절)', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'diag-'));
-  const pages = [table(), person('레베카 던', 4, 18, 2), page('사령부', '조직', '[[레베카 던]]의 편대가 침투했다.', 3)];
+  const pages = [table(), person('레베카 던', 4, 18, 2), page('사령부', '조직', '[[레베카 던]]의 편대가 침투했다.', 3), { ...page('사령부2', '조직', '1991년 1월 17일 새벽 편대 4명이 침투했다.', 4), sections: [{ heading: '1991년 걸프전', level: 1, body: '1991년 1월 17일 새벽 편대 4명이 침투했다.' }] }, page('걸프전', '사건', '걸프전이다.', 5)];
   const w = { id: 'w1', kind: 'world', title: '시험 세계', era: '2020년', seed: '가상', rules: [], timeline: [], events: [], glossary: [], entities: {} };
   for (const p of pages) w.entities[p.key] = { ...c.newEntity(p.title, p.type, ''), page: true, facts: [], mentions: [] };
   pages[1].check = { at: 2, issues: [{ claim: 'x', conflict: '근거: 「마법소녀」: “3등급(10~25kτ)은 항공기 요격” · 다르다', severity: 'low' }], auto: true };
@@ -90,10 +90,20 @@ test('백업 진단 도구가 앱 함수로 보고서를 만든다 (읽기 전�
   assert.match(rep, /등급 규칙: 18kτ는 3등급 구간/);
   assert.match(rep, /「레베카 던」 → 근거 「마법소녀」: 찾음/);
   assert.match(rep, /\| 레베카 던 \| 사령부 \| 0 \|/);
+  assert.match(rep, /## 재서술 지표/); assert.match(rep, /\| 사령부2 \| 1 \| 걸프전 \|/);
   const pr = execFileSync(process.execPath, [tool, f, '--pair', '레베카 던', '사령부'], { encoding: 'utf8' });
   assert.match(pr, /「사령부」 리뷰에 「레베카 던」 원문이 들어감/);
   const ro = path.join(dir, 'r.json'); fs.writeFileSync(ro, JSON.stringify({ app: 'worldwiki-readonly', documents: [] }));
   assert.throws(() => execFileSync(process.execPath, [tool, ro], { encoding: 'utf8', stdio: 'pipe' }), /백업 내보내기/);
+});
+
+test('작성 지침은 다른 항목의 일을 역할 한두 문장과 연도까지만 쓰게 하고, 빨간 링크에도 같은 규칙을 둔다', () => {
+  const w = world([page('러시아', '국가', '러시아다.', 1), page('옥사나', '인물', '1992년 옥사나는 [[러시아]] 해군으로 옮겼다.', 2)]);
+  const pr = c.pagePrompt(w, K('러시아'));
+  assert.match(pr, /다른 항목은 짧고 간단하게:/); assert.match(pr, /빨간 링크든/); assert.match(pr, /자세한 내용은 \[\[항목\]\] 참고/);
+  const ex = c.ownerExcerptBlock(w, K('러시아'), [K('옥사나')]);
+  assert.match(ex, /옮겨 쓸 자료가 아니다/); assert.doesNotMatch(ex, /다시 말할 때는 이 대목을 따르고/);
+  assert.match(pr, /절정은 이 문서만의 장면이어야 한다/);
 });
 
 let failed = 0;

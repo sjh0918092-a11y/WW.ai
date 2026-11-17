@@ -29,7 +29,7 @@ function loadApp() {
     window: { addEventListener() {} }, navigator: {}, location: { hash: "", pathname: "/", search: "", origin: "http://localhost" }, history: { replaceState() {} } };
   vm.createContext(c);
   vm.runInContext(appSource() + `
-;globalThis.__app = { S, keyOf, kOf, stripMarks, pageTexts, checkSourceBatches, checkKeys, detIssues, evidenceQuotes, findQuoteIn, hasName, refOK };`, c);
+;globalThis.__app = { S, keyOf, kOf, stripMarks, pageTexts, checkSourceBatches, checkKeys, detIssues, evidenceQuotes, findQuoteIn, hasName, refOK, namesOf };`, c);
   return c.__app;
 }
 
@@ -125,6 +125,21 @@ for (const p of pages) {
 }
 out(`\n\\* 표시는 기록이 없어 그 문서보다 먼저 만든 문서만으로 다시 계산한 추정값이다. '관련 항목 칸에 못 들어간 빨간 링크'는 현재 코드 기준이다.\n`);
 
+/* ---------- 재서술 지표: 다른 사건을 다룬 문단(또는 제목이 그 사건인 섹션) 안에서 세부(월·일, 시각, 수치)가 든 문장 ----------
+   v7.63부터 작성 지침은 다른 항목의 일을 '이 항목의 역할 한두 문장 + 연도'까지만 쓰게 한다. 이 수가 줄어야 규칙이 지켜지는 것이다. 이 항목 자신이 사건이면 그 사건은 세지 않는다 */
+const DETAIL_RE = /\d{1,2}\s*월\s*\d{1,2}\s*일|\d{1,2}\s*시\s*\d{1,2}\s*분|\d{1,2}:\d{2}|\d[\d,.]*\s*(?:명|척|기|발|분|초|시간|일간|개월|km|㎞|m|미터|킬로미터|kτ|킬로타우|%|퍼센트|톤|도|노트)(?=$|[^가-힣A-Za-z]|[을를이가은는의에과와도만로으까])/;   // 단위 뒤 조사는 허용, '기지'·'명령' 같은 낱말은 제외
+const EVENTS = Object.entries(W.entities || {}).filter(([, e]) => e.type === "사건").map(([k, e]) => ({ k, title: e.title, names: A.namesOf(e.title) }));
+function restatements(p) {
+  const hits = [], evIn = t => EVENTS.find(e => e.k !== p.key && e.names.some(n => A.hasName(t, n)));
+  const scan = (para, ev) => { for (const sen of para.split(/(?<=[.!?。])\s+|\n+/)) if (DETAIL_RE.test(sen)) hits.push({ ev: ev.title, sen: sen.trim() }); };
+  for (const r of p.infobox || []) { const t = A.stripMarks(r.value), ev = evIn(t); if (ev && DETAIL_RE.test(t)) hits.push({ ev: ev.title, sen: `${r.label}: ${t}` }); }
+  for (const sec of p.sections || []) {
+    const head = evIn(sec.heading || "");   // 섹션 제목이 다른 사건이면 그 섹션 전체가 그 사건의 서술이다
+    for (const para of A.stripMarks(sec.body || "").split(/\n{2,}/)) { const ev = head || evIn(para); if (ev) scan(para, ev); }
+  }
+  return hits;
+}
+const RESTATE = new Map(pages.map(p => [p.key, restatements(p)]));
 /* ---------- 3. 나중 문서의 리뷰가 앞 문서를 대조한 쌍 ---------- */
 out(`## 앞 문서를 원문으로 대조한 나중 문서 (주인 문서 → 앞 문서 수정 경로의 후보)\n`);
 out(`앞 문서에 오류가 있으면, 아래 나중 문서의 리뷰가 '고칠 쪽: 앞 문서'로 수정 요청을 보내야 한다.\n`);
@@ -133,6 +148,15 @@ for (const p of pages) {
   const laters = pages.filter(q => (q.createdAt || 0) > (p.createdAt || 0) && SRC.get(q.key).titles.includes(p.title));
   if (!laters.length) continue;
   out(`| ${cell(p.title)} | ${laters.map(q => cell(q.title)).join(", ")} | ${(p.autoConflicts || []).length} |`);
+}
+out("");
+
+out(`## 재서술 지표 (다른 사건을 다룬 문단·섹션 안에서 날짜·시각·수치가 든 문장)\n`);
+out(`합계 ${[...RESTATE.values()].reduce((n, x) => n + x.length, 0)}문장 · 문서당 평균 ${(([...RESTATE.values()].reduce((n, x) => n + x.length, 0)) / Math.max(1, pages.length)).toFixed(1)}문장. 다른 백업과 비교할 기준값이다.\n`);
+out(`| 문서 | 문장 수 | 다시 쓴 사건 | 예 |\n|---|---|---|---|`);
+for (const p of [...pages].sort((a, b) => RESTATE.get(b.key).length - RESTATE.get(a.key).length)) {
+  const r = RESTATE.get(p.key); if (!r.length) continue;
+  out(`| ${cell(p.title)} | ${r.length} | ${[...new Set(r.map(x => x.ev))].map(cell).join(", ")} | ${cell(r[0].sen).slice(0, 90)} |`);
 }
 out("");
 
