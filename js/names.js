@@ -105,10 +105,20 @@ function personByName(w, name, except) {
   }
   return hit;
 }
+/* 본명 칸의 이름 후보. 본명 칸에 링크로 적은 이름([[…|헤일리 앤 젠킨스]])의 표시 이름도 읽고, 한글 이름을 원어 표기보다 앞에 둔다 */
+function realNameCandidates(p) {
+  const linked = [];
+  for (const r of p?.infobox || []) {
+    if (!REAL_NAME_LABEL.test(stripMarks(r.label).replace(/\s/g, ""))) continue;
+    for (const m of String(r.value || "").matchAll(LINK_RE)) { const n = norm(m[2] || m[1]); if (n.length >= 2 && n.length <= 40 && !NAME_JUNK.test(n)) linked.push(n); }
+  }
+  const all = [...new Set([...linked, ...infoboxNames(p, true)])], hangul = n => /[가-힣]/.test(n) ? 1 : 0;
+  return all.map((n, i) => ({ n, i })).sort((a, b) => hangul(b.n) - hangul(a.n) || a.i - b.i).map(x => x.n);
+}
 /* 코드명 형태로 만들어진 인물 제목이면 바꿀 본명. 아니면 "" */
 function realNameFor(w, k) {
   const p = S.world === w ? S.pages[k] : null; if (!p || !isPerson(w, k)) return "";
-  const real = infoboxNames(p, true).find(n => identityName(n) !== identityName(p.title)); if (!real) return "";
+  const real = realNameCandidates(p).find(n => identityName(n) !== identityName(p.title)); if (!real) return "";
   const codes = (p.infobox || []).filter(r => CODE_NAME_LABEL.test(stripMarks(r.label).replace(/\s/g, ""))).map(r => identityName(r.value));
   const codeLike = /['"‘’“”「」『』]|\d|[(（]/.test(p.title) || codes.some(c => c.includes(identityName(p.title)));
   if (!codeLike) return "";

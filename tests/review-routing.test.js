@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -264,6 +264,14 @@ test('자동 수정: 재서술 지움으로 섹션이 통째로 비면 그 지�
   const res = await c.preCheck(w, K('네브래스카'), c.S.pages[K('네브래스카')], { ctl: new AbortController() }, () => {});
   const rel = res.page.sections.find(s => s.heading === '인물 관계');
   assert.ok(rel && /적벽/.test(rel.body), JSON.stringify(res.page.sections));
+});
+
+test('제목을 본명으로 바꾸기: 본명 칸의 링크 표시 이름과 한글 이름을 원어 표기보다 먼저 고른다', () => {
+  const mk = v => { const p = { ...page('네브래스카', '인물', '네브래스카다.', 1), infobox: [{ label: '본명', value: v }, { label: '호출부호', value: '네브래스카' }] }; const w = world([p]); w.entities[K('네브래스카')].type = '인물'; return w; };
+  assert.equal(c.realNameFor(mk('[[헤일리 앤 젠킨스|헤일리 앤 젠킨스]] (Hailey Anne Jenkins)'), K('네브래스카')), '헤일리 앤 젠킨스');
+  assert.equal(c.realNameFor(mk('[[Hailey Anne Jenkins|헤일리 앤 젠킨스]] (Hailey Anne Jenkins)'), K('네브래스카')), '헤일리 앤 젠킨스');
+  assert.equal(c.realNameFor(mk('Hailey Anne Jenkins (헤일리 앤 젠킨스)'), K('네브래스카')), '헤일리 앤 젠킨스');
+  assert.equal(c.realNameFor(mk('에밀리 앤 카터 (Emily Ann Carter)'), K('네브래스카')), '에밀리 앤 카터');
 });
 
 let failed = 0;
