@@ -124,6 +124,7 @@ async function closeMemos(k, items, field) {
   const p = S.pages[k]; if (!p || !items.length) return;
   if (field) p[field] = (p[field] || []).filter((_, i) => !items.includes(i));
   else if (p.check) p.check.issues = (p.check.issues || []).filter(x => !items.includes(x));
+  renderSide();   // 수정 요청 목록의 곳 수가 바뀐다
   try { await Store.savePage(S.world.id, p); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
 }
 /* ---------- 교정 페이지: 편집자 메모를 한 번에 고치고, 대조는 뒤에서 ---------- */
