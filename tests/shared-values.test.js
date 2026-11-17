@@ -75,6 +75,12 @@ test('구성원 현황이 기준 시점 현역과 구성원이 없던 기간을 
   const b = c.rosterBlock(w, [K('러시아')], 30, true);
   assert.match(b, /기준 시점 현역 1\(베레진스카야\)/); assert.match(b, /구성원이 없던 기간: 1987~2008/); assert.match(b, /최초/);
 });
+test('구성원 현황: 상태를 정한 문서가 없으면 현역 0으로 적지 않는다', () => {
+  const w = world([page('전력기동처', '조직', '[[홍련]]을 앞세웠다.', 1)]);
+  w.entities[K('홍련')] = { ...c.newEntity('홍련', '인물', ''), page: false, facts: [], mentions: [], cats: [{ axis: '소속', name: '전력기동처' }] };
+  const b = c.rosterBlock(w, [K('전력기동처')], 30, true);
+  assert.doesNotMatch(b, /기준 시점 현역 0/); assert.match(b, /현역 수를 알 수 없음\(상태 미정 \d+명\)/);
+});
 test('상세 서술은 사건 문서, 그다음 참가자 문서가 맡고 참가하지 않은 개념 문서는 맡지 않는다', () => {
   const w = world([page('전략 소녀', '개념', '개념.', 1), page('세라 바커', '인물', '바커.', 2), page('걸프 전쟁', '사건', '전쟁.', 3)]);
   const ev = (detail, parts) => ({ name: '걸프전', date: '1991년 1월 17일', place: '쿠웨이트', detail, participants: parts, beats: [] });

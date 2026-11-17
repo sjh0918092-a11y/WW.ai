@@ -569,7 +569,12 @@ function rosterBlock(w, orgs, n = 30, check = false) {
     const rows = rosterOf(w, org); if (!rows.length || !w.entities[org]) continue;
     const count = {}; for (const r of rows) if (r.a) count[r.a.state] = (count[r.a.state] || 0) + 1;
     const active = rows.filter(r => r.a?.state === "현역").map(r => w.entities[r.k].title), gaps = rosterGaps(w, rows);
-    const head = `문서가 정한 상태: ${Object.entries(count).map(([s, c]) => `${s} ${c}`).join(", ") || "없음"} · 기준 시점 현역 ${active.length}${active.length ? `(${active.join(", ")})` : ""}${gaps.length ? ` · 구성원이 없던 기간: ${gaps.join(", ")}` : ""}`;
+    // 문서가 없거나 상태를 정하지 않은 구성원이 있으면 현역 수는 아는 만큼만이다. '현역 0'을 확정값처럼 적으면 검사가 그 조직에 구성원이 없다고 읽는다
+    const undecided = rows.filter(r => !r.a?.state).length, states = Object.entries(count).map(([s, c]) => `${s} ${c}`).join(", ");
+    const activeText = !states ? `상태를 정한 구성원 문서가 아직 없어 현역 수를 알 수 없음(상태 미정 ${undecided}명)`
+      : undecided ? `기준 시점 현역은 문서가 정한 것만 ${active.length}명${active.length ? `(${active.join(", ")})` : ""}, 상태 미정 ${undecided}명은 세지 않음`
+      : `기준 시점 현역 ${active.length}${active.length ? `(${active.join(", ")})` : ""}`;
+    const head = `문서가 정한 상태: ${states || "없음"} · ${activeText}${gaps.length ? ` · 구성원이 없던 기간: ${gaps.join(", ")}${undecided ? "(상태 미정 구성원은 반영하지 않음)" : ""}` : ""}`;
     parts.push(`### 「${w.entities[org].title}」 (${head})\n${rows.slice(0, n).map(({ k, a }) => `- ${w.entities[k].title}${a ? `: ${[a.role, a.state, affilSpan(a)].filter(Boolean).join(", ")}` : ": (문서 없음, 상태 미정)"}`).join("\n")}`);
     if (parts.length >= 4) break;
   }
