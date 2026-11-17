@@ -174,10 +174,18 @@ test('문서 읽기 검사: 앱이 정한 사건의 재서술을 다듬을 곳�
   const rp = c.readPrompt(w, K('레베카 헤이즈'));
   const b = rp.slice(rp.indexOf('## 다른 사건의 재서술'), rp.indexOf('## 다른 사건의 재서술') + 900);
   assert.match(b, /\[\[바그다드 참호 돌파\]\]/); assert.match(b, /\[\[남중국해 대치\]\] \(아직 문서 없음\)/); assert.doesNotMatch(b, /\[\[전략 소녀\]\]/);
-  assert.match(b, /사건 하나에 지적 하나만 severity high로 쓴다/); assert.match(b, /두 번 이상 되풀이된 곳/); assert.match(b, /참고 문구 앞이든 뒤든/); assert.match(b, /conflict는 '재서술:'로 시작해/);
+  assert.match(b, /문단마다 하나씩 severity high로 지적하되/); assert.match(b, /'재서술\(줄임\):'으로 시작해/); assert.match(b, /'재서술\(지움\):'으로 시작해/); assert.match(b, /두 번 이상 되풀이된 곳/); assert.match(b, /참고 문구 앞이든 뒤든/);
   assert.doesNotMatch(c.readPrompt(w, K('전략 소녀')), /## 다른 사건의 재서술/);   // 다룬 사건이 없으면 넣지 않는다
   const fp = c.fixBatchPrompt(w, c.S.pages[K('레베카 헤이즈')], { summary: '', cats: '', infobox: '', body: '본문' }, [{ claim: '2003년', conflict: '근거: 참고로 넘길 사건: [[바그다드 참호 돌파]] · 재서술: 줄인다' }]);
-  assert.match(fp, /이유에 '재서술:'이 있는 메모는/); assert.match(fp, /나머지 문단과 그 사건 자리의 인용문은 각각 old로 잡아 new를 빈 문자열로 지운다/); assert.match(fp, /요약과 참고 문구는 한 번만 남는다/); assert.doesNotMatch(fp, /문단마다 하나씩/);
+  assert.match(fp, /'재서술\(지움\):' 메모는 지적된 문단이나 인용문 전체를 old로 잡아 new를 빈 문자열로 둔다/); assert.match(fp, /'재서술\(줄임\):' 메모는/); assert.match(fp, /이 대상의 일로 바꾸지 않는다/);
+});
+
+test('설정 검사: 같은 이름이 날짜·나이로 맞지 않으면 단정하지 않고 보이는 메모(low)로 남기게 한다', () => {
+  const w = world([page('리버티 벨', '인물', '1998년생이다.', 1)]);
+  const pr = c.checkPrompt(w, K('리버티 벨'), []);
+  assert.match(pr, /같은 대상인지 먼저 확인한다/); assert.match(pr, /severity low로 남긴다/); assert.match(pr, /'같은 대상인지 확인 필요:'로 시작해/);
+  assert.match(pr, /이 문서가 스스로 이 대상에게 불가능한 나이나 시점의 일을 붙였으면 그것은 이 문서의 오류이므로 high/);
+  assert.match(pr, /'같은 대상인지 먼저 확인한다'에 걸리는 경우는 그 기준을 따른다/);
 });
 
 let failed = 0;
