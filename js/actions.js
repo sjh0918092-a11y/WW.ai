@@ -20,6 +20,7 @@ async function createWorld() {
       era: String(b.era || "미상").slice(0, 40), historical: b.historical === true || b.historical === "true", guide, tone: normTone(b.tone, ""), rules: (Array.isArray(b.rules) ? b.rules : []).map(r => stripMarks(asText(r))).filter(Boolean).slice(0, 10),
       calendars: cleanCalendars(b.calendars), ...(cleanCalendars(b.undatedCalendars).length ? { undatedCalendars: cleanCalendars(b.undatedCalendars) } : {}), timeline: [], userCanon: "", entities: {}, mainKey: null, createdAt: Date.now() };
     for (const t of (Array.isArray(b.timeline) ? b.timeline : [])) addTimeline(w, t, "seed");
+    await checkTimelineAtCreate(w, { costSession: worldCost });   // 원안 연표가 핵심 규칙과 함께 성립하지 않으면 문서를 쓰기 전에 고친다
     timelineWork = afterTimeline(w, { costSession: worldCost });   // 날짜 보완은 뒤에서 계속하고 같은 세계관 비용으로 집계한다
     const mt = first || norm(b.mainTitle || b.title);
     w.mainKey = keyOf(mt); w.entities[w.mainKey] = newEntity(mt, "", "");

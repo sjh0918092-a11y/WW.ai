@@ -472,7 +472,7 @@ function related(w, key, max = 8) {
    나머지는 pickRelevant로 TIMELINE_PROMPT_N개까지. 고른 것은 연도 순서 그대로 둔다 */
 const TIMELINE_PROMPT_N = 48;
 function promptTimeline(w, focus, list = w.timeline || [], n = TIMELINE_PROMPT_N) {
-  const items = list.filter(live), fixed = t => t.src === "seed" || !!S.pages[t.src]?.editedAt;
+  const items = list.filter(live), fixed = t => t.src === "seed" || t.src === "user" || !!S.pages[t.src]?.editedAt;
   const keep = new Set([...items.filter(fixed), ...pickRelevant(w, null, items.filter(t => !fixed(t)), t => `${t.year}년 ${t.event}`, n, focus)]);
   return timelineOrder(items.filter(t => keep.has(t)), w);
 }
@@ -518,8 +518,8 @@ function stageBlock(w) {
 function canonBlock(w, focus = null, options = null) {
   const on = key => !options || options[key];
   const rules = (w.rules || []).map(r => "- " + r).join("\n") || "- (없음)";
-  const timeline = options && !options.fixedTimeline ? (w.timeline || []).filter(t => t.src !== "seed" && !S.pages[t.src]?.editedAt) : w.timeline || [];
-  const tl = on("timeline") ? promptTimeline(w, focus, timeline, options ? options.timelineCount : TIMELINE_PROMPT_N).map(t => `- ${tlWhen(t)}: ${t.event}${S.pages[t.src]?.editedAt ? " [사용자 확정]" : ""}`).join("\n") || "- (없음)" : "";
+  const timeline = options && !options.fixedTimeline ? (w.timeline || []).filter(t => t.src !== "seed" && t.src !== "user" && !S.pages[t.src]?.editedAt) : w.timeline || [];
+  const tl = on("timeline") ? promptTimeline(w, focus, timeline, options ? options.timelineCount : TIMELINE_PROMPT_N).map(t => `- ${tlWhen(t)}: ${t.event}${t.src === "user" || S.pages[t.src]?.editedAt ? " [사용자 확정]" : ""}`).join("\n") || "- (없음)" : "";
   return [on("seed") ? `## 세계관 원안\n${w.seed}` : "", on("rules") ? `## 핵심 규칙 (절대 위반 금지)\n이 규칙들은 어기면 안 되는 전제일 뿐, 문서마다 언급해야 할 소재가 아니다. 이 항목과 직접 관련된 규칙만 본문에 반영한다.\n${rules}` : "", on("stage") ? stageBlock(w).trim() : "", on("canon") ? `## 사용자 확정 설정 (최우선. 다른 모든 정보보다 우선한다)\n${(w.userCanon || "").trim() || "(없음)"}` : "", on("timeline") ? `## 연표\n${tl}` : "", on("glossary") && (w.glossary || []).length ? glossaryBlock(w, null, options ? options.glossaryCount : GLOSSARY_PROMPT_N) : ""].filter(Boolean).join("\n\n");
 }
 /* 검사의 기준: 검사하는 문서(p)보다 먼저 정해진 설정만. 원안·사용자 지정·이야기 장 줄거리·직접 수정한 문서는 언제나 기준이다.

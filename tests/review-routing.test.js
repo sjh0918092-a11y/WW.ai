@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor,checkTimeline,timelineCheckPrompt,readTimelineForm,timelineEditHtml,promptTimeline});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -325,6 +325,39 @@ test('일반 서술: 작성은 원문 사례와 맞을 때만 묶어 쓰고, 리
   assert.match(pp, /여러 항목을 묶는 일반 서술/);
   const cp = c.checkPrompt(w, K('카일'), '');
   assert.match(cp, /일반 서술과 개별 사례/); assert.match(cp, /연결된 문서의 일반 서술이/); assert.match(cp, /함께 성립할 수 없으면 지적한다/);
+});
+
+test('연표 점검: 규칙과 함께 성립하지 않는 원안 항목을 고치고 이유를 남기며, 사용자 수정 항목은 바꾸지 않는다', async () => {
+  const w = world([page('카일', '인물', '카일은 병사다.', 1)], { rules: ['능력은 14~19세에만 쓴다.'], timeline: [
+    { year: '1954', month: 11, day: 3, event: '갑이 처음 발현하다.', src: 'seed' },
+    { year: '1962', month: 10, day: 22, event: '갑이 해협에서 교전하다.', src: 'seed' },
+    { year: '1970', event: '을이 태어나다.', src: 'user' }] });
+  c.S.sample = true;
+  let prompt = '';
+  vm.runInContext(`callJson = async (kind, p) => { globalThis.__p = p; return { fixes: [{ i: 2, year: '1958', month: 10, day: 22, event: '갑이 해협에서 교전하다.', why: '14~19세 사이 활동 기간 안에 들도록 옮김' }, { i: 3, year: '1999', event: '을이 태어나다.', why: 'x' }] }; }`, c);
+  const n = await c.checkTimeline(w); prompt = c.__p;
+  assert.equal(n, 1);
+  const t = w.timeline.find(x => x.event.includes('교전'));
+  assert.equal(t.year, '1958'); assert.match(t.fix.why, /활동 기간/); assert.match(t.fix.before, /1962년 10월 22일/);
+  assert.equal(w.timeline.find(x => x.event.includes('을')).year, '1970', '사용자 수정 항목은 그대로');
+  assert.match(prompt, /능력은 14~19세에만 쓴다/); assert.match(prompt, /사용자 수정/); assert.equal(w.timelineCheck.fixed, 1);
+  assert.match(c.timelineEditHtml(w), /연표 점검으로 고침: 14~19세/);
+});
+test('연표 편집: 고친 항목은 사용자 수정이 되고, 사건을 비우면 지우며, 새 줄을 더한다', () => {
+  const w = world([page('카일', '인물', '카일은 병사다.', 1)], { timeline: [
+    { year: '1954', event: '갑이 발현하다.', src: 'seed' }, { year: '1960', event: '병이 태어나다.', src: K('카일') }, { year: '1962', event: '을이 지다.', src: 'seed' }] });
+  const vals = { 'data-tl-ev="0"': '갑이 발현하다.', 'data-tl-y="0"': '1956', 'data-tl-ev="1"': '', 'data-tl-y="1"': '1960', 'data-tl-ev="2"': '을이 지다.', 'data-tl-y="2"': '1962', 'data-tl-ev="n0"': '정이 오다.', 'data-tl-y="n0"': '1970', 'data-tl-m="n0"': '3', 'data-tl-d="n0"': '1', 'data-tl-ev="n1"': '', 'data-tl-y="n1"': '' };
+  const el = k => vals[k] === undefined ? null : { value: vals[k], dataset: { tlEv: k.match(/"(.+)"/)[1] } };
+  const doc = c.document, saved = { q: doc.querySelector, qa: doc.querySelectorAll };
+  doc.querySelector = sel => { const m = sel.match(/\[(data-tl-[a-z]+="[^"]+")\]/); return m ? el(m[1]) : sel === '[data-tl-ev]' ? {} : null; };
+  doc.querySelectorAll = () => Object.keys(vals).filter(k => k.startsWith('data-tl-ev')).map(el);
+  try { c.readTimelineForm(w); } finally { doc.querySelector = saved.q; doc.querySelectorAll = saved.qa; }
+  assert.equal(w.timeline.length, 3);
+  const a = w.timeline.find(x => x.event.startsWith('갑')); assert.equal(a.year, '1956'); assert.equal(a.src, 'user'); assert.equal(a.from, 'seed');
+  assert.ok(!w.timeline.some(x => x.event.startsWith('병')), '사건을 비우면 지운다');
+  const n = w.timeline.find(x => x.event.startsWith('정')); assert.equal(n.src, 'user'); assert.equal(n.month, 3); assert.equal(n.day, 1);
+  assert.equal(w.timeline.find(x => x.event.startsWith('을')).src, 'seed', '안 바꾼 항목은 그대로');
+  assert.ok(c.promptTimeline(w, '', w.timeline, 0).some(x => x.src === 'user'), '사용자 수정 항목은 언제나 프롬프트에 들어간다');
 });
 
 let failed = 0;

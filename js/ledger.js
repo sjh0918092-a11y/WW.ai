@@ -197,6 +197,117 @@ async function askTimelineDates(w, opts = {}) {
   sortTimeline(w);
   return n || -1;   // 물어봤으면 0이 아니다(표시를 지웠으니 저장해야 한다)
 }
+/* ---------- 연표 점검 ----------
+   연표 항목끼리, 또는 핵심 규칙과 함께 성립하지 않는 곳(같은 대상의 나이·복무 기간·생사·순서)을 찾아 고친다.
+   세계관을 만들 때 원안 연표에 한 번, 설정 노트의 [연표 점검] 버튼으로 다시. 사용자가 고친 항목은 바꾸지 않는다.
+   고친 항목에는 t.fix(이유와 이전 값)를 남겨 설정 노트에 보인다 */
+const TL_CHECK_MAX = 80;
+const tlSrcLabel = (w, t) => t.src === "seed" ? "원안" : t.src === "user" ? "사용자 수정" : t.ch ? `${t.ch}장` : `「${w.entities[t.src]?.title || "?"}」`;
+function timelineCheckPrompt(w, items) {
+  const rules = (w.rules || []).map(r => "- " + r).join("\n") || "- (없음)";
+  return `## 연표 점검
+가상 세계관 위키 「${w.title}」(작중 기준 시점 ${w.era})의 연표를 핵심 규칙과 맞춰 본다.
+
+## 세계관 원안
+${w.seed || "(없음)"}
+
+## 핵심 규칙
+${rules}
+${w.userCanon ? `\n## 사용자 확정 설정\n${w.userCanon}\n` : ""}
+## 연표 (번호. 날짜: 사건 · 출처)
+${items.map((t, i) => `${i + 1}. ${tlWhen(t)}: ${t.event} · ${tlSrcLabel(w, t)}`).join("\n")}
+
+## 할 일
+- 같은 대상(인물, 조직, 물건)이 나오는 항목들을 모아, 핵심 규칙과 함께 성립하는지 본다. 나이 제한, 활동·복무 기간, 생사, 먼저 있어야 할 일의 순서를 계산한다. 예: 규칙상 활동할 수 있는 기간이 몇 년뿐인데 같은 대상의 첫 활동과 마지막 활동이 그보다 길게 떨어져 있으면 성립하지 않는다.
+- 출생 연도가 없어도, 규칙이 허용하는 어떤 출생 연도로도 두 항목을 함께 맞출 수 없으면 성립하지 않는 것이다.
+- 성립하지 않는 곳만 고친다. 핵심 규칙과 사용자 확정 설정은 바꾸지 않고 연표 쪽을 고친다. 출처가 '사용자 수정'인 항목은 고치지 않는다.
+- 고칠 때는 가장 적게 바꾼다. 사건의 연도·날짜를 옮기거나, 사건 문장에서 그 대상을 맞는 대상으로 바꾼다. 실제 역사 사건에 묶인 항목(그 사건의 연도가 정해진 것)은 연도를 옮기지 말고 다른 쪽 항목을 고친다. 고친 뒤에도 다른 항목과 새로 어긋나지 않게 한다.
+- 시점이나 해석으로 함께 성립할 수 있으면 고치지 않는다. 고칠 것이 없는 것이 정상이다.${tlDateNote(w)}
+
+JSON 객체 하나만 출력: {"fixes":[{"i":1,"year":"연도(원래 표기 방식대로)","month":10,"day":22,"event":"고친 사건 문장(바꾸지 않으면 원문 그대로)","why":"무엇이 어떤 규칙과 맞지 않아 어떻게 고쳤는지 한 문장"}]}`;
+}
+async function checkTimeline(w, opts = {}) {
+  const items = (w.timeline || []).filter(live).slice(0, TL_CHECK_MAX);
+  if (!items.length || !S.sample) return 0;
+  const r = await callJson("timelineCheck", timelineCheckPrompt(w, items), { modelTier: "check", ...opts }, { title: w.title + " · 연표 점검" });
+  let n = 0;
+  for (const f of (Array.isArray(r?.fixes) ? r.fixes : [])) {
+    const t = items[(parseInt(f?.i, 10) || 0) - 1]; if (!t || t.src === "user") continue;
+    const year = String(f.year ?? "").trim() ? normTimelineYear(w, String(f.year).trim()) : t.year;
+    const event = stripMarks(String(f.event || "")).trim().slice(0, 200) || t.event;
+    const md = tlMD(f.month, f.day) || (year === t.year ? tlMD(t.month, t.day) : null);
+    if (!tlYear(w, year)) continue;
+    const before = `${tlWhen(t)}: ${t.event}`;
+    if (year === t.year && event === t.event && md?.month === t.month && md?.day === t.day) continue;
+    t.year = year; t.event = event; delete t.month; delete t.day; delete t.dateAsk;
+    if (md) Object.assign(t, md); else if (tlNeedsDate(w, year)) t.dateAsk = 1;
+    t.fix = { at: Date.now(), why: String(f.why || "").slice(0, 300), before: before.slice(0, 260) };
+    n++;
+  }
+  sortTimeline(w);
+  w.timelineCheck = { at: Date.now(), fixed: n };
+  return n;
+}
+/* 세계관을 만든 직후: 실패해도 세계관 만들기는 계속하고, 설정 노트에 실패를 보인다 */
+async function checkTimelineAtCreate(w, opts = {}) {
+  try { return await checkTimeline(w, opts); }
+  catch (err) { w.timelineCheck = { at: Date.now(), failed: String(err?.code || err?.message || "오류").slice(0, 80) }; return 0; }
+}
+/* 설정 노트의 [연표 점검] 버튼 */
+async function runTimelineCheck() {
+  const w = S.world; if (!w) return;
+  if (!S.sample) { toast(ERR.no_sample); return; }
+  if (S.tlChecking) return;
+  S.tlChecking = true; renderMain();
+  try {
+    const n = await checkTimeline(w);
+    await Store.saveWorld(w);
+    afterTimeline(w);
+    toast(n ? `연표 ${n}곳을 고쳤습니다. 고친 항목에 이유를 표시했습니다. 이미 쓴 문서는 다시 쓰지 않습니다.` : "핵심 규칙과 어긋나는 연표 항목이 없습니다.");
+  } catch (err) { toast("연표를 점검하지 못했습니다. " + errMsg(err)); }
+  finally { S.tlChecking = false; if (S.world === w) renderMain(); }
+}
+/* 설정 노트의 연표 칸을 읽는다. 바꾼 항목은 사용자 수정(src "user")이 되어 작성과 검사의 기준이 되고, 사건 칸을 비우면 지운다 */
+function readTimelineForm(w) {
+  if (!document.querySelector("[data-tl-ev]")) return;
+  const rows = [...document.querySelectorAll("[data-tl-ev]")];
+  const val = (i, f) => (document.querySelector(`[data-tl-${f}="${i}"]`)?.value ?? "").trim();
+  const drop = new Set(), now = Date.now();
+  for (const el of rows) {
+    const i = el.dataset.tlEv, event = stripMarks(el.value).replace(/\s+/g, " ").trim().slice(0, 200), yr = val(i, "y"), mo = val(i, "m"), dy = val(i, "d");
+    const md = tlMD(mo, dy);
+    if (i.startsWith("n")) {   // 새 줄
+      if (!event || !yr) continue;
+      const x = { year: normTimelineYear(w, yr), event, src: "user", userAt: now }; if (md) Object.assign(x, md);
+      w.timeline.push(x); continue;
+    }
+    const t = w.timeline[+i]; if (!t || t.sup) continue;
+    if (!event) { drop.add(t); continue; }
+    const year = yr ? normTimelineYear(w, yr) : t.year;
+    const same = year === t.year && event === t.event && (md?.month ?? null) === (tlMD(t.month, t.day)?.month ?? null) && (md?.day ?? null) === (tlMD(t.month, t.day)?.day ?? null);
+    if (same) continue;
+    if (t.src !== "user") t.from = t.src;
+    Object.assign(t, { year, event, src: "user", userAt: now }); delete t.month; delete t.day; delete t.dateAsk; delete t.fix;
+    if (md) Object.assign(t, md);
+  }
+  w.timeline = timelineOrder(w.timeline.filter(t => !drop.has(t)), w);
+}
+/* 설정 노트의 연표 표: 고칠 수 있는 칸과 출처·점검 표시 */
+function timelineEditHtml(w) {
+  const src = t => t.sup ? ` <span class="src">· 「${esc(w.entities[t.sup.by]?.title || "?")}」 수정으로 대체됨</span>`
+    : t.src === "user" ? ` <span class="src">· 사용자 수정${t.from && w.entities[t.from] ? ` (원래 「${esc(w.entities[t.from].title)}」)` : t.from === "seed" ? " (원래 원안)" : ""}</span>`
+    : t.src && t.src !== "seed" && w.entities[t.src] ? ` <span class="src">· ${linkHtml(w.entities[t.src].title)}</span>` : t.ch ? ` <span class="src">· ${t.ch}장</span>` : t.src === "seed" ? ` <span class="src">· 원안</span>` : "";
+  const fix = t => t.fix ? `<div class="note">연표 점검으로 고침: ${esc(t.fix.why || "규칙과 맞지 않음")} (이전: ${esc(t.fix.before)})</div>` : "";
+  const date = (i, t) => `<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center"><input data-tl-y="${i}" value="${esc(String(t?.year ?? ""))}" placeholder="연도" aria-label="연도" style="width:6.5em"><input data-tl-m="${i}" value="${esc(String(t ? tlMD(t.month, t.day)?.month ?? "" : ""))}" aria-label="월" style="width:3em">월<input data-tl-d="${i}" value="${esc(String(t ? tlMD(t.month, t.day)?.day ?? "" : ""))}" aria-label="일" style="width:3em">일</div>`;
+  const row = (t, i) => t.sup ? `<tr><td>${esc(tlWhen(t))} · <del>${esc(t.event)}</del>${src(t)}</td></tr>`
+    : `<tr><td>${date(i, t)}<input data-tl-ev="${i}" value="${esc(t.event)}" aria-label="사건" style="width:100%;box-sizing:border-box;margin-top:4px">${src(t)}${fix(t)}</td></tr>`;
+  const blank = j => `<tr><td>${date("n" + j, null)}<input data-tl-ev="n${j}" placeholder="새 사건 (비워 두면 추가하지 않음)" aria-label="새 사건" style="width:100%;box-sizing:border-box;margin-top:4px"></td></tr>`;
+  const st = w.timelineCheck, stat = !st ? "" : st.failed ? `<span class="note">세계관을 만들 때 연표 점검에 실패했습니다(${esc(st.failed)}). 버튼으로 다시 점검할 수 있습니다.</span>` : `<span class="note">마지막 점검: ${new Date(st.at).toLocaleString()} · 고친 항목 ${st.fixed}개</span>`;
+  return `<h2>연표</h2>
+    <p class="note">칸을 고치고 '설정 저장'을 누르면 사용자 수정 항목이 되어 이후 작성·검사의 기준이 됩니다. 사건 칸을 비우면 그 항목을 지웁니다.</p>
+    <div style="overflow-x:auto"><table class="tl tl-edit">${timelineOrder(w.timeline, w).map(t => row(t, w.timeline.indexOf(t))).join("")}${blank(0)}${blank(1)}</table></div>
+    <div class="row"><button type="button" class="btn pri" data-act="save-canon">설정 저장</button><button type="button" class="btn" data-act="timeline-check" ${!S.sample || S.tlChecking ? "disabled" : ""}>${S.tlChecking ? "연표 점검 중…" : "연표 점검"}</button><span class="note">연표가 핵심 규칙(나이, 활동 기간, 순서)과 함께 성립하는지 보고, 어긋난 항목을 고칩니다. 사용자 수정 항목은 바꾸지 않습니다. 칸을 고쳤다면 점검 전에 '설정 저장'을 먼저 눌러 주세요.</span>${stat}</div>`;
+}
 /* 생성 흐름에서 연표를 받은 뒤 부른다. 뒤에서 돌고, 끝나면 저장한다 */
 function afterTimeline(w, opts = {}) {
   if (!w || !(w.timeline || []).some(t => t.dateAsk) || !S.sample) return;

@@ -267,6 +267,7 @@ document.addEventListener("click", ev => {
     case "cf-back": if (S.edit) S.edit.pending = null; $("#edConflicts").innerHTML = ""; $("#edBody")?.focus(); break;
     case "ed-cancel": if (S.edit?.saving) break; S.edit?.ctl?.abort(); S.edit = null; renderMain(); window.scrollTo({ top: 0 }); break;
     case "save-canon": saveCanon(); break;
+    case "timeline-check": runTimelineCheck(); break;
     case "world-check": runWorldCheck(); break;
     case "prose-image-generate": generateProseImage(); break;
     case "prose-image-apply": saveProseImage(); break;

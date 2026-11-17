@@ -392,6 +392,7 @@ async function saveCanon() {
   w.tone = tl && tg.length ? { label: tl, guide: tg } : (tl || tg.length ? { label: tl || "지정한 분위기", guide: tg } : null);
   if (!w.tone) w.toneTried = true;
   readGlossaryForm(w);
+  readTimelineForm(w);
   try { await Store.saveWorld(w); toast("설정 노트를 저장했습니다. 이후 작성되는 문서부터 반영됩니다."); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
 }
 

@@ -1,5 +1,5 @@
 /* 큐에서 사용자 AI 설정의 허용 범위만 검사한다. 키·서버 주소는 입력에 허용하지 않는다. */
-const TASKS=['bible','storyBible','page','check','read','fix','factSync','analyze','section','discovery','angles','prose','chapterPlan','chapterBlock','choices','tone','ageRule','timelineDate','cats','relMigrate','worldCheck'];
+const TASKS=['bible','storyBible','page','check','read','fix','factSync','analyze','section','discovery','angles','prose','chapterPlan','chapterBlock','choices','tone','ageRule','timelineDate','timelineCheck','cats','relMigrate','worldCheck'];
 const FLAGS=['seed','rules','canon','stage','timeline','fixedTimeline','facts','userFacts','mentions','related','relatedSummary','relatedBox','relatedFacts','ownerText','roster','index','relations','events','quotes','glossary','nav','categories','sameEvents','life','traits','gaps','guidelines'];
 const COUNTS=['timelineCount','factsCount','mentionsCount','relatedCount','relatedFactsCount','ownerTextCount','rosterCount','indexCount','relationsCount','eventsCount','quotesCount','glossaryCount','navCount','categoriesCount','sameEventsCount','lifeCount','traitsCount'];
 const plain=x=>x&&typeof x==='object'&&!Array.isArray(x);

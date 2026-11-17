@@ -11,9 +11,10 @@ const assert=require('node:assert/strict'),{chromium}=require('playwright'),{app
    const kind=opts.jobMeta.kind;costCalls.push(kind);const model=kind==='timelineDate'?GS.quick:GS.main;opts.onMeta?.({model});
    if(kind==='bible')await new Promise(r=>window.releaseBible=r);
    if(kind==='timelineDate')await new Promise(r=>window.releaseDate=r);
-   const usage={promptTokenCount:kind==='timelineDate'?500:1000,candidatesTokenCount:kind==='timelineDate'?100:200};opts.onUsage?.(usage);opts.onMeta?.({model,usage});
+   const usage=kind==='timelineCheck'?{promptTokenCount:0,candidatesTokenCount:0}:{promptTokenCount:kind==='timelineDate'?500:1000,candidatesTokenCount:kind==='timelineDate'?100:200};opts.onUsage?.(usage);opts.onMeta?.({model,usage});
    if(kind==='bible')return{title:'항구 세계',era:'2000년',rules:['항구는 섬에 있다'],mainTitle:'항구',timeline:[{year:'1999년',event:'항구를 건설하였다'}]};
    if(kind==='timelineDate')return{dates:[{i:1,month:3,day:14}]};
+   if(kind==='timelineCheck')return{fixes:[]};
    return{title:'항구',type:'지명',summary:'섬의 항구이다.',infobox:[],sections:[{heading:'개요',level:1,body:'항구는 섬에 자리한다.'}],links:[]};
   }};
   S.seed='섬나라의 항구에서 벌어지는 교역 이야기이다.';S.first='항구';S.mode='basic';S.view={name:'home'};window.creatingWorld=createWorld();
@@ -26,7 +27,7 @@ const assert=require('node:assert/strict'),{chromium}=require('playwright'),{app
  assert((await page.locator('#docCostPanel summary').innerText()).includes('$0.0015'));assert((await page.locator('#worldCostPanel summary').innerText()).includes('미집계'));
  await page.evaluate(()=>releaseDate());await page.waitForFunction(()=>DocumentCost.creation.finished);assert((await page.locator('#worldCostPanel summary').innerText()).includes('$0.0019'));assert(!(await page.locator('#worldCostPanel summary').innerText()).includes('미집계'));
  const data=await page.evaluate(async()=>{await Store.saveWorld(S.world);return{world:DocumentCost.get(S.world.id,'@world'),doc:DocumentCost.get(S.world.id,S.world.mainKey),calls:costCalls,timeline:S.world.timeline}});
- assert.deepEqual(data.world.rows.map(r=>r.kind),['bible','timelineDate']);assert.deepEqual(data.doc.rows.map(r=>r.kind),['page']);assert.deepEqual(data.calls,['bible','timelineDate','page']);assert.equal(data.timeline[0].month,3);
+ assert.deepEqual(data.world.rows.map(r=>r.kind),['bible','timelineCheck','timelineDate']);assert.deepEqual(data.doc.rows.map(r=>r.kind),['page']);assert.deepEqual(data.calls,['bible','timelineCheck','timelineDate','page']);assert.equal(data.timeline[0].month,3);
  await page.locator('#worldCostPanel summary').click();await page.waitForFunction(()=>localStorage.getItem('wwiki:worldCostExpanded')==='false');
  await page.reload();await page.waitForSelector('#worldCostPanel');assert((await page.locator('#worldCostPanel summary').innerText()).includes('$0.0019'));assert.equal(await page.locator('#worldCostPanel').getAttribute('open'),null);assert((await page.locator('#docCostPanel summary').innerText()).includes('$0.0015'));
  await page.click('#side [data-act="canon"]');await page.waitForSelector('.canon');assert((await page.locator('#worldCostPanel summary').innerText()).includes('$0.0019'));
