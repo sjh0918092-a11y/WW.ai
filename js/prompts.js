@@ -407,24 +407,27 @@ ${w.historical ? `## 실존 인물
 - 구성: ${structureFor(st.structure, ty)}`;
 }
 function pageWritingRules(w, ty) { return pageCommonRules() + PROMPT_CACHE_BREAK + pageTypedRules(w, ty); }
-/* 작성 입력: 집단·직위·칭호 문서의 구성원 목록 지시와, 이 항목에 속한다고 기록된 인물(분류·인포박스로 찾음)과 그 다른 이름.
-   출력 형식 바로 앞에 두어 인포박스·본문을 쓸 때 보이게 한다 */
-const MEMBER_LIST_MAX = 12;
-function groupMembers(w, key) {
-  const title = w.entities[key]?.title; if (!title) return [];
-  const id = identityName(title), out = [];
-  for (const [k, q] of Object.entries(S.pages)) {
-    if (k === key || (q.type || w.entities[k]?.type) !== "인물") continue;
-    const inCat = (q.categories || []).some(c => identityName(c) === id);
-    const inBox = (q.infobox || []).some(r => /소속|부대|조직|단체|직위|직책|칭호|타이틀|출신/.test(stripMarks(r.label)) && stripMarks(String(r.value || "")).includes(title));
-    if (!inCat && !inBox) continue;
-    out.push({ title: q.title, names: infoboxNames(q).filter(n => identityName(n) !== identityName(q.title)).slice(0, 4) });
-    if (out.length >= 20) break;
-  }
-  return out;
+/* 작성 입력: 집단·직위·칭호 문서의 구성원 목록 지시와, 소속 장부(rosterOf)에 이 항목 소속으로 기록된 인물.
+   국가는 그 국가 소속 조직의 구성원까지 한 단계 따라간다. 출력 형식 바로 앞에 두어 인포박스·본문을 쓸 때 보이게 한다 */
+const MEMBER_LIST_MAX = 12, MEMBER_PROMPT_MAX = 24;
+function memberRows(w, key) {
+  const isPerson = k => (S.pages[k]?.type || w.entities[k]?.type) === "인물";
+  const out = [], seen = new Set([key]);
+  const add = (rows, via) => { for (const r of rows) { if (seen.has(r.k) || !isPerson(r.k)) continue; seen.add(r.k); out.push({ ...r, via }); } };
+  const direct = rosterOf(w, key);
+  add(direct, null);
+  if ((S.pages[key]?.type || w.entities[key]?.type) === "국가")
+    for (const r of direct) if (!isPerson(r.k) && w.entities[r.k]) add(rosterOf(w, r.k), r.k);
+  return out.slice(0, MEMBER_PROMPT_MAX);
+}
+function memberLine(w, r) {
+  const p = S.pages[r.k], title = w.entities[r.k].title;
+  const names = p ? infoboxNames(p).filter(n => identityName(n) !== identityName(title)).slice(0, 4) : [];
+  const a = r.a, info = a ? [a.role, a.state, affilSpan(a)].filter(Boolean).join(", ") : "";
+  return `- ${title}${names.length ? ` (다른 이름: ${names.join(", ")})` : ""}${info ? ` — ${info}` : ""}${r.via ? ` · 「${w.entities[r.via].title}」 소속` : ""}`;
 }
 function memberBlock(w, key) {
-  const ms = groupMembers(w, key);
+  const ms = memberRows(w, key);
   return `
 
 ## 구성원 목록 (이 항목이 사람들이 속하거나 차례로 맡는 집단·직위·칭호일 때)
@@ -433,7 +436,7 @@ function memberBlock(w, key) {
 - 실제 역사에서 명단이 확정된 직위·칭호: '역대 ○○' 섹션에 전원을 '- [[이름]] (재임·보유 기간)'으로 쓴다.
 - 그 밖의 집단: '대표 ○○' 섹션에 많아야 ${MEMBER_LIST_MAX}명을 '- [[이름]]: 한두 문장'으로 쓴다. 가상의 집단에는 '역대'라는 제목을 쓰지 않는다.
 - 아래 이미 있는 인물을 먼저 넣고, 모자라는 자리는 새 인물로 채워 링크한다. 한 인물의 본명·호출부호·코드명·이명은 한 자리로 세며, 이미 있는 인물의 다른 이름을 다른 사람처럼 따로 적지 않는다. 아는 인물 수에 맞춰 규모를 줄이지 않는다.
-이 항목에 속한다고 기록된 인물: ${ms.length ? "\n" + ms.map(m => `- ${m.title}${m.names.length ? ` (다른 이름: ${m.names.join(", ")})` : ""}`).join("\n") : "(없음)"}`;
+이 항목에 속한다고 기록된 인물: ${ms.length ? "\n" + ms.map(r => memberLine(w, r)).join("\n") : "(없음)"}`;
 }
 function pagePrompt(w, key, rewriteDir = null, guide = "", angle = null, angleMode = "section", birthday = null, persona = null) {   // angleMode: section(대상이 정해진 문서에 얹기) · novel(랜덤 서핑이 방향에 넣어 보낸 각도)
   const e = w.entities[key], inputs = writingOptions();

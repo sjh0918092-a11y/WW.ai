@@ -366,17 +366,20 @@ test('문서 내부 검사: 원안과 무대를 넘기고, 어긋난 두 서술 
   assert.match(rp, /세계관 원안과 무대/); assert.match(rp, /각국은 상시 3기까지 배치한다/); assert.match(rp, /현역 3기를 총괄한다/); assert.match(rp, /맞지 않는 쪽을 claim으로 잡는다/); assert.match(rp, /같은 인물을 본명과 호출부호·코드명·이명으로 따로 세어/);
 });
 
-test('구성원 목록: 집단 문서에는 구성원 규칙과 소속 인물(다른 이름 포함)을 넣고, 인물 문서에는 넣지 않는다', () => {
-  const org = page('해안 수비대', '조직', '수비대는 해안을 지킨다.', 1);
-  const hero = { ...page('엘라 무어', '인물', '엘라는 [[해안 수비대]] 소속이다.', 2), categories: ['해안 수비대'], infobox: [{ label: '호출부호', value: '스톰 실드' }] };
-  const w = world([org, hero]); w.entities[K('해안 수비대')].type = '조직'; w.entities[K('엘라 무어')].type = '인물';
+test('구성원 목록: 소속 장부로 구성원(다른 이름·자리·상태)을 넣고, 국가는 소속 조직의 구성원까지 한 단계 따라가며, 인물 문서에는 넣지 않는다', () => {
+  const nation = page('라데니아', '국가', '라데니아는 섬나라다.', 1);
+  const org = page('해안 수비대', '조직', '수비대는 해안을 지킨다.', 2);
+  const hero = { ...page('엘라 무어', '인물', '엘라는 [[해안 수비대]] 소속이다.', 3), infobox: [{ label: '호출부호', value: '스톰 실드' }] };
+  const w = world([nation, org, hero]);
+  w.entities[K('라데니아')].type = '국가'; w.entities[K('해안 수비대')].type = '조직'; w.entities[K('엘라 무어')].type = '인물';
+  w.entities[K('해안 수비대')].affil = { src: K('해안 수비대'), list: [{ org: K('라데니아'), role: '', state: '현역', from: '', to: '' }] };
+  w.entities[K('엘라 무어')].affil = { src: K('엘라 무어'), list: [{ org: K('해안 수비대'), role: '대원', state: '현역', from: '2014', to: '' }] };
   const pp = c.pagePrompt(w, K('해안 수비대'));
-  assert.match(pp, /## 구성원 목록/); assert.match(pp, /- 엘라 무어 \(다른 이름: 스톰 실드\)/);
+  assert.match(pp, /## 구성원 목록/); assert.match(pp, /- 엘라 무어 \(다른 이름: 스톰 실드\) — 대원, 현역, 2014~현재/);
   assert.match(pp, /가상의 집단에는 '역대'라는 제목을 쓰지 않는다/); assert.match(pp, /실제 역사에서 명단이 확정된/); assert.match(pp, /이명은 한 자리로 세며/);
-  assert.doesNotMatch(pp, /소속 인원의 수는 세계관의 전제와 원안/);
+  assert.match(c.pagePrompt(w, K('라데니아')), /- 엘라 무어 .*· 「해안 수비대」 소속/, '국가는 소속 조직의 구성원까지 따라간다');
   assert.doesNotMatch(c.pagePrompt(w, K('엘라 무어')), /## 구성원 목록/);
 });
-
 let failed = 0;
 (async () => { for (const [n, f] of tests) { try { await f(); console.log('통과', n); } catch (e) { failed++; console.log('실패', n, '\n', e.message); } }
 if (failed) process.exit(1); })();
