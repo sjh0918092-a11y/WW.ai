@@ -388,7 +388,7 @@ test('작성 전 점검: 조직·국가·유형 미정 항목만 묻고, 확정 
   assert.equal(c.preWriteNeeded(w, K('해안 수비대')), true); assert.equal(c.preWriteNeeded(w, K('엘라 무어')), false);
   w.entities[K('새 항목')] = c.newEntity('새 항목', '', ''); assert.equal(c.preWriteNeeded(w, K('새 항목')), true, '유형 미정은 묻는다'); assert.equal(c.preWriteNeeded(w, K('새 항목'), '인물'), false, '다시 쓰기 전 문서가 인물이면 묻지 않는다');
   const pp = c.preWritePrompt(w, K('해안 수비대'));
-  assert.match(pp, /섬나라들이 해안 수비대를/); assert.match(pp, /수비대는 1990년에 창설되었다/); assert.match(pp, /기대할 구성원 수는 몇인가/); assert.match(pp, /이름은 정하지 않는다/);
+  assert.match(pp, /섬나라들이 해안 수비대를/); assert.match(pp, /수비대는 1990년에 창설되었다/); assert.match(pp, /갖추고 있을 것으로 예상되는 주요 구성원/); assert.match(pp, /'최대', '까지', '이하'로 답하지 않는다/); assert.match(pp, /예상 주요 구성원: N명/); assert.match(pp, /이름은 정하지 않는다/);
   vm.runInContext(`callJson = async (kind) => kind === 'preWrite' ? { type: '조직', notes: '이 집단의 기대 구성원 수: 5명. 이유: 경쟁.' } : {}`, c);
   const r = await c.runPreWrite(w, K('새 항목'), new AbortController().signal);
   assert.equal(r.notes, '이 집단의 기대 구성원 수: 5명. 이유: 경쟁.'); assert.equal(w.entities[K('새 항목')].type, '조직'); assert.equal(r.record.type, '조직'); assert.equal(r.record.notes, r.notes);
