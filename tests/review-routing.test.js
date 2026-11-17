@@ -319,6 +319,14 @@ test('자동 수정 지침: 지운 문단에 기대는 앞뒤 문장도 고치�
   assert.match(p, /참고 문장은 문서 전체에서 한 번만/); assert.match(p, /그 내용을 전제로 하는 앞뒤 문장/); assert.match(p, /되풀이하게 되면/);
 });
 
+test('일반 서술: 작성은 원문 사례와 맞을 때만 묶어 쓰고, 리뷰는 양쪽 방향으로 개별 사례와 대조한다', () => {
+  const w = world([page('카일', '인물', '카일은 병사다.', 1)]);
+  const pp = c.pagePrompt(w, K('카일'));
+  assert.match(pp, /여러 항목을 묶는 일반 서술/);
+  const cp = c.checkPrompt(w, K('카일'), '');
+  assert.match(cp, /일반 서술과 개별 사례/); assert.match(cp, /연결된 문서의 일반 서술이/); assert.match(cp, /함께 성립할 수 없으면 지적한다/);
+});
+
 let failed = 0;
 (async () => { for (const [n, f] of tests) { try { await f(); console.log('통과', n); } catch (e) { failed++; console.log('실패', n, '\n', e.message); } }
 if (failed) process.exit(1); })();
