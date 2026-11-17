@@ -174,7 +174,7 @@ test('문서 읽기 검사: 앱이 정한 사건의 재서술을 다듬을 곳�
   const rp = c.readPrompt(w, K('레베카 헤이즈'));
   const b = rp.slice(rp.indexOf('## 다른 사건의 재서술'), rp.indexOf('## 다른 사건의 재서술') + 2500);
   assert.match(b, /\[\[바그다드 참호 돌파\]\]/); assert.match(b, /\[\[남중국해 대치\]\] \(아직 문서 없음\)/); assert.doesNotMatch(b.slice(0, b.indexOf('이 사건들을')), /\[\[전략 소녀\]\]/);
-  assert.match(b, /문단마다 하나씩 severity high로 지적하되/); assert.match(b, /'재서술\(줄임\):'으로 시작해/); assert.match(b, /'재서술\(지움\):'으로 시작해/); assert.match(b, /같은 섹션 안에서 같은 사건의 요약이나 참고 문구가 되풀이된 곳/); assert.match(b, /인물 관계, 현재처럼 다른 목적의 섹션이/); assert.match(b, /참고 문구 앞이든 뒤든/);
+  assert.match(b, /문단마다 하나씩 severity high로 지적하되/); assert.match(b, /'재서술\(줄임\):'으로 시작해/); assert.match(b, /'재서술\(지움\):'으로 시작해/); assert.match(b, /같은 섹션 안에서 같은 사건의 요약이 되풀이된 곳/); assert.match(b, /인물 관계, 현재처럼 다른 목적의 섹션이/); assert.match(b, /참고 문구 앞이든 뒤든/);
   const none = c.readPrompt(w, K('전략 소녀'));   // 연결된 사건이 없어도 사건 항목 없는 큰 사건의 재서술은 짚는다
   assert.match(none, /## 다른 사건의 재서술 \(앱이 정한 목록\)\n아래[^\n]*\n- \(없음\)/); assert.match(none, /사건 항목 없음: \[\[붙일 사건 이름\]\]/); assert.match(none, /체제 붕괴/);
   const fp = c.fixBatchPrompt(w, c.S.pages[K('레베카 헤이즈')], { summary: '', cats: '', infobox: '', body: '본문' }, [{ claim: '2003년', conflict: '근거: 참고로 넘길 사건: [[바그다드 참호 돌파]] · 재서술: 줄인다' }]);
@@ -273,6 +273,16 @@ test('제목을 본명으로 바꾸기: 본명 칸의 링크 표시 이름과 �
   assert.equal(c.realNameFor(mk('[[Hailey Anne Jenkins|헤일리 앤 젠킨스]] (Hailey Anne Jenkins)'), K('네브래스카')), '헤일리 앤 젠킨스');
   assert.equal(c.realNameFor(mk('Hailey Anne Jenkins (헤일리 앤 젠킨스)'), K('네브래스카')), '헤일리 앤 젠킨스');
   assert.equal(c.realNameFor(mk('에밀리 앤 카터 (Emily Ann Carter)'), K('네브래스카')), '에밀리 앤 카터');
+});
+
+test('참고 문구는 문서에서 한 번만: 중복은 참고 문장만 지우고, 개요 정의·인물 관계는 지키게 한다', () => {
+  const ev = page('카리브해 대치', '사건', '대치다.', 1), per = page('캔자스', '인물', '2. [[카리브해 대치]]에서 막았다. 자세한 내용은 [[카리브해 대치]] 참고.', 2);
+  const w = world([ev, per]); w.entities[K('카리브해 대치')].type = '사건'; w.entities[K('캔자스')].type = '인물';
+  assert.match(c.pagePrompt(w, K('캔자스')), /같은 사건의 참고 문구는 문서 전체에서 한 번만 쓰고/);
+  const rp = c.readPrompt(w, K('캔자스'));
+  assert.match(rp, /'재서술\(참고 중복\):'으로 시작하는 conflict/); assert.match(rp, /개요의 첫 문장\(이 항목이 무엇인지 밝히는 정의\)과 인물 관계 항목은 재서술로 줄이거나 지우라고 짚지 않는다/);
+  const fp = c.fixBatchPrompt(w, c.S.pages[K('캔자스')], { summary: '', cats: '', infobox: '', body: '본문' }, [{ claim: 'x', conflict: '재서술(참고 중복): y' }]);
+  assert.match(fp, /'재서술\(참고 중복\):' 메모는 지적된 참고 문장 하나만/); assert.match(fp, /인물 관계 항목을 사건 요약이나 참고 문구로 바꾸지 않는다/);
 });
 
 let failed = 0;
