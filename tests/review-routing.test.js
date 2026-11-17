@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,fixBatchPrompt});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -160,6 +160,24 @@ test('원안의 지금 진행 중인 일은 짧게 만들게 하고, 넘길 때�
   const w = world([page('조슬린', '인물', '조슬린이다.', 1)], { stage: { units: [{ name: '관리국', kind: '조직' }], now: '관리국과 사령부가 남중국해에서 대치 중이다.', parties: [{ name: '관리국', kind: '조직', want: '항행의 자유' }] } });
   const pr = c.pagePrompt(w, K('조슬린'));
   assert.match(pr, /## 지금 진행 중인 일\n관리국과 사령부가[^\n]*\n\(무대 설명이다\. 문서에서는 이 항목이 이 일에서 맡은 역할만 쓰고/);
+});
+
+test('문서 읽기 검사: 앱이 정한 사건의 재서술을 다듬을 곳으로 짚게 하고, 자동 수정은 문단째 줄이게 한다', () => {
+  const ev = page('바그다드 참호 돌파', '사건', '2003년 3월 20일 새벽 5시 15분에 시작했다.', 1);
+  const con = page('전략 소녀', '개념', '개념이다.', 2);
+  const per = page('레베카 헤이즈', '인물', '2003년 [[바그다드 참호 돌파]]에서 새벽 5시 15분 참호에 도달했다. 152mm 포탄이 쏟아졌다. 자세한 내용은 [[바그다드 참호 돌파]] 참고.\n\n[[전략 소녀]]로 복무했다.', 3);
+  const w = world([ev, con, per]);
+  w.entities[K('바그다드 참호 돌파')].type = '사건'; w.entities[K('전략 소녀')].type = '개념'; w.entities[K('레베카 헤이즈')].type = '인물';
+  w.entities[K('남중국해 대치')] = { ...c.newEntity('남중국해 대치', '사건', ''), page: false, facts: [], mentions: [] };
+  c.S.pages[K('레베카 헤이즈')].sections[0].body += '\n\n2015년 [[남중국해 대치]]를 지켜봤다.';
+  c.S.pages[K('레베카 헤이즈')].links.push(K('남중국해 대치'));
+  const rp = c.readPrompt(w, K('레베카 헤이즈'));
+  const b = rp.slice(rp.indexOf('## 다른 사건의 재서술'), rp.indexOf('## 다른 사건의 재서술') + 900);
+  assert.match(b, /\[\[바그다드 참호 돌파\]\]/); assert.match(b, /\[\[남중국해 대치\]\] \(아직 문서 없음\)/); assert.doesNotMatch(b, /\[\[전략 소녀\]\]/);
+  assert.match(b, /severity high로 지적한다/); assert.match(b, /참고 문구 앞이든 뒤든/); assert.match(b, /conflict는 '재서술:'로 시작해/);
+  assert.doesNotMatch(c.readPrompt(w, K('전략 소녀')), /## 다른 사건의 재서술/);   // 다룬 사건이 없으면 넣지 않는다
+  const fp = c.fixBatchPrompt(w, c.S.pages[K('레베카 헤이즈')], { summary: '', cats: '', infobox: '', body: '본문' }, [{ claim: '2003년', conflict: '근거: 참고로 넘길 사건: [[바그다드 참호 돌파]] · 재서술: 줄인다' }]);
+  assert.match(fp, /이유에 '재서술:'이 있는 메모는/); assert.match(fp, /문단 전체를 old로 잡고/);
 });
 
 let failed = 0;

@@ -478,14 +478,18 @@ facts에는 이 문서가 링크한 항목 중 중요한 것(인물, 조직, 사
 }
 /* 참고 문구('자세한 내용은 [[사건]] 참고.')를 붙일 수 있는 사건. 주인을 모델이 판단하지 않도록 앱이 항목 유형으로 정한다 */
 const REF_EVENTS_N = 12;
-function refEventsBlock(w, key, rel) {
-  if (isStory(w)) return "";
-  const e = w.entities[key], text = [e.summary, ...e.facts.filter(live).map(f => f.t), ...e.mentions.filter(live).map(m => m.text)].join("\n");
+function refEventKeys(w, key, rel, extraText = "") {
+  const e = w.entities[key], text = [e.summary, extraText, ...e.facts.filter(live).map(f => f.t), ...e.mentions.filter(live).map(m => m.text)].join("\n");
   const cand = new Set([...rel, ...eventKeysFor(w, key, rel), ...e.mentions.filter(live).map(m => m.from)]);
   for (const [k, o] of Object.entries(w.entities)) if (namesOf(o.title).some(n => hasName(text, n))) cand.add(k);
-  const list = [...cand].filter(k => k !== key && (w.entities[k]?.type || w.entities[k]?.stub?.type) === "사건").slice(0, REF_EVENTS_N);
+  return [...cand].filter(k => k !== key && (w.entities[k]?.type || w.entities[k]?.stub?.type) === "사건").slice(0, REF_EVENTS_N);
+}
+const refEventLine = (w, k) => `- [[${w.entities[k].title}]]${S.pages[k] ? "" : " (아직 문서 없음)"}`;
+function refEventsBlock(w, key, rel) {
+  if (isStory(w)) return "";
+  const list = refEventKeys(w, key, rel);
   return `## 참고로 넘길 사건 (앱이 정한 목록)
-${list.length ? list.map(k => `- [[${w.entities[k].title}]]${S.pages[k] ? "" : " (아직 문서 없음)"}`).join("\n") : "- (없음)"}
+${list.length ? list.map(k => refEventLine(w, k)).join("\n") : "- (없음)"}
 '자세한 내용은 [[사건]] 참고.'는 이 목록의 사건과 이 문서에서 새로 [[사건]]으로 링크한 사건에만 쓴다.
 
 `;
@@ -607,6 +611,22 @@ ${timelinePairs.map((x, i) => `${i + 1}. ${tlWhen(x.keep)}\n기존: ${x.keep.eve
 
 ${CHECK_ISSUE_JSON.replace('}]}', '}],"timelineSame":[1]}')}` : CHECK_ISSUE_JSON}`;
 }
+/* 문서 읽기 검사: 앱이 정한 사건(그 사건의 문서가 주인)을 이 문서가 한두 문장보다 길게 다시 썼는지. 찾으면 다듬을 곳으로 짚어 자동 수정이 줄인다 */
+function restateCheckBlock(w, key) {
+  if (isStory(w)) return "";
+  const p = S.pages[key], list = refEventKeys(w, key, [...new Set([...related(w, key), ...(p.links || [])])], docForCheck(p));
+  if (!list.length) return "";
+  return `## 다른 사건의 재서술 (앱이 정한 목록)
+아래 사건은 각 사건의 문서가 주인이다(문서가 아직 없어도 같다). 이 문서에서는 이 항목이 그 사건에서 한 일을 한두 문장으로만 쓰고 '자세한 내용은 [[사건]] 참고.'로 넘겨야 한다.
+${list.map(k => refEventLine(w, k)).join("\n")}
+이 사건들을 다룬 문단이나 섹션마다 아래가 있는지 본다. 있으면 문단마다 하나씩 severity high로 지적한다.
+- 이 항목이 한 일 한두 문장을 넘는 서술: 그 사건의 정확한 날짜·시각·경과 시간, 인원·거리·속도·피해 같은 수치, 단계별 경과, 다른 인물의 결정과 직위, 적이나 다른 부대의 이름과 화기.
+- 참고 문구 앞이든 뒤든, 그 사건의 경과나 직후 상황(부상과 치료의 세부 포함)을 따로 이어 쓴 문단.
+claim에는 줄여야 할 문단의 첫 문장을 글자 그대로 쓰고, evidence에는 '참고로 넘길 사건: [[사건 이름]]'을 쓴다. conflict는 '재서술:'로 시작해, 어느 사건의 문서가 주인인지와 이 문단을 이 항목이 한 일 한두 문장과 참고 문구로 줄여야 한다는 것을 쓴다.
+이 목록에 없는 일, 이 항목 자신만 겪은 일, 개요의 한두 문장 요약은 이 기준으로 지적하지 않는다.
+
+`;
+}
 /* 검사 2: 문서 읽기. 설정 자료 없이 문서만 주고 편집자처럼 읽어 앞뒤가 안 맞는 곳을 찾게 한다 */
 function readPrompt(w, key) {
   const p = S.pages[key];
@@ -643,7 +663,7 @@ ${crossRefs(w, p) || "(없음)"}
 - 둘 다 참일 수는 있지만 독자가 모순으로 읽기 쉬운 곳은 severity low로 쓰고, conflict에 어떻게 읽으면 둘 다 참이 되는지도 적는다.
 - 지적할 것이 없는 것이 정상이다. 개수를 채우려고 지적하지 않는다.
 
-${eventBeatsCheckBlock(w, key)}${(w.rules || []).length ? `## 핵심 규칙 (크기·능력·제약을 맞춰 볼 때만 쓴다. 규칙과 문서의 대조 자체는 다른 검사가 한다)\n${w.rules.map(r => "- " + r).join("\n")}\n\n` : ""}${(() => { const g = glossaryBlock(w, docForCheck(p)); return g ? g + "\n\n" : ""; })()}## 문서
+${eventBeatsCheckBlock(w, key)}${restateCheckBlock(w, key)}${(w.rules || []).length ? `## 핵심 규칙 (크기·능력·제약을 맞춰 볼 때만 쓴다. 규칙과 문서의 대조 자체는 다른 검사가 한다)\n${w.rules.map(r => "- " + r).join("\n")}\n\n` : ""}${(() => { const g = glossaryBlock(w, docForCheck(p)); return g ? g + "\n\n" : ""; })()}## 문서
 ${docForCheck(p)}
 
 ${ISSUE_JSON}`;
