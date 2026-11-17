@@ -29,3 +29,6 @@ class_name = "AiJobs"
 [[migrations]]
 tag = "v1-ai-jobs"
 new_sqlite_classes = ["AiJobs"]
+
+# 작업 브랜치에 올리면 Workers Builds가 `wrangler preview`로 미리보기 버전을 만든다. 이 블록이 없으면 그 빌드가 실패한다.
+[previews]
