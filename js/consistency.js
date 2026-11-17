@@ -917,6 +917,12 @@ function checkMetaOf(w, k, batches) {
   try { refs = checkKeys(w, k).map(x => w.entities[x]?.title).filter(Boolean); } catch { /* 기록 실패는 검사에 영향을 주지 않는다 */ }
   return { sources: [...(batches?.titles || [])], batches: batches?.length || 0, refs };
 }
+/* 검사를 하지 못한 사건(실패·건너뜀)도 checkLog에 남긴다. 조용히 넘어가면 백업에서 원인을 알 수 없다 */
+function noteEvent(p, event, err = null) {
+  if (!p) return;
+  const code = err ? String(err.code || err.message || err).slice(0, 80) : "";
+  p.checkLog = [...(p.checkLog || []), { at: Date.now(), event, ...(code ? { code } : {}) }].slice(-CHECK_LOG_N);
+}
 /* 문서의 현재 검사 결과를 요약해 checkLog에 남긴다. checkLog는 고치기·자동 수정으로 check가 바뀌거나 지워져도 유지된다 */
 function noteCheck(p, extra = {}) {
   const c = p?.check; if (!c) return;
@@ -1043,7 +1049,9 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
     if (fixed) np.autoFixed = { at: Date.now(), n: fixed };
     saveRouted(w, routeAutoConflicts(w, k, keep));
     Object.assign(res, { fixed, keep });
-  } catch (err) { /* 건너뛰었거나 실패: 작성된 문서를 그대로 보여 주며 자동 재검사를 예약하지 않는다 */ }
+  } catch (err) {   // 건너뛰었거나 실패: 작성된 문서를 그대로 보여 주며 자동 재검사를 예약하지 않는다. 진단 기록에는 남긴다
+    if (err?.code !== "pipeline_yield") noteEvent(res.page, res.done ? "자동 수정 실패" : "작성 직후 리뷰 실패", err);
+  }
   if (res.done) noteCheck(res.page);
   return res;
 }

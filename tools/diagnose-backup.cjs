@@ -199,7 +199,7 @@ out("");
 const logged = pages.filter(p => p.checkLog?.length);
 out(`## 진단 기록 (page.checkLog, v7.62부터)\n`);
 if (!logged.length) out("(이 백업에는 진단 기록이 없습니다. v7.62 이후에 만든 문서부터 남습니다.)");
-for (const p of logged) out(`- 「${p.title}」: ${p.checkLog.map(x => x.event ? `${T(x.at)} ${x.event}${x.cleared ? "(리뷰 결과 지워짐)" : ""}` : `${T(x.at)} ${x.auto ? "작성 직후" : "수동"} 리뷰 — 원문 ${x.sources ?? "?"}개/${x.batches ?? "?"}회, 지적 ${x.issues}(다듬을 곳 ${x.high}), 수정 요청 ${x.routed?.length ? x.routed.join("·") : 0}, 못 보냄 ${x.unrouted?.length ? x.unrouted.join("·") : 0}, 자동 수정 ${x.fixed}`).join(" / ")}`);
+for (const p of logged) out(`- 「${p.title}」: ${p.checkLog.map(x => x.event ? `${T(x.at)} ${x.event}${x.code ? `(${x.code})` : ""}${x.cleared ? "(리뷰 결과 지워짐)" : ""}` : `${T(x.at)} ${x.auto ? "작성 직후" : "수동"} 리뷰 — 원문 ${x.sources ?? "?"}개/${x.batches ?? "?"}회, 지적 ${x.issues}(다듬을 곳 ${x.high}), 수정 요청 ${x.routed?.length ? x.routed.join("·") : 0}, 못 보냄 ${x.unrouted?.length ? x.unrouted.join("·") : 0}, 자동 수정 ${x.fixed}`).join(" / ")}`);
 
 const report = lines.join("\n") + "\n";
 if (outFile) { fs.writeFileSync(outFile, report); console.error(`보고서를 저장했습니다: ${outFile}`); }

@@ -303,6 +303,16 @@ async function applyFix() {
   try { await Store.savePage(w.id, page); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); return; }
   toast(`${applied}곳을 고쳤습니다.${missed ? ` 겹쳐서 적용하지 못한 수정 ${missed}곳은 건너뛰었습니다.` : ""}`);
   bgSync(k);
+  recheckAfterFix(k);
+}
+/* 고치기는 검사 결과를 지운다. 고친 문서가 다른 문서와 다시 어긋나는지 설정 검사만 다시 돌려 메모로 보여 준다(자동 수정은 하지 않는다).
+   작성 직후 검사를 끈 사용자에게는 돌리지 않는다 */
+function recheckAfterFix(k) {
+  if (GS.preCheck === false || !S.sample) return;
+  const p = S.pages[k];
+  if (S.checking) { noteEvent(p, "고치기 뒤 재검사 건너뜀(다른 검사 중)"); return; }
+  noteEvent(p, "고치기 뒤 재검사");
+  checkPage(k);
 }
 /* 고친 본문의 확정 사실·연표·관계만 정리한다. 모순 검사나 검사 결과 갱신은 하지 않는다. */
 async function bgSync(k) {

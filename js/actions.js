@@ -405,6 +405,7 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
     if (S.world === w) S.pages[k] = page;
     if (S.pipelineDrain) await S.pipelineDrain();
     const pre = GS.preCheck !== false && S.world === w ? await preCheck(w, k, page) : null;   // 보여 주기 전에 검사하고 고친다
+    if (!pre && S.world === w) noteEvent(page, GS.preCheck === false ? "작성 직후 리뷰 꺼짐" : "작성 직후 리뷰 건너뜀");
     const fin = pre?.page || page;
     if (angleUsed) fin.angle = angle.id;
     if (!rewrite && e.persona && (fin.type || e.type) !== "인물") delete e.persona;   // 인물이 아닌 문서로 정해지면 굴린 값은 버린다

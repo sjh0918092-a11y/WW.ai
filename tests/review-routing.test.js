@@ -294,6 +294,16 @@ test('사건 문서가 다른 사건 항목을 다룰 때는 그 사건 문서�
   assert.match(c.readPrompt(w, K('캔자스')), /이 항목이 한 일 한두 문장을 넘는 서술/);
 });
 
+test('작성 직후 리뷰가 실패하면 진단 기록에 남긴다', async () => {
+  const ev = page('디에고 사건', '사건', '사건이다.', 1);
+  const w = world([ev]); w.entities[K('디에고 사건')].type = '사건';
+  vm.runInContext(`callJson = async () => { throw { code: 'api_524' }; }`, c);
+  const res = await c.preCheck(w, K('디에고 사건'), c.S.pages[K('디에고 사건')], { ctl: new AbortController() }, () => {});
+  assert.equal(res.done, false);
+  const log = res.page.checkLog || [];
+  assert.equal(log.at(-1).event, '작성 직후 리뷰 실패'); assert.equal(log.at(-1).code, 'api_524');
+});
+
 let failed = 0;
 (async () => { for (const [n, f] of tests) { try { await f(); console.log('통과', n); } catch (e) { failed++; console.log('실패', n, '\n', e.message); } }
 if (failed) process.exit(1); })();
