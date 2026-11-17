@@ -126,7 +126,7 @@ test('다른 항목과 얽힌 일: 세 경우로 주인을 가르고, 참고 문
   const pr = c.pagePrompt(w, K('러시아'));
   assert.match(pr, /다른 항목과 얽힌 일: 그 일을 누가 정하는지\(주인\)는 아래 세 경우로만 가른다/);
   assert.match(pr, /1\. 사건 항목이 있는 일:/); assert.match(pr, /2\. 사건 항목이 없고 이 항목만 겪은 일: 이 문서가 주인이다/); assert.match(pr, /3\. 사건 항목이 없고 다른 인물과 함께 겪은 일: 공통 사실/);
-  assert.match(pr, /참고 문구의 대상은 1의 사건뿐이다/); assert.match(pr, /개요만 한두 문장으로 쓰고/); assert.match(pr, /나쁜 예: '2003년 3월 20일/);
+  assert.match(pr, /참고 문구의 대상은 1의 사건뿐이다/); assert.match(pr, /개요만 한두 문장으로 쓰고/); assert.match(pr, /혁명, 체제 붕괴, 조약 체결, 재난처럼 여러 세력이 얽힌 일\)이나 실제 역사의 큰 사건/); assert.match(pr, /나쁜 예: '2003년 3월 20일/);
   assert.match(pr, /필요한 만큼 만들어 링크한다/); assert.doesNotMatch(pr, /두세 개 만들어/);
   assert.match(pr, /장면의 주체는 이 항목 자신이다/); assert.match(pr, /다른 인물이 주인공인 장면/); assert.match(pr, /절정은 이 문서만의 장면이어야 한다/);
   const ex = c.ownerExcerptBlock(w, K('러시아'), [K('옥사나')]);
@@ -172,12 +172,13 @@ test('문서 읽기 검사: 앱이 정한 사건의 재서술을 다듬을 곳�
   c.S.pages[K('레베카 헤이즈')].sections[0].body += '\n\n2015년 [[남중국해 대치]]를 지켜봤다.';
   c.S.pages[K('레베카 헤이즈')].links.push(K('남중국해 대치'));
   const rp = c.readPrompt(w, K('레베카 헤이즈'));
-  const b = rp.slice(rp.indexOf('## 다른 사건의 재서술'), rp.indexOf('## 다른 사건의 재서술') + 900);
-  assert.match(b, /\[\[바그다드 참호 돌파\]\]/); assert.match(b, /\[\[남중국해 대치\]\] \(아직 문서 없음\)/); assert.doesNotMatch(b, /\[\[전략 소녀\]\]/);
+  const b = rp.slice(rp.indexOf('## 다른 사건의 재서술'), rp.indexOf('## 다른 사건의 재서술') + 2500);
+  assert.match(b, /\[\[바그다드 참호 돌파\]\]/); assert.match(b, /\[\[남중국해 대치\]\] \(아직 문서 없음\)/); assert.doesNotMatch(b.slice(0, b.indexOf('이 사건들을')), /\[\[전략 소녀\]\]/);
   assert.match(b, /문단마다 하나씩 severity high로 지적하되/); assert.match(b, /'재서술\(줄임\):'으로 시작해/); assert.match(b, /'재서술\(지움\):'으로 시작해/); assert.match(b, /같은 섹션 안에서 같은 사건의 요약이나 참고 문구가 되풀이된 곳/); assert.match(b, /인물 관계, 현재처럼 다른 목적의 섹션이/); assert.match(b, /참고 문구 앞이든 뒤든/);
-  assert.doesNotMatch(c.readPrompt(w, K('전략 소녀')), /## 다른 사건의 재서술/);   // 다룬 사건이 없으면 넣지 않는다
+  const none = c.readPrompt(w, K('전략 소녀'));   // 연결된 사건이 없어도 사건 항목 없는 큰 사건의 재서술은 짚는다
+  assert.match(none, /## 다른 사건의 재서술 \(앱이 정한 목록\)\n아래[^\n]*\n- \(없음\)/); assert.match(none, /사건 항목 없음: \[\[붙일 사건 이름\]\]/); assert.match(none, /체제 붕괴/);
   const fp = c.fixBatchPrompt(w, c.S.pages[K('레베카 헤이즈')], { summary: '', cats: '', infobox: '', body: '본문' }, [{ claim: '2003년', conflict: '근거: 참고로 넘길 사건: [[바그다드 참호 돌파]] · 재서술: 줄인다' }]);
-  assert.match(fp, /'재서술\(지움\):' 메모는 지적된 문단이나 인용문 전체를 old로 잡아 new를 빈 문자열로 둔다/); assert.match(fp, /'재서술\(줄임\):' 메모는/); assert.match(fp, /이 대상의 일로 바꾸지 않는다/);
+  assert.match(fp, /'재서술\(지움\):' 메모는 지적된 문단이나 인용문 전체를 old로 잡아 new를 빈 문자열로 둔다/); assert.match(fp, /'재서술\(줄임\):' 메모는/); assert.match(fp, /근거가 '사건 항목 없음:'이면/); assert.match(fp, /이 대상의 일로 바꾸지 않는다/);
 });
 
 test('설정 검사: 같은 이름이 날짜·나이로 맞지 않으면 단정하지 않고 보이는 메모(low)로 남기게 한다', () => {
