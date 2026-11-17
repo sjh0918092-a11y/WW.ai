@@ -104,6 +104,7 @@ test('작성 지침은 다른 항목의 일을 역할 한두 문장과 연도까
   const ex = c.ownerExcerptBlock(w, K('러시아'), [K('옥사나')]);
   assert.match(ex, /옮겨 쓸 자료가 아니다/); assert.doesNotMatch(ex, /다시 말할 때는 이 대목을 따르고/);
   assert.match(pr, /절정은 이 문서만의 장면이어야 한다/);
+  assert.match(pr, /'이 항목 자신이 한 일'은 좁게 읽는다/); assert.match(pr, /다른 인물이 내린 결정과 그 인물의 계급·직위는/); assert.match(pr, /나쁜 예: '2003년 3월 20일/);
 });
 
 let failed = 0;
