@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor,checkTimeline,timelineCheckPrompt,readTimelineForm,timelineEditHtml,promptTimeline});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor,readPrompt,checkTimeline,timelineCheckPrompt,readTimelineForm,timelineEditHtml,promptTimeline});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -322,7 +322,7 @@ test('자동 수정 지침: 지운 문단에 기대는 앞뒤 문장도 고치�
 test('일반 서술: 작성은 원문 사례와 맞을 때만 묶어 쓰고, 리뷰는 양쪽 방향으로 개별 사례와 대조한다', () => {
   const w = world([page('카일', '인물', '카일은 병사다.', 1)]);
   const pp = c.pagePrompt(w, K('카일'));
-  assert.match(pp, /여러 항목을 묶는 일반 서술/); assert.match(pp, /원문에 없는 부분은 이 문서가 정한다/); assert.match(pp, /독자가 자연스럽게 기대할 상태를 기본으로/); assert.doesNotMatch(pp, /정원을 채운 상태/); assert.match(pp, /이 항목에만 해당하는 구체적인 사실/); assert.match(pp, /우두머리\(이름\)/); assert.match(pp, /모자라는 자리를 새 인물로 채워/);
+  assert.match(pp, /여러 항목을 묶는 일반 서술/); assert.match(pp, /원문에 없는 부분은 이 문서가 정한다/); assert.match(pp, /독자가 자연스럽게 기대할 상태를 기본으로/); assert.doesNotMatch(pp, /정원을 채운 상태/); assert.match(pp, /이 항목에만 해당하는 구체적인 사실/); assert.match(pp, /우두머리\(이름\)/); assert.match(pp, /모자라는 자리를 새 인물로 채워 이름을/); assert.match(pp, /아는 인물 수에 맞춰 규모를 줄이지 않는다/); assert.match(pp, /모자라는 자리를 새 인물로 채워/);
   const cp = c.checkPrompt(w, K('카일'), '');
   assert.match(cp, /일반 서술과 개별 사례/); assert.match(cp, /연결된 문서의 일반 서술이/); assert.match(cp, /함께 성립할 수 없으면 지적한다/);
 });
@@ -358,6 +358,12 @@ test('연표 편집: 고친 항목은 사용자 수정이 되고, 사건을 비�
   const n = w.timeline.find(x => x.event.startsWith('정')); assert.equal(n.src, 'user'); assert.equal(n.month, 3); assert.equal(n.day, 1);
   assert.equal(w.timeline.find(x => x.event.startsWith('을')).src, 'seed', '안 바꾼 항목은 그대로');
   assert.ok(c.promptTimeline(w, '', w.timeline, 0).some(x => x.src === 'user'), '사용자 수정 항목은 언제나 프롬프트에 들어간다');
+});
+
+test('문서 내부 검사: 원안과 무대를 넘기고, 어긋난 두 서술 중 원안·무대와 맞지 않는 쪽을 고칠 쪽으로 잡게 한다', () => {
+  const w = world([page('사령부', '조직', '사령부는 현역 1기를 운용한다.', 1)], { seed: '각국은 상시 3기까지 배치한다.', stage: { units: [{ name: '사령부', kind: '조직', desc: '현역 3기를 총괄한다' }], now: '', parties: [] } });
+  const rp = c.readPrompt(w, K('사령부'));
+  assert.match(rp, /세계관 원안과 무대/); assert.match(rp, /각국은 상시 3기까지 배치한다/); assert.match(rp, /현역 3기를 총괄한다/); assert.match(rp, /맞지 않는 쪽을 claim으로 잡는다/);
 });
 
 let failed = 0;
