@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,fixBatchPrompt,taskThinkOptions});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,fixBatchPrompt,taskThinkOptions,preCheck});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -194,6 +194,26 @@ test('작업별 생각 수준: OpenAI 모델에서 공통 배정 따름이 "inhe
   assert.doesNotMatch(html, /inherit \(지원하지 않음\)/); assert.match(html, /value="inherit" selected>공통 배정 따름/);
 });
 
+test('자동 수정: 같은 문단에 재서술(지움)과 다른 수정이 겹치면 지움을 먼저 적용하고, 지워진 문장의 메모는 남기지 않는다', async () => {
+  const P1 = '2003년 [[이라크 침공]] 때 진격로를 열었다. 자세한 내용은 [[이라크 침공]] 참고.';
+  const S1 = '바그다드 외곽에서 케인은 메디나 기갑사단과 정면으로 맞닥뜨렸다.', S2 = '사령부는 케인을 달래려고 포도당을 공급했다.';
+  const per = { ...page('케인', '인물', P1 + '\n\n' + S1 + ' ' + S2, 2), sections: [{ heading: '개요', level: 1, body: '케인은 전략 소녀다.' }, { heading: '이라크', level: 1, body: P1 + '\n\n' + S1 + ' ' + S2 }] };
+  const w = world([page('이라크 침공', '사건', '침공이다.', 1), per]);
+  w.entities[K('이라크 침공')].type = '사건'; w.entities[K('케인')].type = '인물';
+  c.__mock = { check: { issues: [{ claim: S2, evidence: '핵심 규칙: 진정제를 쓴다', conflict: '절차가 다르다', severity: 'high' }] },
+    read: { issues: [{ claim: S1, evidence: '참고로 넘길 사건: [[이라크 침공]]', conflict: '재서술(지움): 앞 문단에서 요약했으므로 지운다', severity: 'high' }] } };
+  vm.runInContext(`callJson = async (kind, prompt) => {
+    if (kind !== 'fix') return JSON.parse(JSON.stringify(__mock[kind] || { issues: [] }));
+    const n = {}; for (const m of prompt.matchAll(/(\\d+)\\. 문서의 서술: (.*)/g)) n[m[2].trim()] = +m[1];
+    return { edits: [{ memo: n[${JSON.stringify(S2)}], field: 'body', old: ${JSON.stringify(S2)}, new: '사령부는 케인에게 진정제를 투여했다.' }, { memo: n[${JSON.stringify(S1)}], field: 'body', old: ${JSON.stringify(S1 + ' ' + S2)}, new: '' }] };
+  }`, c);
+  const res = await c.preCheck(w, K('케인'), c.S.pages[K('케인')], { ctl: new AbortController() }, () => {});
+  const body = res.page.sections.map(s => s.body).join('\n');
+  assert.doesNotMatch(body, /메디나/); assert.doesNotMatch(body, /포도당|진정제를 투여/);
+  assert.equal(res.page.check.issues.filter(i => /메디나|포도당/.test(i.claim)).length, 0);
+  assert.equal(res.fixed, 2);
+});
+
 let failed = 0;
-for (const [n, f] of tests) { try { f(); console.log('통과', n); } catch (e) { failed++; console.log('실패', n, '\n', e.message); } }
-if (failed) process.exit(1);
+(async () => { for (const [n, f] of tests) { try { await f(); console.log('통과', n); } catch (e) { failed++; console.log('실패', n, '\n', e.message); } }
+if (failed) process.exit(1); })();

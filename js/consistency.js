@@ -983,7 +983,10 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
     const fr = await callJson("fix", fixBatchPrompt(w, page, f, high), { modelTier: "default", ...PAGE_MODEL, signal: g.ctl.signal }, { title: page.title + ` · 자동 ${high.length}곳` });
     if (S.world !== w || S.pages[k] !== page) return res;
     const nf = { ...f }, fixedEdits = []; let applied = 0;
-    for (const ed of (Array.isArray(fr?.edits) ? fr.edits : []).slice(0, 16)) {
+    // 재서술(줄임·지움) 수정을 먼저 적용한다. 같은 문단의 다른 수정이 먼저 들어가면 지울 문단이 원문과 달라져 찾지 못한다
+    const restate = ed => /재서술\(/.test(high[Number(ed?.memo) - 1]?.conflict || "") ? 1 : 0;
+    const edits = (Array.isArray(fr?.edits) ? fr.edits : []).slice(0, 16).map((ed, i) => ({ ed, i })).sort((a, b) => restate(b.ed) - restate(a.ed) || a.i - b.i).map(x => x.ed);
+    for (const ed of edits) {
       const fld = ["summary", "cats", "infobox", "body"].includes(ed?.field) ? ed.field : null;
       let old = String(ed?.old || ""); const nw = String(ed?.new ?? "");
       if (!fld || !old.trim() || old === nw) continue;
@@ -1022,6 +1025,13 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
       const old = text(e.old), nw = text(e.new), final = text(finalSource[e.field]);
       return old && old !== nw && f[e.field].includes(e.old) && !final.includes(old) && final.includes(nw);
     }).map(e => high[e.memo - 1]).filter(i => !verified.some(x => x.conflict === i.conflict)));
+    // 지적한 문장이 원문에는 글자 그대로 있었는데 고친 뒤 문서에서 사라졌으면(문단째 지워진 경우 등) 그 지적은 풀린 것이다
+    const flat = src => stripMarks(Object.values(src).join("\n")).replace(/\s+/g, " "), before = flat(f), after = flat(finalSource);
+    for (const i of issues) {
+      if (edited.has(i) || isNumIssue(i)) continue;
+      const cl = stripMarks(String(i.claim || "")).replace(/\s+/g, " ").trim();
+      if (cl.length >= 12 && before.includes(cl) && !after.includes(cl)) edited.add(i);
+    }
     const keep = mergeIssues([...verified, ...issues.filter(i => !edited.has(i) && !isNumIssue(i))]);
     const fixed = edited.size;
     np.check = { ...np.check, issues: keep, numV: numStamp(w), fixed: [...edited].map(i => ({ claim: String(i.claim).slice(0, 200), conflict: String(i.conflict).slice(0, 300) })) };
