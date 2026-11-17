@@ -317,15 +317,19 @@ async function followRedirect(w, k, to) {
   toast(`「${from}」은(는) 「${title}」의 다른 이름입니다. 기존 문서로 연결했습니다.`);
   drainGenQ();   // afterGen을 거치지 않으므로 대기열을 여기서 잇는다
 }
-/* 작성 전 점검: 실패하거나 건너뛰면 점검 결과 없이 쓴다. 유형이 비어 있던 항목은 점검이 정한 유형으로 프롬프트를 고른다 */
+/* 작성 전 점검: 실패하거나 건너뛰면 점검 결과 없이 쓴다. 답이나 실패는 page.preWrite에 남긴다. 유형이 비어 있던 항목은 점검이 정한 유형으로 프롬프트를 고른다 */
 async function runPreWrite(w, k, signal, hint = "") {
   if (!preWriteNeeded(w, k, hint)) return { notes: "" };
   try {
     const r = await callJson("preWrite", preWritePrompt(w, k, hint), { signal, modelTier: "default" }, { title: w.entities[k].title + " · 작성 전 점검" });
     const e = w.entities[k];
     if (e && !TYPES.includes(e.type) && TYPES.includes(r?.type)) e.type = r.type;
-    return { notes: typeof r?.notes === "string" ? r.notes.trim().slice(0, 600) : "", type: r?.type || "" };
-  } catch (err) { if (err?.code === "cancelled" || signal?.aborted) throw err; return { notes: "" }; }
+    const notes = typeof r?.notes === "string" ? r.notes.trim().slice(0, 600) : "";
+    return { notes, record: { at: Date.now(), type: TYPES.includes(r?.type) ? r.type : "", notes } };
+  } catch (err) {
+    if (err?.code === "cancelled" || signal?.aborted) throw err;
+    return { notes: "", record: { at: Date.now(), failed: String(err?.code || err?.message || "오류").slice(0, 80) } };
+  }
 }
 async function generatePage(k, rewrite, direction, novel = false, novelAngle = null, opts = {}) {
   if (S.discovery?.busy && !novel) { toast("새 문서 탐색을 마치거나 중단한 뒤 작성해 주세요."); return; }
@@ -403,6 +407,7 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
     if (out && typeof out === "object") widenAffil(w, out.categories);   // "X 육군"만 왔으면 국가 X를 첫째 소속으로 보탠다
     if (out && typeof out === "object") { await ensureAxisCats(w, k, out, { signal: ctl.signal }); widenAffil(w, out.categories); if (ctl.signal.aborted) throw { code: "cancelled" }; }   // 소속이나 유형이 비었으면 한 번 다시 받는다
     const page = integrate(w, k, out);
+    if (preWrite.record) page.preWrite = preWrite.record;   // 진단용: 작성 전 점검이 무엇을 답했는지(백업·진단 도구에서 본다)
     delete page.angleUsed; delete page.sceneUsed;
     if (oldPage?.shortStories) page.shortStories = oldPage.shortStories;
     if (oldPage?.portrait) page.portrait = oldPage.portrait;   // 사용자가 올린 이미지는 AI 다시 쓰기와 별개로 유지

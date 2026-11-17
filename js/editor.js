@@ -231,7 +231,7 @@ async function commitEdit(ed, out, r, conflicts, ch) {
     for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === k) delete w.navboxes[id];
     Object.assign(w.navboxes, ownNavboxes);
   }
-  Object.assign(page, { createdAt: old.createdAt, rewrittenAt: old.rewrittenAt, direction: old.direction, editedAt: Date.now(), stale: !r, baseAsOf: old.baseAsOf, syncedTo: old.syncedTo, storyNotice: old.storyNotice, checkLog: [...(old.checkLog || []), { at: Date.now(), event: "직접 편집", cleared: !!old.check, issues: old.check?.issues?.length ?? 0 }].slice(-8) });   // 직접 편집은 검사 결과를 지우므로 그 사실을 진단 기록에 남긴다
+  Object.assign(page, { createdAt: old.createdAt, rewrittenAt: old.rewrittenAt, direction: old.direction, editedAt: Date.now(), stale: !r, baseAsOf: old.baseAsOf, syncedTo: old.syncedTo, storyNotice: old.storyNotice, preWrite: old.preWrite, checkLog: [...(old.checkLog || []), { at: Date.now(), event: "직접 편집", cleared: !!old.check, issues: old.check?.issues?.length ?? 0 }].slice(-8) });   // 직접 편집은 검사 결과를 지우므로 그 사실을 진단 기록에 남긴다
   if (r) {
     // 문단 분석은 해당 문단에서 사라진 기록만 교체한다. 나머지 문서의 기록은 유지한다.
     const keep = x => ed.section ? !r.sectionRemoved?.has(x) : x.src !== k;

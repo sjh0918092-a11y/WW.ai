@@ -196,6 +196,12 @@ if (!shown) out("(근거 문서를 밝힌 남은 지적 없음)");
 out("");
 
 /* ---------- 7. 진단 기록 ---------- */
+const pre = pages.filter(p => p.preWrite);
+if (pre.length) {
+  out(`## 작성 전 점검 (page.preWrite, v8.02부터)\n`);
+  for (const p of pre) out(`- 「${p.title}」: ${T(p.preWrite.at)} ${p.preWrite.failed ? `실패(${p.preWrite.failed})` : `유형 ${p.preWrite.type || "-"} · ${p.preWrite.notes ? `"${cell(p.preWrite.notes)}"` : "답 없음"}`}`);
+  out("");
+}
 const logged = pages.filter(p => p.checkLog?.length);
 out(`## 진단 기록 (page.checkLog, v7.62부터)\n`);
 if (!logged.length) out("(이 백업에는 진단 기록이 없습니다. v7.62 이후에 만든 문서부터 남습니다.)");

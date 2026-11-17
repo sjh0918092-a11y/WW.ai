@@ -391,11 +391,11 @@ test('작성 전 점검: 조직·국가·유형 미정 항목만 묻고, 확정 
   assert.match(pp, /섬나라들이 해안 수비대를/); assert.match(pp, /수비대는 1990년에 창설되었다/); assert.match(pp, /기대할 구성원 수는 몇인가/); assert.match(pp, /이름은 정하지 않는다/);
   vm.runInContext(`callJson = async (kind) => kind === 'preWrite' ? { type: '조직', notes: '이 집단의 기대 구성원 수: 5명. 이유: 경쟁.' } : {}`, c);
   const r = await c.runPreWrite(w, K('새 항목'), new AbortController().signal);
-  assert.equal(r.notes, '이 집단의 기대 구성원 수: 5명. 이유: 경쟁.'); assert.equal(w.entities[K('새 항목')].type, '조직');
+  assert.equal(r.notes, '이 집단의 기대 구성원 수: 5명. 이유: 경쟁.'); assert.equal(w.entities[K('새 항목')].type, '조직'); assert.equal(r.record.type, '조직'); assert.equal(r.record.notes, r.notes);
   const wp = c.pagePrompt(w, K('해안 수비대'), null, '', null, 'section', null, null, r.notes);
   assert.match(wp, /## 작성 전 점검 결과[^\n]*\n이 집단의 기대 구성원 수: 5명/);
   vm.runInContext(`callJson = async () => { throw { code: 'api_500' }; }`, c);
-  assert.equal((await c.runPreWrite(w, K('해안 수비대'), new AbortController().signal)).notes, '', '실패하면 점검 없이 쓴다');
+  { const f = await c.runPreWrite(w, K('해안 수비대'), new AbortController().signal); assert.equal(f.notes, '', '실패하면 점검 없이 쓴다'); assert.equal(f.record.failed, 'api_500', '실패도 기록한다'); }
 });
 test('작성 전 점검의 모델·생각 수준은 따로 정하지 않으면 문서 작성의 배정을 따른다', () => {
   const st = { main: 'm-main', mainThink: 'low', check: 'm-check', taskModels: { page: { model: 'm-page', think: 'high' } } };

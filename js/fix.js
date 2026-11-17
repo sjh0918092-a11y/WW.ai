@@ -262,7 +262,7 @@ function commitFix(w, k, edits, beforeAssign) {
     page = integrate(w, k, out);
   } catch (err) { restoreRewrite(w, backup); throw err; }
   if (beforeAssign) beforeAssign(old);
-  Object.assign(page, { createdAt: old.createdAt, rewrittenAt: old.rewrittenAt, direction: old.direction, editedAt: old.editedAt, fixedAt: Date.now(), stale: false, conflicts: old.conflicts, autoConflicts: old.autoConflicts, autoDismissed: old.autoDismissed, pending: old.pending, check: null, checkLog: [...(old.checkLog || []), { at: Date.now(), event: "고치기", cleared: !!old.check, issues: old.check?.issues?.length ?? 0 }].slice(-8),   // 고치면 검사 결과를 지우고 다시 검사하지 않으므로 그 사실을 진단 기록에 남긴다
+  Object.assign(page, { createdAt: old.createdAt, rewrittenAt: old.rewrittenAt, direction: old.direction, editedAt: old.editedAt, fixedAt: Date.now(), stale: false, conflicts: old.conflicts, autoConflicts: old.autoConflicts, autoDismissed: old.autoDismissed, pending: old.pending, preWrite: old.preWrite, check: null, checkLog: [...(old.checkLog || []), { at: Date.now(), event: "고치기", cleared: !!old.check, issues: old.check?.issues?.length ?? 0 }].slice(-8),   // 고치면 검사 결과를 지우고 다시 검사하지 않으므로 그 사실을 진단 기록에 남긴다
     baseAsOf: old.baseAsOf, syncedTo: old.syncedTo, storyNotice: old.storyNotice });
   cleanupOrphans(w, k);
   S.pages[k] = page;
