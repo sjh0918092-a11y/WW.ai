@@ -301,7 +301,8 @@ function eventIssues(w, k) {
   const refs = eventRefs(w, k), out = [];
   for (const m of mine) for (const n of m.nums) {
     let ref = null, rn = null;
-    for (const r of refs) { if (r.k !== m.k) continue; const hit = r.nums.find(x => numKey(x) === numKey(n)); if (hit) { ref = r; rn = hit; break; } }
+    const owner = eventDetailIn(w, m.k) === k;   // 이 문서가 그 사건의 상세 서술을 맡았으면 먼저 쓴 다른 문서의 재서술 값에 맞추지 않는다. 사용자가 고친 기록만 따른다
+    for (const r of refs) { if (r.k !== m.k || (owner && !eventEdited(r))) continue; const hit = r.nums.find(x => numKey(x) === numKey(n)); if (hit) { ref = r; rn = hit; break; } }
     if (!ref || numVal(rn.value) === numVal(n.value)) continue;
     const rt = S.pages[ref.src].title, val = n.value + n.unit;
     const claim = pageTexts(p).flatMap(sentencesOf).find(s => s.includes(n.value) && (!n.unit || s.includes(n.unit))) || `「${m.name}」의 ${n.name}: ${val}`;
@@ -342,7 +343,7 @@ function eventBlock(w, key, rel, max = null) {
   const det = ks.map(ek => [ek, eventDetailIn(w, ek)]).filter(([, d]) => d && d !== key && w.entities[d]);
   const evName = ek => (w.events || []).filter(x => x.k === ek).sort(eventRank)[0]?.name || w.entities[ek]?.title || "?";
   return `## 사건 장부 (이 문서가 다룰 수 있는 사건의 확정 기록)
-같은 사건을 다룰 때 날짜, 장소, 수치는 '(기준)' 기록을 글자 그대로 따른다. 이 사건의 수치를 새로 적을 때는 장부와 같은 이름과 단위를 쓴다.
+같은 사건을 다룰 때 날짜, 장소, 수치가 '(기준)' 기록과 어긋나지 않게 한다. 이 문서가 그 사건 자체의 문서가 아니면 장부의 날짜·수치·부대 이름을 본문에 옮겨 적지 않는다. 장부는 어긋남을 막는 기준이지 채워 넣을 재료가 아니다. 이 사건 자체의 문서에서 수치를 새로 적을 때는 장부와 같은 이름과 단위를 쓴다.
 ${EVENT_HEAD}
 ${rows.join("\n")}
 ${beats.length ? `

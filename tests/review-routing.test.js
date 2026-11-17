@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -105,6 +105,37 @@ test('작성 지침은 다른 항목의 일을 역할 한두 문장과 연도까
   assert.match(ex, /옮겨 쓸 자료가 아니다/); assert.doesNotMatch(ex, /다시 말할 때는 이 대목을 따르고/);
   assert.match(pr, /절정은 이 문서만의 장면이어야 한다/);
   assert.match(pr, /'이 항목 자신이 한 일'은 좁게 읽는다/); assert.match(pr, /다른 인물이 내린 결정과 그 인물의 계급·직위는/); assert.match(pr, /나쁜 예: '2003년 3월 20일/);
+});
+
+test('주인 문서를 쓸 때는 다른 문서의 재서술을 연도와 결과만 지키게 하고, 사용자 확정 사실과 이야기 모드는 그대로 지키게 한다', () => {
+  const mk = () => { const w = world([page('전략 소녀', '개념', '[[레베카]]는 2003년 방어선 14km를 4시간 만에 평탄화했다.', 1)]);
+    w.entities[K('레베카')] = { ...c.newEntity('레베카', '인물', '전략 소녀'), page: false, facts: [{ t: '레베카는 2003년 방어선 14km를 4시간 만에 평탄화했다.', src: K('전략 소녀') }], mentions: [{ from: K('전략 소녀'), text: '레베카는 2003년 방어선 14km를 4시간 만에 평탄화했다.' }] };
+    return w; };
+  let pr = c.pagePrompt(mk(), K('레베카'));
+  assert.match(pr, /이 문서가 이 항목의 단독 문서다/); assert.match(pr, /\[사용자 확정\]이 붙은 것은 반드시 지킨다/); assert.match(pr, /연도와 결과\(생사, 소속, 승패, 무엇을 해냈는지\)는 지키되/);
+  assert.doesNotMatch(pr, /아래 확정 사실과 언급의 내용은 반드시 지킨다/);
+  const sw = mk(); sw.mode = 'story'; sw.story = { chapter: 1, chapters: [], cast: [] };
+  pr = c.pagePrompt(sw, K('레베카'));
+  assert.match(pr, /아래 확정 사실과 언급의 내용은 반드시 지킨다/);
+});
+test('다른 항목을 요약한 자리에는 참고 문구를 반드시 붙이고, 장면의 주체는 이 항목 자신으로 한정한다', () => {
+  const w = world([page('러시아', '국가', '러시아다.', 1)]);
+  const pr = c.pagePrompt(w, K('러시아'));
+  assert.match(pr, /바로 뒤에는 반드시 '자세한 내용은 \[\[항목\]\] 참고\.'를/);
+  assert.match(pr, /장면의 주체는 이 항목 자신이다/); assert.match(pr, /다른 인물이 주인공인 장면/);
+  assert.match(pr, /사례는 '\[\[인물\]\]이 몇 년 \[\[사건\]\]에서/);
+});
+test('사건 장부: 상세 서술을 맡은 참가자 문서는 먼저 쓴 개념 문서의 재서술 값에 맞추라고 짚지 않는다', () => {
+  const concept = page('전략 소녀', '개념', '개념이다.', 1), person = page('레베카', '인물', '레베카다.', 2);
+  const w = world([concept, person]);
+  const ek = K('이라크 침공');
+  w.entities[ek] = { ...c.newEntity('이라크 침공', '사건', ''), page: false, facts: [], mentions: [] };
+  const rec = (src, v, extra = {}) => ({ k: ek, name: '이라크 침공', date: '2003년', place: '', nums: [{ name: '돌파 구간', value: v, unit: 'km' }], parts: [K('레베카')], result: '', src, createdAt: c.S.pages[src].createdAt, ...extra });
+  w.events = [rec(K('전략 소녀'), '14'), rec(K('레베카'), '9', { detail: true })];
+  assert.equal(c.eventIssues(w, K('레베카')).length, 0);
+  c.S.pages[K('전략 소녀')].editedAt = 9;   // 사용자가 직접 고친 기록은 따른다
+  assert.equal(c.eventIssues(w, K('레베카')).length, 1);
+  assert.match(c.eventBlock(w, K('레베카'), []), /장부는 어긋남을 막는 기준이지 채워 넣을 재료가 아니다/);
 });
 
 let failed = 0;
