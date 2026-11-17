@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -97,33 +97,16 @@ test('백업 진단 도구가 앱 함수로 보고서를 만든다 (읽기 전�
   assert.throws(() => execFileSync(process.execPath, [tool, ro], { encoding: 'utf8', stdio: 'pipe' }), /백업 내보내기/);
 });
 
-test('작성 지침은 다른 항목의 일을 역할 한두 문장과 연도까지만 쓰게 하고, 빨간 링크에도 같은 규칙을 둔다', () => {
-  const w = world([page('러시아', '국가', '러시아다.', 1), page('옥사나', '인물', '1992년 옥사나는 [[러시아]] 해군으로 옮겼다.', 2)]);
-  const pr = c.pagePrompt(w, K('러시아'));
-  assert.match(pr, /다른 항목은 짧고 간단하게:/); assert.match(pr, /받은 것에 없는 세부를 새로 더하지 않는다/); assert.match(pr, /빨간 링크든/); assert.match(pr, /자세한 내용은 \[\[항목\]\] 참고/);
-  const ex = c.ownerExcerptBlock(w, K('러시아'), [K('옥사나')]);
-  assert.match(ex, /이 대목 안의 내용만으로/); assert.match(ex, /이 대목에 없는 세부를 더하지 않고/); assert.doesNotMatch(ex, /다시 말할 때는 이 대목을 따르고/);
-  assert.match(pr, /절정은 이 문서만의 장면이어야 한다/);
-  assert.match(pr, /'이 항목 자신이 한 일'은 좁게 읽는다/); assert.match(pr, /다른 인물이 내린 결정과 그 인물의 계급·직위는/); assert.match(pr, /나쁜 예: '2003년 3월 20일/);
-});
-
 test('주인 문서를 쓸 때는 다른 문서의 재서술을 연도와 결과만 지키게 하고, 사용자 확정 사실과 이야기 모드는 그대로 지키게 한다', () => {
   const mk = () => { const w = world([page('전략 소녀', '개념', '[[레베카]]는 2003년 방어선 14km를 4시간 만에 평탄화했다.', 1)]);
     w.entities[K('레베카')] = { ...c.newEntity('레베카', '인물', '전략 소녀'), page: false, facts: [{ t: '레베카는 2003년 방어선 14km를 4시간 만에 평탄화했다.', src: K('전략 소녀') }], mentions: [{ from: K('전략 소녀'), text: '레베카는 2003년 방어선 14km를 4시간 만에 평탄화했다.' }] };
     return w; };
   let pr = c.pagePrompt(mk(), K('레베카'));
-  assert.match(pr, /이 문서가 이 항목의 단독 문서다/); assert.match(pr, /그 문서가 주인이므로, 받은 내용 안에서 한두 문장으로만 쓰고 새 세부를 더하지 않는다/); assert.match(pr, /\[사용자 확정\]이 붙은 것은 반드시 지킨다/); assert.match(pr, /연도와 결과\(생사, 소속, 무엇을 해냈는지\)만 지키고 세부는 이 문서가 정한다/);
+  assert.match(pr, /이 문서가 이 항목의 단독 문서다/); assert.match(pr, /사건 항목이 있는 일과 다른 인물과 함께 겪은 일의 공통 사실은 받은 그대로 따른다/); assert.match(pr, /\[사용자 확정\]이 붙은 것은 반드시 지킨다/); assert.match(pr, /연도와 결과\(생사, 소속, 무엇을 해냈는지\)만 지키고 세부는 이 문서가 정한다/);
   assert.doesNotMatch(pr, /아래 확정 사실과 언급의 내용은 반드시 지킨다/);
   const sw = mk(); sw.mode = 'story'; sw.story = { chapter: 1, chapters: [], cast: [] };
   pr = c.pagePrompt(sw, K('레베카'));
   assert.match(pr, /아래 확정 사실과 언급의 내용은 반드시 지킨다/);
-});
-test('다른 항목을 요약한 자리에는 참고 문구를 반드시 붙이고, 장면의 주체는 이 항목 자신으로 한정한다', () => {
-  const w = world([page('러시아', '국가', '러시아다.', 1)]);
-  const pr = c.pagePrompt(w, K('러시아'));
-  assert.match(pr, /바로 뒤에는 반드시 '자세한 내용은 \[\[항목\]\] 참고\.'를/);
-  assert.match(pr, /장면의 주체는 이 항목 자신이다/); assert.match(pr, /다른 인물이 주인공인 장면/);
-  assert.match(pr, /사례는 '\[\[인물\]\]이 몇 년 \[\[사건\]\]에서/);
 });
 test('사건 장부: 상세 서술을 맡은 참가자 문서는 먼저 쓴 개념 문서의 재서술 값에 맞추라고 짚지 않는다', () => {
   const concept = page('전략 소녀', '개념', '개념이다.', 1), person = page('레베카', '인물', '레베카다.', 2);
@@ -138,15 +121,45 @@ test('사건 장부: 상세 서술을 맡은 참가자 문서는 먼저 쓴 개�
   assert.match(c.eventBlock(w, K('레베카'), []), /장부는 어긋남을 막는 기준이지 채워 넣을 재료가 아니다/);
 });
 
-test('엔진: 짧게 쓰기가 전제로 올라가고, 사람의 끝은 없으며, 절정의 무대와 인물 관계는 이 항목의 것으로 한정한다', () => {
+test('다른 항목과 얽힌 일: 세 경우로 주인을 가르고, 참고 문구는 사건에만, 큰 일은 사건 항목으로 만든다', () => {
+  const w = world([page('러시아', '국가', '러시아다.', 1), page('옥사나', '인물', '1992년 옥사나는 [[러시아]] 해군으로 옮겼다.', 2)]);
+  const pr = c.pagePrompt(w, K('러시아'));
+  assert.match(pr, /다른 항목과 얽힌 일: 그 일을 누가 정하는지\(주인\)는 아래 세 경우로만 가른다/);
+  assert.match(pr, /1\. 사건 항목이 있는 일:/); assert.match(pr, /2\. 사건 항목이 없고 이 항목만 겪은 일: 이 문서가 주인이다/); assert.match(pr, /3\. 사건 항목이 없고 다른 인물과 함께 겪은 일: 공통 사실/);
+  assert.match(pr, /참고 문구의 대상은 1의 사건뿐이다/); assert.match(pr, /개요만 한두 문장으로 쓰고/); assert.match(pr, /나쁜 예: '2003년 3월 20일/);
+  assert.match(pr, /필요한 만큼 만들어 링크한다/); assert.doesNotMatch(pr, /두세 개 만들어/);
+  assert.match(pr, /장면의 주체는 이 항목 자신이다/); assert.match(pr, /다른 인물이 주인공인 장면/); assert.match(pr, /절정은 이 문서만의 장면이어야 한다/);
+  const ex = c.ownerExcerptBlock(w, K('러시아'), [K('옥사나')]);
+  assert.match(ex, /옮겨 쓸 재료가 아니라 어긋나지 않기 위한 기준이며/); assert.doesNotMatch(ex, /참고\.'를 붙인다/);
+});
+test('참고로 넘길 사건 목록은 앱이 항목 유형으로 정한다(인물·개념은 들어가지 않는다)', () => {
+  const w = world([page('전략 소녀', '개념', '개념이다.', 1), page('바그다드 공방전', '사건', '[[조슬린]]과 [[레이첼]]이 나온다.', 2), page('레이첼', '인물', '레이첼이다.', 3)]);
+  w.entities[K('바그다드 공방전')].type = '사건'; w.entities[K('레이첼')].type = '인물'; w.entities[K('전략 소녀')].type = '개념';
+  w.entities[K('스프래틀리 군도 대치')] = { ...c.newEntity('스프래틀리 군도 대치', '사건', ''), page: false, facts: [], mentions: [] };
+  w.entities[K('조슬린')] = { ...c.newEntity('조슬린', '인물', ''), page: false, facts: [{ t: '조슬린은 스프래틀리 군도 대치에 나섰다.', src: K('전략 소녀') }],
+    mentions: [{ from: K('바그다드 공방전'), text: '조슬린이 나온다.' }, { from: K('레이첼'), text: '레이첼이 조슬린을 만났다.' }, { from: K('전략 소녀'), text: '조슬린이 대치 중이다.' }] };
+  const pr = c.pagePrompt(w, K('조슬린'));
+  const b = pr.slice(pr.indexOf('## 참고로 넘길 사건'), pr.indexOf('## 참고로 넘길 사건') + 400);
+  assert.match(b, /\[\[바그다드 공방전\]\]/); assert.match(b, /\[\[스프래틀리 군도 대치\]\] \(아직 문서 없음\)/);
+  assert.doesNotMatch(b, /\[\[레이첼\]\]|\[\[전략 소녀\]\]/);
+});
+test('엔진: 이 문서가 주인인 일만 크게 쓰는 전제, 사람의 끝 없음, 절정의 무대와 인물 관계 한정', () => {
   const w = world([page('레이첼', '인물', '레이첼이다.', 1)]);
   w.entities[K('레이첼')].type = '인물';
   const pr = c.pagePrompt(w, K('레이첼'));
   const engine = pr.slice(pr.indexOf('## 이 문서의 엔진'), pr.indexOf('## 이 문서의 엔진') + 3000);
-  assert.match(engine, /세 가지를 먼저 정하고/); assert.match(engine, /전제: 이 문서가 크게 쓰는 것은 이 항목 자신의 일뿐이다/);
-  assert.match(engine, /참고 문구는 세부를 대신하는 것이다/); assert.match(engine, /절정과 큰길은 아직 어느 문서도 서술하지 않은 이 항목의 일에서 고른다/); assert.match(engine, /무대는 이 항목의 눈에 보인 것/);
+  assert.match(engine, /세 가지를 먼저 정하고/); assert.match(engine, /전제: 이 문서가 크게 쓰는 것은 이 문서가 주인인 일뿐이다/);
+  assert.match(engine, /참고 문구는 세부를 대신하는 것이므로/); assert.match(engine, /절정과 큰길은 이 문서가 주인인 일에서 고른다/); assert.match(engine, /무대는 이 항목의 눈에 보인 것/);
   assert.doesNotMatch(pr, /사람의 끝/); assert.doesNotMatch(engine, /4\. /);
   assert.match(pr, /상대 인물의 직위, 그 인물이 내린 결정, 그 인물의 이후 경력은 그 인물의 문서에 남긴다/);
+});
+test('원안의 지금 진행 중인 일은 짧게 만들게 하고, 넘길 때는 무대 설명으로 세부를 옮기지 않게 한다', () => {
+  const bp = c.biblePrompt('가상 세계', true, '', false);
+  assert.match(bp, /거리, 인원, 수치, 명령, 기동이나 장면 묘사, 중재·조치·결말의 세부는 넣지 않는다/);
+  assert.match(bp, /원하는 목표 한 줄\. 수단, 수치, 명령/);
+  const w = world([page('조슬린', '인물', '조슬린이다.', 1)], { stage: { units: [{ name: '관리국', kind: '조직' }], now: '관리국과 사령부가 남중국해에서 대치 중이다.', parties: [{ name: '관리국', kind: '조직', want: '항행의 자유' }] } });
+  const pr = c.pagePrompt(w, K('조슬린'));
+  assert.match(pr, /## 지금 진행 중인 일\n관리국과 사령부가[^\n]*\n\(무대 설명이다\. 문서에서는 이 항목이 이 일에서 맡은 역할만 쓰고/);
 });
 
 let failed = 0;

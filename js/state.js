@@ -512,7 +512,7 @@ function stageBlock(w) {
   if (!w.stage || isStory(w)) return "";
   const { units, now, parties } = normStage(w.stage);
   return (units.length ? "\n\n## 주요 단위\n" + units.map(u => `- ${u.name}${u.kind ? " (" + u.kind + ")" : ""}${u.desc ? ": " + u.desc : ""}${u.rel ? " — 관계: " + u.rel : ""}`).join("\n") : "")
-    + (now ? "\n\n## 지금 진행 중인 일\n" + now : "")
+    + (now ? "\n\n## 지금 진행 중인 일\n" + now + "\n(무대 설명이다. 문서에서는 이 항목이 이 일에서 맡은 역할만 쓰고, 여기와 아래 당사자 줄에 적힌 거리·수치·명령·조치는 옮겨 적지 않는다. 이 일을 다룰 때는 '이미 존재하는 항목'에 이 일의 사건이 있으면 그 제목으로, 없으면 이름을 붙여 [[사건]]으로 링크하고 '다른 항목과 얽힌 일'의 1처럼 쓴다.)" : "")
     + (parties.length ? "\n\n## 지금 진행 중인 일의 당사자\n" + parties.map(p => `- ${p.name}${p.kind ? " (" + p.kind + ")" : ""}${p.want ? ": " + p.want : ""}`).join("\n") : "");
 }
 function canonBlock(w, focus = null, options = null) {

@@ -67,7 +67,7 @@ test('허브 작성 입력에 관련 항목 문서의 해당 문단이 들어간
   const w = world([page('러시아', '국가', '러시아다.', 1), page('옥사나 체르넨코', '인물', '1992년 체르넨코는 [[우크라이나]] 해군으로 옮겼다.\n\n1994년 [[러시아]]로 귀환해 흑해함대에 복귀했다.', 2)]);
   const block = c.ownerExcerptBlock(w, K('러시아'), [K('옥사나 체르넨코')]);
   assert.match(block, /1994년 러시아로 귀환/); assert.doesNotMatch(block, /1992년 체르넨코는/);
-  assert.match(c.pagePrompt(w, K('러시아')), /다른 항목은 짧고 간단하게:/);
+  assert.match(c.pagePrompt(w, K('러시아')), /다른 항목과 얽힌 일:/);
 });
 let failed = 0;
 for (const [n, f] of tests) { try { f(); console.log('통과', n); } catch (e) { failed++; console.log('실패', n, '\n', e.message); } }
