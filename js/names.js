@@ -46,11 +46,50 @@ async function registerPersonNames(w, k) {
       merges.push([nk, k]); res.merged.push(n); continue;
     }
     const cur = w.aliases[nk];
-    if (cur && cur !== k && w.entities[cur]) continue;   // 다른 항목의 별칭이면 그대로 둔다
+    if (cur && cur !== k && w.entities[cur]) {   // 다른 항목의 별칭이면 그대로 둔다(처음 연결 유지)
+      if (isPerson(w, cur)) { const fk = keyOf(sharedForm(n, p.title)); if (!w.aliases[fk] && !w.entities[fk]) { w.aliases[fk] = k; res.aliased.push(sharedForm(n, p.title)); } }   // 같은 이명을 쓰는 나중 인물에게는 '이명(본명)'을 이명으로 하나 더 붙인다
+      continue;
+    }
     if (cur !== k) { w.aliases[nk] = k; res.aliased.push(n); }
   }
   if (merges.length) await mergeEntities(w, merges);   // 빨간 링크의 언급·사실은 이 문서로 옮기고, 그 이름은 별칭이 된다
   return res;
+}
+/* ---------- 같은 이명을 쓰는 인물 ----------
+   처음 그 이명을 받은 인물은 맨 이명으로 이어진다. 나중 인물에게는 '이명(본명)'이 링크용 이명으로 하나 더 붙는다.
+   괄호는 링크를 구분하는 표기일 뿐이며, 실제 이명은 모두 같다 */
+const sharedForm = (name, title) => `${name}(${title})`;
+const CODE_ONLY = p => infoboxNames({ infobox: (p?.infobox || []).filter(r => CODE_NAME_LABEL.test(stripMarks(r.label).replace(/\s/g, ""))) });
+function sharedNames(w) {
+  const by = new Map();
+  for (const [k, p] of Object.entries(S.world === w ? S.pages : {})) {
+    if (!w.entities[k] || !isPerson(w, k)) continue;
+    for (const n of CODE_ONLY(p)) {
+      if (identityName(n) === identityName(p.title)) continue;
+      const g = by.get(identityName(n)) || by.set(identityName(n), { name: n, keys: [] }).get(identityName(n));
+      if (!g.keys.includes(k)) g.keys.push(k);
+    }
+  }
+  const out = [];
+  for (const g of by.values()) {
+    if (g.keys.length < 2) continue;
+    const bare = w.aliases?.[keyOf(g.name)];
+    const rows = g.keys.map(k => {
+      const title = w.entities[k].title, fk = keyOf(sharedForm(g.name, title));
+      if (k !== bare && !w.aliases?.[fk] && !w.entities[fk]) (w.aliases ||= {})[fk] = k;   // 이 기능 이전에 만든 세계관도 링크용 이명을 갖게 한다
+      return { k, title, link: k === bare ? g.name : sharedForm(g.name, title) };
+    });
+    out.push({ name: g.name, rows });
+  }
+  return out;
+}
+function sharedNamesBlock(w, check = false) {
+  const list = sharedNames(w).slice(0, 8); if (!list.length) return "";
+  return `## 같은 이명을 쓰는 인물
+${list.map(g => `- ${g.name}: ${g.rows.map(r => `${r.title} → [[${r.link}]]`).join(", ")}`).join("\n")}
+같은 이명을 여러 인물이 쓴다. 괄호는 링크를 구분하려고 붙인 표기일 뿐이고, 실제 이명은 모두 괄호 없는 이름이다. 본문과 인포박스에는 괄호 없이 쓰고, 링크할 때만 위 표기를 대상으로 쓴다(예: [[${list[0].rows.at(-1).link}|${list[0].name}]]). 맨 이명 링크는 위에서 맨 이명으로 이어진 인물만 가리킨다.
+${check ? "이 문서에서 맨 이명으로 건 링크가 문맥상(날짜, 나이, 소속, 선대·후대) 다른 인물을 가리키면 high로 지적한다. claim에는 그 문장을, evidence에는 위 목록의 해당 줄을 쓰고, conflict는 '이명 링크:'로 시작해 어느 인물의 링크 표기로 바꿔야 하는지 쓴다.\n" : ""}
+`;
 }
 /* 고른 말이 기존 인물의 별칭이나 인포박스 이름이면 그 인물의 키. 여럿이면 정하지 않는다 */
 function personByName(w, name, except) {

@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,fixBatchPrompt,taskThinkOptions,preCheck});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -219,6 +219,24 @@ test('설정 검사: 근거가 없다는 것만으로는 지적하지 않고, �
   const pr = c.checkPrompt(w, K('제네바 협정'), []);
   assert.match(pr, /이 문서가 그 조약·제도·기록 자체의 문서이면 그 조항의 내용은 이 문서가 정하는 것이므로 대조 대상이 아니다/);
   assert.match(pr, /확정 설정에 근거가 없다는 것만으로는 지적하지 않는다/); assert.doesNotMatch(pr, /인용 근거를 확정할 수 없으면 low로 쓰고/);
+});
+
+test('같은 이명: 처음 연결은 유지하고 나중 인물에게 이명(본명)을 링크용으로 붙이며, 작성·검사 프롬프트에 목록을 넘긴다', async () => {
+  const box = n => [{ label: '본명', value: n }, { label: '호출부호', value: '블랙버드' }];
+  const A = { ...page('마리아 로페스', '인물', '마리아다.', 1), infobox: box('마리아 로페스') }, B = { ...page('한서진', '인물', '한서진이다.', 2), infobox: box('한서진') };
+  const w = world([A, B]); w.entities[K('마리아 로페스')].type = '인물'; w.entities[K('한서진')].type = '인물';
+  w.aliases = { [K('블랙버드')]: K('마리아 로페스') };
+  await c.registerPersonNames(w, K('한서진'));
+  assert.equal(w.aliases[K('블랙버드')], K('마리아 로페스'));   // 처음 연결 유지
+  assert.equal(w.aliases[K('블랙버드(한서진)')], K('한서진'));
+  assert.equal(c.kOf(w, '블랙버드(한서진)'), K('한서진'));
+  const pr = c.pagePrompt(w, K('한서진'));
+  assert.match(pr, /## 같은 이명을 쓰는 인물\n- 블랙버드: 마리아 로페스 → \[\[블랙버드\]\], 한서진 → \[\[블랙버드\(한서진\)\]\]/);
+  assert.match(pr, /괄호는 링크를 구분하려고 붙인 표기일 뿐이고, 실제 이명은 모두 괄호 없는 이름이다/);
+  assert.doesNotMatch(pr, /조슬린|인디펜던스/);
+  assert.match(c.checkPrompt(w, K('한서진'), []), /conflict는 '이명 링크:'로 시작해/);
+  const w2 = world([A, B]); w2.entities[K('마리아 로페스')].type = '인물'; w2.entities[K('한서진')].type = '인물'; w2.aliases = { [K('블랙버드')]: K('마리아 로페스') };
+  c.sharedNames(w2); assert.equal(w2.aliases[K('블랙버드(한서진)')], K('한서진'));   // 기존 세계관도 링크용 이명이 생긴다
 });
 
 let failed = 0;
