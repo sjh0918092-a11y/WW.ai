@@ -100,9 +100,9 @@ test('백업 진단 도구가 앱 함수로 보고서를 만든다 (읽기 전�
 test('작성 지침은 다른 항목의 일을 역할 한두 문장과 연도까지만 쓰게 하고, 빨간 링크에도 같은 규칙을 둔다', () => {
   const w = world([page('러시아', '국가', '러시아다.', 1), page('옥사나', '인물', '1992년 옥사나는 [[러시아]] 해군으로 옮겼다.', 2)]);
   const pr = c.pagePrompt(w, K('러시아'));
-  assert.match(pr, /다른 항목은 짧고 간단하게:/); assert.match(pr, /빨간 링크든/); assert.match(pr, /자세한 내용은 \[\[항목\]\] 참고/);
+  assert.match(pr, /다른 항목은 짧고 간단하게:/); assert.match(pr, /받은 것에 없는 세부를 새로 더하지 않는다/); assert.match(pr, /빨간 링크든/); assert.match(pr, /자세한 내용은 \[\[항목\]\] 참고/);
   const ex = c.ownerExcerptBlock(w, K('러시아'), [K('옥사나')]);
-  assert.match(ex, /옮겨 쓸 자료가 아니다/); assert.doesNotMatch(ex, /다시 말할 때는 이 대목을 따르고/);
+  assert.match(ex, /이 대목 안의 내용만으로/); assert.match(ex, /이 대목에 없는 세부를 더하지 않고/); assert.doesNotMatch(ex, /다시 말할 때는 이 대목을 따르고/);
   assert.match(pr, /절정은 이 문서만의 장면이어야 한다/);
   assert.match(pr, /'이 항목 자신이 한 일'은 좁게 읽는다/); assert.match(pr, /다른 인물이 내린 결정과 그 인물의 계급·직위는/); assert.match(pr, /나쁜 예: '2003년 3월 20일/);
 });
@@ -112,7 +112,7 @@ test('주인 문서를 쓸 때는 다른 문서의 재서술을 연도와 결과
     w.entities[K('레베카')] = { ...c.newEntity('레베카', '인물', '전략 소녀'), page: false, facts: [{ t: '레베카는 2003년 방어선 14km를 4시간 만에 평탄화했다.', src: K('전략 소녀') }], mentions: [{ from: K('전략 소녀'), text: '레베카는 2003년 방어선 14km를 4시간 만에 평탄화했다.' }] };
     return w; };
   let pr = c.pagePrompt(mk(), K('레베카'));
-  assert.match(pr, /이 문서가 이 항목의 단독 문서다/); assert.match(pr, /\[사용자 확정\]이 붙은 것은 반드시 지킨다/); assert.match(pr, /연도와 결과\(생사, 소속, 승패, 무엇을 해냈는지\)는 지키되/);
+  assert.match(pr, /이 문서가 이 항목의 단독 문서다/); assert.match(pr, /그 문서가 주인이므로, 받은 내용 안에서 한두 문장으로만 쓰고 새 세부를 더하지 않는다/); assert.match(pr, /\[사용자 확정\]이 붙은 것은 반드시 지킨다/); assert.match(pr, /연도와 결과\(생사, 소속, 무엇을 해냈는지\)만 지키고 세부는 이 문서가 정한다/);
   assert.doesNotMatch(pr, /아래 확정 사실과 언급의 내용은 반드시 지킨다/);
   const sw = mk(); sw.mode = 'story'; sw.story = { chapter: 1, chapters: [], cast: [] };
   pr = c.pagePrompt(sw, K('레베카'));
@@ -144,7 +144,7 @@ test('엔진: 짧게 쓰기가 전제로 올라가고, 사람의 끝은 없으�
   const pr = c.pagePrompt(w, K('레이첼'));
   const engine = pr.slice(pr.indexOf('## 이 문서의 엔진'), pr.indexOf('## 이 문서의 엔진') + 3000);
   assert.match(engine, /세 가지를 먼저 정하고/); assert.match(engine, /전제: 이 문서가 크게 쓰는 것은 이 항목 자신의 일뿐이다/);
-  assert.match(engine, /참고 문구는 세부를 대신하는 것이다/); assert.match(engine, /무대는 이 항목의 눈에 보인 것/);
+  assert.match(engine, /참고 문구는 세부를 대신하는 것이다/); assert.match(engine, /절정과 큰길은 아직 어느 문서도 서술하지 않은 이 항목의 일에서 고른다/); assert.match(engine, /무대는 이 항목의 눈에 보인 것/);
   assert.doesNotMatch(pr, /사람의 끝/); assert.doesNotMatch(engine, /4\. /);
   assert.match(pr, /상대 인물의 직위, 그 인물이 내린 결정, 그 인물의 이후 경력은 그 인물의 문서에 남긴다/);
 });
