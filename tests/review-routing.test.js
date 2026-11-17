@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,autoRealNameTitle,preWritePrompt,preWriteNeeded,runPreWrite,taskSelection,GS,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor,readPrompt,checkTimeline,timelineCheckPrompt,readTimelineForm,timelineEditHtml,promptTimeline});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,autoRealNameTitle,refEventKeys,parentEventKeys,preWritePrompt,preWriteNeeded,runPreWrite,taskSelection,GS,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor,readPrompt,checkTimeline,timelineCheckPrompt,readTimelineForm,timelineEditHtml,promptTimeline});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -417,6 +417,20 @@ test('작성 직후: 코드명 제목의 인물 문서는 본명으로 옮기고
   const plain = { ...page('한서진', '인물', '한서진이다.', 3), infobox: [{ label: '본명', value: '한서진' }] };
   const w2 = world([plain]); w2.entities[K('한서진')].type = '인물';
   assert.equal(await c.autoRealNameTitle(w2, K('한서진')), null, '코드명 제목이 아니면 바꾸지 않는다');
+});
+
+test('상위 사건: 하위 사건 문서는 자기를 품은 사건을 참고로 넘기지 않고, 상위 사건 문서는 하위 사건을 그대로 넘긴다', () => {
+  const war = page('사막 전쟁', '사건', '1991년 [[모래 작전]]은 결정적 전환점이었다. 자세한 내용은 [[모래 작전]] 참고.', 1);
+  const op = { ...page('모래 작전', '사건', '작전은 [[사막 전쟁]]의 공세였다. 방어선을 뚫었다.', 2), categories: ['사막 전쟁'] };
+  const w = world([war, op]); w.entities[K('사막 전쟁')].type = '사건'; w.entities[K('모래 작전')].type = '사건';
+  assert.deepEqual([...c.parentEventKeys(w, K('모래 작전'))], [K('사막 전쟁')]);
+  assert.ok(!c.refEventKeys(w, K('모래 작전'), [K('사막 전쟁')]).includes(K('사막 전쟁')), '상위 사건은 참고로 넘길 사건이 아니다');
+  assert.ok(c.refEventKeys(w, K('사막 전쟁'), [K('모래 작전')]).includes(K('모래 작전')), '상위 사건 문서에서는 하위 사건을 넘긴다');
+  assert.deepEqual([...c.parentEventKeys(w, K('사막 전쟁'))], []);
+  assert.match(c.readPrompt(w, K('모래 작전')), /이 사건을 품은 상위 사건: \[\[사막 전쟁\]\]/);
+  // 서로 넘긴 상태여도 분류가 없는 쪽은 상위 사건으로 보지 않는다
+  op.sections[0].body += ' 자세한 내용은 [[사막 전쟁]] 참고.';
+  assert.deepEqual([...c.parentEventKeys(w, K('사막 전쟁'))], []);
 });
 
 let failed = 0;

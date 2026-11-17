@@ -560,19 +560,37 @@ facts에는 이 문서가 링크한 항목 중 중요한 것(인물, 조직, 사
 }
 /* 참고 문구('자세한 내용은 [[사건]] 참고.')를 붙일 수 있는 사건. 주인을 모델이 판단하지 않도록 앱이 항목 유형으로 정한다 */
 const REF_EVENTS_N = 12;
+const isEventKey = (w, k) => (S.pages[k]?.type || w.entities[k]?.type || w.entities[k]?.stub?.type) === "사건";
+/* 이 사건을 품은 상위 사건: 그 사건 문서가 '자세한 내용은 [[이 사건]] 참고.'로 세부를 넘겼거나, 이 사건의 분류에 그 사건 이름이 있다.
+   상위 사건은 '참고로 넘길 사건'에 넣지 않는다. 넣으면 상위 사건은 세부를 이 문서로, 이 문서는 상위 사건으로 넘겨 아무도 경과를 쓰지 않는다 */
+function parentEventKeys(w, key) {
+  if (!isEventKey(w, key)) return [];
+  const title = w.entities[key]?.title; if (!title) return [];
+  const cats = new Set([...(S.pages[key]?.categories || []), ...(w.entities[key]?.cats || []).map(c => c.name)].map(identityName));
+  const handsTo = (from, to) => { const p = S.pages[from], tt = w.entities[to]?.title; if (!p || !tt) return false; const e2 = tt.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); return new RegExp("자세한 내용은\\s*\\[\\[" + e2 + "(?:\\|[^\\]]*)?\\]\\]").test(pageTexts(p).join("\n")); };
+  const out = [];
+  for (const [k, o] of Object.entries(w.entities)) {
+    if (k === key || !isEventKey(w, k)) continue;
+    // 서로 넘긴 경우(이미 어긋난 상태)는 넘김 신호로 정하지 않고 분류만 본다
+    if (cats.has(identityName(o.title)) || (handsTo(k, key) && !handsTo(key, k))) out.push(k);
+  }
+  return out;
+}
 function refEventKeys(w, key, rel, extraText = "") {
   const e = w.entities[key], text = [e.summary, extraText, ...e.facts.filter(live).map(f => f.t), ...e.mentions.filter(live).map(m => m.text)].join("\n");
   const cand = new Set([...rel, ...eventKeysFor(w, key, rel), ...e.mentions.filter(live).map(m => m.from)]);
   for (const [k, o] of Object.entries(w.entities)) if (namesOf(o.title).some(n => hasName(text, n))) cand.add(k);
-  return [...cand].filter(k => k !== key && (w.entities[k]?.type || w.entities[k]?.stub?.type) === "사건").slice(0, REF_EVENTS_N);
+  const parents = new Set(parentEventKeys(w, key));
+  return [...cand].filter(k => k !== key && !parents.has(k) && (w.entities[k]?.type || w.entities[k]?.stub?.type) === "사건").slice(0, REF_EVENTS_N);
 }
+const parentEventNote = (w, key) => { const ps = parentEventKeys(w, key); return ps.length ? `이 사건을 품은 상위 사건: ${ps.map(k => `[[${w.entities[k].title}]]`).join(", ")}. 이 사건의 경과·수치·장면은 이 문서가 주인이며 상위 사건으로 넘기지 않는다. 상위 사건의 다른 부분(전체의 배경, 다른 국면)은 한두 문장으로 쓰고 링크만 건다.\n` : ""; };
 const refEventLine = (w, k) => `- [[${w.entities[k].title}]]${S.pages[k] ? "" : " (아직 문서 없음)"}`;
 function refEventsBlock(w, key, rel) {
   if (isStory(w)) return "";
   const list = refEventKeys(w, key, rel);
   return `## 참고로 넘길 사건 (앱이 정한 목록)
 ${list.length ? list.map(k => refEventLine(w, k)).join("\n") : "- (없음)"}
-'자세한 내용은 [[사건]] 참고.'는 이 목록의 사건과 이 문서에서 새로 [[사건]]으로 링크한 사건에만 쓴다.
+${parentEventNote(w, key)}'자세한 내용은 [[사건]] 참고.'는 이 목록의 사건과 이 문서에서 새로 [[사건]]으로 링크한 사건에만 쓴다.
 
 `;
 }
@@ -703,7 +721,7 @@ function restateCheckBlock(w, key) {
   return `## 다른 사건의 재서술 (앱이 정한 목록)
 아래 사건은 각 사건의 문서가 주인이다(문서가 아직 없어도 같다). 이 문서에서는 ${isEv ? "그 사건이 이 사건의 흐름에서 어떤 의미였는지 두세 문장으로만 쓰고" : "이 항목이 그 사건에서 한 일을 한두 문장으로만 쓰고"} '자세한 내용은 [[사건]] 참고.'로 넘겨야 한다.
 ${list.length ? list.map(k => refEventLine(w, k)).join("\n") : "- (없음)"}
-이 사건들을 다룬 문단이나 섹션마다 아래가 있는지 본다. 있으면 그 사건을 다룬 문단마다 하나씩 severity high로 지적하되, 할 일을 나눠 적는다. 그 사건을 다룬 첫 문단은 줄일 문단이고, 같은 사건을 다룬 나머지 문단과 그 사건 자리의 인용문은 지울 문단이다.
+${parentEventNote(w, key) ? parentEventNote(w, key) + "이 사건 자체의 경과를 쓴 문단은 재서술이 아니므로 지적하지 않는다.\n" : ""}이 사건들을 다룬 문단이나 섹션마다 아래가 있는지 본다. 있으면 그 사건을 다룬 문단마다 하나씩 severity high로 지적하되, 할 일을 나눠 적는다. 그 사건을 다룬 첫 문단은 줄일 문단이고, 같은 사건을 다룬 나머지 문단과 그 사건 자리의 인용문은 지울 문단이다.
 - 이 항목이 한 일 ${n}을 넘는 서술: 그 사건의 정확한 날짜·시각·경과 시간, 인원·거리·속도·피해 같은 수치, 단계별 경과, 다른 인물의 결정과 직위, 적이나 다른 부대의 이름과 화기.
 - 참고 문구 앞이든 뒤든, 그 사건의 경과나 직후 상황(부상과 치료의 세부 포함)을 따로 이어 쓴 문단.
 - 같은 섹션 안에서 같은 사건의 요약이 되풀이된 곳, 그 사건 자리에서 나온 인용문.
