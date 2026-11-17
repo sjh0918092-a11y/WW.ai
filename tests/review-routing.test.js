@@ -174,7 +174,7 @@ test('문서 읽기 검사: 앱이 정한 사건의 재서술을 다듬을 곳�
   const rp = c.readPrompt(w, K('레베카 헤이즈'));
   const b = rp.slice(rp.indexOf('## 다른 사건의 재서술'), rp.indexOf('## 다른 사건의 재서술') + 900);
   assert.match(b, /\[\[바그다드 참호 돌파\]\]/); assert.match(b, /\[\[남중국해 대치\]\] \(아직 문서 없음\)/); assert.doesNotMatch(b, /\[\[전략 소녀\]\]/);
-  assert.match(b, /문단마다 하나씩 severity high로 지적하되/); assert.match(b, /'재서술\(줄임\):'으로 시작해/); assert.match(b, /'재서술\(지움\):'으로 시작해/); assert.match(b, /두 번 이상 되풀이된 곳/); assert.match(b, /참고 문구 앞이든 뒤든/);
+  assert.match(b, /문단마다 하나씩 severity high로 지적하되/); assert.match(b, /'재서술\(줄임\):'으로 시작해/); assert.match(b, /'재서술\(지움\):'으로 시작해/); assert.match(b, /같은 섹션 안에서 같은 사건의 요약이나 참고 문구가 되풀이된 곳/); assert.match(b, /인물 관계, 현재처럼 다른 목적의 섹션이/); assert.match(b, /참고 문구 앞이든 뒤든/);
   assert.doesNotMatch(c.readPrompt(w, K('전략 소녀')), /## 다른 사건의 재서술/);   // 다룬 사건이 없으면 넣지 않는다
   const fp = c.fixBatchPrompt(w, c.S.pages[K('레베카 헤이즈')], { summary: '', cats: '', infobox: '', body: '본문' }, [{ claim: '2003년', conflict: '근거: 참고로 넘길 사건: [[바그다드 참호 돌파]] · 재서술: 줄인다' }]);
   assert.match(fp, /'재서술\(지움\):' 메모는 지적된 문단이나 인용문 전체를 old로 잡아 new를 빈 문자열로 둔다/); assert.match(fp, /'재서술\(줄임\):' 메모는/); assert.match(fp, /이 대상의 일로 바꾸지 않는다/);
@@ -247,6 +247,23 @@ test('문서 내부 검사: 링크 표기를 살리고 인물의 이명을 넘�
   assert.match(rp, /\[\[사라 밀러\|새러토가\]\]를 이송했다/);
   assert.match(rp, /## 이 문서에 나온 인물의 다른 이름 \(같은 인물이다\)\n- 사라 밀러: 새러토가/);
   assert.match(rp, /이런 곳은 severity high로 써서 작성 직후 자동으로 고치게 한다/);
+});
+
+test('자동 수정: 재서술 지움으로 섹션이 통째로 비면 그 지움은 되돌린다', async () => {
+  const R = '[[적벽]]: 2016년 [[스카버러 해상 대치]]에서 맞선 상대다.';
+  const per = { ...page('네브래스카', '인물', '네브래스카다.', 2), sections: [{ heading: '개요', level: 1, body: '네브래스카는 전략 소녀다.' }, { heading: '대치', level: 1, body: '2016년 [[스카버러 해상 대치]]에서 맞섰다. 자세한 내용은 [[스카버러 해상 대치]] 참고.' }, { heading: '인물 관계', level: 1, body: R }] };
+  const w = world([page('스카버러 해상 대치', '사건', '대치다.', 1), per]);
+  w.entities[K('스카버러 해상 대치')].type = '사건'; w.entities[K('네브래스카')].type = '인물';
+  const claim = '적벽: 2016년 스카버러 해상 대치에서 맞선 상대다.';
+  c.__mock = { check: { issues: [] }, read: { issues: [{ claim, evidence: '참고로 넘길 사건: [[스카버러 해상 대치]]', conflict: '재서술(지움): 되풀이', severity: 'high' }] } };
+  vm.runInContext(`callJson = async (kind, prompt) => {
+    if (kind !== 'fix') return JSON.parse(JSON.stringify(__mock[kind] || { issues: [] }));
+    const n = {}; for (const m of prompt.matchAll(/(\\d+)\\. 문서의 서술: (.*)/g)) n[m[2].trim()] = +m[1];
+    return { edits: [{ memo: n[${JSON.stringify(claim)}], field: 'body', old: ${JSON.stringify(R)}, new: '' }] };
+  }`, c);
+  const res = await c.preCheck(w, K('네브래스카'), c.S.pages[K('네브래스카')], { ctl: new AbortController() }, () => {});
+  const rel = res.page.sections.find(s => s.heading === '인물 관계');
+  assert.ok(rel && /적벽/.test(rel.body), JSON.stringify(res.page.sections));
 });
 
 let failed = 0;

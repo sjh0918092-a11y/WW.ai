@@ -991,7 +991,11 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
       let old = String(ed?.old || ""); const nw = String(ed?.new ?? "");
       if (!fld || !old.trim() || old === nw) continue;
       let at = nf[fld].indexOf(old); if (at < 0) { old = old.trim(); at = nf[fld].indexOf(old); } if (at < 0) continue;
-      nf[fld] = nf[fld].slice(0, at) + nw + nf[fld].slice(at + old.length); applied++;
+      const prev = nf[fld];
+      nf[fld] = nf[fld].slice(0, at) + nw + nf[fld].slice(at + old.length);
+      // 재서술을 지우다가 섹션 하나가 통째로 비면(인물 관계·현재 등) 그 지움은 되돌린다. 제목만 남은 섹션을 만들지 않는다
+      if (fld === "body" && restate(ed) && !nw.trim()) { const empty = src => sourceToOut(src).sections.filter(x => !String(x.body || "").trim()).length; if (empty(nf) > empty({ ...nf, body: prev })) { nf[fld] = prev; continue; } }
+      applied++;
       // 메모 번호가 빠졌으면 고친 구절과 지적된 서술이 겹치는 메모가 하나뿐일 때만 그 메모에 연결한다.
       let memo = Number(ed.memo ?? (high.length === 1 ? 1 : NaN));
       if (ed.memo === undefined && !Number.isInteger(memo)) {
