@@ -285,6 +285,15 @@ test('참고 문구는 문서에서 한 번만: 중복은 참고 문장만 지�
   assert.match(fp, /'재서술\(참고 중복\):' 메모는 지적된 참고 문장 하나만/); assert.match(fp, /인물 관계 항목을 사건 요약이나 참고 문구로 바꾸지 않는다/);
 });
 
+test('사건 문서가 다른 사건 항목을 다룰 때는 그 사건 문서가 주인이고, 의미를 두세 문장으로 쓰게 한다', () => {
+  const big = page('쿠바 미사일 위기', '사건', '위기다. [[카리브해 대치]]가 있었다.', 1), sub = page('카리브해 대치', '사건', '대치다.', 2), per = page('캔자스', '인물', '[[카리브해 대치]]에 나갔다.', 3);
+  const w = world([big, sub, per]); for (const t of ['쿠바 미사일 위기', '카리브해 대치']) w.entities[K(t)].type = '사건'; w.entities[K('캔자스')].type = '인물';
+  assert.match(c.pagePrompt(w, K('쿠바 미사일 위기')), /사건 문서에서는 그 사건이 전체 흐름에서 어떤 의미였는지 두세 문장으로 쓰고/);
+  const rb = c.readPrompt(w, K('쿠바 미사일 위기'));
+  assert.match(rb, /그 사건이 이 사건의 흐름에서 어떤 의미였는지 두세 문장으로만 쓰고/); assert.match(rb, /이 항목이 한 일 두세 문장을 넘는 서술/);
+  assert.match(c.readPrompt(w, K('캔자스')), /이 항목이 한 일 한두 문장을 넘는 서술/);
+});
+
 let failed = 0;
 (async () => { for (const [n, f] of tests) { try { await f(); console.log('통과', n); } catch (e) { failed++; console.log('실패', n, '\n', e.message); } }
 if (failed) process.exit(1); })();
