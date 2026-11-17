@@ -411,13 +411,13 @@ function pageWritingRules(w, ty) { return pageCommonRules() + PROMPT_CACHE_BREAK
    국가는 그 국가 소속 조직의 구성원까지 한 단계 따라간다. 출력 형식 바로 앞에 두어 인포박스·본문을 쓸 때 보이게 한다 */
 const MEMBER_LIST_MAX = 12, MEMBER_PROMPT_MAX = 24;
 function memberRows(w, key) {
-  const isPerson = k => (S.pages[k]?.type || w.entities[k]?.type) === "인물";
+  const personKey = k => (S.pages[k]?.type || w.entities[k]?.type) === "인물";
   const out = [], seen = new Set([key]);
-  const add = (rows, via) => { for (const r of rows) { if (seen.has(r.k) || !isPerson(r.k)) continue; seen.add(r.k); out.push({ ...r, via }); } };
+  const add = (rows, via) => { for (const r of rows) { if (seen.has(r.k) || !personKey(r.k)) continue; seen.add(r.k); out.push({ ...r, via }); } };
   const direct = rosterOf(w, key);
   add(direct, null);
   if ((S.pages[key]?.type || w.entities[key]?.type) === "국가")
-    for (const r of direct) if (!isPerson(r.k) && w.entities[r.k]) add(rosterOf(w, r.k), r.k);
+    for (const r of direct) if (!personKey(r.k) && w.entities[r.k]) add(rosterOf(w, r.k), r.k);
   return out.slice(0, MEMBER_PROMPT_MAX);
 }
 function memberLine(w, r) {

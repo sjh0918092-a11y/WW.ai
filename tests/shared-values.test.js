@@ -29,7 +29,7 @@ test('항목 자신의 문서가 정한 소속만 받고, 링크하지 않은 �
 });
 test('구성원 현황은 상태별 수와 구성원을 보여 준다', () => {
   const w = russia(), b = c.rosterBlock(w, [K('러시아')], 30, true);
-  assert.match(b, /현역 1, 퇴역 1/); assert.match(b, /베레진스카야: 해군 전략 소녀, 현역, 2009~현재/); assert.match(b, /N기 중/);
+  assert.match(b, /현역 1, 퇴역 1/); assert.match(b, /베레진스카야: 해군 전략 소녀, 현역, 2009~현재/); assert.match(b, /표보다 구성원이 많다고 쓴 것은 지적하지 않는다/); assert.doesNotMatch(b, /현역 3기 중 하나라고 씀/);
 });
 test('허브 작성 입력과 소속 인물 작성 입력에 구성원 현황이 들어간다', () => {
   const w = russia();
@@ -73,13 +73,13 @@ test('구성원 현황이 기준 시점 현역과 구성원이 없던 기간을 
   const w = russia();
   c.ingestAffil(w, K('체르넨코'), [{ org: '러시아', role: '전략 소녀', state: '퇴역', from: '1970', to: '1986' }]);
   const b = c.rosterBlock(w, [K('러시아')], 30, true);
-  assert.match(b, /기준 시점 현역 1\(베레진스카야\)/); assert.match(b, /구성원이 없던 기간: 1987~2008/); assert.match(b, /최초/);
+  assert.match(b, /현역으로 기록된 구성원 1명\(베레진스카야\)/); assert.match(b, /전체 수가 아니다/); assert.match(b, /구성원이 없던 기간: 1987~2008/); assert.match(b, /최초/);
 });
 test('구성원 현황: 상태를 정한 문서가 없으면 현역 0으로 적지 않는다', () => {
   const w = world([page('전력기동처', '조직', '[[홍련]]을 앞세웠다.', 1)]);
   w.entities[K('홍련')] = { ...c.newEntity('홍련', '인물', ''), page: false, facts: [], mentions: [], cats: [{ axis: '소속', name: '전력기동처' }] };
   const b = c.rosterBlock(w, [K('전력기동처')], 30, true);
-  assert.doesNotMatch(b, /기준 시점 현역 0/); assert.match(b, /현역 수를 알 수 없음\(상태 미정 \d+명\)/);
+  assert.doesNotMatch(b, /기준 시점 현역 0|기록된 구성원 0명/); assert.match(b, /현역 수를 알 수 없음\(상태 미정 \d+명\)/);
 });
 test('상세 서술은 사건 문서, 그다음 참가자 문서가 맡고 참가하지 않은 개념 문서는 맡지 않는다', () => {
   const w = world([page('전략 소녀', '개념', '개념.', 1), page('세라 바커', '인물', '바커.', 2), page('걸프 전쟁', '사건', '전쟁.', 3)]);
