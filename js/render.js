@@ -114,14 +114,14 @@ function workHtml(w) {
   if (S.bgSync && w.entities[S.bgSync]) rows.push(`<li class="genpill"><span class="dot"></span><span class="gq-st">사실 정리</span><button type="button" class="btn gq-t" data-k="${S.bgSync}">${name(S.bgSync)}</button></li>`);
   return rows.length ? `<section class="genq work"><h4>진행 중인 작업 · ${rows.length}</h4><ul>${rows.join("")}</ul></section>` : "";
 }
-/* 수정 요청: 다른 문서의 직접 수정·자동 대조로 충돌 표시가 붙었거나, 편집자 메모에 이 문서에서 다듬을 곳이 남아 고쳐야 하는 문서 */
+/* 수정 요청: 다른 문서의 직접 수정·자동 대조로 충돌 표시가 붙었거나, 편집자 메모(다듬을 곳·참고)가 남아 고쳐야 하는 문서 */
 const fixReqs = (w, P) => [...(P.conflicts || []), ...(P.autoConflicts || []).filter(c => w.entities[c.by])];
-const memoReqs = (P, k) => (P.check?.issues || []).filter(i => i.severity === "high" && (!i.target || i.target === k));   // 다른 문서가 고칠 대상인 메모는 그 문서의 몫이다
+const memoReqs = (P, k) => (P.check?.issues || []).filter(i => !i.target || i.target === k);   // 다른 문서가 고칠 대상인 메모는 그 문서의 몫이다
 function fixReqHtml(w) {
   const ks = Object.keys(S.pages).filter(k => w.entities[k] && (fixReqs(w, S.pages[k]).length || memoReqs(S.pages[k], k).length));
   if (!ks.length) return "";
   const cur = S.view.name === "article" ? S.view.key : null;
-  const tip = (cs, ms) => [cs.length ? `「${esc(cs[0].byTitle)}」${cs.length > 1 ? " 등" : ""} 문서와 맞지 않는 서술 ${cs.length}곳` : "", ms.length ? `편집자 메모의 다듬을 곳 ${ms.length}곳` : ""].filter(Boolean).join(" · ");
+  const tip = (cs, ms) => [cs.length ? `「${esc(cs[0].byTitle)}」${cs.length > 1 ? " 등" : ""} 문서와 맞지 않는 서술 ${cs.length}곳` : "", ms.length ? `편집자 메모 ${ms.length}곳${ms.some(i => i.severity !== "high") ? ` (참고 ${ms.filter(i => i.severity !== "high").length})` : ""}` : ""].filter(Boolean).join(" · ");
   return `<section class="genr fixreq"><h4>수정 요청 · ${ks.length}</h4><ul>${ks.slice(0, 8).map(k => { const cs = fixReqs(w, S.pages[k]), ms = memoReqs(S.pages[k], k); return `<li><button type="button" class="gq-t${k === cur ? " cur" : ""}" data-k="${k}" title="${tip(cs, ms)}">${esc(w.entities[k].title)} <span class="src">${cs.length + ms.length}곳</span></button></li>`; }).join("")}${ks.length > 8 ? `<li class="src">외 ${ks.length - 8}개</li>` : ""}</ul></section>`;
 }
 /* 최근 생성: 작성(다시 쓰기 포함) 시각이 최근인 문서 */
