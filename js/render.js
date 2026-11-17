@@ -137,7 +137,7 @@ function thinkOptions(model, value) {
   if(isOpenAITextModel(model)){
     const supported=openAIThinkingLevels(model),levels=["",...supported];
     if(supported.includes("low")&&!supported.includes("minimal"))levels.splice(levels.indexOf("low"),0,"minimal");
-    if(value!==undefined&&!levels.includes(value))levels.push(value);
+    if(value!==undefined&&value!=="inherit"&&!levels.includes(value))levels.push(value);   // "공통 배정 따름"(inherit)은 작업별 목록이 앞에 따로 붙인다
     const labels={"":"모델 기본값",none:"사고 끔",minimal:supported.includes("minimal")?"최소":"최소 (low)",low:"낮음",medium:"보통",high:"높음",xhigh:"매우 높음",max:"최대"};
     return levels.map(id=>`<option value="${esc(id)}" ${value===id?"selected":""}>${esc(labels[id]||id)}${id&&!supported.includes(id)&&!(id==="minimal"&&supported.includes("low"))?" (지원하지 않음)":""}</option>`).join("");
   }

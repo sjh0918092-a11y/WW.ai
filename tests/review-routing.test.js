@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,fixBatchPrompt});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,fixBatchPrompt,taskThinkOptions});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -186,6 +186,12 @@ test('설정 검사: 같은 이름이 날짜·나이로 맞지 않으면 단정�
   assert.match(pr, /같은 대상인지 먼저 확인한다/); assert.match(pr, /severity low로 남긴다/); assert.match(pr, /'같은 대상인지 확인 필요:'로 시작해/);
   assert.match(pr, /이 문서가 스스로 이 대상에게 불가능한 나이나 시점의 일을 붙였으면 그것은 이 문서의 오류이므로 high/);
   assert.match(pr, /'같은 대상인지 먼저 확인한다'에 걸리는 경우는 그 기준을 따른다/);
+});
+
+test('작업별 생각 수준: OpenAI 모델에서 공통 배정 따름이 "inherit (지원하지 않음)"으로 한 번 더 나오지 않는다', () => {
+  const html = c.taskThinkOptions('gpt-6-luna', 'inherit');
+  assert.equal((html.match(/value="inherit"/g) || []).length, 1);
+  assert.doesNotMatch(html, /inherit \(지원하지 않음\)/); assert.match(html, /value="inherit" selected>공통 배정 따름/);
 });
 
 let failed = 0;
