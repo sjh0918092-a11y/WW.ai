@@ -138,6 +138,17 @@ test('사건 장부: 상세 서술을 맡은 참가자 문서는 먼저 쓴 개�
   assert.match(c.eventBlock(w, K('레베카'), []), /장부는 어긋남을 막는 기준이지 채워 넣을 재료가 아니다/);
 });
 
+test('엔진: 짧게 쓰기가 전제로 올라가고, 사람의 끝은 없으며, 절정의 무대와 인물 관계는 이 항목의 것으로 한정한다', () => {
+  const w = world([page('레이첼', '인물', '레이첼이다.', 1)]);
+  w.entities[K('레이첼')].type = '인물';
+  const pr = c.pagePrompt(w, K('레이첼'));
+  const engine = pr.slice(pr.indexOf('## 이 문서의 엔진'), pr.indexOf('## 이 문서의 엔진') + 3000);
+  assert.match(engine, /세 가지를 먼저 정하고/); assert.match(engine, /전제: 이 문서가 크게 쓰는 것은 이 항목 자신의 일뿐이다/);
+  assert.match(engine, /참고 문구는 세부를 대신하는 것이다/); assert.match(engine, /무대는 이 항목의 눈에 보인 것/);
+  assert.doesNotMatch(pr, /사람의 끝/); assert.doesNotMatch(engine, /4\. /);
+  assert.match(pr, /상대 인물의 직위, 그 인물이 내린 결정, 그 인물의 이후 경력은 그 인물의 문서에 남긴다/);
+});
+
 let failed = 0;
 for (const [n, f] of tests) { try { f(); console.log('통과', n); } catch (e) { failed++; console.log('실패', n, '\n', e.message); } }
 if (failed) process.exit(1);
