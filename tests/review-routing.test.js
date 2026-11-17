@@ -433,6 +433,13 @@ test('상위 사건: 하위 사건 문서는 자기를 품은 사건을 참고�
   assert.deepEqual([...c.parentEventKeys(w, K('사막 전쟁'))], []);
 });
 
+test("'최초' 주장: 작성·설정 검사·세계 전체 점검이 '첫'도 다루고, 설정 검사는 연표의 더 이른 사례와 맞춰 본다", () => {
+  const w = world([page('전투', '사건', '첫 대규모 지상 격투전 사례로 기록되었다.', 1)]); w.entities[K('전투')].type = '사건';
+  assert.match(c.pagePrompt(w, K('전투')), /'최초', '처음', '첫', '유일'/);
+  const cp = c.checkPrompt(w, K('전투'), '');
+  assert.match(cp, /'최초', '처음', '첫', '유일' 주장: 연표와 연결된 문서 원문에 더 이른 같은 종류의 사례가 있으면 high/);
+});
+
 let failed = 0;
 (async () => { for (const [n, f] of tests) { try { await f(); console.log('통과', n); } catch (e) { failed++; console.log('실패', n, '\n', e.message); } }
 if (failed) process.exit(1); })();
