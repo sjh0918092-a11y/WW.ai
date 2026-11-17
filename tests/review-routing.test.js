@@ -322,7 +322,7 @@ test('자동 수정 지침: 지운 문단에 기대는 앞뒤 문장도 고치�
 test('일반 서술: 작성은 원문 사례와 맞을 때만 묶어 쓰고, 리뷰는 양쪽 방향으로 개별 사례와 대조한다', () => {
   const w = world([page('카일', '인물', '카일은 병사다.', 1)]);
   const pp = c.pagePrompt(w, K('카일'));
-  assert.match(pp, /여러 항목을 묶는 일반 서술/); assert.match(pp, /원문에 없는 부분은 이 문서가 정한다/); assert.match(pp, /독자가 자연스럽게 기대할 상태를 기본으로/); assert.doesNotMatch(pp, /정원을 채운 상태/); assert.match(pp, /이 항목에만 해당하는 구체적인 사실/); assert.match(pp, /우두머리\(이름\)/); assert.match(pp, /모자라는 자리를 새 인물로 채워 이름을/); assert.match(pp, /아는 인물 수에 맞춰 규모를 줄이지 않는다/); assert.match(pp, /모자라는 자리를 새 인물로 채워/);
+  assert.match(pp, /여러 항목을 묶는 일반 서술/); assert.match(pp, /원문에 없는 부분은 이 문서가 정한다/); assert.match(pp, /독자가 자연스럽게 기대할 상태를 기본으로/); assert.doesNotMatch(pp, /정원을 채운 상태/); assert.match(pp, /이 항목에만 해당하는 구체적인 사실/); assert.match(pp, /우두머리\(이름\)/); assert.match(pp, /모자라는 자리를 새 인물로 채워 이름을/); assert.match(pp, /아는 인물 수에 맞춰 규모를 줄이지 않는다/); assert.match(pp, /한 인물의 본명·호출부호·코드명·이명은 한 자리/); assert.match(pp, /모자라는 자리를 새 인물로 채워/);
   const cp = c.checkPrompt(w, K('카일'), '');
   assert.match(cp, /일반 서술과 개별 사례/); assert.match(cp, /연결된 문서의 일반 서술이/); assert.match(cp, /함께 성립할 수 없으면 지적한다/);
 });
@@ -363,7 +363,7 @@ test('연표 편집: 고친 항목은 사용자 수정이 되고, 사건을 비�
 test('문서 내부 검사: 원안과 무대를 넘기고, 어긋난 두 서술 중 원안·무대와 맞지 않는 쪽을 고칠 쪽으로 잡게 한다', () => {
   const w = world([page('사령부', '조직', '사령부는 현역 1기를 운용한다.', 1)], { seed: '각국은 상시 3기까지 배치한다.', stage: { units: [{ name: '사령부', kind: '조직', desc: '현역 3기를 총괄한다' }], now: '', parties: [] } });
   const rp = c.readPrompt(w, K('사령부'));
-  assert.match(rp, /세계관 원안과 무대/); assert.match(rp, /각국은 상시 3기까지 배치한다/); assert.match(rp, /현역 3기를 총괄한다/); assert.match(rp, /맞지 않는 쪽을 claim으로 잡는다/);
+  assert.match(rp, /세계관 원안과 무대/); assert.match(rp, /각국은 상시 3기까지 배치한다/); assert.match(rp, /현역 3기를 총괄한다/); assert.match(rp, /맞지 않는 쪽을 claim으로 잡는다/); assert.match(rp, /같은 인물을 본명과 호출부호·코드명·이명으로 따로 세어/);
 });
 
 let failed = 0;
