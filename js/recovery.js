@@ -69,12 +69,13 @@ const AIRecovery = {
     try {
       const list = await AIJobs.req(ctx, ""); if (!AIJobs.current(ctx)) return;
       const local = new Map(this.local().map(r => [r.id, r]));
-      for (const j of list.jobs || []) {
+      const sync = () => { for (const j of list.jobs || []) {
         const old = local.get(j.id), r = { ...old, ...j, meta: old?.meta || j.meta || {}, owner: ctx.owner, base: ctx.base };
         if (!old && !j.meta) continue; // 이전 버전에서 대상 정보 없이 만든 기록은 자동으로 가져오지 않는다.
         AIJobs.save(r); local.set(r.id, r);
         if(typeof DocumentCost!=="undefined")DocumentCost.recovered(r);
-      }
+      } };
+      if (typeof DocumentCost !== "undefined") DocumentCost.batch(sync); else sync();   // 비용 기록 저장·화면 갱신은 작업마다가 아니라 끝에 한 번만
       const next = [...local.values()].sort((a, b) => b.createdAt - a.createdAt);
       changed = JSON.stringify(next) !== JSON.stringify(this.items) || !!this.networkError;
       this.items = next; this.networkError = "";

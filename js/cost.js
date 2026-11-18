@@ -74,6 +74,13 @@ const DocumentCost = {
     if(this.creation?.storageKey && keys.has(this.creation.storageKey) && !this.records.has(this.creation.storageKey))this.creation=null;
     this.render();
   },
+  /* 여러 기록을 한 번에 갱신한다: 그동안의 저장·화면 갱신을 모았다가 끝에 한 번씩만 한다(작업 목록 동기화처럼 기록이 많을 때) */
+  batch(fn) {
+    if(this.dirty)return fn();
+    this.dirty=new Set();this.dirtyRender=false;
+    try{return fn();}
+    finally{const d=this.dirty,r=this.dirtyRender;this.dirty=null;for(const x of d)this.save(x);if(r)this.render();}
+  },
   mirror(r,row) {
     const ledger=this.ledger(r.wid,r.storageKey), id=r.id+":"+row.id;
     if(ledger.resetAt && (!r.at || r.at<=ledger.resetAt))return;
@@ -126,6 +133,7 @@ const DocumentCost = {
   },
   save(r) {
     if (!r || this.records.get(r.storageKey) !== r) return;
+    if (this.dirty) { this.dirty.add(r); return; }
     try {
       localStorage.setItem(r.storageKey,JSON.stringify(r));
       const keys = [];
@@ -155,8 +163,7 @@ const DocumentCost = {
   server(r, job) {
     if (!r) return;
     if (Array.isArray(job.steps)) r.rows=job.steps.map((s,i)=>({id:String(i),kind:s.kind,model:s.model||job.model,title:r.title||"",status:s.status,usage:this.counts(s.usage)}));
-    for(const row of r.rows)this.mirror(r,row);
-    this.save(r);this.render();
+    this.batch(()=>{for(const row of r.rows)this.mirror(r,row);this.save(r);this.render();});
   },
   restore(wid,key,receipt,report) {
     const ledger=this.ledger(wid);
@@ -164,14 +171,12 @@ const DocumentCost = {
     const previous=this.get(wid,key);
     if(previous && previous.at>(receipt.createdAt||0))return;
     const r={id:receipt.id,storageKey:this.key(wid,key),wid,key,at:receipt.createdAt||Date.now(),finished:true,rows:(report.steps||[]).map((s,i)=>({...s,id:String(i),usage:this.counts(s.usage)}))};
-    for(const row of r.rows)this.mirror(r,row);
-    this.records.set(r.storageKey,r);this.save(r);this.render();
+    this.batch(()=>{for(const row of r.rows)this.mirror(r,row);this.records.set(r.storageKey,r);this.save(r);this.render();});
   },
   finish(r) {
     if (!r) return; this.active.delete(r.id); r.finished=true;
     for (const row of r.rows) if (row.status === "running") row.status="unknown";
-    for(const row of r.rows)this.mirror(r,row);
-    this.save(r);this.render();
+    this.batch(()=>{for(const row of r.rows)this.mirror(r,row);this.save(r);this.render();});
   },
   money(n) { return n === null ? "산정 대기" : `₩${(n*this.exchangeRate).toLocaleString("ko-KR",{minimumFractionDigits:2,maximumFractionDigits:2})} ($${n.toFixed(n<.001?6:4)})`; },
   content(r) {
@@ -205,6 +210,7 @@ const DocumentCost = {
   },
   render() {
     if(typeof S==="undefined")return;
+    if(this.dirty){this.dirtyRender=true;return;}
     this.mount(document.querySelector("#main .sheet"),S.world && S.view.name!=="home"?this.ledger(S.world.id):null,"worldUsagePanel");
     if(S.view.name==="home"){
       const r=this.creation, mine=r&&r.storageKey===this.key(r.wid,r.key);
