@@ -133,7 +133,7 @@ try {
  e=await reset({rewrite:true});behavior='fix';fixClaim='선장의 항해지가 푸른 바다로 설정되어 있다';
  await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));
  assert.equal(r.result.pipeline.fixed,1);assert.equal(r.result.pipeline.remaining,0);assert.deepEqual(storedPage(B).check.issues,[]);
- assert(storedPage(B).sections[0].body.includes('붉은'));assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page','check','read','fix','factSync']);
+ assert(storedPage(B).sections[0].body.includes('붉은'));assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page','check','read','fix','factSync']);{const st=r.result.pipeline.steps;assert(st.find(x=>x.kind==='fix').text.includes('"edits"'),'자동 수정 응답이 결과에 남는다');assert(st.find(x=>x.kind==='check').text.includes('"issues"'));assert(!st.find(x=>x.kind==='page').text,'문서 본문 응답은 따로 남기지 않는다');}
  fixClaim='푸른 바다를 항해한다.';
  pass('검사 메모가 원문을 요약했어도 실제로 적용한 자동 수정에 해당하는 경고는 닫고 재검사를 호출하지 않는다');
 

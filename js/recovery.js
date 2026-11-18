@@ -280,7 +280,7 @@ function jobDiagnosisHtml(r, report, open) {
   const total = Array.isArray(report?.steps) || Array.isArray(r?.steps) ? rows.reduce((n, x) => n + (x.timing?.end || 0), 0) : 0;
   return `<details class="job-diag memo"${open || bad ? " open" : ""}><summary>실행 진단${bad ? ` · ${esc(stepLabel(bad.kind))}: ${esc(bad.d.text.split(" — ")[0])}` : " · 이상 없음"}</summary><div class="cost-body">
     <p class="note">${slow ? `가장 오래 걸린 호출: ${esc(stepLabel(slow.kind))} ${s(slow.timing.end)}` : "시간 기록이 없습니다."}${total ? ` · AI 호출 합계 ${s(total)}(검사는 동시에 실행)` : ""}. 서버 감시 기준: 첫 응답 240초, 도중 멈춤 90초, 전체 10분.</p>
-    <ul>${rows.map(x => `<li class="diag-${x.d.level}"><span><b>${esc(stepLabel(x.kind))}</b> · ${esc(x.model || "")} · ${esc(STEP_STATUS[x.status] || x.status || "")}<br><small>${esc(x.d.text)}</small>${cacheDiagHtml(x)}</span><span>${x.timing ? `첫 응답 ${s(x.timing.first)} · 총 ${s(x.timing.end)}${x.timing.last !== null && x.timing.end !== null ? ` · 마지막 수신 후 ${s(x.timing.end - x.timing.last)}` : ""} · ${kb(x.timing.bytes)}` : "-"}</span></li>`).join("")}</ul>
+    <ul>${rows.map(x => `<li class="diag-${x.d.level}"><span><b>${esc(stepLabel(x.kind))}</b> · ${esc(x.model || "")} · ${esc(STEP_STATUS[x.status] || x.status || "")}<br><small>${esc(x.d.text)}</small>${cacheDiagHtml(x)}${x.text ? `<details class="step-text"><summary>응답 보기</summary><pre class="logpre">${esc(x.text)}</pre></details>` : ""}</span><span>${x.timing ? `첫 응답 ${s(x.timing.first)} · 총 ${s(x.timing.end)}${x.timing.last !== null && x.timing.end !== null ? ` · 마지막 수신 후 ${s(x.timing.end - x.timing.last)}` : ""} · ${kb(x.timing.bytes)}` : "-"}</span></li>`).join("")}</ul>
   </div></details>`;
 }
 
