@@ -328,11 +328,10 @@ function recheckAfterFix(k) {
   noteEvent(p, "고치기 뒤 재검사");
   checkPage(k);
 }
-/* 정리 호출이 붙인 분류를 문서에, linkedCats를 문서가 없는 링크 항목에 넣는다. 국가 문서는 자기 제목, 인물은 소속·유형 하나씩과 사건만(기타 없음) */
+/* 정리 호출이 붙인 분류를 문서에, linkedCats를 문서가 없는 링크 항목에 넣는다. 국가 문서는 자기 제목, 인물은 소속 하나 */
 function applySyncCats(w, k, p, r) {
   const type = p.type || w.entities[k]?.type || "";
-  const raw = r?.categories && typeof r.categories === "object" && !Array.isArray(r.categories) ? { ...r.categories } : {};
-  if (type === "인물") { delete raw.기타; if (Array.isArray(raw.유형)) raw.유형 = raw.유형.slice(0, 1); }
+  const raw = r?.categories && typeof r.categories === "object" && !Array.isArray(r.categories) ? r.categories : {};
   const cats = parseCats(widenAffil(w, raw, type, p.title));
   p.categories = cats.map(c => c.name);
   if (cats.length) p.catAxes = cats; else delete p.catAxes;

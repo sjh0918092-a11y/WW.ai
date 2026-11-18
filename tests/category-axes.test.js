@@ -120,11 +120,11 @@ const ax = (o) => Object.entries(o).flatMap(([axis, xs]) => xs.map(name => ({ na
     const out = { title: '사랑', type: '인물', summary: '베타국의 기사', notices: [], infobox: [{ label: '출생', value: '1952년 5월 2일' }],
       sections: [{ heading: '개요', level: 1, body: '사랑은 [[아름]]과 함께 싸웠다.' }], timeline: [], newEntities: [{ title: '아름', type: '인물', summary: '베타국의 기사' }],
       navboxes: [{ title: '모델이 만든 틀', rows: [{ label: '', items: ['[[아름]]'] }] }] };
-    const sync1 = { facts: [], relations: [], categories: { 소속: ['베타국 기사단'], 유형: ['기사', '전사'], 사건: [], 기타: ['1952년 출생'] }, linkedCats: [{ title: '아름', 소속: ['베타국'], 유형: ['기사'] }] };
+    const sync1 = { facts: [], relations: [], categories: { 소속: ['베타국 기사단'], 유형: ['기사'], 사건: [] }, linkedCats: [{ title: '아름', 소속: ['베타국'], 유형: ['기사'] }] };
     let cs = await write('사랑', out, sync1);
     assert.deepStrictEqual(cs.map(c => c.kind), ['page', 'sync']);
     const saved = await page.evaluate(([k, h]) => ({ cats: S.pages[k].categories, axes: S.pages[k].catAxes, stale: S.pages[k].stale, hint: S.world.entities[h]?.cats, own: Object.values(S.world.navboxes).filter(nb => nb.src === k).length }), [K('사랑'), K('아름')]);
-    assert.deepStrictEqual(saved.cats, ['베타국', '기사'], '인물은 넓은 소속 하나, 유형 하나만 남고 기타는 붙지 않는다');
+    assert.deepStrictEqual(saved.cats, ['베타국', '기사'], '인물의 소속은 넓은 것 하나만 남는다');
     assert.deepStrictEqual(saved.axes, ax({ 소속: ['베타국'], 유형: ['기사'] }));
     assert.deepStrictEqual(saved.hint, ax({ 소속: ['베타국'], 유형: ['기사'] }));
     assert.equal(saved.stale, undefined);
