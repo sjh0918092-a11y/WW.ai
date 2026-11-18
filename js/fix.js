@@ -370,6 +370,7 @@ async function bgSync(k, opts = {}) {
     if (Array.isArray(r?.affiliations)) ingestAffil(w, k, r.affiliations);
     if (r?.existence && typeof r.existence === "object") ingestSpan(w, k, r.existence);
     if (opts.cats) applySyncCats(w, k, p, r);
+    if (wantLooks(temp)) { const l = cleanLooks(r?.looks); if (l) p.looks = l; }
     for (const n of (Array.isArray(r?.newEntities) ? r.newEntities : [])) {
       if (!n || !n.title) continue; const o = w.entities[kOf(w, n.title)];
       if (o && !o.page && !o.summary && n.summary) { o.summary = stripMarks(n.summary).slice(0, 200); if (!o.type && TYPES.includes(n.type)) o.type = n.type; }

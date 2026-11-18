@@ -102,7 +102,8 @@ function factSyncPrompt(w, temp, linkKeys, opts = {}) {
   const bare = cats ? linkKeys.filter(k => w.entities[k] && !w.entities[k].page && k !== temp.key).map(k => w.entities[k].title) : [];
   const inputs = writingOptions();
   const doc = docText(temp, w, temp.navboxes), gl = glossaryBlock(w, doc);
-  const what = ["확정 사실", ledger ? "연표" : "", "인물 관계", "용어", "소속 이력", "존속 기간", ledger ? "사건 장부" : "", cats ? "분류" : ""].filter(Boolean).join(", ");
+  const looks = wantLooks(temp);
+  const what = ["확정 사실", ledger ? "연표" : "", "인물 관계", "용어", "소속 이력", "존속 기간", ledger ? "사건 장부" : "", cats ? "분류" : "", looks ? "외모" : ""].filter(Boolean).join(", ");
   return `## 문서의 확정 사실 정리
 가상 세계관 위키 「${w.title}」(작중 기준 ${w.era})의 문서에서 다음을 추출한다: ${what}. 문서에 적힌 내용만 쓰고 새 내용을 지어내거나 고치지 않는다. 모순을 검사하거나 교정안을 만들지 않는다.
 ${doc}
@@ -110,14 +111,33 @@ ${doc}
 링크한 항목: ${linked}
 
 ${gl ? gl + "\n\n" : ""}${relRefBlock(w, [temp.key, ...linkKeys], temp.key, temp.key, 24)}${ledger ? eventBlock(w, temp.key, linkKeys) : ""}JSON 객체 하나만 출력:
-{"facts":[{"about":"항목 제목","fact":"사실 한 문장"}],${ledger ? '"timeline":[{"year":"연도","month":3,"day":14,"about":"사건의 주체 항목 제목","event":"사건"}],' : ""}"newEntities":[{"title":"항목 제목","type":"${TYPES.join("|")} 중 하나","summary":"본문에 근거한 한 문장 정의"}],${REL_JSON},${ledger ? EVENTS_JSON + "," : ""}${TERMS_JSON},${AFFIL_JSON},${SPAN_JSON}${cats ? ',"categories":{"소속":["..."],"유형":["..."],"사건":[],"기타":[]}' + (bare.length ? ',"linkedCats":[{"title":"문서가 없는 링크 항목 제목","소속":["..."],"유형":["..."]}]' : "") : ""}}
+{"facts":[{"about":"항목 제목","fact":"사실 한 문장"}],${ledger ? '"timeline":[{"year":"연도","month":3,"day":14,"about":"사건의 주체 항목 제목","event":"사건"}],' : ""}"newEntities":[{"title":"항목 제목","type":"${TYPES.join("|")} 중 하나","summary":"본문에 근거한 한 문장 정의"}],${REL_JSON},${ledger ? EVENTS_JSON + "," : ""}${TERMS_JSON},${AFFIL_JSON},${SPAN_JSON}${cats ? ',"categories":{"소속":["..."],"유형":["..."],"사건":[],"기타":[]}' + (bare.length ? ',"linkedCats":[{"title":"문서가 없는 링크 항목 제목","소속":["..."],"유형":["..."]}]' : "") : ""}${looks ? "," + looksJson() : ""}}
 ${ledger ? eventsSpec(w) + "\n" : ""}${ENTITY_DEFINITION_RULE}
 facts에는 이 문서가 링크한 항목 중 중요한 것(인물, 조직, 사건, 장소 위주) 6~10개에 대해 1개씩 넣되, 이 문서의 절정이나 큰 사건에 등장한 항목은 빠짐없이 포함해 그 사건에서 무엇을 했고 어떻게 되었는지(쓴 무기나 수단, 생사, 결과)를 사실로 남긴다. 그리고 「${temp.title}」 자체에 대한 핵심 사실 3~6개를 넣는다. about, a, b는 문서 제목이나 링크한 항목 제목 그대로 쓴다. ${ledger ? `timeline에는 연도가 적힌 사건 중 세계에 영향을 준 것만 0~2개 넣고, 현재 상태·근황·거주는 넣지 않는다. about에는 사건의 주체가 되는 항목 제목을 글자 그대로 쓴다. ${TL_DATE_SPEC}${tlDateNote(w)} ` : ""}newEntities에는 아직 정의가 없는 링크 항목만 넣는다.
 relations에는 이 문서에 나온 인물 사이의 주요 관계를 6개까지 넣는다. 관계를 채우려고 새 인물이나 연인을 지어내지 않는다. 인물이 아닌 항목만 다룬 문서라면 빈 배열. ${REL_SPEC}
 ${TERMS_SPEC} ${AFFIL_SPEC.replace("{T}", temp.title)} ${SPAN_SPEC.replace("{T}", temp.title)}${cats ? `
 ${catGuide(w, temp.key, inputs.categories ? inputs.categoriesCount : 0, temp.type || "")}${bare.length ? `
 linkedCats에는 아래 문서가 없는 링크 항목 가운데 이 문서에서 소속이나 유형을 알 수 있는 것만 넣는다. 각 항목의 문서 유형에 맞는 위 기준(기존 분류 이름 우선)으로 소속과 유형을 0~1개씩 쓰고, 모르면 빈 배열로 둔다. title은 글자 그대로 쓴다.
-문서가 없는 링크 항목: ${bare.slice(0, 30).join(" / ")}` : ""}` : ""}`;
+문서가 없는 링크 항목: ${bare.slice(0, 30).join(" / ")}` : ""}` : ""}${looks ? "\n" + looksSpec(w, temp) : ""}`;
+}
+/* 인물 문서의 외모를 이 호출에서 함께 정한다. 사용자가 직접 고친 외모는 다시 정하지 않는다 */
+const wantLooks = temp => temp.type === "인물" && !S.pages[temp.key]?.looksEditedAt;
+const looksJson = () => `"looks":{${LOOKS_FIELDS.map(([id, label]) => `"${id}":"${label}"`).join(",")}}`;
+function looksSpec(w, temp) {
+  const had = looksOf(S.pages[temp.key]), spread = looksSpread(w, temp.key);
+  return `looks는 「${temp.title}」의 작중 기준 시점 외모다. 이 항목만은 추출 원칙의 예외로, 본문에 없는 부분을 새로 정한다.
+- 본문·인포박스에 외모 묘사가 있으면 그 내용을 그대로 옮기고, 빠진 항목만 정한다.${had ? `
+- 아래 기존 외모를 유지한다. 본문과 정면으로 어긋나는 항목만 본문에 맞춘다.
+${looksLines(had)}` : ""}
+- 이름, 국적, 출신지, 소속, 가족, 시대와 개연성 있게 정한다. 가족이 이미 있으면 닮은 점을 둔다.
+- 체형, 키, 나이대, 머리 모양은 직업이나 역할의 전형(군인이면 근육질 등)을 따르지 않고 이 인물만의 모습으로 정한다. 같은 조건에서 가장 먼저 떠오르는 전형적인 외모가 아닌 쪽을 고른다.
+- 혈통과 피부색도 이름과 출신지가 허용하는 범위에서 그 집단의 실제 다양성을 반영한다. 다양한 사회라면 다수 집단만 고르지 않는다.
+- 이 세계관의 장르와 화풍, 공통 이미지 지침이 기대하는 범위 안에서 정한다(예: 미형 위주의 작품에서 주요 인물을 미형 밖으로 그리지 않는다). 조연·단역은 범위를 더 넓게 써도 된다.
+- marks에는 이 인물을 한눈에 알아보게 하는 특징을 1~2개 쓴다. 결점이 아니라 개성이며, 장르에 어울려야 한다.
+- 각 값은 짧은 명사구로 쓴다(예: "짙은 갈색", "어깨 길이 곱슬머리", "170cm 전후, 마른 편"). 사람이 아닌 존재는 그 존재에 맞게 쓰고, 해당 없는 항목은 빈 문자열로 둔다.${spread ? `
+- 같은 외모가 여러 명이어도 되지만, 한쪽으로 지나치게 몰려 있다면 다른 쪽을 고려한다. 다른 인물과 거의 같은 조합은 피하고, 특징은 다른 인물과 겹치지 않게 한다.
+${spread}` : ""}${String(w.imageGuide || "").trim() ? `
+공통 이미지 지침: ${String(w.imageGuide).slice(0, 600)}` : ""}`;
 }
 /* 기존 문서의 기록은 문단별 출처가 없으므로, 이전 문단에서 사라진 기록만 번호로 지정해 교체한다. */
 function sectionAnalysisContext(w, p, ed) {

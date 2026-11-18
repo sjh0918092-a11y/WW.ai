@@ -104,7 +104,30 @@ const IMAGE_MODELS = [
   { id: "gemini-3-pro-image", label: "Nano Banana Pro", price: .134 }
 ];
 const IMAGE_STYLES = ["세계관 지침 따름", "실사", "애니메이션", "웹툰", "유화", "수채화", "픽셀아트", "3D 렌더"];
-const imageDocStamp = p => JSON.stringify([p.title, p.type, p.summary, p.infobox, p.sections]);
+const imageDocStamp = p => JSON.stringify([p.title, p.type, p.summary, p.infobox, p.sections, p.looks || null]);
+/* 인물 외모: 확정 사실 정리가 정하고 문서 이미지·단편·삽화가 같은 값을 따른다. 평소에는 숨기고 이미지 생성 패널에서 고친다 */
+const LOOKS_FIELDS = [["origin", "혈통"], ["skin", "피부색"], ["hairColor", "머리 색"], ["hair", "머리 모양"], ["eyes", "눈 색"], ["build", "체형"], ["height", "키"], ["age", "나이대"], ["marks", "눈에 띄는 특징"]];
+const LOOKS_COUNTED = ["origin", "hairColor", "hair", "eyes", "build", "age"];
+function cleanLooks(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const out = {};
+  for (const [id] of LOOKS_FIELDS) { const t = typeof v[id] === "string" ? norm(stripMarks(v[id])).slice(0, id === "marks" ? 120 : 60) : ""; if (t) out[id] = t; }
+  return Object.keys(out).length ? out : null;
+}
+const looksOf = p => p?.type === "인물" ? cleanLooks(p.looks) : null;
+const looksLines = l => LOOKS_FIELDS.filter(([id]) => l?.[id]).map(([id, label]) => `- ${label}: ${l[id]}`).join("\n");
+/* 이 세계관 다른 인물의 외모 분포. 같은 값이 많아도 되지만 한쪽으로 몰렸는지 모델이 알게 한다 */
+function looksSpread(w, key) {
+  const all = Object.entries(S.pages || {}).filter(([k, p]) => k !== key && looksOf(p)).map(([, p]) => looksOf(p));
+  if (!all.length) return "";
+  const rows = LOOKS_COUNTED.map(id => {
+    const n = new Map(); for (const l of all) if (l[id]) n.set(l[id], (n.get(l[id]) || 0) + 1);
+    const top = [...n].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t, c]) => `${t} ${c}`).join(", ");
+    return top ? `- ${LOOKS_FIELDS.find(f => f[0] === id)[1]}: ${top}` : "";
+  }).filter(Boolean);
+  const marks = all.map(l => l.marks).filter(Boolean).slice(-20);
+  return `이 세계관 다른 인물 ${all.length}명의 외모 분포(값 뒤의 수는 인원):\n${rows.join("\n")}${marks.length ? `\n- 이미 쓴 특징: ${marks.join(" / ")}` : ""}`;
+}
 const openAIImage = model => /^gpt-image-/.test(model || "");
 const imageReady = model => openAIImage(model) ? serverImageJob(model) : gReady();
 const imageSetupHint = model => openAIImage(model) ? "서버 접속 암호를 저장하고 로그인해 주세요. 이미지 생성에는 서버 AI 실행이 필요합니다." : "AI 연결 설정에서 이미지 생성이 가능한 Gemini API 연결을 저장해 주세요.";
@@ -120,7 +143,7 @@ ${String(w.imageGuide || "").slice(0, 2000) || "세계관의 시대와 분위기
 ## 이번 이미지
 희망 화풍: ${o.style}. 공통 이미지 지침과 화풍 선택이 충돌하면 공통 이미지 지침을 따른다.
 추가 요청: ${o.direction || "없음"}
-${o.useRef && portraitSrc(p) ? "첨부 이미지는 같은 대상의 외모·형태 참고다. 정체성과 주요 특징을 유지하면서 공통 이미지 지침과 이번 요청을 반영한다." : ""}
+${looksOf(p) ? `## 고정 외모 (반드시 지킨다. 문서 본문보다 우선한다)\n${looksLines(looksOf(p))}\n` : ""}${o.useRef && portraitSrc(p) ? "첨부 이미지는 같은 대상의 외모·형태 참고다. 정체성과 주요 특징을 유지하면서 공통 이미지 지침과 이번 요청을 반영한다." : ""}
 ## 문서 내용
 ${docText(p, w).slice(0, 10000)}`;
 }
@@ -211,6 +234,27 @@ async function applyDocImage() {
     S.imageGen = null; renderMain(); toast("생성한 이미지를 적용했습니다.");
   } catch (e) { v.error = "이미지를 적용하지 못했습니다. " + (e.message || errMsg(e)); renderMain(); }
 }
+function looksBoxHtml(v, p, disabled) {
+  const cur = v.looksDraft || looksOf(p) || {}, dirty = !!v.looksDraft;
+  return `<details class="memo looks-box" data-looks-box ${v.looksOpen ? "open" : ""}><summary>외모 설정${looksOf(p) ? "" : " (아직 정해지지 않음)"}${p.looksEditedAt ? " · 직접 수정함" : ""}</summary>
+    <p class="note">문서 이미지·단편·삽화가 이 외모를 따릅니다. 비어 있으면 문서 내용을 참고합니다.${p.looksEditedAt ? "" : " 직접 저장하면 이후 문서 정리에서 AI가 바꾸지 않습니다."}</p>
+    <div class="two">${LOOKS_FIELDS.map(([id, label]) => `<div><label class="lb" for="looks-${id}">${label}</label><input id="looks-${id}" data-looks="${id}" maxlength="${id === "marks" ? 120 : 60}" value="${esc(cur[id] || "")}" ${disabled}></div>`).join("")}</div>
+    <div class="row"><button type="button" class="btn" data-act="looks-save" ${disabled || !dirty ? "disabled" : ""}>외모 저장</button>${dirty ? `<button type="button" class="btn" data-act="looks-reset" ${disabled}>되돌리기</button>` : ""}</div></details>`;
+}
+async function saveLooks() {
+  const v = S.imageGen, w = S.world, p = v && S.pages[v.key];
+  if (!v || v.busy || !v.looksDraft || !w || v.wid !== w.id || !p) return;
+  if (portraitBusy(v.key) || S.portraitJob) { v.error = "문서 작업이 끝난 뒤 외모를 저장해 주세요."; renderMain(); return; }
+  try {
+    const latest = await Store.getPage(w.id, v.key); if (!latest) throw new Error("문서가 삭제되었습니다.");
+    const l = cleanLooks(v.looksDraft), next = { ...latest, looksEditedAt: Date.now() };
+    if (l) next.looks = l; else { delete next.looks; delete next.looksEditedAt; }   // 모두 비우면 다시 AI가 정하게 둔다
+    await Store.savePage(w.id, next);
+    if (S.world === w && S.pages[v.key] === p) S.pages[v.key] = next;
+    v.looksDraft = null; v.error = ""; toast("외모를 저장했습니다.");
+  } catch (e) { v.error = "외모를 저장하지 못했습니다. " + (e.message || errMsg(e)); }
+  renderMain();
+}
 function imageGenHtml(w, k) {
   const v = S.imageGen, p = S.pages[k]; if (!v || v.wid !== w.id || v.key !== k || !p) return "";
   const o = v.opts, disabled = v.busy ? "disabled" : "", price = IMAGE_MODELS.find(m => m.id === o.model)?.price;
@@ -218,6 +262,7 @@ function imageGenHtml(w, k) {
   return `<section class="image-gen" aria-label="문서 이미지 생성"><h3>AI 이미지 생성</h3>
     ${!imageReady(o.model) ? `<p class="note">${esc(imageSetupHint(o.model))} <button type="button" class="btn" data-act="gset">AI 연결 설정</button></p>` : ""}
     <details class="memo"><summary>세계관 공통 이미지 지침</summary><div class="guide">${esc(w.imageGuide || "지정된 이미지 지침이 없습니다.")}</div><button type="button" class="btn" data-act="image-guide" ${disabled}>이미지 지침 설정</button></details>
+    ${p.type === "인물" ? looksBoxHtml(v, p, disabled) : ""}
     <div class="two"><div><label class="lb" for="imageModel">이미지 모델</label><select id="imageModel" data-igf="model" ${disabled}>${models.map(m => `<option value="${esc(m.id)}" ${o.model === m.id ? "selected" : ""}>${esc(m.label)}</option>`).join("")}</select></div>
     <div><label class="lb" for="imageStyle">화풍</label><select id="imageStyle" data-igf="style" ${disabled}>${IMAGE_STYLES.map(s => `<option ${o.style === s ? "selected" : ""}>${s}</option>`).join("")}</select></div></div>
     <label class="lb" for="imageRatio">화면 비율</label><select id="imageRatio" data-igf="ratio" ${disabled}>${["1:1", "3:4", "4:3", "9:16", "16:9"].map(r => `<option ${o.ratio === r ? "selected" : ""}>${r}</option>`).join("")}</select>

@@ -3,6 +3,10 @@
 /* ---------- 문서에서 파생한 단편: 확정 설정과 별도로 보관 ---------- */
 const PROSE_LENGTHS = { short: "약 2,000~3,500자", medium: "약 5,000~8,000자", long: "약 10,000~15,000자" };
 const shortStoriesOf = p => (Array.isArray(p?.shortStories) ? p.shortStories : []).filter(x => x && typeof x.id === "string" && typeof x.title === "string" && typeof x.body === "string");
+/* 단편과 삽화가 따를 외모: 기준 문서와 관련 인물 중 외모가 정해진 사람 */
+function looksCast(w, key) {
+  return [key, ...related(w, key).filter(k => k !== key)].map(k => { const l = looksOf(S.pages[k]); return l ? `### ${S.pages[k].title}\n${looksLines(l)}` : ""; }).filter(Boolean).slice(0, 6).join("\n");
+}
 function prosePrompt(w, p, o) {
   const e = w.entities[p.key];
   return `## 문서 기반 단편 소설
@@ -12,7 +16,7 @@ ${canonBlock(w)}
 ${isStory(w) ? storyBlock(w, p.key, true) + "\n" + secretsBlock(w, "write") : ""}
 ## 기준 문서
 ${docForCheck(p)}
-## 이 대상에 대해 확정된 사실과 관계
+${looksCast(w, p.key) ? `## 확정된 외모 (외모를 묘사할 때 이와 어긋나지 않게 한다. 작중 시점이 다르면 나이에 따른 변화만 반영한다)\n${looksCast(w, p.key)}\n` : ""}## 이 대상에 대해 확정된 사실과 관계
 ${e ? promptFacts(w, p.key, e.facts.filter(live)).map(f => factLine(f)).join("\n") : ""}
 ${e ? promptMentions(w, p.key, e.mentions.filter(live)).map(m => `「${w.entities[m.from]?.title || "?"}」: ${m.text}`).join("\n") : ""}
 ${relationsOf(w, p.key).filter(live).map(r => relLine(w, r)).join("\n")}
@@ -78,7 +82,7 @@ ${w.title} · ${w.era}\n${w.seed || ""}\n${(w.rules || []).join("\n")}\n${w.user
 ${String(w.imageGuide || "").slice(0, 2000) || "세계관의 시대와 분위기를 따른다."}
 ## 기준 문서 — 신원·나이·신장·시대·외모·복장 설정
 ${docText(p, w).slice(0, 10000)}
-## 삽화를 그릴 단편 전체
+${looksCast(w, p.key) ? `## 확정된 외모 (등장하는 인물은 반드시 이 외모로 그린다. 단편의 시점에 따른 나이 변화만 반영한다)\n${looksCast(w, p.key)}\n` : ""}## 삽화를 그릴 단편 전체
 ${story.body}
 ## 이번 삽화 요청
 희망 화풍: ${o.style}. 화풍은 공통 이미지 지침을 우선한다.

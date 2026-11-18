@@ -284,6 +284,8 @@ document.addEventListener("click", ev => {
     case "image-apply": applyDocImage(); break;
     case "image-discard": if (S.imageGen && !S.imageGen.busy) { AIRecovery.handled(S.imageGen.jobId, true); S.imageGen.preview = ""; S.imageGen.error = ""; renderMain(); } break;
     case "image-close": S.imageGen?.ctl?.abort(); S.imageGen = null; renderMain(); break;
+    case "looks-save": saveLooks(); break;
+    case "looks-reset": if (S.imageGen && !S.imageGen.busy) { S.imageGen.looksDraft = null; renderMain(); } break;
     case "image-guide": S.view = { name: "canon" }; renderAll(); $("#wImageGuide")?.focus(); break;
     case "roll": rollDice(true); S.seed = diceSeed(S.dice); renderMain(); break;
     case "whatif-more": { const shown = new Set(S.whatIfs || []); const rest = shuffle(WHATIFS.filter(q => !shown.has(q))); S.whatIfs = (rest.length >= 8 ? rest : shuffle(WHATIFS)).slice(0, 8); renderMain(); break; }
@@ -302,10 +304,12 @@ document.addEventListener("click", ev => {
     })(); break;
   }
 });
+document.addEventListener("toggle", ev => { if (ev.target.matches?.("[data-looks-box]") && S.imageGen) S.imageGen.looksOpen = ev.target.open; }, true);
 document.addEventListener("input", ev => {
   if (ev.target.dataset?.proseImage && S.proseGen?.illustration && !S.proseGen.busy) { const f = ev.target.dataset.proseImage; if (["model", "style", "ratio", "direction"].includes(f)) S.proseGen.illustration.opts[f] = ev.target.value; }
   if (ev.target.dataset?.proseField && S.proseGen && !S.proseGen.busy) { const f = ev.target.dataset.proseField; if (["direction", "length"].includes(f)) S.proseGen.opts[f] = ev.target.value; }
   if (ev.target.dataset?.igf && S.imageGen && !S.imageGen.busy) { const f = ev.target.dataset.igf; S.imageGen.opts[f] = f === "useRef" ? ev.target.checked : ev.target.value; }
+  if (ev.target.dataset?.looks && S.imageGen && !S.imageGen.busy) { const v = S.imageGen, p = S.pages[v.key], first = !v.looksDraft; v.looksDraft = { ...(v.looksDraft || looksOf(p) || {}), [ev.target.dataset.looks]: ev.target.value }; v.looksOpen = true; if (first) { const b = document.querySelector('[data-act="looks-save"]'); if (b) b.disabled = false; } }
   if (ev.target.id === "seedTa") {
     S.seed = S.ownSeed = ev.target.value;
     if (S.seedTab !== "own") {   // 예시나 주사위 결과를 고쳐 쓰면 내 원안이 된다

@@ -406,3 +406,4 @@ details.ent li{margin-bottom:3px}
 .ai-input > label:last-child:not(:first-child) { display:flex;align-items:center;gap:4px;white-space:nowrap; }
 @media(max-width:480px) { .ai-input { flex-wrap:wrap; } .ai-input > label:first-child { min-width:65%; } }
 .job-diag{margin:14px 0;font-size:13px}.job-diag summary{cursor:pointer;line-height:1.6}.job-diag li small{color:var(--muted);line-height:1.5}.job-diag li.diag-bad small{color:var(--red)}.job-diag li.diag-warn small{color:var(--warn-fg)}
+.looks-box input{width:100%;box-sizing:border-box}
