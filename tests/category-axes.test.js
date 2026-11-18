@@ -93,7 +93,7 @@ const ax = (o) => Object.entries(o).flatMap(([axis, xs]) => xs.map(name => ({ na
     assert.deepStrictEqual([wide.a, wide.b, wide.c, wide.d, wide.e], [['알파국', '알파국 육군'], ['베타국', '베타국 기사단'], ['알파국', '알파국 육군'], ['감마 상회'], ['알파국군']]);
     assert.deepStrictEqual([wide.p1, wide.p2], [['알파국'], ['알파국']], '인물의 소속은 넓은 것 하나');
     assert.deepStrictEqual([wide.n1, wide.n2], [['감마국', '북방 연합'], ['감마국']], '국가 문서는 자기 제목이 첫째 소속');
-    assert(wide.g.includes('이 문서의 유형은 인물이다') && wide.g.includes('속한 국가(또는 그에 맞먹는 세력) 하나만') && wide.g.includes('이 세계 고유의 종류') && !wide.g.includes('예: 군인'));
+    assert(wide.g.includes('이 문서의 유형은 인물이다') && wide.g.includes('속한 국가(또는 그에 맞먹는 세력) 하나만') && wide.g.includes('이 세계 고유의 종류') && !wide.g.includes('예: 군인') && wide.g.includes('가장 대표하는 것 1개만') && wide.g.includes('인물은 붙이지 않는다') && !wide.g.includes('출생 연도'));
     assert(wide.gn.includes('자기 제목은 앱이 붙인다') && wide.gn.includes('연합이나 상위 세력'));
     assert(wide.ge.includes('사건의 종류') && wide.ge.includes('관련된 존재나 신분은 유형으로 쓰지 않는다') && wide.ge.includes('상위 사건'));
     assert(wide.g.includes('직접 참여했거나 쓰인 사건') && wide.g.includes('사례나 배경으로 언급만 한 사건은 붙이지 않는다'));
@@ -120,12 +120,12 @@ const ax = (o) => Object.entries(o).flatMap(([axis, xs]) => xs.map(name => ({ na
     const out = { title: '사랑', type: '인물', summary: '베타국의 기사', notices: [], infobox: [{ label: '출생', value: '1952년 5월 2일' }],
       sections: [{ heading: '개요', level: 1, body: '사랑은 [[아름]]과 함께 싸웠다.' }], timeline: [], newEntities: [{ title: '아름', type: '인물', summary: '베타국의 기사' }],
       navboxes: [{ title: '모델이 만든 틀', rows: [{ label: '', items: ['[[아름]]'] }] }] };
-    const sync1 = { facts: [], relations: [], categories: { 소속: ['베타국 기사단'], 유형: ['기사'], 사건: [], 기타: ['1952년 출생'] }, linkedCats: [{ title: '아름', 소속: ['베타국'], 유형: ['기사'] }] };
+    const sync1 = { facts: [], relations: [], categories: { 소속: ['베타국 기사단'], 유형: ['기사', '전사'], 사건: [], 기타: ['1952년 출생'] }, linkedCats: [{ title: '아름', 소속: ['베타국'], 유형: ['기사'] }] };
     let cs = await write('사랑', out, sync1);
     assert.deepStrictEqual(cs.map(c => c.kind), ['page', 'sync']);
     const saved = await page.evaluate(([k, h]) => ({ cats: S.pages[k].categories, axes: S.pages[k].catAxes, stale: S.pages[k].stale, hint: S.world.entities[h]?.cats, own: Object.values(S.world.navboxes).filter(nb => nb.src === k).length }), [K('사랑'), K('아름')]);
-    assert.deepStrictEqual(saved.cats, ['베타국', '기사', '1952년 출생'], '인물의 소속은 넓은 것 하나만 남는다');
-    assert.deepStrictEqual(saved.axes, ax({ 소속: ['베타국'], 유형: ['기사'], 기타: ['1952년 출생'] }));
+    assert.deepStrictEqual(saved.cats, ['베타국', '기사'], '인물은 넓은 소속 하나, 유형 하나만 남고 기타는 붙지 않는다');
+    assert.deepStrictEqual(saved.axes, ax({ 소속: ['베타국'], 유형: ['기사'] }));
     assert.deepStrictEqual(saved.hint, ax({ 소속: ['베타국'], 유형: ['기사'] }));
     assert.equal(saved.stale, undefined);
     assert.equal(saved.own, 0, '모델이 navboxes를 보내도 새 틀을 만들지 않는다');
