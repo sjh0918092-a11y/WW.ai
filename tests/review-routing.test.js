@@ -460,6 +460,12 @@ test('자동 합치기 이름 토막: 호출명 제목은 쪼개지 않고, 연�
   assert.equal(c.nameMergeOk(w, K('벡'), K('조슬린 벡')), false, '태어나기 전의 일이면 합치지 않는다');
 });
 
+test('링크 이름 지침: 새로 등장하는 인물도 풀 네임을 링크 대상으로 하고 호출명·이름 토막만으로 새 링크를 만들지 않는다', () => {
+  const w = world([page('카일', '인물', '카일은 병사다.', 1)]);
+  const pp = c.pagePrompt(w, K('카일'));
+  assert.match(pp, /새로 등장하는 인물도 링크 대상은 그 인물 문서의 제목이 될 풀 네임으로/); assert.match(pp, /한 토막만으로 새 링크를 만들지 않는다/);
+});
+
 let failed = 0;
 (async () => { for (const [n, f] of tests) { try { await f(); console.log('통과', n); } catch (e) { failed++; console.log('실패', n, '\n', e.message); } }
 if (failed) process.exit(1); })();
