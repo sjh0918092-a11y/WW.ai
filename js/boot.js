@@ -11,7 +11,8 @@
   await Store.init();
   try { S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)); }
   catch (e) { toast("세계관 목록을 불러오지 못했습니다. " + errMsg(e)); }
-  if (Sync.acct) { Sync.load(); await Sync.pull(); S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)); Sync.push(); }   // 로그인되어 있으면 서버에서 바뀐 것을 받고 남은 변경을 올린다
+  // 로그인되어 있으면 서버에서 바뀐 것을 받고 남은 변경을 올린다. 서버가 늦거나 응답하지 않아도 첫 화면을 막지 않도록 4초까지만 기다리고, 나머지는 뒤에서 받아 화면에 반영한다(Sync.refresh)
+  if (Sync.acct) { Sync.load(); const synced = Sync.pull().then(() => Sync.push()).catch(() => {}); await Promise.race([synced, new Promise(r => setTimeout(r, 4000))]); S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)); }
   S.ready = true; S.view = gReady() ? { name: "home" } : { name: "gset" };
   if (invited) S.gres = "초대 링크로 중계 서버 주소가 채워졌습니다. 받은 접속 암호를 넣고 저장해 주세요.";
   Nav.active = true;
