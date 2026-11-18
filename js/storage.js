@@ -211,7 +211,8 @@ const Sync = {
     for (;;) {
       if (!token || this.acct?.token !== token || this.base() !== base) throw new Error("로그인 계정이나 서버가 바뀌었습니다.");
       if (Date.now() > until) throw new Error("동기화가 지연되어 문서 작업을 시작하지 않았습니다.");
-      if (this.busy || this.pulling) { await gSleep(50); continue; }
+      // 진행 중인 올리기만 기다린다. 받아 오기는 서버 쪽이 더 최신일 때만 덮어써 올리기와 부딪히지 않으므로, 시작 직후 뒤에서 도는 큰 받아 오기를 기다리지 않는다
+      if (this.busy) { await gSleep(50); continue; }
       if (!this.dirty) this.load();
       if (!this.pending()) return;
       await this.push(); if (this.err) throw new Error(this.err);
