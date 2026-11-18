@@ -54,6 +54,7 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
     });
     assert.ok(prompts.image.includes("## 고정 외모") && prompts.image.includes("짙은 갈색"));
     assert.ok(!prompts.syncEdited.includes('"looks"'), "직접 고친 외모는 정리 호출이 다시 정하지 않는다");
+    assert.ok(prompts.syncNew.includes("알려진 실제 외모를 따른다"), "실존 인물은 실제 외모를 따른다");
     assert.ok(prompts.syncNew.includes('"looks"') && prompts.syncNew.includes("다른 인물 1명의 외모 분포") && prompts.syncNew.includes("왼쪽 눈썹의 흉터"));
     assert.ok(prompts.prose.includes("## 확정된 외모") && prompts.prose.includes("하비에르 로페스"), "단편은 관련 인물의 외모도 따른다");
     assert.deepStrictEqual(prompts.clean, { origin: "아일랜드계", build: "건장한 편" });
