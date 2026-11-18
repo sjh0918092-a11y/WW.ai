@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,autoRealNameTitle,nameMergeOk,refEventKeys,parentEventKeys,preWritePrompt,preWriteNeeded,runPreWrite,taskSelection,GS,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor,readPrompt,checkTimeline,timelineCheckPrompt,readTimelineForm,timelineEditHtml,promptTimeline});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,autoRealNameTitle,dropDuplicateRefs,nameMergeOk,refEventKeys,parentEventKeys,preWritePrompt,preWriteNeeded,runPreWrite,taskSelection,GS,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor,readPrompt,checkTimeline,timelineCheckPrompt,readTimelineForm,timelineEditHtml,promptTimeline});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -464,6 +464,13 @@ test('링크 이름 지침: 새로 등장하는 인물도 풀 네임을 링크 �
   const w = world([page('카일', '인물', '카일은 병사다.', 1)]);
   const pp = c.pagePrompt(w, K('카일'));
   assert.match(pp, /새로 등장하는 인물도 링크 대상은 그 인물 문서의 제목이 될 풀 네임으로/); assert.match(pp, /한 토막만으로 새 링크를 만들지 않는다/);
+});
+
+test('자동 수정 뒤 글자까지 같은 참고 문장이 여러 번이면 첫 번째만 남긴다', () => {
+  const src = { summary: '정의다.', body: '## 개요\n전투가 있었다. 자세한 내용은 [[스프래틀리 대치]] 참고.\n\n## 경과\n2016년 가을 차단했다. 자세한 내용은 [[스프래틀리 대치]] 참고. 자세한 내용은 [[스프래틀리 대치]] 참고.\n\n자세한 내용은 [[다른 전투]] 참고.' };
+  assert.equal(c.dropDuplicateRefs(src), 2);
+  assert.equal((src.body.match(/자세한 내용은 \[\[스프래틀리 대치\]\] 참고\./g) || []).length, 1);
+  assert.match(src.body, /2016년 가을 차단했다\.\n/); assert.match(src.body, /자세한 내용은 \[\[다른 전투\]\] 참고\./);
 });
 
 let failed = 0;

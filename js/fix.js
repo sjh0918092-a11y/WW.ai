@@ -241,6 +241,18 @@ async function runFixBatch(v = curFix()) {
   if (v.phase === "review") toast(`「${p.title}」의 교정안이 준비되었습니다.`, { label: "검토하기", fn: () => { S.view = { name: "fix", key: v.key }; renderAll(); } });
   else { if (!v.items.length || !v.err) dropFix(v.key); toast(`「${p.title}」 ${v.err || "교정을 마쳤습니다."}`, v.items.length && v.err ? { label: "열기", fn: () => { S.view = { name: "fix", key: v.key }; renderAll(); } } : undefined); }
 }
+/* 수정을 적용한 뒤: 글자까지 같은 '자세한 내용은 [[X]] 참고.' 문장이 문서에 두 번 이상 있으면 첫 번째만 남긴다(한 줄 정의 → 본문 순).
+   새 문장을 만들지 않고 완전히 같은 문장의 중복만 지운다. 문장을 지워 빈 문단이 되면 그 빈 줄도 정리한다. 지운 수를 돌려준다 */
+const REF_SENTENCE_RE = /\s*자세한 내용은\s*\[\[[^\]]+\]\]\s*참고\./g;
+function dropDuplicateRefs(src) {
+  const seen = new Set(); let n = 0;
+  for (const f of ["summary", "body"]) {
+    if (typeof src[f] !== "string") continue;
+    src[f] = src[f].replace(REF_SENTENCE_RE, m => { const key = m.replace(/\s+/g, " ").trim(); if (seen.has(key)) { n++; return ""; } seen.add(key); return m; });
+    if (n) src[f] = src[f].replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
+  }
+  return n;
+}
 /* 고치기 수정안(e.on인 것)을 문서 k에 적용해 S.pages[k]를 바꾼다. 저장은 하지 않는다.
    돌려주는 값: { page, applied, missed } 또는 { why: "none" | "empty" }. integrate가 실패하면 되돌리고 던진다 */
 function commitFix(w, k, edits, beforeAssign) {
@@ -252,6 +264,7 @@ function commitFix(w, k, edits, beforeAssign) {
     nf[e.field] = nf[e.field].slice(0, at) + e.new + nf[e.field].slice(at + e.old.length); applied++;
   }
   if (!applied) return { why: "none" };
+  dropDuplicateRefs(nf);
   const out = sourceToOut(nf);
   if (!out.sections.some(x => x.body.trim())) return { why: "empty" };
   const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], events: w.events || [], glossary: w.glossary || [] });

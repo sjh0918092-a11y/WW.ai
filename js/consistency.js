@@ -1012,6 +1012,7 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
       if (restate(ed)) restated.push(stripMarks(old).replace(/\s+/g, " "));   // 재서술로 줄이거나 지운 원문 구간
     }
     if (!applied) return res;
+    dropDuplicateRefs(nf);   // 줄임 수정 여러 개가 같은 참고 문장을 붙였으면 첫 번째만 남긴다
     const out = sourceToOut(nf); if (!out.sections.some(x => x.body.trim())) return res;
     autoLink(w, k, out);
     const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], events: w.events || [], glossary: w.glossary || [] });
