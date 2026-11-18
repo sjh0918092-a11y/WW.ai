@@ -42,6 +42,7 @@ document.addEventListener("click", ev => {
   if (!ev.target.closest(".search")) $("#sugg").hidden = true;
   const el = ev.target.closest("button, a"); if (!el) return;
   const d = el.dataset;
+  if (d.tlEdit !== undefined && S.world) { const td = el.closest("td"); if (td) { td.innerHTML = timelineRowHtml(S.world, +d.tlEdit, true); td.querySelector("[data-tl-ev]")?.focus(); } return; }   // 그 줄만 입력칸으로 바꾼다(다른 줄에 고치던 값은 그대로)
   if(d.costMore){DocumentCost.expanded.add(d.costMore);DocumentCost.render();return;}
   if(d.costReset){
     if(d.costReset!==S.world?.id)return;
