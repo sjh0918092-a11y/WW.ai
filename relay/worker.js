@@ -15,12 +15,15 @@
  *   POST /api/login  {id, pw}          로그인 → {token}
  *   POST /api/logout                   (Authorization: Bearer 토큰)
  *   GET  /api/sync?since=n             since 뒤에 바뀐 세계관과 문서
+ *   GET  /api/sync?since=n&meta=1      본문 없는 변경 목록(같은 순번은 after로 나눠 받음)
+ *   POST /api/sync/read {records}     필요한 순번의 본문만 받아 오기
  *   POST /api/sync {worlds, pages}     올리기. 기기의 수정 시각(updated)이 더 최근인 것만 저장한다
  */
 import { pipelineSchema } from "./pipeline-store.js";
 import { jobsApi } from "./jobs.js";
 import { claudeModels, openAIModels } from "./models.js";
 import { accountSettings } from "./account-settings.js";
+import { syncSchema, syncManifest, syncRead, syncLegacy } from "./sync.js";
 export { AiJobs } from "./jobs.js";
 
 const UPSTREAM = "https://generativelanguage.googleapis.com";
@@ -107,8 +110,6 @@ export default {
 const ID_RE = /^[A-Za-z0-9가-힣_.-]{2,24}$/;
 const PBKDF2_ITER = 20000;           // 무료 플랜의 CPU 시간 한도 안에서 도는 횟수
 const MAX_SYNC = 20 * 1024 * 1024;   // 올리기 한 번의 본문 상한 20MB
-const PAGE_LIMIT = 1500;             // 받아 오기 한 번에 내려 주는 문서 수
-const SYNC_BYTES = 2 * 1024 * 1024;  // 받아 오기 한 번에 표 하나당 내려 주는 크기 목표. 모바일 회선에서 한 번의 응답이 끊기지 않게 작게 나눈다(D1 조회 한도 50MB보다도 넉넉히 작다)
 let schema = null;
 function ensureSchema(db) {
   schema ||= db.batch([
@@ -120,6 +121,7 @@ function ensureSchema(db) {
     db.prepare("CREATE INDEX IF NOT EXISTS pages_stamp ON pages (uid, stamp)"),
     db.prepare("CREATE TABLE IF NOT EXISTS account_settings (uid TEXT PRIMARY KEY, data TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1, updated INTEGER NOT NULL)"),
     ...pipelineSchema(db),
+    ...syncSchema(db),
   ]).catch(e => { schema = null; throw e; });
   return schema;
 }
@@ -179,23 +181,13 @@ async function api(request, env, url, cors, fail) {
     if (path === "/api/logout" && m === "POST") { await db.prepare("DELETE FROM sessions WHERE token = ?").bind(tok).run(); return json({ ok: true }); }
     if (path === "/api/sync" && m === "GET") {
       const since = Number(url.searchParams.get("since") || 0) || 0;
-      // D1은 한 번의 조회 결과가 50MB를 넘으면 실패하므로 건수와 함께 누적 크기로도 끊어 내려 준다(한도를 넘기는 첫 줄까지 포함)
-      const sized = (table, cols) => `SELECT ${cols}, data, updated, deleted, stamp, acc FROM (SELECT ${cols}, data, updated, deleted, stamp, SUM(COALESCE(length(CAST(data AS BLOB)), 0)) OVER (ORDER BY stamp ROWS UNBOUNDED PRECEDING) AS acc, COALESCE(length(CAST(data AS BLOB)), 0) AS n FROM ${table} WHERE uid = ? AND stamp > ? ORDER BY stamp LIMIT ?) WHERE acc - n <= ? ORDER BY stamp`;
-      const take = async (table, cols) => {
-        const rows = (await db.prepare(sized(table, cols)).bind(uid, since, PAGE_LIMIT + 1, SYNC_BYTES).all()).results || [];
-        const cut = rows.length > PAGE_LIMIT || (rows.length > 0 && rows.at(-1).acc > SYNC_BYTES);
-        rows.length = Math.min(rows.length, PAGE_LIMIT);
-        for (const r of rows) delete r.acc;
-        return { rows, end: cut ? rows.at(-1).stamp : null };
-      };
-      const w = await take("worlds", "wid"), p = await take("pages", "wid, pkey");
-      const ends = [w.end, p.end].filter(x => x != null);
-      const more = ends.length > 0;
-      // 덜 받은 쪽의 마지막 순번까지만 확정하고, 그 뒤의 기록은 다음 차례에 받는다
-      const top = more ? Math.min(...ends) : Math.max(since, ...w.rows.map(x => x.stamp), ...p.rows.map(x => x.stamp));
-      const upTo = list => more ? list.filter(x => x.stamp <= top) : list;
-      return json({ id: uid, worlds: upTo(w.rows), pages: upTo(p.rows), next: top, more });
+      if (url.searchParams.get("meta") === "1") {
+        let after; try { after = JSON.parse(url.searchParams.get("after") || "null"); } catch { return fail(400, "동기화 위치가 올바르지 않습니다."); }
+        return json(await syncManifest(db, uid, since, after));
+      }
+      return json(await syncLegacy(db, uid, since));
     }
+    if (path === "/api/sync/read" && m === "POST") return json(await syncRead(db, uid, (await body()).records));
     if (path === "/api/sync" && m === "POST") {
       const { worlds = [], pages = [] } = await body();
       const st = [];
@@ -218,6 +210,7 @@ async function api(request, env, url, cors, fail) {
     return fail(404, "허용되지 않은 요청입니다.");
   } catch (e) {
     if (e?.status === 413) return fail(413, "한 번에 올리기에는 너무 큽니다.");
+    if ([400, 409].includes(e?.status)) return fail(e.status, e.message);
     throw e;
   }
 }
