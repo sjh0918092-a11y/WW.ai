@@ -220,13 +220,13 @@ const PERSON_TITLE_RULE = "인물에게 붙은 호출부호·코드명·제식�
 function worldCats(w, except, limit = 40) {
   return [...catStats(w, except)].map(([c, s]) => [c, s.n]).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko")).slice(0, limit);
 }
-function catGuide(w, key, max = 30) {
+function catGuide(w, key, max = 30, type = "") {
   const st = [...catStats(w, key)].sort((a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0], "ko"));
   const list = ax => st.filter(([, s]) => s.axis === ax).slice(0, max).map(([c, s]) => `${c}(${s.n})`).join(", ");
   const have = [...CAT_AXES.map(ax => [ax, list(ax)]), ["축 미정(예전 문서)", list("")]].filter(([, t]) => t);
   return `categories는 위키 하단의 분류처럼 링크 없이 짧게, 축별 객체로 쓴다: {"소속":[...],"유형":[...],"사건":[...],"기타":[...]}
-${CAT_AXIS_RULES}
-- 사건: 이 항목이 깊이 관련된 사건 문서의 제목. 0~2개.
+이 문서의 유형은 ${type || "(미정)"}이다. 축마다 이 유형에 맞는 것을 붙인다.
+${catAxisRules(type)}
 - 기타: 출생 연도 등 위에 들지 않는 것. 0~2개.
 - 분류는 넓은 이름으로 축마다 따로 붙인다. 소속과 유형을 합친 분류("○○의 △△", "○○ 출신 △△")는 만들지 않는다.
 - 같은 뜻이면 기존 이름을 글자 그대로 쓴다. 같은 뜻의 분류가 이미 둘 이상 있으면 문서 수가 많은 쪽 하나만 쓴다. 맞는 것이 없을 때만 새로 만든다.
@@ -553,11 +553,9 @@ ${inputs.guidelines ? firstPageBlock(w, key, rewriteDir) : ""}${inputs.gaps ? wo
 ## 출력
 ${ENTITY_DEFINITION_RULE}
 JSON 객체 하나만 출력:
-{"title":"${e.title}",${angle && rewriteDir === null ? (angleMode === "section" ? '"angleUsed":"true 또는 false(이번 각도를 반영했는가)",' : "") + '"sceneUsed":"이번 각도로 실제로 쓴 장면 한 문장(쓰지 않았으면 빈 문자열)",' : ""}"type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의(링크 없이)","categories":{"소속":["..."],"유형":["..."],"사건":[],"기타":[]},"notices":["..."],"infobox":[{"label":"...","value":"..."}],"sections":[{"heading":"개요","level":1,"body":"..."},{"heading":"생애","level":1,"body":""},{"heading":"1959년 데뷔","level":2,"body":"..."}],${showFor(ty, ["인물"]) ? '"motifs":["' + (staged ? '이 인물의 특징 전체를 대표하는 중심 소재(짧은 명사)' : '이 인물 문서에서 성격을 보여 준 일화의 중심 소재(짧은 명사)') + '"],' : ""}"facts":[{"about":"항목 제목","fact":"이 문서에서 확정한, 그 항목에 관한 사실 한 문장"}],${REL_JSON},"newEntities":[{"title":"새로 링크한 항목 제목","type":"유형","summary":"한 문장 정의","소속":["아는 경우"],"유형":["아는 경우"]}],"timeline":[{"year":"연도","month":3,"day":14,"about":"사건의 주체가 되는 항목 제목","event":"이 문서에서 새로 확정한, 세계에 영향을 준 사건"}],${EVENTS_JSON},${TERMS_JSON},${AFFIL_JSON},${SPAN_JSON}}
-relations에는 이 문서에 나온 인물 사이의 관계를 넣는다. 이 항목이 인물이면 이 문서에 실제로 나온 인물과의 주요 관계를 넣는다. 관계를 채우려고 새 인물이나 연인을 지어내지 않는다. '기존 인물 관계'에 이미 있는 관계를 이 문서가 다시 다루면 same으로 그 번호만 쓰고, 관계의 성격이 실제로 바뀌었을 때만 next를 쓴다. a와 b는 이 문서의 제목이거나 이 문서가 링크한 항목의 제목을 글자 그대로 쓴다. 인물이 아닌 항목만 다룬 문서라면 빈 배열.
-${REL_SPEC}
-${showFor(ty, ["인물"]) ? `${staged ? 'motifs에는 인물의 성격·능력·습관 등 특징 전체의 중심 소재 1~3개를 쓴다. 기존 소재와 의미가 같으면 그 이름을 재사용한다. 인물이 아니면 빈 배열.' : 'motifs에는 이 항목이 인물이면 이 문서에서 성격을 보여 준 일화의 중심 소재 1~3개를 짧은 명사로 쓴다(예: "규칙 위반", "음식", "동물", "음악", "가족"). 다른 인물의 특징 목록에 나온 소재와 의미가 같으면 그 이름을 그대로 쓴다. 인물이 아니면 빈 배열.'}\n` : ""}${catGuide(w, key, inputs.categories ? inputs.categoriesCount : 0)} sections의 level은 1(큰 섹션) 또는 2(바로 앞 큰 섹션의 하위 섹션)이며, 섹션 번호는 쓰지 않는다.
-facts에는 이 문서가 링크한 항목 중 중요한 것(인물, 조직, 사건, 장소 위주) 6~10개에 대해 1개씩 넣되, 이 문서의 절정이나 큰 사건에 등장한 항목은 빠짐없이 포함해 그 사건에서 무엇을 했고 어떻게 되었는지(쓴 무기나 수단, 생사, 결과)를 사실로 남긴다. 그리고 「${e.title}」 자체에 대한 핵심 사실 3~6개를 넣는다. newEntities에는 위 '이미 존재하는 항목' 목록에 없던 링크 대상을 모두 넣되, summary는 40자 안팎의 한 문장으로 짧게 쓴다. newEntities의 소속과 유형은 이 문서에서 알 수 있는 범위에서 categories와 같은 규칙(기존 분류 이름 우선)으로 0~1개씩 쓰고, 모르면 빈 배열로 둔다. timeline에는 이 문서에서 새로 확정한 사건 중 세계에 영향을 준 것(전쟁, 조약, 창설, 해체, 발견, 사고, 정변처럼 그 해에 일어난 일)만 0~2개 넣는다. 넣을 사건이 없으면 빈 배열이 정상이며, 연표를 채우려고 사건을 만들지 않는다. ${TL_DATE_SPEC}${tlDateNote(w)} 현재 상태, 근황, 거주, 요양, 재직 중, 복무 중 같은 서술은 연표가 아니라 본문에 쓴다. event 문장에는 그 일을 한 주체의 고유명사를 넣고, 같은 이름을 about에 글자 그대로 쓴다. 이미 연표에 있는 사건은 다시 넣지 않는다. ${inputs.events || inputs.sameEvents ? eventsSpec(w) : EVENTS_SPEC_BASE} ${TERMS_SPEC} ${AFFIL_SPEC.replace("{T}", e.title)} ${SPAN_SPEC.replace("{T}", e.title)}`;
+{"title":"${e.title}",${angle && rewriteDir === null ? (angleMode === "section" ? '"angleUsed":"true 또는 false(이번 각도를 반영했는가)",' : "") + '"sceneUsed":"이번 각도로 실제로 쓴 장면 한 문장(쓰지 않았으면 빈 문자열)",' : ""}"type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의(링크 없이)","notices":["..."],"infobox":[{"label":"...","value":"..."}],"sections":[{"heading":"개요","level":1,"body":"..."},{"heading":"생애","level":1,"body":""},{"heading":"1959년 데뷔","level":2,"body":"..."}],${showFor(ty, ["인물"]) ? '"motifs":["' + (staged ? '이 인물의 특징 전체를 대표하는 중심 소재(짧은 명사)' : '이 인물 문서에서 성격을 보여 준 일화의 중심 소재(짧은 명사)') + '"],' : ""}"newEntities":[{"title":"새로 링크한 항목 제목","type":"유형","summary":"한 문장 정의"}],"timeline":[{"year":"연도","month":3,"day":14,"about":"사건의 주체가 되는 항목 제목","event":"이 문서에서 새로 확정한, 세계에 영향을 준 사건"}],${EVENTS_JSON}}
+${showFor(ty, ["인물"]) ? `${staged ? 'motifs에는 인물의 성격·능력·습관 등 특징 전체의 중심 소재 1~3개를 쓴다. 기존 소재와 의미가 같으면 그 이름을 재사용한다. 인물이 아니면 빈 배열.' : 'motifs에는 이 항목이 인물이면 이 문서에서 성격을 보여 준 일화의 중심 소재 1~3개를 짧은 명사로 쓴다(예: "규칙 위반", "음식", "동물", "음악", "가족"). 다른 인물의 특징 목록에 나온 소재와 의미가 같으면 그 이름을 그대로 쓴다. 인물이 아니면 빈 배열.'}\n` : ""}sections의 level은 1(큰 섹션) 또는 2(바로 앞 큰 섹션의 하위 섹션)이며, 섹션 번호는 쓰지 않는다.
+newEntities에는 위 '이미 존재하는 항목' 목록에 없던 링크 대상을 모두 넣되, summary는 40자 안팎의 한 문장으로 짧게 쓴다. timeline에는 이 문서에서 새로 확정한 사건 중 세계에 영향을 준 것(전쟁, 조약, 창설, 해체, 발견, 사고, 정변처럼 그 해에 일어난 일)만 0~2개 넣는다. 넣을 사건이 없으면 빈 배열이 정상이며, 연표를 채우려고 사건을 만들지 않는다. ${TL_DATE_SPEC}${tlDateNote(w)} 현재 상태, 근황, 거주, 요양, 재직 중, 복무 중 같은 서술은 연표가 아니라 본문에 쓴다. event 문장에는 그 일을 한 주체의 고유명사를 넣고, 같은 이름을 about에 글자 그대로 쓴다. 이미 연표에 있는 사건은 다시 넣지 않는다. ${inputs.events || inputs.sameEvents ? eventsSpec(w) : EVENTS_SPEC_BASE}`;
 }
 /* 참고 문구('자세한 내용은 [[사건]] 참고.')를 붙일 수 있는 사건. 주인을 모델이 판단하지 않도록 앱이 항목 유형으로 정한다 */
 const REF_EVENTS_N = 12;

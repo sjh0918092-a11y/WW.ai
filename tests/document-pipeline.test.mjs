@@ -79,7 +79,7 @@ try {
  assert(liveSeen?.serverNow&&liveSeen.liveSteps?.some(s=>s.kind==='page'&&s.status==='running'&&Number.isFinite(s.timing?.at)&&s.timing.headers===null),JSON.stringify(liveSeen?.liveSteps));
  { const page=r.result.pipeline.steps.find(s=>s.kind==='page'); assert(page.cache.chars>7000&&page.cache.hashes.length===2&&page.cache.tokens===5000,JSON.stringify(page.cache)); assert(r.job.steps.find(s=>s.kind==='page').cache.hash===page.cache.hash); }
  { const gen=calls.find(c=>c.kind==='page'); assert.equal(gen.body.cachedContent,'cachedContents/test-cache'); assert.equal(gen.body.contents[0].parts.length,1); const created=cacheCalls.filter(c=>c.method==='POST'); assert(created.length>=1); const cb=JSON.parse(created[0].body); assert.equal(cb.ttl,'900s'); assert.equal(cb.contents[0].parts.length,2); assert(cb.model.startsWith('models/')); }
- assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert(r.result.pipeline.saved);assert(r.result.pipeline.checked);assert(storedPage(B)?.check);assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page','check','read']);assert(calls[0].url.includes('custom-main'));assert(calls[1].url.includes('custom-check'));assert.equal(calls[1].body.generationConfig.thinkingConfig.thinkingLevel,'high');
+ assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert(r.result.pipeline.saved);assert(r.result.pipeline.checked);assert(storedPage(B)?.check);assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page','check','read','factSync']);assert(calls[0].url.includes('custom-main'));assert(calls[1].url.includes('custom-check'));assert.equal(calls[1].body.generationConfig.thinkingConfig.thinkingLevel,'high');
  assert(!JSON.stringify(r).includes('private-server-key'));assert(![...e.storage.data.keys()].some(k=>/^(key:|in:|pipe:)/.test(k)));pass('매 alarm마다 서버 객체를 재생성해도 생성·두 검사·D1 저장까지 완료하며 완료된 호출은 재실행하지 않는다');
 
  async function parallelFixture() {
@@ -122,7 +122,7 @@ try {
   e.w.timeline=[{year:'1900',month:1,day:1,event:'항구 항해법이 공표되다.',src:'seed',k:A}];
   db.sqlite.prepare('UPDATE worlds SET data=? WHERE uid=?').run(JSON.stringify(e.w),'alice');e.input.worldHash=await digest(e.w);
   await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));
-  assert.deepEqual(orderedChecks(calls).map(c=>c.kind),preCheck?['page','check','read']:['page']);
+  assert.deepEqual(orderedChecks(calls).map(c=>c.kind),preCheck?['page','check','read','factSync']:['page','factSync']);
   const timeline=JSON.parse(db.sqlite.prepare('SELECT data FROM worlds WHERE uid=?').get('alice').data).timeline;
   assert.equal(timeline.length,preCheck?1:2);assert.equal(timeline[0].src,'seed');
  }
@@ -250,7 +250,7 @@ try {
 
  e=await reset();delete e.w.entities[B];e.w.angles=[{id:'angle-1',label:'고독한 항해',area:'해양',uses:0}];db.sqlite.prepare('UPDATE worlds SET data=? WHERE uid=?').run(JSON.stringify(e.w),'alice');e.body.input={...e.input,novel:true,entity:{title:'선장',type:'인물',summary:'새 탐험가',src:'discovery'},angleId:'angle-1',worldHash:await digest(e.w)};await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert(r.result.pipeline.angleRecorded);const novelWorld=JSON.parse(db.sqlite.prepare('SELECT data FROM worlds WHERE uid=?').get('alice').data);assert.equal(novelWorld.angles[0].uses,1);assert(novelWorld.entities[B].page);pass('탐색에서 고른 새 후보도 저장하고 각도 사용은 한 번만 기록한다');
 
- e=await reset({settings:{preCheck:false}});await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded');assert(!r.result.pipeline.checked);assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page']);pass('자동 검사 끄기 설정은 유지하며 수행하지 않은 검사를 완료로 표시하지 않는다');
+ e=await reset({settings:{preCheck:false}});await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded');assert(!r.result.pipeline.checked);assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page','factSync']);pass('자동 검사 끄기 설정은 유지하며 수행하지 않은 검사를 완료로 표시하지 않는다');
 
  db.sqlite.exec("INSERT INTO users VALUES('한글계정','s','h',1);INSERT INTO sessions VALUES('korean-token','한글계정',1)");
  let forwarded;

@@ -26,51 +26,43 @@ function parseCats(raw) {
   }
   return out.slice(0, 8);
 }
-/* 소속·유형을 고르는 기준. 문서 작성(catGuide)과 다시 받기(catRetryPrompt)가 함께 쓴다 */
-const CAT_AXIS_RULES = `- 소속: 이 항목이 속한 가장 넓은 곳(국가나 그에 맞먹는 세력)을 첫째로 붙인다. 국가 안의 군·부대·기관·회사·학교에 속하면 그 국가를 먼저 붙이고, 그 조직은 둘째로만 붙인다(예: 'A국 해군' 소속이면 ["A국", "A국 해군"]). 해당하면 1개는 반드시 붙인다(최대 2개).
-- 유형: 이 항목이 무엇인지 나타내는 넓은 말. 원안과 핵심 규칙이 만든 이 세계 고유의 존재·신분·계층(이 세계관의 중심 소재)에 해당하는 항목이면 그 이름을 유형의 첫째로 쓴다. 현실에도 있는 직업이나 범주는 그다음이다. 해당하면 1개는 반드시 붙인다(최대 2개).`;
-/* 소속이 "X 육군"처럼 이 세계의 국가나 기존 소속 분류 X로 시작하면 X를 첫째 소속으로 보탠다(넓은 소속이 빠지지 않게). 생성 응답에만 쓴다 */
-function widenAffil(w, raw) {
+/* 문서 유형별로 축이 맡는 뜻. 분류는 확정 사실 정리(factSync)가 새 문서·다시 쓰기에서만 붙인다(catGuide) */
+const CAT_TYPE_RULES = {
+  인물: ["속한 국가(또는 그에 맞먹는 세력) 하나만 붙인다. 국가에 속하지 않을 때만 직접 속한 조직을 붙인다. 군·부대·기관·회사 같은 하위 조직은 분류로 붙이지 않는다(소속 이력에 쓴다).", "신분·존재·직업"],
+  국가: ["자기 제목은 앱이 붙인다. 연합이나 상위 세력에 속하면 그 이름 하나만 쓰고, 없으면 빈 배열로 둔다.", "정체(나라의 형태)의 종류"],
+  조직: ["상위 국가나 조직. 국가 안의 조직이면 그 국가를 첫째로, 바로 위 조직은 둘째로만 붙인다.", "조직의 종류(예: 군, 기업, 학교)"],
+  지명: ["그곳이 속한 국가.", "장소의 종류"],
+  사건: ["사건을 수행하거나 그 당사자인 국가·세력.", "사건의 종류(예: 작전, 전쟁, 사고). 사건에 관련된 존재나 신분은 유형으로 쓰지 않는다"],
+  기술: ["개발하거나 보유한 국가·세력.", "기술의 종류"],
+  물건: ["개발하거나 보유한 국가·세력.", "물건의 종류"],
+  제도: ["시행한 국가·세력.", "제도의 종류"],
+  문화: ["유래하거나 퍼진 국가·세력.", "문화의 종류"],
+  개념: ["유래한 국가·세력(해당하면).", "개념의 종류"],
+};
+function catAxisRules(type) {
+  const [aff, kind] = CAT_TYPE_RULES[type] || ["이 항목이 속한 가장 넓은 곳(국가나 그에 맞먹는 세력).", "이 항목이 무엇인지 나타내는 넓은 말"];
+  return `- 소속: ${aff}${type === "인물" || type === "국가" ? "" : " 해당하면 1개는 반드시 붙인다(최대 2개)."}
+- 유형: ${kind}. 원안과 핵심 규칙이 만든 이 세계 고유의 종류에 해당하면 그 이름을 첫째로 쓰고, 현실에도 있는 범주는 그다음이다. 해당하면 1개는 반드시 붙인다(최대 2개).
+- 사건: ${type === "사건" ? "이 사건을 품은 상위 사건 문서의 제목. 0~1개." : "이 항목이 깊이 관련된 사건 문서의 제목. 0~2개."}`;
+}
+/* 소속이 "X 육군"처럼 이 세계의 국가나 기존 소속 분류 X로 시작하면 X를 첫째 소속으로 보탠다(넓은 소속이 빠지지 않게).
+   인물은 소속을 하나만 두므로 X로 바꾸는 셈이 되고, 국가 문서는 자기 제목을 첫째 소속으로 둔다 */
+function widenAffil(w, raw, type = "", self = "") {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
   const names = parseCats({ 소속: Array.isArray(raw.소속) ? raw.소속 : typeof raw.소속 === "string" ? [raw.소속] : [] }).map(x => x.name);
-  if (!names.length) return raw;
-  const st = catStats(w), wide = new Set([...Object.values(w.entities).filter(o => o.type === "국가").map(o => norm(o.title)), ...[...st].filter(([, s]) => s.axis === "소속").map(([c]) => c)]);
   const out = [];
-  for (const c of names) {
-    const parent = [...wide].filter(x => x.length >= 2 && c !== x && c.startsWith(x + " ")).sort((a, b) => b.length - a.length)[0];
-    if (parent && !out.includes(parent) && !names.includes(parent)) out.push(parent);
-    if (!out.includes(c)) out.push(c);
+  if (type === "국가" && catName(self)) out.push(catName(self));
+  if (names.length) {
+    const st = catStats(w), wide = new Set([...Object.values(w.entities).filter(o => o.type === "국가").map(o => norm(o.title)), ...[...st].filter(([, s]) => s.axis === "소속").map(([c]) => c)]);
+    for (const c of names) {
+      const parent = [...wide].filter(x => x.length >= 2 && c !== x && c.startsWith(x + " ")).sort((a, b) => b.length - a.length)[0];
+      if (parent && !out.includes(parent) && !names.includes(parent)) out.push(parent);
+      if (!out.includes(c)) out.push(c);
+    }
   }
-  raw.소속 = out.slice(0, CAT_AXIS_MAX.소속);
+  if (!out.length) return raw;
+  raw.소속 = out.slice(0, type === "인물" ? 1 : CAT_AXIS_MAX.소속);
   return raw;
-}
-/* 축별 응답인데 소속이나 유형이 비었는가 */
-const axisCatsMissing = raw => !!raw && typeof raw === "object" && !Array.isArray(raw) && (!parseCats({ 소속: raw.소속 }).length || !parseCats({ 유형: raw.유형 }).length);
-function catRetryPrompt(w, key, out) {
-  const e = w.entities[key], st = catStats(w, key), list = ax => [...st].filter(([, s]) => s.axis === ax).sort((a, b) => b[1].n - a[1].n).slice(0, 30).map(([c, s]) => `${c}(${s.n})`).join(", ") || "(없음)";
-  const box = (Array.isArray(out?.infobox) ? out.infobox : []).filter(r => r && r.label).slice(0, 10).map(r => `${r.label}: ${stripMarks(String(r.value || ""))}`).join("\n");
-  return `가상 세계관 위키 「${w.title}」의 문서 「${e.title}」에 붙일 분류 중 소속과 유형을 정한다.
-정의: ${stripMarks(String(out?.summary || e.summary || ""))}
-${box ? "인포박스:\n" + box + "\n" : ""}원안: ${String(w.seed || "").slice(0, 600)}
-핵심 규칙: ${(w.rules || []).slice(0, 8).join(" / ") || "(없음)"}
-지금 붙은 분류: ${JSON.stringify(out?.categories || {})}
-${CAT_AXIS_RULES}
-- 유형 이름(${TYPES.join(", ")})은 쓰지 않는다.
-- 같은 뜻이면 아래 기존 이름을 글자 그대로 쓴다. 같은 뜻의 분류가 이미 둘 이상 있으면 문서 수가 많은 쪽 하나만 쓴다. 합친 분류("○○의 △△")는 만들지 않는다.
-- 정말 해당하는 것이 없으면 빈 배열로 둔다.
-기존 소속 분류(괄호는 문서 수): ${list("소속")}
-기존 유형 분류: ${list("유형")}
-JSON 객체 하나만 출력: {"소속":["..."],"유형":["..."]}`;
-}
-/* 소속이나 유형이 비었으면 한 번만 다시 받아 빈 축을 채운다. 실패해도 문서 작성은 계속한다 */
-async function ensureAxisCats(w, key, out, opts = {}) {
-  if (!axisCatsMissing(out?.categories)) return false;
-  let r;
-  try { r = await callJson("cats", catRetryPrompt(w, key, out), { modelTier: "check", ...opts }, { title: w.entities[key]?.title || "" }); }
-  catch (err) { if (err?.code === "cancelled" || opts.signal?.aborted) throw err; return false; }
-  let ch = false;
-  for (const ax of ["소속", "유형"]) if (!parseCats({ [ax]: out.categories[ax] }).length) { const got = parseCats({ [ax]: r?.[ax] }); if (got.length) { out.categories[ax] = got.map(x => x.name); ch = true; } }
-  return ch;
 }
 /* 이 항목의 분류 이름들(합친 분류는 새 이름으로). 문서가 있으면 문서의 분류, 없으면 링크할 때 받아 둔 소속·유형 */
 function docCats(w, k) {

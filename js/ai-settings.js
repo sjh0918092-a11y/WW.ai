@@ -3,7 +3,7 @@
 const AI_TASKS = [
  ["bible","세계관 기본 설정"],["storyBible","스토리 기본 설정"],["page","문서 작성"],["preWrite","작성 전 점검"],
  ["check","설정 검사"],["read","문서 내부 검사"],["fix","충돌 고치기"],
- ["factSync","수정 후 사실·연표·관계 추출"],["analyze","직접 편집한 문서의 설정 대조"],
+ ["factSync","확정 사실·관계·분류 정리"],["analyze","직접 편집한 문서의 설정 대조"],
  ["section","문단 다시 쓰기"],["discovery","새 대상 탐색"],["angles","각도 목록"],
  ["prose","단편 쓰기"],["chapterPlan","장 계획"],["chapterBlock","장 섹션 작성"],["choices","행동 후보"],
  ["tone","분위기 판별"],["ageRule","나이 규칙 해석"],["timelineDate","연표 날짜 보완"],["timelineCheck","연표 점검"],

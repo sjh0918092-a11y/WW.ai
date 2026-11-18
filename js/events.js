@@ -154,6 +154,7 @@ document.addEventListener("click", ev => {
     case "story-back": { const w = S.world; if (!w) break; S.view = { name: "article", key: S.recent.find(x => w.entities[x]) || w.mainKey }; renderAll(); break; }
     case "epilogue": S.view = { name: "epilogue" }; renderAll(); window.scrollTo({ top: 0 }); break;
     case "story-card-close": S.storyCard = null; renderMain(); break;
+    case "sync-new": { const k = S.view.key; if (S.pages[k]?.stale === "new" && S.bgSync !== k) bgSync(k, { cats: true, ledger: false }); break; }
     case "sync-retry": { const k = S.view.key; S.syncErr = null; maybeSync(k); renderMain(); break; }
     case "fixv-open": { const k = S.view.key, m = S.memo; if (m && m.k === k) openFixView(k, m.items.map((x, i) => i).filter(i => m.items[i].severity === "high"), false); break; }
     case "fixv-run": runFixBatch(); break;

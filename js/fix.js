@@ -275,7 +275,7 @@ function commitFix(w, k, edits, beforeAssign) {
     page = integrate(w, k, out);
   } catch (err) { restoreRewrite(w, backup); throw err; }
   if (beforeAssign) beforeAssign(old);
-  Object.assign(page, { createdAt: old.createdAt, rewrittenAt: old.rewrittenAt, direction: old.direction, editedAt: old.editedAt, fixedAt: Date.now(), stale: false, conflicts: old.conflicts, autoConflicts: old.autoConflicts, autoDismissed: old.autoDismissed, pending: old.pending, preWrite: old.preWrite, check: null, checkLog: [...(old.checkLog || []), { at: Date.now(), event: "고치기", cleared: !!old.check, issues: old.check?.issues?.length ?? 0 }].slice(-8),   // 고치면 검사 결과를 지우고 다시 검사하지 않으므로 그 사실을 진단 기록에 남긴다
+  Object.assign(page, { createdAt: old.createdAt, rewrittenAt: old.rewrittenAt, direction: old.direction, editedAt: old.editedAt, fixedAt: Date.now(), stale: old.stale === "new" ? "new" : false, conflicts: old.conflicts, autoConflicts: old.autoConflicts, autoDismissed: old.autoDismissed, pending: old.pending, preWrite: old.preWrite, check: null, checkLog: [...(old.checkLog || []), { at: Date.now(), event: "고치기", cleared: !!old.check, issues: old.check?.issues?.length ?? 0 }].slice(-8),   // 고치면 검사 결과를 지우고 다시 검사하지 않으므로 그 사실을 진단 기록에 남긴다
     baseAsOf: old.baseAsOf, syncedTo: old.syncedTo, storyNotice: old.storyNotice });
   cleanupOrphans(w, k);
   S.pages[k] = page;
@@ -328,37 +328,57 @@ function recheckAfterFix(k) {
   noteEvent(p, "고치기 뒤 재검사");
   checkPage(k);
 }
-/* 고친 본문의 확정 사실·연표·관계만 정리한다. 모순 검사나 검사 결과 갱신은 하지 않는다. */
-async function bgSync(k) {
+/* 정리 호출이 붙인 분류를 문서에, linkedCats를 문서가 없는 링크 항목에 넣는다. 국가 문서는 자기 제목, 인물은 소속 하나 */
+function applySyncCats(w, k, p, r) {
+  const type = p.type || w.entities[k]?.type || "";
+  const raw = r?.categories && typeof r.categories === "object" && !Array.isArray(r.categories) ? r.categories : {};
+  const cats = parseCats(widenAffil(w, raw, type, p.title));
+  p.categories = cats.map(c => c.name);
+  if (cats.length) p.catAxes = cats; else delete p.catAxes;
+  for (const h of (Array.isArray(r?.linkedCats) ? r.linkedCats : [])) {
+    if (!h || typeof h.title !== "string") continue;
+    const hk = kOf(w, h.title), o = w.entities[hk]; if (!o || o.page || hk === k) continue;
+    const hc = parseCats({ 소속: widenAffil(w, { 소속: h.소속 }, o.type || "", o.title).소속, 유형: h.유형 }); if (!hc.length) continue;
+    o.cats = [...(o.cats || []), ...hc.filter(x => !(o.cats || []).some(y => y.name === x.name))].slice(0, 4);
+  }
+}
+/* 문서의 확정 기록(사실·관계·용어·소속 이력·존속 기간)을 정리한다. 모순 검사나 검사 결과 갱신은 하지 않는다.
+   opts.ledger(기본 true): 연표·사건 장부도 다시 뽑는다. 새 문서를 고치지 않았으면 작성 호출이 뽑은 것을 그대로 둔다.
+   opts.cats: 분류와 문서가 없는 링크 항목의 소속·유형도 붙인다(새 문서·다시 쓰기만. 고치기·직접 편집 뒤에는 이전 분류를 둔다) */
+async function bgSync(k, opts = {}) {
+  const ledger = opts.ledger !== false;
   const w = S.world, p = S.pages[k]; if (!w || !p || !S.sample) return;
   S.bgSync = k; if (S.view.name === "article" && S.view.key === k) renderMain();
   try {
     const out = sourceToOut(pageToSource(w, p));
     const linkKeys = linksOfOut(w, out, k);
     const temp = { key: k, title: p.title, summary: out.summary, infobox: out.infobox, sections: out.sections, navboxes: out.navboxes };
-    const r = await callJson("factSync", factSyncPrompt(w, temp, linkKeys), { modelTier: "check" }, { title: p.title + " · 확정 사실 정리" });
+    temp.type = p.type || w.entities[k]?.type || "";
+    const r = await callJson("factSync", factSyncPrompt(w, temp, linkKeys, { ledger, cats: !!opts.cats }), { modelTier: "check" }, { title: p.title + " · 확정 사실 정리" });
     if (S.world !== w || S.pages[k] !== p) { S.bgSync = null; return; }
     // AI가 고친 본문은 다른 문서를 대체하는 기준이 되지 않는다. 사용자가 직접 수정한 문서라면 그 수정이 세운 대체 표시는 그대로 두고,
     // 직접 수정한 적 없는 문서라면 (예전 버전이 AI 수정으로 붙였던) 대체 표시와 다른 문서의 경고를 걷어낸다.
     const touched = p.editedAt ? new Set() : clearBadges(k);
     for (const o of Object.values(w.entities)) { o.facts = o.facts.filter(f => f.src !== k); if (!p.editedAt) for (const x of [...o.facts, ...o.mentions]) if (x.sup?.by === k) delete x.sup; }
-    if (!p.editedAt) { w.timeline.forEach(t => { if (t.sup?.by === k) delete t.sup; }); (w.relations || []).forEach(x => { if (x.sup?.by === k) delete x.sup; }); }
-    w.timeline = w.timeline.filter(x => x.src !== k);
+    if (!p.editedAt) { if (ledger) w.timeline.forEach(t => { if (t.sup?.by === k) delete t.sup; }); (w.relations || []).forEach(x => { if (x.sup?.by === k) delete x.sup; }); }
+    if (ledger) w.timeline = w.timeline.filter(x => x.src !== k);
     w.relations = (w.relations || []).filter(x => x.src !== k);
     for (const f of (Array.isArray(r?.facts) ? r.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = kOf(w, f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), k); }
-    acceptPageTimeline(w, r?.timeline, k);
-    afterTimeline(w);
-    if (Array.isArray(r?.events)) ingestEvents(w, k, r.events);
+    if (ledger) { acceptPageTimeline(w, r?.timeline, k); afterTimeline(w); if (Array.isArray(r?.events)) ingestEvents(w, k, r.events); }
     for (const x of (Array.isArray(r?.relations) ? r.relations : []).slice(0, 16)) addRelation(w, k, x);
+    if (Array.isArray(r?.terms)) ingestTerms(w, k, r.terms);
+    if (Array.isArray(r?.affiliations)) ingestAffil(w, k, r.affiliations);
+    if (r?.existence && typeof r.existence === "object") ingestSpan(w, k, r.existence);
+    if (opts.cats) applySyncCats(w, k, p, r);
     for (const n of (Array.isArray(r?.newEntities) ? r.newEntities : [])) {
       if (!n || !n.title) continue; const o = w.entities[kOf(w, n.title)];
       if (o && !o.page && !o.summary && n.summary) { o.summary = stripMarks(n.summary).slice(0, 200); if (!o.type && TYPES.includes(n.type)) o.type = n.type; }
     }
-    p.stale = false;
+    if (opts.cats || p.stale !== "new") delete p.stale;   // 분류를 아직 못 붙인 새 문서는 분류를 붙일 때까지 표시를 둔다
     await Store.savePage(w.id, p);
     for (const x of touched) if (S.pages[x]) await Store.savePage(w.id, S.pages[x]);
     await Store.saveWorld(w);
-  } catch (err) { p.stale = true; try { await Store.savePage(w.id, p); } catch {} }
+  } catch (err) { p.stale = opts.cats || p.stale === "new" ? "new" : true; try { await Store.savePage(w.id, p); } catch {} }
   S.bgSync = null;
   if (S.view.name === "article" && S.view.key === k) renderMain(); else renderSide();
 }

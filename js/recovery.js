@@ -190,6 +190,7 @@ const AIRecovery = {
         delete out.navboxes; for (const s of out.sections) delete s.ch;
         autoLink(copy, m.key, out); widenAffil(copy, out.categories);
         nextPage = integrate(copy, m.key, out, { noAI: true }); nextWorld = copy;
+        if (out.categories === undefined) nextPage.stale = "new";   // 분류·사실은 정리 호출이 붙인다. 복구한 초안은 문서 위 '다시 정리'로 붙인다
         if (p) {
           for (const k of ["createdAt", "portrait", "shortStories"]) if (p[k] !== undefined) nextPage[k] = p[k];
           if (!nextPage.motifs && p.motifs) nextPage.motifs = p.motifs;
@@ -243,7 +244,7 @@ const AIRecovery = {
 };
 
 const STEP_STATUS = { done: "완료", failed: "실패", unknown: "결과 확인 불가", running: "실행 중" };
-const stepLabel = kind => ({ page: "초안 생성", check: "설정 대조", read: "문서 내부 검사", fix: "자동 수정", analyze: "직접 편집 설정 대조", factSync: "수정 후 사실 정리", ageRule: "나이 규칙 해석" }[kind] || KIND[kind] || kind || "AI 호출");
+const stepLabel = kind => ({ page: "초안 생성", check: "설정 대조", read: "문서 내부 검사", fix: "자동 수정", analyze: "직접 편집 설정 대조", factSync: "확정 사실·분류 정리", ageRule: "나이 규칙 해석" }[kind] || KIND[kind] || kind || "AI 호출");
 /* 서버가 남긴 단계별 시각(호출 시작 기준 ms)으로 어디서 늘어졌는지 판정한다. AI를 다시 부르지 않는다. */
 const SLOW_FIRST_MS = 120000;
 function diagnoseTiming(t, status, code) {

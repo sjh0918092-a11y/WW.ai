@@ -16,7 +16,7 @@
     deferred.push(async () => { datesQueued = false; await askTimelineDates(w); await Store.saveWorld(w); });
   };
   const syncFacts = bgSync;
-  bgSync = key => { deferred.push(() => syncFacts(key)); };
+  bgSync = (key, opts) => { deferred.push(() => syncFacts(key, opts)); };
   // 문서와 무관한 각도 목록 보충·다른 장 갱신은 문서 작업의 완료를 막지 않는다.
   maybeAutoAngles = () => null; maybeRefillAngles = () => null; drainSync = () => {};
   const drain = async () => { let count = 0; while (deferred.length && count++ < 12) await deferred.shift()(); };

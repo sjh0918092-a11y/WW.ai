@@ -35,7 +35,8 @@ test('허브 작성 입력과 소속 인물 작성 입력에 구성원 현황이
   const w = russia();
   assert.match(c.pagePrompt(w, K('러시아')), /소속 구성원 현황/);
   assert.match(c.pagePrompt(w, K('베레진스카야')), /체르넨코: 해군 전략 소녀, 퇴역, 1987~2001/);
-  assert.match(c.pagePrompt(w, K('베레진스카야')), /"affiliations":\[/);
+  assert.doesNotMatch(c.pagePrompt(w, K('베레진스카야')), /"affiliations":\[/);
+  assert.match(c.factSyncPrompt(w, { key: K('베레진스카야'), title: '베레진스카야', summary: '', infobox: [], sections: [{ heading: '개요', level: 1, body: '기록' }] }, []), /"affiliations":\[/, '소속 이력은 확정 사실 정리가 받는다');
 });
 test('설정 대조에 구성원 현황과 등장 대상의 기간이 들어간다', () => {
   const w = russia();
@@ -67,7 +68,8 @@ test('존속 기간은 문서가 낸 필드로만 받고 작성 입력에도 들
   assert.equal(w.entities[K('쿠바 위기')].span, undefined);
   assert.match(c.checkPrompt(w, K('쿠바 위기')), /기동 질량 등급: 도입 1968/);
   assert.match(c.pagePrompt(w, K('쿠바 위기')), /관련 항목의 존속·소속 기간[\s\S]*기동 질량 등급: 도입 1968/);
-  assert.match(c.pagePrompt(w, K('쿠바 위기')), /"existence":\{/);
+  assert.doesNotMatch(c.pagePrompt(w, K('쿠바 위기')), /"existence":\{/);
+  assert.match(c.factSyncPrompt(w, { key: K('쿠바 위기'), title: '쿠바 위기', summary: '', infobox: [], sections: [{ heading: '개요', level: 1, body: '기록' }] }, []), /"existence":\{/, '존속 기간은 확정 사실 정리가 받는다');
 });
 test('구성원 현황이 기준 시점 현역과 구성원이 없던 기간을 계산한다', () => {
   const w = russia();

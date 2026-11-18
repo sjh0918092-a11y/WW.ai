@@ -22,11 +22,12 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
   page.on('pageerror', e => { errors.push(e.message); console.error('Browser:', e.message); });
   await ctx.route('**/v1beta/models/**', async r => {
     const prompt = JSON.parse(r.request().postData()).contents[0].parts.map(p=>p.text).join("");
-    const kind = prompt.includes('## 각도 목록 만들기') ? (prompt.includes('## 할 일 3: 6개 고르기') ? 'refill' : 'angles') : prompt.includes('## 작성할 문서:') ? 'page' : 'other'; calls.push(kind);
+    const kind = prompt.includes('## 각도 목록 만들기') ? (prompt.includes('## 할 일 3: 6개 고르기') ? 'refill' : 'angles') : prompt.includes('## 작성할 문서:') ? 'page' : prompt.startsWith('## 문서의 확정 사실 정리') ? 'sync' : 'other'; calls.push(kind);
     const fail = async () => { try { await r.fulfill({ status: 404, json: { error: { message: 'model missing' } } }); } catch {} };
     let out;
     if (kind === 'angles') { if (angleMode === 'hold') await new Promise(res => release = res); if (angleMode === 'fail') return fail(); out = anglesReply; }
     else if (kind === 'page') { const title = /## 작성할 문서: 「([^」]+)」/.exec(prompt)[1]; out = { title, type: '지명', summary: title + '의 정의', infobox: [], sections: [{ heading: '개요', level: 1, body: title + '은 항구에 있다.' }], links: [], facts: [], newEntities: [], relations: [], timeline: [], categories: [] }; }
+    else if (kind === 'sync') out = { facts: [] };
     else return fail();
     try { await r.fulfill({ contentType: 'text/event-stream', body: 'data: ' + JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(out) }] }, finishReason: 'STOP' }] }) + '\n\n' }); } catch {}
   });
@@ -34,7 +35,7 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
   const write = async title => {
     const k = key(title);
     await page.evaluate(({ k, title }) => { Math.random = () => 0.99; if (!S.world.entities[k]) S.world.entities[k] = newEntity(title, '지명', ''); generatePage(k, false, ''); }, { k, title });
-    await page.waitForFunction(k => !S.gen && S.pages[k], k); await page.evaluate(() => Store.q);
+    await page.waitForFunction(k => !S.gen && !S.bgSync && S.pages[k], k); await page.evaluate(() => Store.q);
     assert((await read(page, 'p:port:' + k)), title + ' 문서가 저장되어야 한다');
   };
   const settle = () => page.waitForFunction(() => !anglesBuilding.size);

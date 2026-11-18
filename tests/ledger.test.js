@@ -211,7 +211,7 @@ test("키가 다르면 날짜와 참가자가 겹치는 후보만 검사 프롬�
 test("사건 장부가 생성·검사·수정 흐름에 연결되어 있다", () => {
   assert(html.includes('["사건 장부", (w, k) => [...eventIssues(w, k), ...timelineIssues(w, k), ...episodeIssues(w, k)]]'));
   assert(html.includes("나이 규칙|사건 장부"));
-  assert((html.match(/\$\{EVENTS_JSON\}/g) || []).length >= 3, "문서 작성, 확정 사실 정리, 수정본 분석");
+  assert((html.match(/\$\{EVENTS_JSON\}|ledger \? EVENTS_JSON/g) || []).length >= 3, "문서 작성, 확정 사실 정리, 수정본 분석");
   assert(html.includes("ingestEvents(w, key, out.events)")); assert(html.includes("eventBlock(w, key, rel, inputs.eventsCount)")); assert(html.includes("${eventCheckBlock(w, key, ok)}"));
   assert(html.includes("if (w.events) w.events = w.events.filter(x => x.src !== key);"), "문서를 지우거나 다시 쓰면 그 문서의 기록을 걷어 낸다");
 });
@@ -266,7 +266,7 @@ test("용어 정의가 모든 문서 프롬프트와 문서 읽기 검사에 들
   assert(html.includes("glossaryBlock(w, null, options ? options.glossaryCount : GLOSSARY_PROMPT_N)"), "canonBlock에 넣는다");
   assert(html.includes("이 세계의 용어를 아래 '용어 정의'와 다른 뜻으로 쓴 곳"));
   assert(html.includes("const g = glossaryBlock(w, docForCheck(p))"));
-  assert(html.includes(",${TERMS_JSON},${AFFIL_JSON},${SPAN_JSON}}")); assert(html.includes("ingestTerms(w, key, out.terms)"));
+  assert(html.includes("${TERMS_JSON},${AFFIL_JSON},${SPAN_JSON}")); assert(html.includes("ingestTerms(w, k, r.terms)"));
   assert(html.includes("  purgeTerms(w, key);"));
   assert(html.includes("data-term-pick=") && html.includes("어느 쪽으로 할까요?"));
 });

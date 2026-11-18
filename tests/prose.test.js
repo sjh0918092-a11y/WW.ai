@@ -23,6 +23,7 @@ let n=0;const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
    if(mode==='delay')await new Promise(resolve=>release=resolve);
    if(mode==='bad')out={title:'빈 결과'};else out={title:'대기실 '+(++serial),body:mode==='long'?longBody:'정비병은 손을 멈췄다.\n\n<script>window.proseXss=1</script>\n“조금만 기다려.”'};
   }else if(prompt.includes('## 작성할 문서:'))out={...p,facts:[],relations:[],newEntities:[],timeline:[]};
+  else if(prompt.startsWith('## 문서의 확정 사실 정리'))out={facts:[],relations:[]};
   else if(prompt.includes('사용자가 직접 수정한 최종본'))out={facts:[],relations:[],timeline:[],conflicts:[],newEntities:[]};
   else throw new Error('unexpected AI call: '+prompt.slice(0,100));
   try{await r.fulfill({contentType:'text/event-stream',body:'data: '+JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify(out)}]},finishReason:'STOP'}]})+'\n\n'});}catch{}

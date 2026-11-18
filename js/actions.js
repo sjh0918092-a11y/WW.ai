@@ -404,8 +404,7 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
     const sceneUsed = (angle || novelAngle) && typeof out?.sceneUsed === "string" ? norm(out.sceneUsed).slice(0, 200) : "";
     if (out && typeof out === "object") { delete out.angleUsed; delete out.sceneUsed; }
     if (out && typeof out === "object") delete out.navboxes;   // 틀은 분류에서 계산한다. 새 문서가 틀을 만들지 않는다
-    if (out && typeof out === "object") widenAffil(w, out.categories);   // "X 육군"만 왔으면 국가 X를 첫째 소속으로 보탠다
-    if (out && typeof out === "object") { await ensureAxisCats(w, k, out, { signal: ctl.signal }); widenAffil(w, out.categories); if (ctl.signal.aborted) throw { code: "cancelled" }; }   // 소속이나 유형이 비었으면 한 번 다시 받는다
+    if (out && typeof out === "object") delete out.categories;   // 분류는 확정 사실 정리가 완성된 본문을 읽고 붙인다
     const page = integrate(w, k, out);
     if (preWrite.record) page.preWrite = preWrite.record;   // 진단용: 작성 전 점검이 무엇을 답했는지(백업·진단 도구에서 본다)
     delete page.angleUsed; delete page.sceneUsed;
@@ -427,21 +426,22 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
     const fin = pre?.page || page;
     if (angleUsed) fin.angle = angle.id;
     if (!rewrite && e.persona && (fin.type || e.type) !== "인물") delete e.persona;   // 인물이 아닌 문서로 정해지면 굴린 값은 버린다
-    S.gen = null;
+    S.gen = null; S.bgSync = k;   // 확정 사실 정리까지 작성의 일부다. 끝날 때까지 다른 작업이 끼지 않게 미리 표시한다
     const named = S.world === w && S.pages[k] === fin ? await registerPersonNames(w, k).catch(() => null) : null;   // 인포박스의 본명·코드명을 이 문서로 잇는다(어느 경로로 만들어졌든)
     try { await Store.savePage(w.id, fin); for (const x of cleared) if (S.pages[x] && x !== k) await Store.savePage(w.id, S.pages[x]); if (!novel && !rewrite) noteAngleUse(w, angleUsed ? angle : null, sceneUsed); await Store.saveWorld(w); if (recovery) AIRecovery.handled(recovery.group); if (!novel) maybeRefillAngles(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
     const renamed = S.world === w && S.pages[k] === fin && (fin.type || e.type) === "인물" ? await autoRealNameTitle(w, k).catch(() => null) : null;   // 코드명 제목이면 본명으로 옮긴다(옛 제목은 별칭)
     const kk = renamed?.to || k;
+    if (S.world === w && S.pages[kk]) await bgSync(kk, { cats: true, ledger: !!pre?.patched });
+    if (S.bgSync === k || S.bgSync === kk) S.bgSync = null;   // 사실·관계·용어·소속 이력·존속 기간·분류를 완성된 본문에서 정리한다. 고친 본문이면 연표·사건 장부도 다시 뽑는다
     afterGen(kk, true);
     maybeAutoAngles(w);   // 기다리지 않는다. 실패하면 다음 문서 생성 뒤 다시 시도한다
     if (S.world === w && S.pages[kk]) {
-      if (pre?.patched) bgSync(kk);   // 바뀐 본문에 맞춰 확정 사실을 정리한다
       if (pre?.fixed) toast(`설정과 어긋난 ${pre.fixed}곳을 고쳐서 보여 드립니다.`);
       else if (named?.twins.length) toast("인포박스 이름이 다른 인물 문서의 제목과 같습니다. 설정 노트의 '같은 인물일 수 있는 두 문서'에서 확인해 주세요.");
     }
     return { sceneUsed };
   } catch (err) {
-    S.gen = null;
+    S.gen = null; if (S.bgSync === k) S.bgSync = null;
     if (novel) throw err;
     if (rewrite) {
       restoreRewrite(w, backup); if (S.world === w && oldPage) S.pages[k] = oldPage;
@@ -574,8 +574,9 @@ function integrate(w, key, out, options = {}) {
   const sections = (Array.isArray(out?.sections) ? out.sections : []).filter(s => s && (s.body || s.heading)).map(s => { const x = { heading: String(s.heading || "").replace(/^#+\s*/, "").replace(/^\d+(\.\d+)*\.?\s+/, "").slice(0, 80), level: s.level === 2 ? 2 : 1, body: String(s.body || "") }; if (s.ch > 0) x.ch = +s.ch; return x; });
   if (sections.length && sections[0].level === 2) sections[0].level = 1;
   if (!sections.some(s => s.body.trim())) throw { code: "bad_page" };
-  const cats = parseCats(out.categories), categories = cats.map(c => c.name);   // 축별 객체 또는 예전 형식(이름 배열). 유형 이름은 분류로 두지 않는다
-  const prevAx = S.world === w ? S.pages[key]?.catAxes || [] : [];   // 편집·고치기처럼 이름만 돌아오면 이전 축을 이어 쓴다
+  const old = S.world === w ? S.pages[key] : null;
+  const cats = out.categories === undefined && old ? (old.categories || []).map(name => ({ name })) : parseCats(out.categories), categories = cats.map(c => c.name);   // 축별 객체 또는 예전 형식(이름 배열). 분류가 없는 결과(새 문서·다시 쓰기)는 정리 호출이 붙일 때까지 이전 분류를 둔다
+  const prevAx = old?.catAxes || [];   // 편집·고치기처럼 이름만 돌아오면 이전 축을 이어 쓴다
   const catAxes = cats.map(c => c.axis ? c : prevAx.find(x => x.name === c.name) ? { name: c.name, axis: prevAx.find(x => x.name === c.name).axis } : null).filter(Boolean);
   const infobox = (Array.isArray(out.infobox) ? out.infobox : []).filter(r => r && r.label && r.value).slice(0, 10).map(r => ({ label: String(r.label).slice(0, 30), value: limitInfoboxValue(String(r.value)) }));
   const type = TYPES.includes(out.type) ? out.type : (String(out.type || "").slice(0, 8) || "개념");
@@ -592,11 +593,6 @@ function integrate(w, key, out, options = {}) {
       if (hints[lk]?.aliases && !S.pages[lk]) registerNewAliases(w, lk, hints[lk].aliases);   // 새 항목의 호출부호·이명을 별칭으로(문서가 생기기 전에도 [[본명|호출명]] 링크가 이어지게)
       addMention(w.entities[lk], key, sentenceAround(t, m.index, m[0].length));
     }
-  }
-  for (const [hk, h] of Object.entries(hints)) {   // 아직 문서가 없는 항목의 소속·유형: 틀에 빨간 링크로 들어간다
-    const o = w.entities[hk]; if (!o || o.page || hk === key) continue;
-    const hc = parseCats({ 소속: widenAffil(w, { 소속: h.소속 }).소속, 유형: h.유형 }); if (!hc.length) continue;
-    o.cats = [...(o.cats || []), ...hc.filter(x => !(o.cats || []).some(y => y.name === x.name))].slice(0, 4);
   }
   for (const f of (Array.isArray(out.facts) ? out.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = kOf(w, f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), key); }
   for (const r of (Array.isArray(out.relations) ? out.relations : []).slice(0, 12)) addRelation(w, key, r);

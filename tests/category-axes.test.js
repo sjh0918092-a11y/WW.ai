@@ -37,20 +37,20 @@ const ax = (o) => Object.entries(o).flatMap(([axis, xs]) => xs.map(name => ({ na
   const fixture = { app: 'worldwiki', version: 1, worlds: [world], pages: { axes: Object.fromEntries(P.map(p => [p.key, p])) } };
   const page = await ctx.newPage(), calls = [], errors = [];
   page.on('pageerror', e => { errors.push(e.message); console.error('Browser:', e.message); });
-  let pageOut = null, retryOut = null;
+  let pageOut = null, syncOut = null;
   await ctx.route('**/v1beta/models/**', async r => {
     const prompt = JSON.parse(r.request().postData()).contents[0].parts.map(p=>p.text).join("");
-    const kind = prompt.includes('## 작성할 문서:') ? 'page' : prompt.includes('소속과 유형을 정한다') ? 'cats' : 'other'; calls.push({ kind, prompt });
-    const body = kind === 'page' ? pageOut(/## 작성할 문서: 「([^」]+)」/.exec(prompt)[1]) : kind === 'cats' ? retryOut : null;
+    const kind = prompt.includes('## 작성할 문서:') ? 'page' : prompt.startsWith('## 문서의 확정 사실 정리') ? 'sync' : 'other'; calls.push({ kind, prompt });
+    const body = kind === 'page' ? pageOut(/## 작성할 문서: 「([^」]+)」/.exec(prompt)[1]) : kind === 'sync' ? syncOut : null;
     if (!body) { try { await r.fulfill({ status: 404, json: { error: { message: 'model missing' } } }); } catch {} return; }
     try { await r.fulfill({ contentType: 'text/event-stream', body: 'data: ' + JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(body) }] }, finishReason: 'STOP' }] }) + '\n\n' }); } catch {}
   });
   const open = async title => { await page.evaluate(k => openEntity(k), K(title)); await page.waitForFunction(t => document.querySelector('h1.t')?.textContent === t, title); };
   const boxes = () => page.$$eval('.navbox', xs => xs.map(x => ({ title: x.querySelector('.nb-t').textContent, auto: x.classList.contains('nb-auto'), old: !!x.querySelector('.nb-old-tag'), open: x.open, items: [...x.querySelectorAll('.nb-row li')].map(li => (li.querySelector('a,b')?.textContent || '').trim()) })));
-  const write = async (title, out, retry) => {
-    pageOut = () => out; retryOut = retry; const at = calls.length;
+  const write = async (title, out, sync) => {
+    pageOut = () => out; syncOut = sync; const at = calls.length;
     await page.evaluate(k => generatePage(k, false, ''), K(title));
-    await page.waitForFunction(k => S.pages[k] && !S.gen, K(title)); await page.evaluate(() => Store.q);
+    await page.waitForFunction(k => S.pages[k] && !S.gen && !S.bgSync, K(title)); await page.evaluate(() => Store.q);
     return calls.slice(at);
   };
   try {
@@ -86,11 +86,17 @@ const ax = (o) => Object.entries(o).flatMap(([axis, xs]) => xs.map(name => ({ na
     assert.deepStrictEqual(many.rows, [['1950년대', 4], ['1960년대', 3], ['1970년대', 3], ['1980년대', 2], ['연도 미상', 1]]);
     pass('구성원이 12개를 넘으면 연대별로 줄을 나누고, 연도를 모르는 항목은 맨 끝 줄에 둔다');
 
-    const wide = await page.evaluate(() => ({ a: widenAffil(S.world, { 소속: ['알파국 육군'], 유형: ['기사'] }).소속, b: widenAffil(S.world, { 소속: ['베타국 기사단', '다른 곳'] }).소속, c: widenAffil(S.world, { 소속: ['알파국', '알파국 육군'] }).소속, d: widenAffil(S.world, { 소속: ['감마 상회'] }).소속, e: widenAffil(S.world, { 소속: ['알파국군'] }).소속, g: catGuide(S.world, null), r: catRetryPrompt(S.world, keyOf('사랑'), { categories: {} }) }));
+    const wide = await page.evaluate(() => ({ a: widenAffil(S.world, { 소속: ['알파국 육군'], 유형: ['기사'] }).소속, b: widenAffil(S.world, { 소속: ['베타국 기사단', '다른 곳'] }).소속, c: widenAffil(S.world, { 소속: ['알파국', '알파국 육군'] }).소속, d: widenAffil(S.world, { 소속: ['감마 상회'] }).소속, e: widenAffil(S.world, { 소속: ['알파국군'] }).소속,
+      p1: widenAffil(S.world, { 소속: ['알파국 육군'] }, '인물', '누군가').소속, p2: widenAffil(S.world, { 소속: ['알파국', '알파국 육군'] }, '인물', '누군가').소속,
+      n1: widenAffil(S.world, { 소속: ['북방 연합'] }, '국가', '감마국').소속, n2: widenAffil(S.world, {}, '국가', '감마국').소속,
+      g: catGuide(S.world, null, 30, '인물'), gn: catGuide(S.world, null, 30, '국가'), ge: catGuide(S.world, null, 30, '사건') }));
     assert.deepStrictEqual([wide.a, wide.b, wide.c, wide.d, wide.e], [['알파국', '알파국 육군'], ['베타국', '베타국 기사단'], ['알파국', '알파국 육군'], ['감마 상회'], ['알파국군']]);
-    for (const t of [wide.g, wide.r]) assert(t.includes('가장 넓은 곳(국가나 그에 맞먹는 세력)을 첫째로') && t.includes('이 세계 고유의 존재·신분·계층') && !t.includes('예: 군인'));
-    assert(wide.r.includes('원안: ') && wide.r.includes('핵심 규칙: '));
-    pass('소속이 "국가 + 조직" 이름으로만 오면 그 국가(세계의 국가 항목이나 기존 소속 분류)를 첫째 소속으로 보태고, 분류 지침은 넓은 소속과 세계 고유의 유형을 먼저 고르게 한다');
+    assert.deepStrictEqual([wide.p1, wide.p2], [['알파국'], ['알파국']], '인물의 소속은 넓은 것 하나');
+    assert.deepStrictEqual([wide.n1, wide.n2], [['감마국', '북방 연합'], ['감마국']], '국가 문서는 자기 제목이 첫째 소속');
+    assert(wide.g.includes('이 문서의 유형은 인물이다') && wide.g.includes('속한 국가(또는 그에 맞먹는 세력) 하나만') && wide.g.includes('이 세계 고유의 종류') && !wide.g.includes('예: 군인'));
+    assert(wide.gn.includes('자기 제목은 앱이 붙인다') && wide.gn.includes('연합이나 상위 세력'));
+    assert(wide.ge.includes('사건의 종류') && wide.ge.includes('관련된 존재나 신분은 유형으로 쓰지 않는다') && wide.ge.includes('상위 사건'));
+    pass('소속이 "국가 + 조직" 이름으로만 오면 그 국가를 첫째 소속으로 보태고, 인물은 넓은 소속 하나만, 국가 문서는 자기 제목을 첫째 소속으로 둔다. 분류 지침은 문서 유형별로 축의 뜻을 바꾼다');
 
     // 분류 합치기: 병사 → 군인
     await page.click('#side [data-act="cats"]'); await page.waitForSelector('#cmFrom');
@@ -107,23 +113,28 @@ const ax = (o) => Object.entries(o).flatMap(([axis, xs]) => xs.map(name => ({ na
     assert.equal(await page.locator('h1.t').innerText(), '분류: 군인');
     pass('분류 합치기 뒤에는 표시, 틀 계산, 프롬프트의 기존 분류 목록에서 옛 이름을 새 이름으로 읽고, 문서 데이터는 그대로 둔다');
 
-    // 새 문서: 소속만 오고 유형이 비면 한 번 다시 받는다. 베타국×기사가 3개가 되면 틀이 생긴다
+    // 새 문서: 작성 호출은 분류를 받지 않고, 확정 사실 정리가 완성된 본문에서 분류와 링크 항목의 소속·유형을 붙인다
     await open('바다'); assert(!(await boxes()).some(b => b.title === '베타국의 기사'));
-    const out = { title: '사랑', type: '인물', summary: '베타국의 기사', categories: { 소속: ['베타국'], 유형: [], 사건: [], 기타: ['1952년 출생'] }, notices: [], infobox: [{ label: '출생', value: '1952년 5월 2일' }],
-      sections: [{ heading: '개요', level: 1, body: '사랑은 [[아름]]과 함께 싸웠다.' }], facts: [], relations: [], timeline: [], newEntities: [{ title: '아름', type: '인물', summary: '베타국의 기사', 소속: ['베타국'], 유형: ['기사'] }],
+    const out = { title: '사랑', type: '인물', summary: '베타국의 기사', notices: [], infobox: [{ label: '출생', value: '1952년 5월 2일' }],
+      sections: [{ heading: '개요', level: 1, body: '사랑은 [[아름]]과 함께 싸웠다.' }], timeline: [], newEntities: [{ title: '아름', type: '인물', summary: '베타국의 기사' }],
       navboxes: [{ title: '모델이 만든 틀', rows: [{ label: '', items: ['[[아름]]'] }] }] };
-    let cs = await write('사랑', out, { 소속: ['베타국'], 유형: ['기사'] });
-    assert.deepStrictEqual(cs.map(c => c.kind), ['page', 'cats']);
-    const saved = await page.evaluate(([k, h]) => ({ cats: S.pages[k].categories, axes: S.pages[k].catAxes, hint: S.world.entities[h]?.cats, own: Object.values(S.world.navboxes).filter(nb => nb.src === k).length }), [K('사랑'), K('아름')]);
-    assert.deepStrictEqual(saved.cats, ['베타국', '기사', '1952년 출생']);
+    const sync1 = { facts: [], relations: [], categories: { 소속: ['베타국 기사단'], 유형: ['기사'], 사건: [], 기타: ['1952년 출생'] }, linkedCats: [{ title: '아름', 소속: ['베타국'], 유형: ['기사'] }] };
+    let cs = await write('사랑', out, sync1);
+    assert.deepStrictEqual(cs.map(c => c.kind), ['page', 'sync']);
+    const saved = await page.evaluate(([k, h]) => ({ cats: S.pages[k].categories, axes: S.pages[k].catAxes, stale: S.pages[k].stale, hint: S.world.entities[h]?.cats, own: Object.values(S.world.navboxes).filter(nb => nb.src === k).length }), [K('사랑'), K('아름')]);
+    assert.deepStrictEqual(saved.cats, ['베타국', '기사', '1952년 출생'], '인물의 소속은 넓은 것 하나만 남는다');
     assert.deepStrictEqual(saved.axes, ax({ 소속: ['베타국'], 유형: ['기사'], 기타: ['1952년 출생'] }));
     assert.deepStrictEqual(saved.hint, ax({ 소속: ['베타국'], 유형: ['기사'] }));
+    assert.equal(saved.stale, undefined);
     assert.equal(saved.own, 0, '모델이 navboxes를 보내도 새 틀을 만들지 않는다');
-    pass('분류를 축별로 저장하고(이름 목록 + {name, axis}), 소속이나 유형이 비면 한 번 다시 받아 채운다. newEntities의 소속·유형도 받아 둔다');
-    const pp = cs[0].prompt;
+    pass('새 문서의 분류는 확정 사실 정리가 축별로 붙이고(이름 목록 + {name, axis}), 문서가 없는 링크 항목의 소속·유형도 같은 호출에서 받는다');
+    const pp = cs[0].prompt, sp = cs[1].prompt;
     assert(!/navboxes/.test(pp), '프롬프트에 navboxes 출력 지시가 없다'); assert(!pp.includes('구성원 명단을 틀로 만든다'));
-    assert(pp.includes('"categories":{"소속"') && /- 소속: [^\n]*베타국\(2\)/.test(pp) && pp.includes('같은 뜻의 분류가 이미 둘 이상 있으면 문서 수가 많은 쪽 하나만 쓴다'));
-    pass('문서 작성 프롬프트에 navboxes 출력 지시가 없고, 분류 지침은 축별 기존 분류(문서 수 포함)를 보여 준다');
+    assert(!pp.includes('"categories"') && !pp.includes('"facts"') && !pp.includes('"terms"') && !pp.includes('"affiliations"') && !pp.includes('"existence"') && !pp.includes('"relations"'), '작성 호출은 분류·사실·관계·용어·소속 이력·존속 기간을 받지 않는다');
+    assert(pp.includes('"timeline"') && pp.includes('"events"'), '연표와 사건 장부는 작성 호출이 받는다');
+    assert(sp.includes('"categories":{"소속"') && sp.includes('이 문서의 유형은 인물이다') && /- 소속: [^\n]*베타국\(2\)/.test(sp) && sp.includes('같은 뜻의 분류가 이미 둘 이상 있으면 문서 수가 많은 쪽 하나만 쓴다') && sp.includes('"linkedCats"') && sp.includes('문서가 없는 링크 항목: 아름'));
+    assert(!sp.includes('"timeline"') && !sp.includes('"events"'), '고치지 않은 새 문서는 연표·사건 장부를 다시 뽑지 않는다');
+    pass('문서 작성 프롬프트에는 분류 지침이 없고, 확정 사실 정리 프롬프트가 문서 유형별 분류 지침과 축별 기존 분류(문서 수 포함)를 보여 준다');
     await page.waitForFunction(t => document.querySelector('h1.t')?.textContent === t, '사랑');
     bs = await boxes(); const beta = bs.find(b => b.title === '베타국의 기사');
     assert(beta && beta.auto, '소속×유형이 3개가 되면 틀이 자동으로 생긴다');
@@ -131,12 +142,27 @@ const ax = (o) => Object.entries(o).flatMap(([axis, xs]) => xs.map(name => ({ na
     await open('바다'); assert((await boxes()).some(b => b.title === '베타국의 기사'));
     pass('소속 X와 유형 Y가 함께 붙은 문서가 3개가 되면 "X의 Y" 틀이 자동으로 정의되고, 새 문서와 링크로 생긴 항목이 바로 구성원에 나타난다');
 
-    // 틀이 있는 항목을 쓸 때는 그 틀의 구성원 목록을 맥락에 넣는다. 소속·유형이 모두 있으면 다시 받지 않는다
-    const out2 = { title: '아름', type: '인물', summary: '베타국의 기사', categories: { 소속: ['베타국'], 유형: ['기사'] }, notices: [], infobox: [], sections: [{ heading: '개요', level: 1, body: '아름은 기사였다.' }], facts: [], relations: [], timeline: [], newEntities: [] };
-    cs = await write('아름', out2, null);
-    assert.deepStrictEqual(cs.map(c => c.kind), ['page']);
+    // 틀이 있는 항목을 쓸 때는 그 틀의 구성원 목록을 맥락에 넣는다
+    const out2 = { title: '아름', type: '인물', summary: '베타국의 기사', notices: [], infobox: [], sections: [{ heading: '개요', level: 1, body: '아름은 기사였다.' }], timeline: [], newEntities: [] };
+    cs = await write('아름', out2, { facts: [], categories: { 소속: ['베타국'], 유형: ['기사'] } });
+    assert.deepStrictEqual(cs.map(c => c.kind), ['page', 'sync']);
     assert(cs[0].prompt.includes('## 이 항목이 속한 틀') && /### 틀: 베타국의 기사[^\n]*총 4개/.test(cs[0].prompt) && cs[0].prompt.includes('아름 ← 이 항목'));
-    pass('문서 생성 맥락에 이 항목이 속한 틀의 구성원 목록(계산 결과)을 넣고, 소속·유형이 다 있으면 다시 받지 않는다');
+    pass('문서 생성 맥락에 이 항목이 속한 틀의 구성원 목록(계산 결과)을 넣는다');
+
+    // 국가 문서는 자기 제목을 첫째 소속으로 코드가 붙인다. 정리 호출이 실패하면 경고 띠와 [다시 정리]를 띄운다
+    await page.evaluate(() => { S.world.entities[keyOf('감마국')] = newEntity('감마국', '국가', ''); });
+    const out3 = { title: '감마국', type: '국가', summary: '북방의 나라', notices: [], infobox: [], sections: [{ heading: '개요', level: 1, body: '감마국은 북방에 있다.' }], timeline: [], newEntities: [] };
+    cs = await write('감마국', out3, null);
+    assert.deepStrictEqual(cs.map(c => c.kind).filter(x => x !== 'other'), ['page', 'sync']);
+    assert.equal(await page.evaluate(k => S.pages[k].stale, K('감마국')), 'new');
+    await open('감마국');
+    assert((await page.locator('main .banner.warn').innerText()).includes('분류와 확정 사실을 정리하지 못했습니다'));
+    syncOut = { facts: [], categories: { 소속: ['북방 연합'], 유형: ['공화국'] } };
+    await page.click('[data-act="sync-new"]');
+    await page.waitForFunction(k => !S.bgSync && !S.pages[k].stale, K('감마국'));
+    assert.deepStrictEqual(await page.evaluate(k => S.pages[k].categories, K('감마국')), ['감마국', '북방 연합', '공화국']);
+    assert.equal(await page.locator('main .banner.warn').count(), 0);
+    pass('국가 문서는 자기 제목을 첫째 소속으로 두고, 정리 호출이 실패하면 경고 띠를 띄워 [다시 정리]로 분류와 사실을 다시 붙인다');
 
     // 분류 목록에서 틀 지우기·만들기
     await page.click('#side [data-act="cats"]'); await page.waitForSelector('#ndTitle');

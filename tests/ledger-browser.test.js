@@ -52,6 +52,7 @@ const read = (p, k) => p.evaluate(k => new Promise(resolve => { const r = indexe
       try { await r.fulfill({ contentType: "text/event-stream", body: "data: " + JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ edits, note: "연결 설정 반영" }) }] }, finishReason: "STOP" }] }) + "\n\n" }); } catch {}
       return;
     }
+    if (prompt.startsWith("## 문서의 확정 사실 정리")) { prompts.push(prompt); try { await r.fulfill({ contentType: "text/event-stream", body: "data: " + JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ facts: [], relations: [], terms: reply.terms || [] }) }] }, finishReason: "STOP" }] }) + "\n\n" }); } catch {} return; }
     if (!prompt.includes("## 작성할 문서:")) { try { await r.fulfill({ status: 404, json: { error: { message: "model missing" } } }); } catch {} return; }
     prompts.push(prompt);
     try { await r.fulfill({ contentType: "text/event-stream", body: "data: " + JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(reply) }] }, finishReason: "STOP" }] }) + "\n\n" }); } catch {}
@@ -95,11 +96,11 @@ const read = (p, k) => p.evaluate(k => new Promise(resolve => { const r = indexe
 
     /* 생성: 프롬프트에 장부가 들어가고, 응답의 events·terms·timeline을 검사해 받는다 */
     await page.evaluate(k => openEntity(k), stub);
-    await page.waitForFunction(k => !S.gen && S.pages[k], stub);
-    const pr = prompts[prompts.length - 1];
+    await page.waitForFunction(k => !S.gen && !S.bgSync && S.pages[k], stub);
+    const pr = prompts.filter(x => x.includes("## 작성할 문서:")).at(-1), sync = prompts.filter(x => x.startsWith("## 문서의 확정 사실 정리")).at(-1);
     assert(pr.includes("## 용어 정의와 공통 값 (이 세계의 용어는 이 뜻으로만 쓰고, 공통 값은 이 값과 경계를 그대로 따른다)")); assert(pr.includes("- Type-05: 소녀 한 명의 개인 이름 [사용자 확정]"));
     assert(pr.includes("## 사건 장부 (이 문서가 다룰 수 있는 사건의 확정 기록)")); assert(pr.includes("| 해저 결투 | 2015년 11월 4일 | 북해 | 거리 180해리; 수심 70m |"));
-    assert(pr.includes('"events":[{') && pr.includes('"terms":[{'));
+    assert(pr.includes('"events":[{') && !pr.includes('"terms":[{')); assert(sync.includes('"terms":[{') && !sync.includes('"events":[{'), '용어는 확정 사실 정리가 받고, 사건 장부는 작성 호출이 받는다');
     await page.waitForFunction(() => S.world.events.length === 2);
     saved = await page.evaluate(() => JSON.parse(JSON.stringify(S.world)));
     const mine = saved.events.find(x => x.src !== saved.mainKey); assert.equal(mine.k, saved.mainKey); assert.equal(mine.nums[0].value, "40");
@@ -136,8 +137,9 @@ const read = (p, k) => p.evaluate(k => new Promise(resolve => { const r = indexe
     saved = await read(page, "w:sea"); const la = saved.worldCheck.items.find(x => x.id === a.id);
     assert.equal(la.status, "linked"); assert(saved.userCanon.includes("한 조직의 작전"));
     assert.deepEqual(la.batch.done.sort(), [duel, stub].sort()); assert.deepEqual(la.batch.manual, [hero]); assert.deepEqual(la.batch.failed, []);
-    assert.equal(prompts.length - nFix, 2, "직접 고친 문서는 고치기를 부르지 않는다");
-    assert(prompts.slice(nFix).every(p => p.includes("세계 전체 점검으로 확정한 설정: 북해의 잠항 병기 침투는 모두 한 조직의 작전이다.")));
+    const fixPrompts = prompts.slice(nFix).filter(p => !p.startsWith("## 문서의 확정 사실 정리"));
+    assert.equal(fixPrompts.length, 2, "직접 고친 문서는 고치기를 부르지 않는다");
+    assert(fixPrompts.every(p => p.includes("세계 전체 점검으로 확정한 설정: 북해의 잠항 병기 침투는 모두 한 조직의 작전이다.")));
     assert((await page.evaluate(k => S.pages[k].sections[0].body, duel)).includes("이 일은 한 조직의 작전과 이어진다."));
     assert((await page.locator(`#wc-${a.id}`).textContent()).includes("직접 확인 필요: 「한서진」"));
     pass("[연결하기]는 연결 설정을 사용자 확정 설정에 넣고 관련 문서마다 고치며, 직접 고친 문서는 '직접 확인 필요'로 둔다");
