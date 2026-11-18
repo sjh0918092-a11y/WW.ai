@@ -96,6 +96,8 @@ const ax = (o) => Object.entries(o).flatMap(([axis, xs]) => xs.map(name => ({ na
     assert(wide.g.includes('이 문서의 유형은 인물이다') && wide.g.includes('속한 국가(또는 그에 맞먹는 세력) 하나만') && wide.g.includes('이 세계 고유의 종류') && !wide.g.includes('예: 군인'));
     assert(wide.gn.includes('자기 제목은 앱이 붙인다') && wide.gn.includes('연합이나 상위 세력'));
     assert(wide.ge.includes('사건의 종류') && wide.ge.includes('관련된 존재나 신분은 유형으로 쓰지 않는다') && wide.ge.includes('상위 사건'));
+    assert(wide.g.includes('직접 참여했거나 쓰인 사건') && wide.g.includes('사례나 배경으로 언급만 한 사건은 붙이지 않는다'));
+    assert((await page.evaluate(() => catGuide(S.world, null, 30, '개념'))).includes('그 사건으로 생겨났을 때만'), '개념 문서는 사례로 든 사건을 분류로 붙이지 않는다');
     pass('소속이 "국가 + 조직" 이름으로만 오면 그 국가를 첫째 소속으로 보태고, 인물은 넓은 소속 하나만, 국가 문서는 자기 제목을 첫째 소속으로 둔다. 분류 지침은 문서 유형별로 축의 뜻을 바꾼다');
 
     // 분류 합치기: 병사 → 군인
