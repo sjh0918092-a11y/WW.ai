@@ -290,7 +290,7 @@ function renderMain(force) {
     m.innerHTML = editHtml(S.view.key); m.dataset.ed = S.edit.key; return;
   }
   m.dataset.ed = "";
-  if (!S.ready || S.view.name === "loading") { m.innerHTML = `<div class="sheet"><p class="note">불러오는 중…</p><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>`; return; }
+  if (!S.ready || S.view.name === "loading") { m.innerHTML = `<div class="sheet"><p class="note">불러오는 중…</p><p class="note" id="bootStage">${typeof bootStageText === "function" ? esc(bootStageText()) : ""}</p><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>`; return; }
   if (S.view.name === "home") m.innerHTML = homeHtml();
   else if (S.view.name === "canon") m.innerHTML = canonHtml();
   else if (S.view.name === "notfound") m.innerHTML = notFoundHtml(S.view.title);

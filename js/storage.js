@@ -40,7 +40,7 @@ const IDB = {
 const Store = {
   mode: "memory", mem: { worlds: {}, pages: {} }, q: Promise.resolve(),
   async init() {
-    try { await IDB.open(); await IDB.put("probe", 1); this.mode = "idb"; try { await navigator.storage?.persist?.(); } catch {} return; } catch {}
+    try { await IDB.open(); await IDB.put("probe", 1); this.mode = "idb"; try { navigator.storage?.persist?.()?.catch?.(() => {}); } catch {} return; } catch {}   // 저장 공간 유지 요청은 응답을 기다리지 않는다(일부 모바일 브라우저에서 늦게 돌아옴)
     this.mode = LS.set("wwiki:probe", 1) ? "local" : "memory";
   },
   run(fn) { const p = this.q.then(fn); this.q = p.catch(() => {}); return p; },
