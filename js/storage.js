@@ -165,10 +165,11 @@ const Sync = {
   schedule(ms = 3000) { clearTimeout(this.timer); this.timer = setTimeout(() => this.push(), ms); },
   async req(path, opts = {}) {
     let res;
-    // 받아 오기(GET)는 서버가 응답하지 않아도 끝없이 기다리지 않게 30초에서 끊는다. 올리기는 큰 세계관이 느린 회선에서 잘리지 않게 그대로 둔다
-    const timeout = !opts.method && !opts.signal && typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(30000) : opts.signal;
-    try { res = await fetch(this.base() + path, { ...opts, ...(timeout ? { signal: timeout } : {}), headers: { "Content-Type": "application/json", ...(this.acct?.token ? { Authorization: "Bearer " + this.acct.token } : {}), ...(opts.headers || {}) } }); }
+    // 받아 오기(GET)는 서버가 응답을 시작하지 않으면 30초에서 끊는다. 응답이 시작된 뒤의 본문은 느린 회선에서 오래 걸려도 끊지 않는다(한 번에 수 MB). 올리기는 그대로 둔다
+    const ctl = !opts.method && !opts.signal ? new AbortController() : null, timer = ctl ? setTimeout(() => ctl.abort(), 30000) : null;
+    try { res = await fetch(this.base() + path, { ...opts, ...(ctl ? { signal: ctl.signal } : {}), headers: { "Content-Type": "application/json", ...(this.acct?.token ? { Authorization: "Bearer " + this.acct.token } : {}), ...(opts.headers || {}) } }); }
     catch (e) { throw { code: "network", message: "중계 서버에 연결하지 못했습니다." }; }
+    finally { clearTimeout(timer); }
     let j = null; try { j = await res.json(); } catch {}
     if (!res.ok) { const m = j?.error?.message || "HTTP " + res.status; if (res.status === 401 && this.acct && !/^\/(login|signup)/.test(path)) { this.acct = null; LS.del(AKEY); } throw { code: "acct", status: res.status, message: m }; }
     return j;
