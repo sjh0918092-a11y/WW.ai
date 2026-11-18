@@ -22,7 +22,7 @@ const IDB = {
     return new Promise((res, rej) => {
       const t = this.db.transaction("kv", mode), st = t.objectStore("kv"); let out;
       Promise.resolve(fn(st, v => { out = v; })).catch(rej);
-      t.oncomplete = () => res(out); t.onerror = () => rej(t.error?.name === "QuotaExceededError" ? { code: "quota_exceeded" } : t.error); t.onabort = t.onerror;
+      t.oncomplete = () => res(out); t.onerror = () => rej(t.error?.name === "QuotaExceededError" ? { code: "quota_exceeded", message: "브라우저 저장 공간이 가득 찼습니다." } : t.error || new Error("브라우저 저장소 작업이 중단되었습니다. 저장 공간이 부족할 수 있습니다.")); t.onabort = t.onerror;
     });
   },
   put(k, v) { return this.tx("readwrite", st => { st.put(v, k); }); },
@@ -168,6 +168,7 @@ const Sync = {
     try { res = await fetch(this.base() + path, { ...opts, headers: { "Content-Type": "application/json", ...(this.acct?.token ? { Authorization: "Bearer " + this.acct.token } : {}), ...(opts.headers || {}) } }); }
     catch (e) { throw { code: "network", message: "중계 서버에 연결하지 못했습니다." }; }
     let j = null; try { j = await res.json(); } catch {}
+    if (res.ok && (j === null || typeof j !== "object")) throw { code: "network", message: "서버 응답을 끝까지 받지 못했습니다. 회선이 끊겼을 수 있으니 다시 동기화해 주세요." };
     if (!res.ok) { const m = j?.error?.message || "HTTP " + res.status; if (res.status === 401 && this.acct && !/^\/(login|signup)/.test(path)) { this.acct = null; LS.del(AKEY); } throw { code: "acct", status: res.status, message: m }; }
     return j;
   },
@@ -202,7 +203,7 @@ const Sync = {
       for (const it of items) { const n = (it[2].data || "").length + 200; if (size + n > 4e6 && batch.length) await send(); batch.push(it); size += n; }
       await send();
       this.lastAt = Date.now();
-    } catch (e) { this.err = e.message || "올리지 못했습니다."; this.schedule(30000); }
+    } catch (e) { this.err = e?.message || "올리지 못했습니다."; this.schedule(30000); }
     this.busy = false; this.render();
   },
   async flush() {
@@ -218,8 +219,15 @@ const Sync = {
       await this.push(); if (this.err) throw new Error(this.err);
     }
   },
-  async pull() {
-    if (!this.acct || this.pulling) return 0; this.pulling = true;
+  /* 받아 오기. 이미 진행 중이면 그 결과를 기다린다(동기화 버튼이 뒤에서 도는 받아 오기를 건너뛰고 '동기화했습니다'를 띄우지 않게) */
+  pull() {
+    if (!this.acct) return Promise.resolve(0);
+    if (this.pulling && this.pullP) return this.pullP;
+    this.pulling = true;
+    const p = this.pullP = this.pullOnce().finally(() => { if (this.pullP === p) { this.pullP = null; this.pulling = false; } });
+    return p;
+  },
+  async pullOnce() {
     let changed = 0;
     try {
       if(typeof AISettingsSync!=="undefined")await AISettingsSync.load();
@@ -238,9 +246,12 @@ const Sync = {
           if (!local || (local.savedAt || 0) < r.updated) { let p; try { p = JSON.parse(r.data); } catch { continue; } if (p && p.key) { p.savedAt = r.updated; await Store.putPageRaw(r.wid, p); changed++; } }
         }
         more = !!j.more; since = more ? j.next : Math.max(0, j.next - 5e6);   // 끝에서는 5초를 겹쳐 받아 순서가 엇갈린 기록도 놓치지 않는다
+        // 받은 쪽까지의 위치를 쪽마다 저장한다. 느린 회선에서 중간에 끊겨도 다음 받아 오기가 처음부터 다시 받지 않는다
+        if (!this.acct) throw new Error("다시 로그인해 주세요.");
+        this.acct.since = since; LS.set(AKEY, this.acct);
       }
-      this.acct.since = since; LS.set(AKEY, this.acct); this.lastAt = Date.now(); this.err = "";
-    } catch (e) { this.err = e.message || "받아 오지 못했습니다."; }
+      this.lastAt = Date.now(); this.err = "";
+    } catch (e) { this.err = e?.message || "받아 오지 못했습니다."; }
     this.pulling = false;
     if (changed) await this.refresh();
     this.render();

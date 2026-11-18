@@ -108,7 +108,7 @@ const ID_RE = /^[A-Za-z0-9가-힣_.-]{2,24}$/;
 const PBKDF2_ITER = 20000;           // 무료 플랜의 CPU 시간 한도 안에서 도는 횟수
 const MAX_SYNC = 20 * 1024 * 1024;   // 올리기 한 번의 본문 상한 20MB
 const PAGE_LIMIT = 1500;             // 받아 오기 한 번에 내려 주는 문서 수
-const SYNC_BYTES = 8 * 1024 * 1024;  // 받아 오기 한 번에 표 하나당 내려 주는 크기 목표(D1 조회 한도 50MB보다 넉넉히 작게)
+const SYNC_BYTES = 2 * 1024 * 1024;  // 받아 오기 한 번에 표 하나당 내려 주는 크기 목표. 모바일 회선에서 한 번의 응답이 끊기지 않게 작게 나눈다(D1 조회 한도 50MB보다도 넉넉히 작다)
 let schema = null;
 function ensureSchema(db) {
   schema ||= db.batch([
