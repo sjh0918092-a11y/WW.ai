@@ -123,10 +123,18 @@ function codeLikeTitle(p) {
   const codes = (p.infobox || []).filter(r => CODE_NAME_LABEL.test(stripMarks(r.label).replace(/\s/g, ""))).map(r => identityName(r.value));
   return /['"‘’“”「」『』]|\d|[(（]/.test(p.title) || codes.some(c => c.includes(identityName(p.title)));
 }
+/* 제목이 한글 본명과 겹치는 낱말이 하나도 없으면 칭호·이명 제목으로 본다(「자유의 전초」 ↔ 본명 「캐서린 앤 밀러」).
+   「하인츠 키신저」 ↔ 「하인츠 알프레트 키신저」처럼 이름 토막을 함께 쓰면 본명을 길게 적은 것이라 바꾸지 않는다 */
+function nicknameTitle(title, real) {
+  if (!/[가-힣]/.test(real)) return false;
+  const words = t => norm(stripMarks(t)).normalize("NFKC").toLowerCase().split(/[\s·・.\-]+/).filter(Boolean);
+  const rw = new Set(words(real)), tw = words(title);
+  return tw.length > 0 && !tw.some(x => rw.has(x));
+}
 function realNameFor(w, k) {
   const p = S.world === w ? S.pages[k] : null; if (!p || !isPerson(w, k)) return "";
   const real = realNameCandidates(p).find(n => identityName(n) !== identityName(p.title)); if (!real) return "";
-  if (!codeLikeTitle(p)) return "";
+  if (!codeLikeTitle(p) && !nicknameTitle(p.title, real)) return "";
   const rk = keyOf(real);
   if (rk !== k && S.pages[rk]) return "";   // 본명 문서가 따로 있으면 합치기로 다룬다
   return real;
