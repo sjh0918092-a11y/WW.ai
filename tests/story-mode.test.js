@@ -722,7 +722,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
       const memo = (calls.slice(n29).find(c => c.kind === "fix")?.prompt.split("## 원문")[0]) || "";
       assert(memo.includes("인용 대조: 같은 사람이 같은 날 한 말이 문서마다 다르다"), "같은 날 다른 말은 잡아서 고친다"); }
     assert((await page.locator(".article").innerText()).includes("소급 적용은 무효이므로"), "먼저 기록된 인용으로 맞춘다");
-    { const bp29 = calls.filter(c => c.kind === "page").pop().prompt; assert(bp29.includes("직접 인용은 없는 것이 기본이다") && bp29.includes("인용이 없는 문서도 좋은 문서다"), "인용은 없는 것이 기본"); }
+    { const bp29 = calls.filter(c => c.kind === "page").pop().prompt; assert(bp29.includes("직접 인용은 문서 전체에서 1~2개까지") && !bp29.includes("직접 인용은 없는 것이 기본"), "직접 인용은 1~2개까지"); }
     ok("인용 대조: 같은 사람이 같은 날 한 말은 이미 기록된 것을 넘겨 주고, 다르게 쓰면 잡아서 맞춘다. 인용은 없는 것이 기본");
 
     /* 30. 장 전환 뒤 자동 재검사 없이 반영하고 명시적으로 검사할 수 있다 */
