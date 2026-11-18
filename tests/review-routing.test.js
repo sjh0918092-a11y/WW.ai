@@ -440,6 +440,12 @@ test("'최초' 주장: 작성·설정 검사·세계 전체 점검이 '첫'도 �
   assert.match(cp, /'최초', '처음', '첫', '유일' 주장: 연표와 연결된 문서 원문에 더 이른 같은 종류의 사례가 있으면 high/);
 });
 
+test('인물 인포박스의 본명: 제목이 본명이 아니면 넣고 개요에서 밝히며, 제목이 본명이면 원어 표기나 더 긴 이름일 때만 넣는다', () => {
+  const w = world([page('카일', '인물', '카일은 병사다.', 1)]); w.entities[K('카일')].type = '인물';
+  const pp = c.pagePrompt(w, K('카일'));
+  assert.match(pp, /본명이 아닌 이름이면 '본명' 줄을 넣고 개요 첫 문장에서 본명을 밝힌다/); assert.match(pp, /제목과 같은 글자만 되풀이하는 줄은 쓰지 않는다/); assert.match(pp, /본명이 감춰진 인물이면 본명 줄을 넣지 않는다/);
+});
+
 let failed = 0;
 (async () => { for (const [n, f] of tests) { try { await f(); console.log('통과', n); } catch (e) { failed++; console.log('실패', n, '\n', e.message); } }
 if (failed) process.exit(1); })();
