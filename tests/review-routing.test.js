@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,autoRealNameTitle,dropDuplicateRefs,nameMergeOk,refEventKeys,parentEventKeys,preWritePrompt,preWriteNeeded,runPreWrite,taskSelection,GS,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor,readPrompt,checkTimeline,timelineCheckPrompt,readTimelineForm,timelineEditHtml,promptTimeline});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,autoRealNameTitle,registerNewAliases,textIssues,dropDuplicateRefs,nameMergeOk,refEventKeys,parentEventKeys,preWritePrompt,preWriteNeeded,runPreWrite,taskSelection,GS,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor,readPrompt,checkTimeline,timelineCheckPrompt,readTimelineForm,timelineEditHtml,promptTimeline});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -471,6 +471,20 @@ test('자동 수정 뒤 글자까지 같은 참고 문장이 여러 번이면 �
   assert.equal(c.dropDuplicateRefs(src), 2);
   assert.equal((src.body.match(/자세한 내용은 \[\[스프래틀리 대치\]\] 참고\./g) || []).length, 1);
   assert.match(src.body, /2016년 가을 차단했다\.\n/); assert.match(src.body, /자세한 내용은 \[\[다른 전투\]\] 참고\./);
+});
+
+test('새 항목의 aliases를 별칭으로 등록해 [[본명|호출명]] 링크를 텍스트 검사가 오탐하지 않고, 이미 쓰는 이름이면 이명(제목)으로 붙인다', () => {
+  const doc = page('이라크 전쟁', '사건', '[[새뮤얼 조지아나 메이필드|리버티 프라임]]이 사막을 종단했다.', 1);
+  const w = world([doc, page('에블린 캐번디시', '인물', '2대다.', 2)]); w.aliases = {};
+  w.entities[K('새뮤얼 조지아나 메이필드')] = c.newEntity('새뮤얼 조지아나 메이필드', '인물', ''); w.entities[K('에블린 캐번디시')].type = '인물';
+  assert.ok(c.textIssues(w, K('이라크 전쟁')).some(i => /리버티 프라임/.test(i.conflict)), '등록 전에는 오탐');
+  c.registerNewAliases(w, K('새뮤얼 조지아나 메이필드'), ['리버티 프라임']);
+  assert.equal(w.aliases[K('리버티 프라임')], K('새뮤얼 조지아나 메이필드'));
+  assert.ok(!c.textIssues(w, K('이라크 전쟁')).some(i => /리버티 프라임/.test(i.conflict)), '등록 뒤에는 짚지 않는다');
+  w.entities[K('워스파이트')] = c.newEntity('워스파이트', '인물', '');
+  const added = c.registerNewAliases(w, K('에블린 캐번디시'), ['워스파이트']);
+  assert.ok(!w.aliases[K('워스파이트')], '같은 이름의 빨간 링크는 합치지도 덮지도 않는다'); assert.deepEqual([...added], ['워스파이트(에블린 캐번디시)']);
+  assert.equal(w.aliases[K('워스파이트(에블린 캐번디시)')], K('에블린 캐번디시'));
 });
 
 let failed = 0;

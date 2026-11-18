@@ -149,6 +149,25 @@ function nameMergeOk(w, dk, bk) {
   const earliest = born + (mins.length ? Math.min(...mins) : 0);
   return !years.some(y => y < earliest);
 }
+/* 작성 응답의 newEntities에 적힌 새 항목의 호출부호·이명(aliases)을 별칭으로 등록한다.
+   그 이름이 이미 다른 항목의 제목이거나 다른 항목의 별칭이면 처음 연결을 그대로 두고, 인물끼리면 이 항목에 '이명(제목)'을 링크용 별칭으로 붙인다.
+   같은 이름의 빨간 링크 항목이 따로 있어도 합치지 않는다(다른 사람일 수 있다) */
+function registerNewAliases(w, k, aliases) {
+  const title = w.entities[k]?.title; if (!title || !Array.isArray(aliases)) return [];
+  const person = (w.entities[k].type || "") === "인물", added = [];
+  w.aliases ||= {};
+  for (const raw of aliases.slice(0, 6)) {
+    const n = norm(stripMarks(String(raw || ""))); if (!n || n.length > 40 || NAME_JUNK.test(n) || identityName(n) === identityName(title)) continue;
+    const nk = keyOf(n); if (nk === k) continue;
+    const cur = w.entities[nk] ? nk : w.aliases[nk];
+    if (cur && cur !== k && w.entities[cur]) {
+      if (person && isPerson(w, cur)) { const sk = keyOf(sharedForm(n, title)); if (!w.aliases[sk] && !w.entities[sk]) { w.aliases[sk] = k; added.push(sharedForm(n, title)); } }
+      continue;
+    }
+    if (cur !== k) { w.aliases[nk] = k; added.push(n); }
+  }
+  return added;
+}
 /* 제목을 본명 키로 옮기고 옛 제목은 별칭으로 남긴다. 버튼과 작성 직후 자동 변경이 함께 쓴다. 옮겼으면 { from, to, real }, 아니면 null */
 async function moveTitleToRealName(w, k) {
   const e = w?.entities[k], real = w ? realNameFor(w, k) : ""; if (!e || !real) return null;

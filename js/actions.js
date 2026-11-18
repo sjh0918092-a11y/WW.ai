@@ -589,6 +589,7 @@ function integrate(w, key, out, options = {}) {
       if (!links.includes(lk)) links.push(lk);
       if (!w.entities[lk]) { const h = hints[lk]; w.entities[lk] = newEntity(tt, h && TYPES.includes(h.type) ? h.type : "", h ? stripMarks(h.summary).slice(0, 200) : ""); w.entities[lk].origin = key; }
       else if (!w.entities[lk].summary && hints[lk]?.summary) w.entities[lk].summary = stripMarks(hints[lk].summary).slice(0, 200);
+      if (hints[lk]?.aliases && !S.pages[lk]) registerNewAliases(w, lk, hints[lk].aliases);   // 새 항목의 호출부호·이명을 별칭으로(문서가 생기기 전에도 [[본명|호출명]] 링크가 이어지게)
       addMention(w.entities[lk], key, sentenceAround(t, m.index, m[0].length));
     }
   }
