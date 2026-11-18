@@ -452,6 +452,8 @@ test('자동 합치기 이름 토막: 호출명 제목은 쪼개지 않고, 연�
   const w = world([ws, beck]); w.entities[K('워스파이트 2세')].type = '인물'; w.entities[K('조슬린 벡')].type = '인물';
   w.entities[K('워스파이트')] = { ...c.newEntity('워스파이트', '인물', ''), facts: [{ t: '워스파이트는 1982년 포클랜드 전쟁에서 선단을 호위했다.', src: 'x' }] };
   assert.equal(c.nameMergeOk(w, K('워스파이트'), K('워스파이트 2세')), false, '호출명 제목은 쪼개지 않는다');
+  w.entities[K('워스파이트 3세')] = c.newEntity('워스파이트 3세', '인물', '');
+  assert.equal(c.nameMergeOk(w, K('워스파이트'), K('워스파이트 3세')), false, '상대가 문서 없는 빨간 링크여도 제목에 숫자가 있으면 쪼개지 않는다');
   w.entities[K('벡')] = { ...c.newEntity('벡', '인물', ''), facts: [{ t: '벡은 1990년 걸프전에 투입되었다.', src: 'x' }] };
   assert.equal(c.nameMergeOk(w, K('벡'), K('조슬린 벡')), true, '사람 이름의 성이고 연대가 맞으면 합친다');
   w.entities[K('벡')].facts = [{ t: '벡은 1962년 카리브해에서 싸웠다.', src: 'x' }];

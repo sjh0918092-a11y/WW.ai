@@ -137,6 +137,7 @@ function realNameFor(w, k) {
 function nameMergeOk(w, dk, bk) {
   const p = S.world === w ? S.pages[bk] : null;
   if (p && (codeLikeTitle(p) || realNameCandidates(p).some(n => identityName(n) !== identityName(p.title)))) return false;
+  if (!p && codeLikeTitle({ title: w.entities[bk]?.title || "", infobox: [] })) return false;   // 상대도 문서 없는 빨간 링크면 제목만 본다(숫자·따옴표·괄호)
   const birthRow = (p?.infobox || []).find(r => /출생|탄생|생년/.test(stripMarks(r.label)));
   const born = birthRow ? yearHits(stripMarks(String(birthRow.value)), w)[0]?.y : null;
   if (!Number.isFinite(born)) return true;
