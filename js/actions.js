@@ -178,7 +178,7 @@ async function autoMerge(w) {
     if (named && (!p || (!p.editedAt && (protect.has(named) || (target.createdAt || 0) < (p.createdAt || 0) || ((target.createdAt || 0) === (p.createdAt || 0) && named < dk))))) { pairs.push([dk, named]); continue; }
     const m = TYPE_SUFFIX.exec(d.title || "");
     if (m) { const bk = keyOf(norm(m[1])); if (bk !== dk && w.entities[bk]) { pairs.push([dk, bk]); continue; } }
-    if (!S.pages[dk] && (!d.type || d.type === "인물")) { const bk = nameOwner(w, d.title, dk); if (bk) pairs.push([dk, bk]); }
+    if (!S.pages[dk] && (!d.type || d.type === "인물")) { const bk = nameOwner(w, d.title, dk); if (bk && nameMergeOk(w, dk, bk)) pairs.push([dk, bk]); }   // 호출명 제목을 쪼개거나 연대가 맞지 않는 사람을 합치지 않는다
   }
   if (!pairs.length) return 0;
   await mergeEntities(w, pairs);

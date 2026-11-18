@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,autoRealNameTitle,refEventKeys,parentEventKeys,preWritePrompt,preWriteNeeded,runPreWrite,taskSelection,GS,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor,readPrompt,checkTimeline,timelineCheckPrompt,readTimelineForm,timelineEditHtml,promptTimeline});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,autoRealNameTitle,nameMergeOk,refEventKeys,parentEventKeys,preWritePrompt,preWriteNeeded,runPreWrite,taskSelection,GS,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor,readPrompt,checkTimeline,timelineCheckPrompt,readTimelineForm,timelineEditHtml,promptTimeline});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -444,6 +444,18 @@ test('인물 인포박스의 본명: 제목이 본명이 아니면 넣고 개요
   const w = world([page('카일', '인물', '카일은 병사다.', 1)]); w.entities[K('카일')].type = '인물';
   const pp = c.pagePrompt(w, K('카일'));
   assert.match(pp, /참고 문구 없이 사건 이름에 링크만 건다/); assert.match(pp, /본명이 아닌 이름이면 '본명' 줄을 넣고 개요 첫 문장에서 본명을 밝힌다/); assert.match(pp, /제목과 같은 글자만 되풀이하는 줄은 쓰지 않는다/); assert.match(pp, /본명이 감춰진 인물이면 본명 줄을 넣지 않는다/);
+});
+
+test('자동 합치기 이름 토막: 호출명 제목은 쪼개지 않고, 연대가 맞지 않는 사람은 합치지 않는다', () => {
+  const ws = { ...page('워스파이트 2세', '인물', '2대다.', 1), infobox: [{ label: '본명', value: '에블린 캐번디시' }, { label: '출생', value: '1973년 10월 11일' }] };
+  const beck = { ...page('조슬린 벡', '인물', '벡이다.', 2), infobox: [{ label: '출생', value: '1973년 1월 3일' }], categories: ['전략 소녀'] };
+  const w = world([ws, beck]); w.entities[K('워스파이트 2세')].type = '인물'; w.entities[K('조슬린 벡')].type = '인물';
+  w.entities[K('워스파이트')] = { ...c.newEntity('워스파이트', '인물', ''), facts: [{ t: '워스파이트는 1982년 포클랜드 전쟁에서 선단을 호위했다.', src: 'x' }] };
+  assert.equal(c.nameMergeOk(w, K('워스파이트'), K('워스파이트 2세')), false, '호출명 제목은 쪼개지 않는다');
+  w.entities[K('벡')] = { ...c.newEntity('벡', '인물', ''), facts: [{ t: '벡은 1990년 걸프전에 투입되었다.', src: 'x' }] };
+  assert.equal(c.nameMergeOk(w, K('벡'), K('조슬린 벡')), true, '사람 이름의 성이고 연대가 맞으면 합친다');
+  w.entities[K('벡')].facts = [{ t: '벡은 1962년 카리브해에서 싸웠다.', src: 'x' }];
+  assert.equal(c.nameMergeOk(w, K('벡'), K('조슬린 벡')), false, '태어나기 전의 일이면 합치지 않는다');
 });
 
 let failed = 0;

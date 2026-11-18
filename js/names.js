@@ -117,15 +117,36 @@ function realNameCandidates(p) {
   return all.map((n, i) => ({ n, i })).sort((a, b) => hangul(b.n) - hangul(a.n) || a.i - b.i).map(x => x.n);
 }
 /* 코드명 형태로 만들어진 인물 제목이면 바꿀 본명. 아니면 "" */
+/* 제목이 호출명·코드명처럼 보이는가: 따옴표·숫자·괄호가 있거나 인포박스 호출명·코드명 칸 값에 제목이 들어 있다 */
+function codeLikeTitle(p) {
+  if (!p) return false;
+  const codes = (p.infobox || []).filter(r => CODE_NAME_LABEL.test(stripMarks(r.label).replace(/\s/g, ""))).map(r => identityName(r.value));
+  return /['"‘’“”「」『』]|\d|[(（]/.test(p.title) || codes.some(c => c.includes(identityName(p.title)));
+}
 function realNameFor(w, k) {
   const p = S.world === w ? S.pages[k] : null; if (!p || !isPerson(w, k)) return "";
   const real = realNameCandidates(p).find(n => identityName(n) !== identityName(p.title)); if (!real) return "";
-  const codes = (p.infobox || []).filter(r => CODE_NAME_LABEL.test(stripMarks(r.label).replace(/\s/g, ""))).map(r => identityName(r.value));
-  const codeLike = /['"‘’“”「」『』]|\d|[(（]/.test(p.title) || codes.some(c => c.includes(identityName(p.title)));
-  if (!codeLike) return "";
+  if (!codeLikeTitle(p)) return "";
   const rk = keyOf(real);
   if (rk !== k && S.pages[rk]) return "";   // 본명 문서가 따로 있으면 합치기로 다룬다
   return real;
+}
+/* 자동 합치기의 '이름 토막' 규칙(문서 없는 "벡"을 "조슬린 벡"에 합침)을 써도 되는가.
+   - 상대 인물의 제목이 사람 이름(성+이름)이 아니라 호출명·코드명이면 쪼개지 않는다("워스파이트"는 "워스파이트 2세"의 토막이 아니라 다른 사람일 수 있다).
+   - 합칠 항목의 사실·언급에 나온 연도에 상대 인물이 태어나지 않았거나, 나이 규칙상 활동할 수 없는 나이였으면 합치지 않는다 */
+function nameMergeOk(w, dk, bk) {
+  const p = S.world === w ? S.pages[bk] : null;
+  if (p && (codeLikeTitle(p) || realNameCandidates(p).some(n => identityName(n) !== identityName(p.title)))) return false;
+  const birthRow = (p?.infobox || []).find(r => /출생|탄생|생년/.test(stripMarks(r.label)));
+  const born = birthRow ? yearHits(stripMarks(String(birthRow.value)), w)[0]?.y : null;
+  if (!Number.isFinite(born)) return true;
+  const d = w.entities[dk], texts = [...(d?.facts || []).filter(live).map(f => f.t), ...(d?.mentions || []).filter(live).map(m => m.text)];
+  const years = texts.flatMap(t => yearHits(t, w).map(h => h.y)).filter(Number.isFinite);
+  if (!years.length) return true;
+  const about = p ? [p.summary, ...(p.categories || []), ...(p.infobox || []).map(r => r.value)].join(" ") : "";
+  const mins = (typeof ageRules === "function" ? ageRules(w) : []).filter(R => R.subjects.some(sj => about.includes(sj)) && Number.isInteger(R.min)).map(R => R.min);
+  const earliest = born + (mins.length ? Math.min(...mins) : 0);
+  return !years.some(y => y < earliest);
 }
 /* 제목을 본명 키로 옮기고 옛 제목은 별칭으로 남긴다. 버튼과 작성 직후 자동 변경이 함께 쓴다. 옮겼으면 { from, to, real }, 아니면 null */
 async function moveTitleToRealName(w, k) {
