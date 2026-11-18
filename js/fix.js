@@ -27,10 +27,11 @@ function autoLink(w, key, out) {
   const fields = [...out.sections.filter(s => typeof s?.body === "string").map(s => [s, "body"]),
     ...(Array.isArray(out.infobox) ? out.infobox : []).filter(r => typeof r?.value === "string").map(r => [r, "value"])];
   const owners = documentNameOwners(w);
-  const cands = [];
+  const cands = [], titled = new Set(Object.values(w.entities).map(o => identityName(o.title)));
   for (const [k, o] of Object.entries(w.entities)) {
     if (k === key) continue;
-    for (const n of namesOf(o.title)) if (n === o.title || !/^[㐀-鿿]+$/.test(n)) {
+    // 제목 괄호의 앞뒤 말("빅토리아 여왕(전략 소녀)"의 '전략 소녀')이 다른 항목의 제목이면 다른 이름이 아니라 구분 표시다
+    for (const n of namesOf(o.title)) if (n === o.title || (!/^[㐀-鿿]+$/.test(n) && !titled.has(identityName(n)))) {
       if ((owners.get(identityName(n))?.size || 0) <= 1 || n === o.title) cands.push({ n, title: o.title });
     }
   }

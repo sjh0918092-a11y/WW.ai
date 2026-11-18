@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,autoRealNameTitle,registerNewAliases,textIssues,dropDuplicateRefs,nameMergeOk,refEventKeys,parentEventKeys,preWritePrompt,preWriteNeeded,runPreWrite,taskSelection,GS,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor,readPrompt,checkTimeline,timelineCheckPrompt,readTimelineForm,timelineEditHtml,promptTimeline});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,autoRealNameTitle,autoLink,registerNewAliases,textIssues,dropDuplicateRefs,nameMergeOk,refEventKeys,parentEventKeys,preWritePrompt,preWriteNeeded,runPreWrite,taskSelection,GS,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor,readPrompt,checkTimeline,timelineCheckPrompt,readTimelineForm,timelineEditHtml,promptTimeline});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -485,6 +485,14 @@ test('새 항목의 aliases를 별칭으로 등록해 [[본명|호출명]] 링�
   const added = c.registerNewAliases(w, K('에블린 캐번디시'), ['워스파이트']);
   assert.ok(!w.aliases[K('워스파이트')], '같은 이름의 빨간 링크는 합치지도 덮지도 않는다'); assert.deepEqual([...added], ['워스파이트(에블린 캐번디시)']);
   assert.equal(w.aliases[K('워스파이트(에블린 캐번디시)')], K('에블린 캐번디시'));
+});
+
+test('자동 링크: 제목 괄호 안 말이 다른 항목의 제목이면(구분 표시) 그 말을 이 항목의 다른 이름으로 링크하지 않는다', () => {
+  const concept = page('전략 소녀', '개념', '개념이다.', 1), queen = page('빅토리아 여왕(전략 소녀)', '인물', '영국의 전략 소녀다.', 2);
+  const w = world([concept, queen, page('영국', '국가', '나라다.', 3)]);
+  const out = { sections: [{ heading: '개요', level: 1, body: '영국은 전략 소녀를 운용한다. 백두는 산이다.' }], infobox: [] };
+  c.autoLink(w, K('영국'), out);
+  assert.doesNotMatch(out.sections[0].body, /빅토리아 여왕\(전략 소녀\)\|전략 소녀/); assert.match(out.sections[0].body, /\[\[전략 소녀\]\]/);
 });
 
 let failed = 0;
