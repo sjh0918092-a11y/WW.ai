@@ -318,7 +318,7 @@ test('작성 직후 리뷰에서 고칠 곳이 없어도 검사 요약을 진단
 test('자동 수정 지침: 지운 문단에 기대는 앞뒤 문장도 고치고, 참고 문장은 문서에서 한 번만 붙인다', () => {
   const w = world([page('카일', '인물', '카일은 병사다.', 1)]);
   const p = c.fixBatchPrompt(w, c.S.pages[K('카일')], { summary: '', cats: '', infobox: '', body: '카일은 병사다.' }, [{ claim: '카일은 병사다.', conflict: '재서술(지움): x', severity: 'high' }]);
-  assert.match(p, /참고 문장은 문서 전체에서 한 번만/); assert.match(p, /그 내용을 전제로 하는 앞뒤 문장/); assert.match(p, /되풀이하게 되면/);
+  assert.match(p, /참고 문장은 문서 전체에서 한 번만/); assert.match(p, /반드시 하나는 남긴다/); assert.match(p, /개요가 아닌 첫 섹션의 수정 하나에 붙이고/); assert.match(p, /이름을 문장마다 주어로 되풀이하지 않고/); assert.match(p, /그 내용을 전제로 하는 앞뒤 문장/); assert.match(p, /되풀이하게 되면/);
 });
 
 test('일반 서술: 작성은 원문 사례와 맞을 때만 묶어 쓰고, 리뷰는 양쪽 방향으로 개별 사례와 대조한다', () => {
