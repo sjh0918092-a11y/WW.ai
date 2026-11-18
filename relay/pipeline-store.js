@@ -26,7 +26,7 @@ export async function snapshotWorld(db, uid, input) {
   if (r[2].results.length > 1500) throw fault("snapshot_limit", "문서가 1,500개를 넘는 세계관은 개별 서버 작업을 이용해 주세요.");
   const world = JSON.parse(w.data), pages = {}, updated = {};
   for (const row of r[2].results) { pages[row.pkey] = sourcePage(JSON.parse(row.data)); updated[row.pkey] = row.updated; }
-  if (world.id !== input.wid || !world.entities || (await digest(world)) !== input.worldHash || (await digest(pages[input.key] || null)) !== input.pageHash) throw fault("source_changed", "접수 전 원본이 바뀌었습니다. 동기화한 뒤 다시 시작해 주세요.");
+  if (world.id !== input.wid || !world.entities || (await digest(world)) !== input.worldHash || (await digest(pages[input.key] || null)) !== input.pageHash) throw fault("source_stale", "접수 전 원본이 바뀌었습니다. 동기화한 뒤 다시 시작해 주세요.");
   if (!world.entities[input.key] && !input.entity) throw fault("source_deleted", "대상 항목이 없어 시작하지 않았습니다.");
   if (input.action === "check" && !pages[input.key]) throw fault("source_deleted", "검사할 문서가 없습니다.");
   const snapshot = { world, pages, version: r[0].results?.[0]?.version || 0, updated, worldUpdated: w.updated };

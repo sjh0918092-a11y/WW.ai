@@ -20,7 +20,29 @@ const DocumentPipeline = {
     }
     return { world: w, pages, report };
   },
-  async request(action, k, { rewrite = false, direction = "", novel = false, angle = null, ctl } = {}) {
+  /* 다른 서버 작업이나 기기가 먼저 저장해 이 기기 원본이 뒤처졌으면, 받아 와서 화면 원본을 맞춘 뒤 다시 접수한다 */
+  async request(action, k, opts = {}) {
+    const w = S.world;
+    for (let attempt = 0; ; attempt++) {
+      try { return await this.requestOnce(action, k, opts); }
+      catch (err) {
+        const stale = err?.code === "source_stale" || (err?.code === "source_changed" && /접수 전/.test(err?.message || ""));
+        if (!stale || attempt >= 2 || opts.ctl?.signal.aborted) throw err;
+        await this.catchUp(w, k);
+      }
+    }
+  },
+  async catchUp(w, k) {
+    await Sync.pull(); if (Sync.err) throw new Error(Sync.err);
+    const fresh = await Store.getWorld(w.id);
+    if (!fresh || S.world !== w) throw new Error("세계관이나 계정이 바뀌었습니다.");
+    const pending = w.entities[k] && !fresh.entities[k] ? w.entities[k] : null;
+    for (const key of Object.keys(w)) delete w[key]; Object.assign(w, fresh);
+    if (pending) w.entities[k] = pending;
+    S.pages = await Store.listPages(w.id); S.worlds = S.worlds.map(v => v.id === w.id ? w : v);
+    restoreQueued(w);
+  },
+  async requestOnce(action, k, { rewrite = false, direction = "", novel = false, angle = null, ctl } = {}) {
     const w = S.world, ctx = AIRecovery.context();
     if (!ctx) throw new Error("로그인이 필요합니다.");
     await Sync.flush();

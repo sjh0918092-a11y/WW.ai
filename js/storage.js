@@ -50,7 +50,7 @@ const Store = {
     return Object.values(this.mem.worlds).map(w => JSON.parse(JSON.stringify(w)));
   },
   saveWorld(w) {
-    w.updatedAt = Date.now(); const copy = JSON.parse(JSON.stringify(w));
+    w.updatedAt = Math.max(Date.now(), (w.updatedAt || 0) + 1); const copy = JSON.parse(JSON.stringify(w));
     Sync.mark("w", w.id);
     return this.putWorldRaw(copy);
   },
@@ -68,7 +68,7 @@ const Store = {
     return JSON.parse(JSON.stringify(this.mem.pages[wid] || {}));
   },
   savePage(wid, p) {
-    p.savedAt = Date.now(); const copy = JSON.parse(JSON.stringify(p));
+    p.savedAt = Math.max(Date.now(), (p.savedAt || 0) + 1); const copy = JSON.parse(JSON.stringify(p));
     Sync.mark("p", wid, p.key);
     return this.putPageRaw(wid, copy);
   },
