@@ -318,7 +318,7 @@ test('작성 직후 리뷰에서 고칠 곳이 없어도 검사 요약을 진단
 test('자동 수정 지침: 지운 문단에 기대는 앞뒤 문장도 고치고, 참고 문장은 문서에서 한 번만 붙인다', () => {
   const w = world([page('카일', '인물', '카일은 병사다.', 1)]);
   const p = c.fixBatchPrompt(w, c.S.pages[K('카일')], { summary: '', cats: '', infobox: '', body: '카일은 병사다.' }, [{ claim: '카일은 병사다.', conflict: '재서술(지움): x', severity: 'high' }]);
-  assert.match(p, /참고 문장은 문서 전체에서 한 번만/); assert.match(p, /반드시 하나는 남긴다/); assert.match(p, /개요가 아닌 첫 섹션의 수정 하나에 붙이고/); assert.match(p, /이름을 문장마다 주어로 되풀이하지 않고/); assert.match(p, /그 내용을 전제로 하는 앞뒤 문장/); assert.match(p, /되풀이하게 되면/);
+  assert.match(p, /참고 문장은 문서 전체에서 한 번만/); assert.match(p, /반드시 하나는 남긴다/); assert.match(p, /참여하지 않고 다른 항목의 일이나 배경으로만 나오는 문단이면, 짧게 줄이되 참고 문장을 붙이지 않고/); assert.match(p, /개요가 아닌 첫 섹션의 수정 하나에 붙이고/); assert.match(p, /이름을 문장마다 주어로 되풀이하지 않고/); assert.match(p, /그 내용을 전제로 하는 앞뒤 문장/); assert.match(p, /되풀이하게 되면/);
 });
 
 test('일반 서술: 작성은 원문 사례와 맞을 때만 묶어 쓰고, 리뷰는 양쪽 방향으로 개별 사례와 대조한다', () => {
@@ -443,7 +443,7 @@ test("'최초' 주장: 작성·설정 검사·세계 전체 점검이 '첫'도 �
 test('인물 인포박스의 본명: 제목이 본명이 아니면 넣고 개요에서 밝히며, 제목이 본명이면 원어 표기나 더 긴 이름일 때만 넣는다', () => {
   const w = world([page('카일', '인물', '카일은 병사다.', 1)]); w.entities[K('카일')].type = '인물';
   const pp = c.pagePrompt(w, K('카일'));
-  assert.match(pp, /본명이 아닌 이름이면 '본명' 줄을 넣고 개요 첫 문장에서 본명을 밝힌다/); assert.match(pp, /제목과 같은 글자만 되풀이하는 줄은 쓰지 않는다/); assert.match(pp, /본명이 감춰진 인물이면 본명 줄을 넣지 않는다/);
+  assert.match(pp, /참고 문구 없이 사건 이름에 링크만 건다/); assert.match(pp, /본명이 아닌 이름이면 '본명' 줄을 넣고 개요 첫 문장에서 본명을 밝힌다/); assert.match(pp, /제목과 같은 글자만 되풀이하는 줄은 쓰지 않는다/); assert.match(pp, /본명이 감춰진 인물이면 본명 줄을 넣지 않는다/);
 });
 
 let failed = 0;
