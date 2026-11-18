@@ -271,6 +271,7 @@ async function openWorld(wid, goKey, restoring = false) {
   S.view = { name: "loading" }; renderAll();
   try { S.pages = await Store.listPages(w.id); } catch (e) { toast(errMsg(e)); }
   const merged = await autoMerge(w);
+  const renamedTitles = await autoRealNameTitles(w).catch(() => []);   // 이미 있는 인물 문서도 칭호·코드명 제목이면 본명으로 옮긴다(옛 제목은 별칭)
   await cleanChapterTitles(w);
   const unbadged = await cleanAiSupersede(w);
   if (fixOldAngles(w, S.pages)) { try { await Store.saveWorld(w); } catch {} maybeRefillAngles(w); }   // 이전 형식 각도 변환, 한도까지 쓴 각도 은퇴. 활성 각도가 모자라면 보충
@@ -288,6 +289,7 @@ async function openWorld(wid, goKey, restoring = false) {
   else openEntity(goKey && (w.entities[goKey] || w.aliases?.[goKey]) ? goKey : w.mainKey);
   if (resumed) { toast(`작성 대기열에 남아 있던 문서 ${resumed}개를 이어서 작성합니다.`); drainGenQ(); }
   if (unbadged) setTimeout(() => toast(`AI 수정 때문에 잘못 붙어 있던 '설정과 맞지 않음' 경고 ${unbadged}건을 지웠습니다.`), merged ? 3800 : 0);
+  if (renamedTitles.length) setTimeout(() => toast(renamedTitles.length === 1 ? `「${renamedTitles[0].from}」 문서 제목을 본명 「${renamedTitles[0].real}」(으)로 바꿨습니다. 옛 제목 링크도 이 문서로 이어집니다.` : `인물 문서 ${renamedTitles.length}개의 제목을 본명으로 바꿨습니다(예: 「${renamedTitles[0].from}」 → 「${renamedTitles[0].real}」). 옛 제목 링크도 이어집니다.`), merged || unbadged ? 7600 : 0);
   if (merged) toast(`같은 대상을 가리키는데 따로 생긴 항목 ${merged}개를 원래 항목에 합쳤습니다. 예: "이름(인물)", 성이나 이름만 쓴 인물.`);
 }
 

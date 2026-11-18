@@ -2,8 +2,8 @@
 /* 인물 이름 안전장치: 어느 경로로 만들어졌든 인물 문서의 인포박스 이름(본명·코드명 등)을 이 문서로 이어 준다.
    - 이름 칸의 이름은 w.aliases에 이 문서 키로 등록한다(앞으로 그 이름으로 링크하면 이 문서로 간다).
    - 그 이름의 빨간 링크 항목이 이미 있으면 이 문서에 합친다. 문서가 있는 항목은 건드리지 않고 w.nameTwins에 남겨 설정 노트에 띄운다.
-   - 새로 쓰거나 다시 쓴 인물 문서는 제목이 호출명·코드명이고 본명이 따로 적혀 있으면 작성 직후 제목을 본명으로 옮긴다(옛 제목은 별칭).
-     그 밖의 기존 문서는 자동으로 바꾸지 않고, 사용자가 [제목을 본명으로 바꾸기]를 눌렀을 때만 바꾼다. */
+   - 인물 문서의 제목이 호출명·코드명·칭호이고 본명이 따로 적혀 있으면 작성 직후와 세계관을 열 때 제목을 본명으로 옮긴다(옛 제목은 별칭).
+     [제목을 본명으로 바꾸기] 버튼은 그 사이에 남은 문서용이다. */
 const NAME_JUNK = /미상|불명|없음|비공개|알\s*수\s*없|해당\s*없|기밀|불확실|^[-—–]+$/;
 const REAL_NAME_LABEL = /^(?:본명|성명|이름)$/;
 const CODE_NAME_LABEL = /^(?:코드명|코드네임|암호명|제식명|활동명|별칭|별명|가명|호출부호|호출명|콜사인|이명|칭호)$/;
@@ -206,6 +206,16 @@ async function autoRealNameTitle(w, k) {
   const r = await moveTitleToRealName(w, k); if (!r || r.blocked) return null;
   const p = S.pages[r.to]; if (p) { p.renamedFrom = { from: r.from, at: Date.now() }; try { await Store.savePage(w.id, p); } catch {} }
   return r;
+}
+/* 세계관을 열 때: 이미 있는 인물 문서 가운데 칭호·코드명 제목인 것을 모두 본명으로 옮긴다. 옮긴 목록을 돌려준다 */
+async function autoRealNameTitles(w) {
+  const out = [];
+  if (!w || isStory(w) || S.world !== w) return out;
+  for (const k of Object.keys(S.pages)) {
+    if (S.world !== w || !S.pages[k] || !w.entities[k] || !realNameFor(w, k)) continue;
+    const r = await autoRealNameTitle(w, k).catch(() => null); if (r) out.push(r);
+  }
+  return out;
 }
 /* 설정 노트: 같은 인물일 수 있는 두 문서 */
 function nameTwinsHtml(w) {

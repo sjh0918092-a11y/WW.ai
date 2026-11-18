@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,autoRealNameTitle,autoLink,registerNewAliases,textIssues,dropDuplicateRefs,nameMergeOk,refEventKeys,parentEventKeys,preWritePrompt,preWriteNeeded,runPreWrite,taskSelection,GS,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor,readPrompt,checkTimeline,timelineCheckPrompt,readTimelineForm,timelineEditHtml,promptTimeline});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,gradeIssues,detIssues,checkKeys,checkPrompt,noteCheck,commitFix,pagePrompt,ownerExcerptBlock,eventIssues,eventBlock,biblePrompt,readPrompt,autoRealNameTitle,autoRealNameTitles,autoLink,registerNewAliases,textIssues,dropDuplicateRefs,nameMergeOk,refEventKeys,parentEventKeys,preWritePrompt,preWriteNeeded,runPreWrite,taskSelection,GS,fixBatchPrompt,taskThinkOptions,preCheck,registerPersonNames,sharedNames,kOf,realNameFor,readPrompt,checkTimeline,timelineCheckPrompt,readTimelineForm,timelineEditHtml,promptTimeline});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -423,6 +423,16 @@ test('작성 직후: 코드명 제목의 인물 문서는 본명으로 옮기고
   const plain = { ...page('한서진', '인물', '한서진이다.', 3), infobox: [{ label: '본명', value: '한서진' }] };
   const w2 = world([plain]); w2.entities[K('한서진')].type = '인물';
   assert.equal(await c.autoRealNameTitle(w2, K('한서진')), null, '코드명 제목이 아니면 바꾸지 않는다');
+});
+
+test('세계관을 열 때: 이미 있는 칭호 제목 인물 문서도 본명으로 옮긴다', async () => {
+  const p = { ...page('자유의 전초', '인물', '전초다.', 1), infobox: [{ label: '본명', value: '[[캐서린 앤 밀러]] (Catherine Ann Miller)' }] };
+  const plain = { ...page('한서진', '인물', '한서진이다.', 2), infobox: [{ label: '본명', value: '한서진' }] };
+  const w = world([p, plain]); w.entities[K('자유의 전초')].type = '인물'; w.entities[K('한서진')].type = '인물'; w.aliases = {};
+  const rs = await c.autoRealNameTitles(w);
+  assert.equal(rs.length, 1); assert.equal(rs[0].to, K('캐서린 앤 밀러'));
+  assert.ok(c.S.pages[K('캐서린 앤 밀러')] && !c.S.pages[K('자유의 전초')]); assert.equal(w.aliases[K('자유의 전초')], K('캐서린 앤 밀러'));
+  assert.ok(c.S.pages[K('한서진')]);
 });
 
 test('상위 사건: 하위 사건 문서는 자기를 품은 사건을 참고로 넘기지 않고, 상위 사건 문서는 하위 사건을 그대로 넘긴다', () => {
