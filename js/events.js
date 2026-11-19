@@ -181,6 +181,7 @@ document.addEventListener("click", ev => {
       readGsetForm();const blob=new Blob([JSON.stringify(aiSettingsFile(),null,2)],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="worldwiki-ai-settings-"+new Date().toISOString().slice(0,10)+".json";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);setGres("AI 설정을 내보냈습니다.");break;
     }
     case "gset-import": $("#aiSettingsFile")?.click();break;
+    case "gset-reset-all": if(window.confirm("AI 설정을 모두 기본값으로 초기화하시겠습니까? 접속 암호·중계 서버 주소·불러온 모델 목록은 유지합니다."))(async()=>{GS={...GS,...Object.fromEntries(AI_EXPORT_FIELDS.map(k=>[k,GDEF[k]])),taskModels:{},prompt:normalizePromptOptions()};AISettingsSync.formDirty=false;saveGS();S.sample=gReady()?gemini:null;S.gres="모든 AI 설정을 기본값으로 초기화했습니다.";renderSide();renderMain();await AISettingsSync.flush();AISettingsSync.render()})();break;
     case "gset-input-defaults": readGsetForm();GS.prompt=normalizePromptOptions();saveGS();renderMain();setGres("문서 작성 입력 자료를 기본값으로 복원했습니다.");break;
     case "gset-test": (async () => {
       readGsetForm(); renderSide(); if (!gReady()) { setGres("서버 접속 암호를 먼저 저장해 주세요."); return; }
