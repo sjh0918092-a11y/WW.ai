@@ -257,7 +257,7 @@ function diagnoseTiming(t, status, code, detail) {
   if (code === "deadline_exceeded") return { level: "bad", text: t.first === null ? "서버 10분 제한 도달 — 끝까지 첫 응답이 없었습니다" : "서버 10분 제한 도달 — 응답은 오고 있었지만 너무 길었습니다" };
   if (t.end === null) return { level: "warn", text: "아직 실행 중이거나 서버가 도중에 종료됐습니다" };
   if (t.headers === null) return { level: "bad", text: "AI 서버 연결 단계에서 실패했습니다" };
-  if (status === "failed" || status === "unknown") return { level: "bad", text: "응답을 받았지만 처리에 실패했습니다" + (code ? ` (${code})` : "") + (detail ? ` — 공급자 응답: ${detail}` : code === "upstream_error" ? " — 공급자 사유가 기록되지 않았습니다. 서버(Worker)가 v8.43 이전 코드라면 relay를 다시 배포해야 사유가 남습니다" : "") };
+  if (status === "failed" || status === "unknown") return { level: "bad", text: "응답을 받았지만 처리에 실패했습니다" + (code ? ` (${code})` : "") + (detail ? ` — 공급자 응답: ${detail}` : code === "upstream_error" ? " — 공급자 사유가 기록되지 않았습니다(사유를 남기는 서버 코드는 v8.43부터)" : "") };
   if (t.first !== null && t.first >= SLOW_FIRST_MS) return { level: "warn", text: `첫 응답까지 ${s(t.first)} — 생각 시간이 깁니다. 생각 수준을 낮추면 빨라집니다` };
   return { level: "ok", text: "정상" };
 }
@@ -279,7 +279,7 @@ function jobDiagnosisHtml(r, report, open) {
   const bad = rows.find(x => x.d.level === "bad") || rows.find(x => x.d.level === "warn");
   const total = Array.isArray(report?.steps) || Array.isArray(r?.steps) ? rows.reduce((n, x) => n + (x.timing?.end || 0), 0) : 0;
   return `<details class="job-diag memo"${open || bad ? " open" : ""}><summary>실행 진단${bad ? ` · ${esc(stepLabel(bad.kind))}: ${esc(bad.d.text.split(" — ")[0])}` : " · 이상 없음"}</summary><div class="cost-body">
-    <p class="note">${slow ? `가장 오래 걸린 호출: ${esc(stepLabel(slow.kind))} ${s(slow.timing.end)}` : "시간 기록이 없습니다."}${total ? ` · AI 호출 합계 ${s(total)}(검사는 동시에 실행)` : ""}. 서버 감시 기준: 첫 응답 240초, 도중 멈춤 90초, 전체 10분.</p>
+    <p class="note">${slow ? `가장 오래 걸린 호출: ${esc(stepLabel(slow.kind))} ${s(slow.timing.end)}` : "시간 기록이 없습니다."}${total ? ` · AI 호출 합계 ${s(total)}(검사는 동시에 실행)` : ""}. 서버 감시 기준: 첫 응답 240초, 도중 멈춤 90초, 전체 10분. 이 작업을 실행한 서버 코드: ${report ? esc(report.relay || "v8.45 이전(버전 기록 없음)") : "-"}.</p>
     <ul>${rows.map(x => `<li class="diag-${x.d.level}"><span><b>${esc(stepLabel(x.kind))}</b> · ${esc(x.model || "")} · ${esc(STEP_STATUS[x.status] || x.status || "")}<br><small>${esc(x.d.text)}</small>${cacheDiagHtml(x)}${x.text ? `<details class="step-text"><summary>응답 보기</summary><pre class="logpre">${esc(x.text)}</pre></details>` : ""}</span><span>${x.timing ? `첫 응답 ${s(x.timing.first)} · 총 ${s(x.timing.end)}${x.timing.last !== null && x.timing.end !== null ? ` · 마지막 수신 후 ${s(x.timing.end - x.timing.last)}` : ""} · ${kb(x.timing.bytes)}` : "-"}</span></li>`).join("")}</ul>
   </div></details>`;
 }

@@ -1,4 +1,4 @@
-import { createDocumentEngine, ENGINE_SOURCE } from "./engine.generated.js";
+import { createDocumentEngine, ENGINE_SOURCE, RELAY_VERSION } from "./engine.generated.js";
 import { snapshotWorld, commitDocument, digest } from "./pipeline-store.js";
 import { runProvider, usageCounts, countGeminiTokens } from "./providers.js";
 const yieldError = () => ({ code: "pipeline_yield", serverJob: true });
@@ -14,7 +14,7 @@ const resultFor = (state, output, saved, error) => {
   const parts = pageStep?.response?.candidates?.[0]?.content?.parts || [];
   const text = output?.page ? JSON.stringify(output.page) : parts.filter(p => typeof p.text === "string" && !p.thought).map(p => p.text).join("");
   return { candidates: [{ content: { parts: [{ text }] }, finishReason: "STOP" }], pipeline: {
-    version: 1, saved, wid: state.snapshot?.world.id, targetKey: output?.targetKey || state.input.key, checked: !!output?.checked,
+    version: 1, relay: RELAY_VERSION, saved, wid: state.snapshot?.world.id, targetKey: output?.targetKey || state.input.key, checked: !!output?.checked,
     fixed: output?.fixed || 0, remaining: output?.remaining || 0, notFound: !!output?.notFound, redirectTo: output?.redirectTo || null,
     sceneUsed: output?.sceneUsed || "", angleRecorded: !!state.input.novel && saved,
     steps: state.steps.map(({ kind, model, status, error, response, timing, cache }) => ({ kind, model, status, usage:usageCounts(response?.usageMetadata), ...(timing ? { timing } : {}), ...(cache ? { cache } : {}), ...(error ? { error: safeError(error) } : {}), ...(kind !== "page" && stepText(response) ? { text: stepText(response) } : {}) })), ...(error ? { error } : {}),

@@ -20,6 +20,7 @@
  *   POST /api/sync {worlds, pages}     올리기. 기기의 수정 시각(updated)이 더 최근인 것만 저장한다
  */
 import { pipelineSchema } from "./pipeline-store.js";
+import { RELAY_VERSION } from "./engine.generated.js";
 import { jobsApi } from "./jobs.js";
 import { claudeModels, openAIModels } from "./models.js";
 import { accountSettings } from "./account-settings.js";
@@ -58,7 +59,7 @@ export default {
     // runsIn은 이 Worker가 Google로 요청을 내보내는 Cloudflare 데이터센터(공항 코드)와 나라다. HKG(홍콩) 등이면 Gemini가 막는다.
     if (url.pathname === "/" && request.method === "GET") {
       const where = await egress();
-      return new Response(JSON.stringify({ ok: true, service: "WorldWiki relay", keyConfigured: !!env.GEMINI_KEY, openaiKeyConfigured: !!env.OPENAI_API_KEY, claudeKeyConfigured: !!env.ANTHROPIC_API_KEY, passwordsConfigured: !!env.PASSWORDS, storageConfigured: !!env.DB, jobsConfigured: !!env.AI_JOBS, jobsVersion: env.AI_JOBS ? 4 : 0, receivedAt: request.cf?.colo || null, runsIn: where }), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
+      return new Response(JSON.stringify({ ok: true, service: "WorldWiki relay", relayVersion: RELAY_VERSION, keyConfigured: !!env.GEMINI_KEY, openaiKeyConfigured: !!env.OPENAI_API_KEY, claudeKeyConfigured: !!env.ANTHROPIC_API_KEY, passwordsConfigured: !!env.PASSWORDS, storageConfigured: !!env.DB, jobsConfigured: !!env.AI_JOBS, jobsVersion: env.AI_JOBS ? 4 : 0, receivedAt: request.cf?.colo || null, runsIn: where }), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
     }
 
     if (!originOk) return fail(403, "허용되지 않은 사이트입니다. ALLOWED_ORIGINS 설정을 확인하세요.");
