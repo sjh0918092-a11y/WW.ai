@@ -263,14 +263,24 @@ function sseEvents(text) {
 }
 const plainJson = text => { try { return JSON.parse(text); } catch { throw { code: "invalid_response" }; } };
 const cutOff = () => ({ code: "incomplete_response", safeMessage: "AI 응답이 완료 신호 없이 끊겼습니다. 중복 실행을 피하려고 자동으로 다시 보내지 않았습니다." });
-const streamError = () => ({ code: "upstream_error", definite: true, safeMessage: "AI 서버가 응답 도중 오류를 보냈습니다. 잠시 뒤 다시 시도해 주세요." });
+// 스트림 안에 온 공급자 오류의 코드·상태·메시지를 남겨 원인(과부하·한도·내부 오류 등)을 구분할 수 있게 한다.
+// 키처럼 보이는 문자열은 가리고 길이를 제한한다.
+const redact = v => String(v ?? "").replace(/AIza[\w-]{20,}|sk-[\w-]{16,}|Bearer\s+\S+/g, "[가림]").replace(/\s+/g, " ").trim().slice(0, 300);
+export function streamError(err) {
+  const e = err && typeof err === "object" ? err : {};
+  const http = Number.isInteger(e.code) ? e.code : (Number.isInteger(e.status_code) ? e.status_code : undefined);
+  const detail = [http, typeof e.status === "string" ? e.status : (typeof e.type === "string" && e.type !== "error" ? e.type : ""), redact(e.message)].filter(v => v !== undefined && v !== "").join(" ");
+  return { code: "upstream_error", definite: true, ...(http ? { status: http } : {}), ...(detail ? { detail } : {}),
+    safeMessage: "AI 서버가 응답 도중 오류를 보냈습니다. 잠시 뒤 다시 시도해 주세요." + (detail ? " (공급자 응답: " + detail + ")" : "") };
+}
 
 // OpenAI Responses 스트림은 마지막 completed/incomplete 이벤트에 전체 응답을 담는다.
 export function mergeOpenAIStream(text) {
   const events = sseEvents(text); if (!events) return plainJson(text);
   let final = null;
   for (const e of events) {
-    if (e?.type === "error" || e?.type === "response.failed") throw streamError();
+    if (e?.type === "error") throw streamError(e.error || e);
+    if (e?.type === "response.failed") throw streamError(e.response?.error || { message: e.response?.status });
     if (["response.completed", "response.incomplete"].includes(e?.type) && e.response) final = e.response;
   }
   if (!final) throw cutOff();
@@ -282,7 +292,7 @@ export function mergeClaudeStream(text) {
   const events = sseEvents(text); if (!events) return plainJson(text);
   let message = null, stopped = false; const blocks = [];
   for (const e of events) {
-    if (e?.type === "error") throw streamError();
+    if (e?.type === "error") throw streamError(e.error);
     if (e?.type === "message_start" && e.message) message = { ...e.message, content: [], usage: { ...(e.message.usage || {}) } };
     else if (e?.type === "content_block_start" && Number.isInteger(e.index)) blocks[e.index] = { ...e.content_block, ...(e.content_block?.type === "text" ? { text: e.content_block.text || "" } : {}) };
     else if (e?.type === "content_block_delta" && e.delta?.type === "text_delta" && blocks[e.index]?.type === "text") blocks[e.index].text += e.delta.text || "";
@@ -312,7 +322,7 @@ export function mergeGeminiStream(text) {
   if (!chunks.length) throw { code: "invalid_response" };
   let out = "", finishReason = "", candidate = null, promptFeedback, usageMetadata, modelVersion;
   for (const c of chunks) {
-    if (c?.error) throw { code: "upstream_error", definite: true, safeMessage: "AI 서버가 응답 도중 오류를 보냈습니다. 잠시 뒤 다시 시도해 주세요." };
+    if (c?.error) throw streamError(c.error);
     if (c?.promptFeedback) promptFeedback = c.promptFeedback;
     if (c?.usageMetadata) usageMetadata = c.usageMetadata;
     if (c?.modelVersion) modelVersion = c.modelVersion;

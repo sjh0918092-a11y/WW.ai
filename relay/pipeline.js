@@ -5,7 +5,7 @@ const yieldError = () => ({ code: "pipeline_yield", serverJob: true });
 const CHECK_CONCURRENCY = 4;
 const isCheck = kind => ["check", "read", "ageRule"].includes(kind);
 const phaseFor = kind => ["check","read","ageRule"].includes(kind) ? "check" : ["fix","analyze","factSync"].includes(kind) ? "fix" : "generate";
-const safeError = e => ({ code: e?.code || "pipeline_error", message: e?.safeMessage || "문서 작업을 끝내지 못해 원본을 유지했습니다. AI 작업에서 결과를 확인해 주세요.", ...(e?.status ? { httpStatus: e.status } : {}), ...(e?.code === "model_not_found" && e.model ? {model:e.model,phase:e.phase} : {}) });
+const safeError = e => ({ code: e?.code || "pipeline_error", message: e?.safeMessage || "문서 작업을 끝내지 못해 원본을 유지했습니다. AI 작업에서 결과를 확인해 주세요.", ...(e?.status ? { httpStatus: e.status } : {}), ...(e?.detail ? { detail: String(e.detail).slice(0, 300) } : {}), ...(e?.code === "model_not_found" && e.model ? {model:e.model,phase:e.phase} : {}) });
 // 문서 본문(page) 밖의 단계 응답(검사·읽기·자동 수정·정리)은 작업이 끝나도 결과에 남겨 'AI 작업'에서 볼 수 있게 한다(디버깅용). 생각 부분은 뺀다
 const STEP_TEXT_MAX = 60000;
 const stepText = response => (response?.candidates?.[0]?.content?.parts || []).filter(p => typeof p.text === "string" && !p.thought).map(p => p.text).join("").slice(0, STEP_TEXT_MAX);
@@ -102,7 +102,7 @@ export async function processPipeline(host, job, signal) {
         await counting;
         step.status = "done";
       } catch (e) {
-        step.error = { code: e?.code || "outcome_unknown", safeMessage: safeError(e).message, serverJob: true, definite: !!e?.definite, ...(e?.code === "model_not_found" ? {model:step.model,phase:step.kind} : {}), ...(e?.status ? { status: e.status } : {}) };
+        step.error = { code: e?.code || "outcome_unknown", safeMessage: safeError(e).message, serverJob: true, definite: !!e?.definite, ...(e?.code === "model_not_found" ? {model:step.model,phase:step.kind} : {}), ...(e?.status ? { status: e.status } : {}), ...(e?.detail ? { detail: e.detail } : {}) };
         step.status = step.error.definite ? "failed" : "unknown";
       }
       // 먼저 끝난 결과도 즉시 보존하되 상태 저장은 직렬화한다. 모든 응답 전에는 replay하지 않는다.
