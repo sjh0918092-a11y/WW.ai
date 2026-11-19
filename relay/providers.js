@@ -269,7 +269,7 @@ const redact = v => String(v ?? "").replace(/AIza[\w-]{20,}|sk-[\w-]{16,}|Bearer
 export function streamError(err) {
   const e = err && typeof err === "object" ? err : {};
   const http = Number.isInteger(e.code) ? e.code : (Number.isInteger(e.status_code) ? e.status_code : undefined);
-  const detail = [http, typeof e.status === "string" ? e.status : (typeof e.type === "string" && e.type !== "error" ? e.type : ""), redact(e.message)].filter(v => v !== undefined && v !== "").join(" ");
+  const detail = [http, typeof e.status === "string" ? e.status : "", typeof e.code === "string" ? e.code : "", typeof e.type === "string" && e.type !== "error" ? e.type : "", redact(e.message)].filter(v => v !== undefined && v !== "").join(" ");
   return { code: "upstream_error", definite: true, ...(http ? { status: http } : {}), ...(detail ? { detail } : {}),
     safeMessage: "AI 서버가 응답 도중 오류를 보냈습니다. 잠시 뒤 다시 시도해 주세요." + (detail ? " (공급자 응답: " + detail + ")" : "") };
 }

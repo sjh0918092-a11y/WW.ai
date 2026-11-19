@@ -143,6 +143,8 @@ try {
     assert.throws(() => mergeGeminiStream(sse({ error: { code: 503, status: "UNAVAILABLE", message: "The model is overloaded. key AIzaSyA1234567890abcdefghijkl" } })),
       e => e.status === 503 && e.detail.startsWith("503 UNAVAILABLE The model is overloaded") && !e.detail.includes("AIza") && e.safeMessage.includes("(공급자 응답: 503 UNAVAILABLE"));
     assert.throws(() => mergeClaudeStream(sse({ type: "error", error: { type: "overloaded_error", message: "Overloaded" } })), e => e.detail === "overloaded_error Overloaded");
+    assert.throws(() => mergeOpenAIStream(sse({ type: "response.failed", response: { status: "failed", error: { code: "server_error", message: "Something went wrong" } } })), e => e.detail === "server_error Something went wrong");
+    assert.throws(() => mergeOpenAIStream(sse({ type: "error", code: "invalid_prompt", message: "bad" })), e => e.detail === "invalid_prompt bad");
     ok("Gemini 스트림 조각을 사고 요약 없이 합치고, 완료 신호 없는 응답은 성공으로 저장하지 않는다");
     const claude = mergeClaudeStream([
       { type: "message_start", message: { id: "m", role: "assistant", model: "claude-x", usage: { input_tokens: 10, cache_read_input_tokens: 4, output_tokens: 1 } } },

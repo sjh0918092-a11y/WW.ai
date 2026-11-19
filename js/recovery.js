@@ -248,7 +248,7 @@ const STEP_STATUS = { done: "완료", failed: "실패", unknown: "결과 확인 
 const stepLabel = kind => ({ page: "초안 생성", check: "설정 대조", read: "문서 내부 검사", fix: "자동 수정", analyze: "직접 편집 설정 대조", factSync: "확정 사실·분류 정리", ageRule: "나이 규칙 해석" }[kind] || KIND[kind] || kind || "AI 호출");
 /* 서버가 남긴 단계별 시각(호출 시작 기준 ms)으로 어디서 늘어졌는지 판정한다. AI를 다시 부르지 않는다. */
 const SLOW_FIRST_MS = 120000;
-function diagnoseTiming(t, status, code) {
+function diagnoseTiming(t, status, code, detail) {
   if (!t || !Number.isFinite(t.at)) return { level: "", text: "시간 기록 없음(이전 버전 작업)" };
   code = t.code || code || "";
   const s = ms => (ms / 1000).toFixed(1) + "초";
@@ -257,7 +257,7 @@ function diagnoseTiming(t, status, code) {
   if (code === "deadline_exceeded") return { level: "bad", text: t.first === null ? "서버 10분 제한 도달 — 끝까지 첫 응답이 없었습니다" : "서버 10분 제한 도달 — 응답은 오고 있었지만 너무 길었습니다" };
   if (t.end === null) return { level: "warn", text: "아직 실행 중이거나 서버가 도중에 종료됐습니다" };
   if (t.headers === null) return { level: "bad", text: "AI 서버 연결 단계에서 실패했습니다" };
-  if (status === "failed" || status === "unknown") return { level: "bad", text: "응답을 받았지만 처리에 실패했습니다" + (code ? ` (${code})` : "") };
+  if (status === "failed" || status === "unknown") return { level: "bad", text: "응답을 받았지만 처리에 실패했습니다" + (code ? ` (${code})` : "") + (detail ? ` — 공급자 응답: ${detail}` : code === "upstream_error" ? " — 공급자 사유가 기록되지 않았습니다. 서버(Worker)가 v8.43 이전 코드라면 relay를 다시 배포해야 사유가 남습니다" : "") };
   if (t.first !== null && t.first >= SLOW_FIRST_MS) return { level: "warn", text: `첫 응답까지 ${s(t.first)} — 생각 시간이 깁니다. 생각 수준을 낮추면 빨라집니다` };
   return { level: "ok", text: "정상" };
 }
@@ -271,7 +271,7 @@ function cacheDiagHtml(x) {
 }
 function jobDiagnosisHtml(r, report, open) {
   const rows = (Array.isArray(report?.steps) ? report.steps : Array.isArray(r?.steps) ? r.steps : r?.timing ? [{ kind: r.meta?.kind, model: r.model, status: r.status === "succeeded" ? "done" : r.status, timing: r.timing, code: r.error?.code }] : [])
-    .map(x => ({ ...x, d: diagnoseTiming(x.timing, x.status, x.code || x.error?.code) }));
+    .map(x => ({ ...x, d: diagnoseTiming(x.timing, x.status, x.code || x.error?.code, x.error?.detail) }));
   if (!rows.length) return "";
   const s = ms => ms === null || ms === undefined ? "-" : (ms / 1000).toFixed(1) + "초";
   const kb = n => n >= 1024 ? (n / 1024).toFixed(1) + "KB" : (n || 0) + "B";
