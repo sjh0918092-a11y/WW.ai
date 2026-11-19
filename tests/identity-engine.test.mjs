@@ -12,5 +12,5 @@ const runtime={id:'identity-regression',at:Date.UTC(2026,10,16),input:{action:'g
  return{candidates:[{content:{parts:[{text:JSON.stringify(out)}]},finishReason:'STOP'}]};
 }};
 const result=await createDocumentEngine(runtime).execute();
-assert.equal(count,1);assert(result.error);assert.equal(result.page,null);assert(!result.pages[target]);assert.equal(result.world.entities[target].type,'인물');assert.equal(JSON.stringify(snapshot),original);
-assert(runtime.failures.some(x=>x.code==='identity_conflict'));console.log('✓ Server engine rejects misclassified person before page save, without changing source or extra AI calls');
+assert.equal(count,2);assert(result.error);assert.equal(result.page,null);assert(!result.pages[target]);assert.equal(result.world.entities[target].type,'인물');assert.equal(JSON.stringify(snapshot),original);
+assert(runtime.failures.some(x=>x.code==='identity_conflict'));console.log('✓ Server engine rejects misclassified person before page save, after one repair attempt, without changing source');

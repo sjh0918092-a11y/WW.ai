@@ -56,6 +56,17 @@ globalThis.fetch=async(url,opts)=>{
  if(behavior==='reject'&&kind==='read') return Response.json({error:{message:'private-key'}},{status:429});
  if ((behavior==='timeout-page'&&kind==='page')||(behavior==='timeout-fix'&&kind==='fix')) return new Response('private-key',{status:524});
  if(behavior==='thinking'&&kind==='page'&&JSON.parse(opts.body).generationConfig.thinkingConfig) return Response.json({error:{message:'thinking unsupported'}},{status:400});
+ if(behavior.startsWith('identity-')&&kind==='factSync') {
+  const retry=calls.filter(c=>c.kind==='factSync').length===2;
+  if(retry){
+   const prompt=JSON.stringify(JSON.parse(opts.body));
+   assert(prompt.includes('신원 분류 충돌 수정'));assert(prompt.includes('선장'));
+   if(behavior==='identity-timeout')return new Response('private-key',{status:524});
+  }
+  const corrected=retry&&behavior==='identity-repair';
+  const out={...response(kind),newEntities:[{title:'선장',type:corrected?'인물':'개념',summary:'해양 탐험가'}]};
+  return Response.json({candidates:[{content:{parts:[{text:JSON.stringify(out)}]},finishReason:'STOP'}],usageMetadata:{promptTokenCount:1000,candidatesTokenCount:100}});
+ }
  return Response.json({candidates:[{content:{parts:[{text:'hidden',thought:true},{text:JSON.stringify(response(kind))}]},finishReason:'STOP'}],usageMetadata:{promptTokenCount:1000,candidatesTokenCount:100,thoughtsTokenCount:20,cachedContentTokenCount:50}});
 };
 async function reset({rewrite=false,settings={}}={}) {
@@ -81,6 +92,24 @@ try {
  { const gen=calls.find(c=>c.kind==='page'); assert.equal(gen.body.cachedContent,'cachedContents/test-cache'); assert.equal(gen.body.contents[0].parts.length,1); const created=cacheCalls.filter(c=>c.method==='POST'); assert(created.length>=1); const cb=JSON.parse(created[0].body); assert.equal(cb.ttl,'900s'); assert.equal(cb.contents[0].parts.length,2); assert(cb.model.startsWith('models/')); }
  assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert(r.result.pipeline.saved);assert(r.result.pipeline.checked);assert(storedPage(B)?.check);assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page','check','read','factSync']);assert(calls[0].url.includes('custom-main'));assert(calls[1].url.includes('custom-check'));assert.equal(calls[1].body.generationConfig.thinkingConfig.thinkingLevel,'high');
  assert(!JSON.stringify(r).includes('private-server-key'));assert(![...e.storage.data.keys()].some(k=>/^(key:|in:|pipe:)/.test(k)));pass('매 alarm마다 서버 객체를 재생성해도 생성·두 검사·D1 저장까지 완료하며 완료된 호출은 재실행하지 않는다');
+
+ for(const mode of ['identity-repair','identity-persistent','identity-timeout']){
+  e=await reset();behavior=mode;await request(e,'',e.body);r=await run(e);
+  assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page','check','read','factSync','factSync']);
+  assert.equal(new Set(calls.map(c=>c.slot)).size,calls.length,'서버 재생 중 같은 요청을 중복 실행하지 않는다');
+  assert.equal(r.result.pipeline.steps.filter(s=>s.kind==='factSync').length,2,'수정 요청도 사용량과 함께 보존한다');
+  if(mode==='identity-repair'){
+   assert.equal(r.job.status,'succeeded',JSON.stringify(r.job.error));assert(r.result.pipeline.saved);
+   assert(storedPage(B));assert.equal(JSON.parse(db.sqlite.prepare('SELECT data FROM worlds WHERE uid=?').get('alice').data).entities[B].type,'인물');
+  }else{
+   assert.equal(r.job.status,'failed');assert(!r.result.pipeline.saved);assert.equal(storedPage(B),null);
+   assert(r.result.candidates[0].content.parts[0].text,'완성된 초안을 보존한다');
+   assert.equal(r.job.error.code,mode==='identity-timeout'?'api_524':'identity_conflict');
+   if(mode==='identity-persistent'){assert.match(r.job.error.message,/선장/);assert.match(r.job.error.message,/개념/);}
+  }
+  const before=calls.length;await fireAlarm(e.obj);assert.equal(calls.length,before,'최종 결과 이후 재호출하지 않는다');
+ }
+ pass('신원 충돌한 사실 정리만 한 번 수정해 저장하며, 재충돌·수정 API 실패는 초안과 상세 원인을 보존하고 종료한다');
 
  async function parallelFixture() {
   const e=await reset({rewrite:true});behavior='parallel';checkHolds=[];inFlight=0;peakChecks=0;

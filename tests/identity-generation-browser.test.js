@@ -23,14 +23,31 @@ const assert=require('node:assert/strict'),{chromium}=require('playwright'),{app
    S.sample={json:async()=>{calls++;return output;}};
    try{await callJson(kind,'mock',{recoveryTarget:{wid:w.id,key:ck}});rejects.push('missed');}catch(e){rejects.push(e.code);}
   }
+  // 신원 충돌만 한 번 수정하고 같은 형식의 정상 응답은 추가 호출 없이 통과한다.
+  const good={facts:[],newEntities:[{title:code,type:'인물',summary:'전략소녀의 호출부호'}]};
+  let repairedCalls=0;
+  S.sample={json:async(prompt)=>{
+   repairedCalls++;
+   if(repairedCalls===1)return {facts:[],newEntities:[{title:code,type:'개념'}]};
+   if(!prompt.includes('신원 분류 충돌 수정')||!prompt.includes(person)||!prompt.includes('"type":"개념"'))throw Error('수정 요청에 충돌 정보가 없다');
+   return good;
+  }};
+  if(JSON.stringify(await callJson('factSync','mock'))!==JSON.stringify(good)||repairedCalls!==2)throw Error('충돌 수정 실패');
+  let cleanCalls=0;S.sample={json:async()=>{cleanCalls++;return good;}};
+  await callJson('factSync','mock');if(cleanCalls!==1)throw Error('정상 응답 재호출');
+  let failedCalls=0;S.sample={json:async()=>{failedCalls++;throw {code:'network'};}};
+  try{await callJson('factSync','mock');throw Error('실패를 삼켰다');}catch(e){if(e.code!=='network'||failedCalls!==1)throw e;}
+  const ctl=new AbortController();let cancelledCalls=0;
+  S.sample={json:async()=>{cancelledCalls++;ctl.abort();return {facts:[],newEntities:[{title:code,type:'개념'}]};}};
+  try{await callJson('factSync','mock',{signal:ctl.signal});throw Error('충돌을 삼켰다');}catch(e){if(e.code!=='identity_conflict'||cancelledCalls!==1)throw e;}
   // 실제 별도 장비·운용자 관계와 명시적으로 구분한 동명이인은 허용한다.
   validateAIIdentity(w,root,{title:'별도 전차',type:'물건',infobox:[{label:'조종사',value:person},{label:'호출부호',value:'새 전차'}]});
   w.entities[ck].notSame=[pk];validateAIIdentity(w,ck,{title:code,type:'물건'});delete w.entities[ck].notSame;
   validateAIIdentity(w,pk,{title:person,type:'인물',infobox:[{label:'호출부호',value:code}]});
   return{rejects,calls,unchanged:JSON.stringify(JSON.parse(before).w.entities)===JSON.stringify(w.entities) && JSON.stringify(JSON.parse(before).p)===JSON.stringify(S.pages),prompt,redirect};
  });
- assert(result.rejects.every(x=>x==='identity_conflict'),JSON.stringify(result.rejects));assert.equal(result.calls,8);assert(result.unchanged,'검증은 기존 문서·항목을 합치거나 변경하지 않는다');
+ assert(result.rejects.every(x=>x==='identity_conflict'),JSON.stringify(result.rejects));assert.equal(result.calls,16);assert(result.unchanged,'검증은 기존 문서·항목을 합치거나 변경하지 않는다');
  assert(result.prompt.includes('이전 분류(확정된 신원과 다르면 바로잡을 것)'));assert(result.prompt.includes('별도 물건으로 잘못 분류한 경우 그 오분류를 유지하지 않는다'));
  assert(result.prompt.includes('거대한 신체'));assert(result.redirect.includes('잔 다르크 4세'));assert(result.redirect.includes('Jeanne d’Arc IV'));assert.deepEqual(errors,[]);
- console.log('✓ Reject AI person/callsign equipment splits before saving; real equipment allowed; existing world unchanged; no extra AI');
+ console.log('✓ Repair identity conflicts once; reject persistent conflicts; preserve source; allow real equipment; no retries for clean responses, transport errors, or cancellation');
 }finally{await browser.close();await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exitCode=1});

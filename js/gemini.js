@@ -321,8 +321,22 @@ async function callJson(kind, prompt, opts = {}, meta = {}) {
     onUsage: u => { if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,rec.model,u); opts.onUsage?.(u); },
     onMeta: m => { if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,m.model,m.usage); rec.model = m.model; rec.effort = m.think || ""; if (m.retries) rec.retry = m.retries; if (m.usage) rec.tok = { i: m.usage.promptTokenCount || 0, o: m.usage.candidatesTokenCount || 0, t: m.usage.thoughtsTokenCount || 0 }; } };
   const done = () => { rec.first = first === null ? null : Math.round(first - t0); rec.total = Math.round(performance.now() - t0); rec.out = chars; };
-  try { const r = await S.sample.json(prompt, o); if(S.world===identityWorld && ["page","discovery","chapterPlan","chapterBlock","analyze","factSync"].includes(kind))validateAIIdentity(identityWorld,target.key,r); done(); rec.ok = true; if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,rec.model,null,"done"); pushLog(rec); if (typeof AIRecovery !== "undefined" && !["page", "check", "read", "prose", "section", "fix", "analyze", "factSync"].includes(kind)) for (const id of rec.jobs || []) AIRecovery.handled(id); return r; }
-  catch (e) { if (!chars && typeof e?.text === "string") chars = e.text.length; done(); rec.ok = false; if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,rec.model,null,"failed"); rec.err = e?.code || String(e?.message || e).slice(0, 80); if (e?.message) rec.msg = String(e.message).slice(0, 200); pushLog(rec); throw e; }
+  let response, identityError;
+  try {
+    response = await S.sample.json(prompt, o);
+    if(S.world===identityWorld && ["page","discovery","chapterPlan","chapterBlock","analyze","factSync"].includes(kind)){
+      try { validateAIIdentity(identityWorld,target.key,response); }
+      catch(e) { if(e?.code==="identity_conflict")identityError=e; throw e; }
+    }
+    done(); rec.ok = true; if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,rec.model,null,"done"); pushLog(rec); if (typeof AIRecovery !== "undefined" && !["page", "check", "read", "prose", "section", "fix", "analyze", "factSync"].includes(kind)) for (const id of rec.jobs || []) AIRecovery.handled(id); return response;
+  }
+  catch (e) {
+    if (!chars && typeof e?.text === "string") chars = e.text.length; done(); rec.ok = false; if(typeof DocumentCost!=="undefined")DocumentCost.update(costCall,rec.model,null,"failed"); rec.err = e?.code || String(e?.message || e).slice(0, 80); if (e?.message) rec.msg = String(e.message).slice(0, 200); pushLog(rec);
+    // API 실패·중단·서버 재생 대기는 재호출하지 않는다. 신원 검증이 거절한 확정 응답만 한 번 수정한다.
+    if(identityError===e && !opts.identityRepair && !opts.signal?.aborted && S.world===identityWorld)
+      return callJson(kind,identityRepairPrompt(prompt,e,response),{...opts,identityRepair:true},meta);
+    throw e;
+  }
 }
 const secs = ms => ms == null ? "-" : (ms / 1000).toFixed(1) + "초";
 function logLine(r) {

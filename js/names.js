@@ -258,6 +258,15 @@ function validateAIIdentity(w, key, out) {
     const box=Array.isArray(row.infobox)?row.infobox:[];
     const real=box.some(r=>/^(?:본명|성명)$/.test(stripMarks(r?.label||"").replace(/\s/g,"")) && infoboxNames({infobox:[r]},true).length);
     const code=box.some(r=>CODE_NAME_LABEL.test(stripMarks(r?.label||"").replace(/\s/g,"")));
-    if(owners?.size===1 || real&&code)throw {code:"identity_conflict",message:`「${row.title||w.entities[key]?.title||"항목"}」을 인물의 이름·호출부호와 별도 대상으로 동시에 분류한 AI 응답이라 저장하지 않았습니다. 다시 시도해 주세요.`};
+    if(owners?.size===1 || real&&code){
+      const title=row.title||w.entities[key]?.title||"항목";
+      const names=[...owners].map(id=>w.entities[id]?.title).filter(Boolean);
+      const message=`「${title}」의 분류 「${row.type}」가 인물의 이름·호출부호와 충돌합니다.${names.length?` 기존 인물: ${names.join(", ")}.`:" 본명과 호출부호를 가진 인물을 별도 비인물로 분리할 수 없습니다."}`;
+      throw {code:"identity_conflict",message,safeMessage:message};
+    }
   }
+}
+/* 확정된 응답의 신원 충돌만 한 번 고친다. 기존 요청·응답을 함께 주어 같은 JSON 구조를 유지한다. */
+function identityRepairPrompt(prompt, error, response) {
+  return `${prompt}\n\n## 신원 분류 충돌 수정\n직전 응답이 신원 검증을 통과하지 못했다: ${error.safeMessage}\n기존 인물과 그 이름·호출부호는 인물로 유지한다. 인물 본인을 개념·물건·장비로 분리하지 않는다. 기존 본명·별칭 연결과 명시적으로 구분된 동명이인은 그대로 존중한다. 아래 JSON에서 충돌한 분류와 그에 직접 연결된 내용만 고치고, 나머지 본문·사실·필드는 유지한다. 항목을 임의로 삭제하거나 이름을 바꿔 검증을 피하지 않는다. 원래 요청과 같은 구조의 완전한 JSON 객체만 반환한다.\n\n직전 응답(JSON 데이터):\n${JSON.stringify(response)}`;
 }

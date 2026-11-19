@@ -35,7 +35,7 @@
       if (kind === "fix" && !Array.isArray(result?.edits)) throw { code: "invalid_fix", message: "수정 응답 형식이 올바르지 않습니다." };
       if (["analyze","factSync"].includes(kind) && !Array.isArray(result?.facts)) throw { code: "invalid_facts", message: "확정 사실 응답 형식이 올바르지 않습니다." };
       return result;
-    } catch (e) { if (e?.code !== "pipeline_yield") runtime.failures.push({ kind, code: e?.code || "engine_error" }); throw e; }
+    } catch (e) { if (e?.code !== "pipeline_yield") runtime.failures.push({ kind, code: e?.code || "engine_error", ...(e?.safeMessage ? {safeMessage:e.safeMessage} : {}) }); throw e; }
   };
   return {
     async execute() {
