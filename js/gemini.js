@@ -325,6 +325,7 @@ async function callJson(kind, prompt, opts = {}, meta = {}) {
   try {
     response = await S.sample.json(prompt, o);
     if(S.world===identityWorld && ["page","discovery","chapterPlan","chapterBlock","analyze","factSync"].includes(kind)){
+      if(kind==="factSync")retainKnownPersonTypes(identityWorld,response);
       try { validateAIIdentity(identityWorld,target.key,response); }
       catch(e) { if(e?.code==="identity_conflict")identityError=e; throw e; }
     }

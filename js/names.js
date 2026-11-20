@@ -227,6 +227,15 @@ function nameTwinsHtml(w) {
       <div class="row" style="margin-top:4px"><button type="button" class="btn" data-mgdo="${t.a}" data-mgto="${t.b}" ${S.gen || S.storyGen || S.syncing ? "disabled" : ""}>「${esc(w.entities[t.b].title)}」에 합치기</button><button type="button" class="btn" data-notsame="${t.a}" data-other="${t.b}">다른 인물입니다</button></div></li>`).join("")}</ul>`;
 }
 
+/* 사실 정리의 부가 분류로 기존 인물을 비인물로 바꾸지 않는다. 제목·등록 별칭의 확정 인물만 유지한다. */
+function retainKnownPersonTypes(w, out) {
+  if (!w || !Array.isArray(out?.newEntities)) return;
+  out.newEntities = out.newEntities.map(row => {
+    if (!row || typeof row.title !== "string") return row;
+    const key = keyOf(norm(row.title)), owner = w.entities[key] ? key : w.aliases?.[key];
+    return isPerson(w, owner) && row.type !== "인물" ? { ...row, type:"인물" } : row;
+  });
+}
 /* 새 AI 응답만 검증한다. 이름이 비슷하다는 추측으로 기존 데이터를 변경하지 않는다. */
 function validateAIIdentity(w, key, out) {
   if(!w || !out || typeof out!=="object")return;

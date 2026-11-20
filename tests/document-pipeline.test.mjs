@@ -56,7 +56,7 @@ globalThis.fetch=async(url,opts)=>{
  if(behavior==='reject'&&kind==='read') return Response.json({error:{message:'private-key'}},{status:429});
  if ((behavior==='timeout-page'&&kind==='page')||(behavior==='timeout-fix'&&kind==='fix')) return new Response('private-key',{status:524});
  if(behavior==='thinking'&&kind==='page'&&JSON.parse(opts.body).generationConfig.thinkingConfig) return Response.json({error:{message:'thinking unsupported'}},{status:400});
- if(behavior.startsWith('identity-')&&kind==='factSync') {
+ if((behavior.startsWith('identity-')||behavior==='known-type')&&kind==='factSync') {
   const retry=calls.filter(c=>c.kind==='factSync').length===2;
   if(retry){
    const prompt=JSON.stringify(JSON.parse(opts.body));
@@ -64,7 +64,7 @@ globalThis.fetch=async(url,opts)=>{
    if(behavior==='identity-timeout')return new Response('private-key',{status:524});
   }
   const corrected=retry&&behavior==='identity-repair';
-  const out={...response(kind),newEntities:[{title:'선장',type:corrected?'인물':'개념',summary:'해양 탐험가'}]};
+  const out={...response(kind),newEntities:behavior==='known-type'?[{title:'선장',type:'문화',summary:'해양 탐험가'}]:[{title:'새 호출부호',type:corrected?'인물':'물건',infobox:[{label:'본명',value:'새 인물'},{label:'호출부호',value:'새 호출부호'}]}]};
   return Response.json({candidates:[{content:{parts:[{text:JSON.stringify(out)}]},finishReason:'STOP'}],usageMetadata:{promptTokenCount:1000,candidatesTokenCount:100}});
  }
  return Response.json({candidates:[{content:{parts:[{text:'hidden',thought:true},{text:JSON.stringify(response(kind))}]},finishReason:'STOP'}],usageMetadata:{promptTokenCount:1000,candidatesTokenCount:100,thoughtsTokenCount:20,cachedContentTokenCount:50}});
@@ -93,6 +93,12 @@ try {
  assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert(r.result.pipeline.saved);assert(r.result.pipeline.checked);assert(storedPage(B)?.check);assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page','check','read','factSync']);assert(calls[0].url.includes('custom-main'));assert(calls[1].url.includes('custom-check'));assert.equal(calls[1].body.generationConfig.thinkingConfig.thinkingLevel,'high');
  assert(!JSON.stringify(r).includes('private-server-key'));assert(![...e.storage.data.keys()].some(k=>/^(key:|in:|pipe:)/.test(k)));pass('매 alarm마다 서버 객체를 재생성해도 생성·두 검사·D1 저장까지 완료하며 완료된 호출은 재실행하지 않는다');
 
+ e=await reset();behavior='known-type';await request(e,'',e.body);r=await run(e);
+ assert.equal(r.job.status,'succeeded',JSON.stringify(r.job.error));assert(r.result.pipeline.saved);assert(storedPage(B));
+ assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page','check','read','factSync']);
+ assert.equal(JSON.parse(db.sqlite.prepare('SELECT data FROM worlds WHERE uid=?').get('alice').data).entities[B].type,'인물');
+ pass('기존 인물을 문화로 잘못 출력한 부가 항목은 확정 유형을 유지해 추가 AI 호출 없이 문서를 저장한다');
+
  for(const mode of ['identity-repair','identity-persistent','identity-timeout']){
   e=await reset();behavior=mode;await request(e,'',e.body);r=await run(e);
   assert.deepEqual(orderedChecks(calls).map(c=>c.kind),['page','check','read','factSync','factSync']);
@@ -105,7 +111,7 @@ try {
    assert.equal(r.job.status,'failed');assert(!r.result.pipeline.saved);assert.equal(storedPage(B),null);
    assert(r.result.candidates[0].content.parts[0].text,'완성된 초안을 보존한다');
    assert.equal(r.job.error.code,mode==='identity-timeout'?'api_524':'identity_conflict');
-   if(mode==='identity-persistent'){assert.match(r.job.error.message,/선장/);assert.match(r.job.error.message,/개념/);}
+   if(mode==='identity-persistent'){assert.match(r.job.error.message,/새 호출부호/);assert.match(r.job.error.message,/물건/);}
   }
   const before=calls.length;await fireAlarm(e.obj);assert.equal(calls.length,before,'최종 결과 이후 재호출하지 않는다');
  }

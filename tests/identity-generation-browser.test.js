@@ -35,6 +35,15 @@ const assert=require('node:assert/strict'),{chromium}=require('playwright'),{app
   if(JSON.stringify(await callJson('factSync','mock'))!==JSON.stringify(good)||repairedCalls!==2)throw Error('충돌 수정 실패');
   let cleanCalls=0;S.sample={json:async()=>{cleanCalls++;return good;}};
   await callJson('factSync','mock');if(cleanCalls!==1)throw Error('정상 응답 재호출');
+  const registered='등록된 별칭';w.aliases[keyOf(registered)]=pk;
+  let knownCalls=0;const fact={about:person,fact:'기존 사실을 유지한다.'};
+  S.sample={json:async()=>{knownCalls++;return {facts:[fact],newEntities:[{title:person,type:'문화'},{title:registered,type:'개념'}]};}};
+  const known=await callJson('factSync','mock');
+  if(knownCalls!==1||known.newEntities.some(x=>x.type!=='인물')||JSON.stringify(known.facts)!==JSON.stringify([fact]))throw Error('확정 유형 보존 실패');
+  w.entities[pk].type='';
+  const documented=await callJson('factSync','mock');w.entities[pk].type='인물';
+  if(knownCalls!==2||documented.newEntities.some(x=>x.type!=='인물'))throw Error('기존 문서의 인물 유형 보존 실패');
+  delete w.aliases[keyOf(registered)];
   let failedCalls=0;S.sample={json:async()=>{failedCalls++;throw {code:'network'};}};
   try{await callJson('factSync','mock');throw Error('실패를 삼켰다');}catch(e){if(e.code!=='network'||failedCalls!==1)throw e;}
   const ctl=new AbortController();let cancelledCalls=0;

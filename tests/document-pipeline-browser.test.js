@@ -1,7 +1,7 @@
 /* 브라우저 → 인증된 Worker → SQLite → 단계별 alarm. 제공자 호출은 모두 대체한다. */
 const cacheCalls=[];
 const assert=require('node:assert/strict'),{chromium}=require('playwright'),{appServer}=require('./helpers/app');
-const server=appServer();let browser,context,page,n=0,hold=true,release,calls=[],errors=[],loseSubmit=false;
+const server=appServer();let browser,context,page,n=0,hold=true,release,calls=[],errors=[],loseSubmit=false,identityFailure='';
 const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
 const until=async(fn,ms=20000)=>{const t=Date.now();while(Date.now()-t<ms){if(await fn())return;await new Promise(r=>setTimeout(r,30));}throw Error('브라우저 작업 대기 시간 초과')};
 (async()=>{
@@ -16,7 +16,7 @@ const until=async(fn,ms=20000)=>{const t=Date.now();while(Date.now()-t<ms){if(aw
  if(String(url).includes("/cachedContents")){cacheCalls.push({url:String(url),method:(opts||{}).method,body:(opts||{}).body});return Response.json({name:"cachedContents/test-cache",expireTime:new Date(Date.now()+900000).toISOString()})}if(String(url).endsWith(":countTokens"))return Response.json({totalTokens:5000});
   const j=jobs().find(j=>j.status==='running');assert(j);const step=j.steps.find(s=>s.status==='running'&&!calls.some(c=>c.id===j.id&&c.slot===s.slot));const kind=step.kind;calls.push({id:j.id,slot:step.slot,kind,url});
   if(hold&&kind==='page')await new Promise(r=>{release=r});
-  const out=kind==='page'?{title:j.meta.title,type:'인물',summary:'해양 탐험가',infobox:[{label:'성별',value:'남성'}],sections:[{heading:'개요',level:1,body:'서버가 끝까지 완성한 항해 기록이다.'}],categories:['소속:항구','유형:인물'],facts:[],newEntities:[],relations:[],timeline:[]}:kind==='fix'?{edits:[]}:kind==='analyze'||kind==='factSync'?{facts:[],relations:[],timeline:[]}:{issues:[]};
+  const out=kind==='page'?{title:j.meta.title,type:'인물',summary:'해양 탐험가',infobox:[{label:'성별',value:'남성'}],sections:[{heading:'개요',level:1,body:'서버가 끝까지 완성한 항해 기록이다.'}],categories:['소속:항구','유형:인물'],facts:[],newEntities:[],relations:[],timeline:[]}:kind==='fix'?{edits:[]}:kind==='analyze'||kind==='factSync'?{facts:[],relations:[],timeline:[],...(identityFailure===j.meta.title?{newEntities:[{title:'미확정 호출부호',type:'물건',infobox:[{label:'본명',value:'미확정 인물'},{label:'호출부호',value:'미확정 호출부호'}]}]}:{})}:{issues:[]};
   return Response.json({candidates:[{content:{parts:[{text:JSON.stringify(out)}]},finishReason:'STOP'}],usageMetadata:{promptTokenCount:1000,candidatesTokenCount:100,thoughtsTokenCount:20}});
  };
  try{
@@ -95,6 +95,34 @@ const until=async(fn,ms=20000)=>{const t=Date.now();while(Date.now()-t<ms){if(aw
   assert(JSON.parse(db.sqlite.prepare("SELECT data FROM worlds WHERE wid='browser-world'").get().data).entities[fixedKey].facts.some(f=>f.t==='교역의 중심지이다.'));
   assert.equal(await page.evaluate(()=>Sync.pending()),0);await page.evaluate(()=>window.restoreFixCalls());
   pass('교정 뒤 사실 정리·저장·동기화를 마친 원본으로 서버 검사를 진행해 충돌 없이 수정과 검사 결과를 보존한다');
+  const F=await fixture('후속 선원');identityFailure='실패한 검색 선원';
+  await page.evaluate(title=>goSearch(title),identityFailure);
+  await until(()=>jobs().some(j=>j.meta.title===identityFailure&&j.status==='failed'));
+  await page.waitForFunction(()=>!S.gen);
+  const failed=jobs().find(j=>j.meta.title===identityFailure);
+  assert.equal(failed.error.code,'identity_conflict');assert.equal(calls.filter(c=>c.id===failed.id&&c.kind==='factSync').length,2);
+  const beforeBlocked=jobs().length;
+  const blocked=await page.evaluate(async k=>{
+   const before=S.world.guide;S.world.guide='아직 저장하지 않은 사용자 설정';
+   try{await DocumentPipeline.request('generate',k);return '';}catch(e){return e.message;}finally{S.world.guide=before;}
+  },F);
+  assert.match(blocked,/화면의 설정과 저장된 원본/);assert.equal(jobs().length,beforeBlocked,'실제 미저장 설정은 덮어쓰거나 AI를 접수하지 않는다');
+  const now=Date.now()+100;
+  db.sqlite.prepare("UPDATE worlds SET data=json_set(data,'$.guide','다른 기기의 최신 설정','$.updatedAt',?),updated=? WHERE wid='browser-world'").run(now,now);
+  await page.evaluate(async()=>{
+   S.gen={wid:S.world.id,key:S.world.mainKey};try{await Sync.pull();}finally{S.gen=null;}
+   if(S.world.guide==='다른 기기의 최신 설정')throw Error('작업 중 화면은 이전 원본으로 남아야 한다');
+  });
+  await page.evaluate(k=>generatePage(k),F);
+  assert.equal(await page.evaluate(()=>S.genErr?.msg||''),'','실패한 미저장 검색 항목이 다른 문서 작성을 막지 않는다');
+  assert(await page.evaluate(k=>!!S.pages[k],F));
+  assert.equal(await page.evaluate(()=>S.world.guide),'다른 기기의 최신 설정','이전 접수 원본과 같은 화면은 자동으로 최신 저장본을 받는다');
+  const failedKey=await page.evaluate(()=>keyOf('실패한 검색 선원'));
+  assert(await page.evaluate(k=>!!S.world.entities[k]&&!S.pages[k],failedKey),'실패한 검색 후보는 화면에 보존한다');
+  assert.equal(db.sqlite.prepare('SELECT count(*) AS n FROM pages WHERE pkey=?').get(failedKey).n,0,'실패한 초안을 다음 작업에 섞어 저장하지 않는다');
+  identityFailure='';await page.evaluate(k=>generatePage(k),failedKey);
+  assert(await page.evaluate(k=>!!S.pages[k],failedKey),'남겨 둔 검색 후보도 다시 작성할 수 있다');
+  pass('실패한 검색 후보와 초안을 보존하면서 최신 저장본으로 후속·재시도 문서를 작성하고 실제 미저장 편집은 보호한다');
 
   assert.deepEqual(errors,[]);pass('공유 엔진·작업 화면·문서 열기에서 브라우저 오류가 없다');
  }finally{globalThis.fetch=originalFetch;for(const e of entries.values())clearTimeout(e.timer);await context?.close();await browser?.close();await new Promise(r=>server.close(r));db.sqlite.close()}

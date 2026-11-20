@@ -4,6 +4,17 @@ const DocumentPipeline = {
   enabled() { return GS.documentPipeline !== false && AIJobs.enabled("gemini"); },
   sourcePage(p) { if (!p) return null; const v = { ...p }; delete v.portrait; delete v.shortStories; delete v.savedAt; return v; },
   pending(wid) { const d = Sync.dirty; return d && (d.w.has(wid) || d.dw.has(wid) || [...d.p,...d.dp].some(k => k.startsWith(wid + "\u0001"))); },
+  // 검색·실패 작업의 미저장 후보는 설정 수정이 아니다. 저장된 항목과 본문은 항상 비교한다.
+  drafts(w, stored, key) {
+    const keys = new Set([key, ...queuedUnsaved(w, stored)]);
+    for (const [k, e] of Object.entries(w.entities)) if (e.searched) keys.add(k);
+    for (const r of AIRecovery.local()) if (r.meta?.wid === w.id && r.meta.entity && !r.meta.hadPage) keys.add(r.meta.key);
+    return Object.fromEntries([...keys].filter(k => w.entities[k] && !stored.entities[k] && !S.pages[k]).map(k => [k, JSON.parse(JSON.stringify(w.entities[k]))]));
+  },
+  restoreDrafts(w, drafts) {
+    for (const [k, e] of Object.entries(drafts)) if (!w.entities[k] && !w.aliases?.[k] && !S.pages[k] && !S.nf.has(k)) w.entities[k] = e;
+    restoreQueued(w);
+  },
   async receive(result, original, ctx) {
     const report = result?.pipeline;
     if (!report?.saved) throw new Error(report?.error?.message || "저장되지 않은 결과입니다. AI 작업에서 초안을 확인해 주세요.");
@@ -14,9 +25,10 @@ const DocumentPipeline = {
     const w = await Store.getWorld(report.wid), pages = await Store.listPages(report.wid);
     if (!w) throw new Error("완료 후 세계관이 삭제되었습니다. 결과 내려받기를 이용해 주세요.");
     if (original && S.world === original) {
+      const drafts = this.drafts(original, w);
       for (const key of Object.keys(original)) delete original[key]; Object.assign(original,w);
       S.pages = pages; S.worlds = S.worlds.map(v => v.id === w.id ? original : v);
-      restoreQueued(original);
+      this.restoreDrafts(original, drafts);
     }
     return { world: w, pages, report };
   },
@@ -36,11 +48,10 @@ const DocumentPipeline = {
     await Sync.pull(); if (Sync.err) throw new Error(Sync.err);
     const fresh = await Store.getWorld(w.id);
     if (!fresh || S.world !== w) throw new Error("세계관이나 계정이 바뀌었습니다.");
-    const pending = w.entities[k] && !fresh.entities[k] ? w.entities[k] : null;
+    const drafts = this.drafts(w, fresh, k);
     for (const key of Object.keys(w)) delete w[key]; Object.assign(w, fresh);
-    if (pending) w.entities[k] = pending;
     S.pages = await Store.listPages(w.id); S.worlds = S.worlds.map(v => v.id === w.id ? w : v);
-    restoreQueued(w);
+    this.restoreDrafts(w, drafts);
   },
   async requestOnce(action, k, { rewrite = false, direction = "", novel = false, angle = null, ctl } = {}) {
     const w = S.world, ctx = AIRecovery.context();
@@ -51,16 +62,21 @@ const DocumentPipeline = {
     if (!stored || S.world !== w || !AIJobs.current(ctx)) throw new Error("세계관이나 계정이 바뀌었습니다.");
     const pending = w.entities[k] && !stored.entities[k] ? w.entities[k] : null;
     if (!stored.entities[k] && !pending) throw new Error("대상 항목이 없습니다.");
-    // 모든 미저장 설정 변경을 먼저 올린다. 탐색 중인 새 후보만 아직 원본에 없을 수 있다.
+    // 실패한 검색 후보도 화면에 남을 수 있다. 후보 이외의 설정 변경은 그대로 보호한다.
     const compare = JSON.parse(JSON.stringify(w));
-    if (pending) delete compare.entities[k];
-    for (const x of queuedUnsaved(w, stored)) delete compare.entities[x];
-    if (await AIRecovery.hash(compare) !== await AIRecovery.hash(stored)) throw new Error("화면의 설정과 저장된 원본이 다릅니다. 세계관을 다시 열고 시작해 주세요.");
+    for (const x of Object.keys(this.drafts(w, stored, k))) delete compare.entities[x];
+    const screenHash = await AIRecovery.hash(compare), storedHash = await AIRecovery.hash(stored);
+    if (screenHash !== storedHash) {
+      // 이전 접수 원본과 정확히 같은 화면만 자동 갱신한다. 사용자의 새 편집을 덮어쓰지 않는다.
+      if (!this.pending(w.id) && AIRecovery.local().some(r => r.meta?.wid === w.id && r.meta.worldStamp === screenHash))
+        throw { code:"source_stale", message:"저장된 최신 세계관을 받아 작업을 다시 준비합니다." };
+      throw new Error("화면의 설정과 저장된 원본이 다릅니다. 세계관을 다시 열고 시작해 주세요.");
+    }
     const settings = Object.fromEntries(["main","mainThink","quick","quickThink","check","checkThink","preCheck","taskModels","prompt"].map(key => [key,GS[key]]));
     const input = { action,wid:w.id,key:k,rewrite:!!rewrite,direction:direction || "",novel:!!novel,settings,
       ...(angle?.id ? { angleId: angle.id } : {}),
       ...(pending ? { entity: { title: pending.title,type:pending.type || "",summary:pending.summary || "", ...(pending.src ? {src:pending.src}:{}), ...(pending.searched ? {searched:true}:{}) } } : {}),
-      worldHash:await AIRecovery.hash(stored),pageHash:await AIRecovery.hash(this.sourcePage(page)) };
+      worldHash:storedHash,pageHash:await AIRecovery.hash(this.sourcePage(page)) };
     const meta = await AIRecovery.capture(action === "check" ? "check" : "page",w,k,{rewrite:!!rewrite,direction:(direction || "").slice(0,300)});
     const costSession = typeof DocumentCost!=="undefined" ? (action==="generate"?DocumentCost.get(w.id,k):DocumentCost.start(w.id,k)) : null;
     let id;
