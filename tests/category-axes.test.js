@@ -126,10 +126,10 @@ const ax = (o) => Object.entries(o).flatMap(([axis, xs]) => xs.map(name => ({ na
     const saved = await page.evaluate(([k, h]) => ({ cats: S.pages[k].categories, axes: S.pages[k].catAxes, stale: S.pages[k].stale, hint: S.world.entities[h]?.cats, own: Object.values(S.world.navboxes).filter(nb => nb.src === k).length }), [K('사랑'), K('아름')]);
     assert.deepStrictEqual(saved.cats, ['베타국', '기사'], '인물의 소속은 넓은 것 하나만 남는다');
     assert.deepStrictEqual(saved.axes, ax({ 소속: ['베타국'], 유형: ['기사'] }));
-    assert.deepStrictEqual(saved.hint, ax({ 소속: ['베타국'], 유형: ['기사'] }));
+    assert.deepStrictEqual(saved.hint, ax({ 소속: ['베타국'] }), '문서가 없는 링크 항목은 유형을 보내도 소속만 받는다');
     assert.equal(saved.stale, undefined);
     assert.equal(saved.own, 0, '모델이 navboxes를 보내도 새 틀을 만들지 않는다');
-    pass('새 문서의 분류는 확정 사실 정리가 축별로 붙이고(이름 목록 + {name, axis}), 문서가 없는 링크 항목의 소속·유형도 같은 호출에서 받는다');
+    pass('새 문서의 분류는 확정 사실 정리가 축별로 붙이고(이름 목록 + {name, axis}), 문서가 없는 링크 항목의 소속도 같은 호출에서 받는다');
     const pp = cs[0].prompt, sp = cs[1].prompt;
     assert(!/navboxes/.test(pp), '프롬프트에 navboxes 출력 지시가 없다'); assert(!pp.includes('구성원 명단을 틀로 만든다'));
     assert(!pp.includes('"categories"') && !pp.includes('"facts"') && !pp.includes('"terms"') && !pp.includes('"affiliations"') && !pp.includes('"existence"') && !pp.includes('"relations"'), '작성 호출은 분류·사실·관계·용어·소속 이력·존속 기간을 받지 않는다');
@@ -140,11 +140,12 @@ const ax = (o) => Object.entries(o).flatMap(([axis, xs]) => xs.map(name => ({ na
     await page.waitForFunction(t => document.querySelector('h1.t')?.textContent === t, '사랑');
     bs = await boxes(); const beta = bs.find(b => b.title === '베타국의 기사');
     assert(beta && beta.auto, '소속×유형이 3개가 되면 틀이 자동으로 생긴다');
-    assert.deepStrictEqual(beta.items, ['마루', '바다', '사랑', '아름']);
+    assert.deepStrictEqual(beta.items, ['마루', '바다', '사랑'], '문서가 없는 링크 항목은 유형을 받지 않으므로 소속×유형 틀에 들지 않는다');
     await open('바다'); assert((await boxes()).some(b => b.title === '베타국의 기사'));
-    pass('소속 X와 유형 Y가 함께 붙은 문서가 3개가 되면 "X의 Y" 틀이 자동으로 정의되고, 새 문서와 링크로 생긴 항목이 바로 구성원에 나타난다');
+    pass('소속 X와 유형 Y가 함께 붙은 문서가 3개가 되면 "X의 Y" 틀이 자동으로 정의되고, 새 문서가 바로 구성원에 나타난다');
 
     // 틀이 있는 항목을 쓸 때는 그 틀의 구성원 목록을 맥락에 넣는다
+    await page.evaluate(k => { S.world.entities[k].cats = [{ name: '베타국', axis: '소속' }, { name: '기사', axis: '유형' }]; }, K('아름'));   // 예전에 받아 둔 유형은 그대로 읽는다
     const out2 = { title: '아름', type: '인물', summary: '베타국의 기사', notices: [], infobox: [], sections: [{ heading: '개요', level: 1, body: '아름은 기사였다.' }], timeline: [], newEntities: [] };
     cs = await write('아름', out2, { facts: [], categories: { 소속: ['베타국'], 유형: ['기사'] } });
     assert.deepStrictEqual(cs.map(c => c.kind), ['page', 'sync']);

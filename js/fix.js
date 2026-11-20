@@ -330,7 +330,7 @@ function recheckAfterFix(k) {
   noteEvent(p, "고치기 뒤 재검사");
   checkPage(k);
 }
-/* 정리 호출이 붙인 분류를 문서에, linkedCats를 문서가 없는 링크 항목에 넣는다. 국가 문서는 자기 제목, 인물은 소속 하나 */
+/* 정리 호출이 붙인 분류를 문서에, linkedCats(소속만)를 문서가 없는 링크 항목에 넣는다. 국가 문서는 자기 제목, 인물은 소속 하나 */
 function applySyncCats(w, k, p, r) {
   const type = p.type || w.entities[k]?.type || "";
   const raw = r?.categories && typeof r.categories === "object" && !Array.isArray(r.categories) ? r.categories : {};
@@ -340,13 +340,13 @@ function applySyncCats(w, k, p, r) {
   for (const h of (Array.isArray(r?.linkedCats) ? r.linkedCats : [])) {
     if (!h || typeof h.title !== "string") continue;
     const hk = kOf(w, h.title), o = w.entities[hk]; if (!o || o.page || hk === k) continue;
-    const hc = parseCats({ 소속: widenAffil(w, { 소속: h.소속 }, o.type || "", o.title).소속, 유형: h.유형 }); if (!hc.length) continue;
+    const hc = parseCats({ 소속: widenAffil(w, { 소속: h.소속 }, o.type || "", o.title).소속 }); if (!hc.length) continue;
     o.cats = [...(o.cats || []), ...hc.filter(x => !(o.cats || []).some(y => y.name === x.name))].slice(0, 4);
   }
 }
 /* 문서의 확정 기록(사실·관계·용어·소속 이력·존속 기간)을 정리한다. 모순 검사나 검사 결과 갱신은 하지 않는다.
    opts.ledger(기본 true): 연표·사건 장부도 다시 뽑는다. 새 문서를 고치지 않았으면 작성 호출이 뽑은 것을 그대로 둔다.
-   opts.cats: 분류와 문서가 없는 링크 항목의 소속·유형도 붙인다(새 문서·다시 쓰기만. 고치기·직접 편집 뒤에는 이전 분류를 둔다) */
+   opts.cats: 분류와 문서가 없는 링크 항목의 소속도 붙인다(새 문서·다시 쓰기만. 고치기·직접 편집 뒤에는 이전 분류를 둔다) */
 async function bgSync(k, opts = {}) {
   const ledger = opts.ledger !== false;
   const w = S.world, p = S.pages[k]; if (!w || !p || !S.sample) return;

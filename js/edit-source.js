@@ -95,7 +95,7 @@ function conflictContext(w, k, linkKeys) {
 }
 /* 문서의 확정 기록 정리. 새 문서·다시 쓰기·고친 본문에서 사실·관계·용어·소속 이력·존속 기간을 뽑는다.
    opts.ledger: 연표와 사건 장부도 뽑는다(본문이 바뀐 뒤. 새 문서는 작성 호출이 이미 뽑았다)
-   opts.cats: 분류와 문서가 없는 링크 항목의 소속·유형도 붙인다(새 문서·다시 쓰기만) */
+   opts.cats: 분류와 문서가 없는 링크 항목의 소속도 붙인다(새 문서·다시 쓰기만) */
 function factSyncPrompt(w, temp, linkKeys, opts = {}) {
   const ledger = opts.ledger !== false, cats = !!opts.cats;
   const linked = linkKeys.filter(k => w.entities[k]).map(k => w.entities[k].title).join(" / ") || "(없음)";
@@ -111,13 +111,13 @@ ${doc}
 링크한 항목: ${linked}
 
 ${gl ? gl + "\n\n" : ""}${relRefBlock(w, [temp.key, ...linkKeys], temp.key, temp.key, 24)}${ledger ? eventBlock(w, temp.key, linkKeys) : ""}JSON 객체 하나만 출력:
-{"facts":[{"about":"항목 제목","fact":"사실 한 문장"}],${ledger ? '"timeline":[{"year":"연도","month":3,"day":14,"about":"사건의 주체 항목 제목","event":"사건"}],' : ""}"newEntities":[{"title":"항목 제목","type":"${TYPES.join("|")} 중 하나","summary":"본문에 근거한 한 문장 정의"}],${REL_JSON},${ledger ? EVENTS_JSON + "," : ""}${TERMS_JSON},${AFFIL_JSON},${SPAN_JSON}${cats ? ',"categories":{"소속":["..."],"유형":["..."],"사건":[],"기타":[]}' + (bare.length ? ',"linkedCats":[{"title":"문서가 없는 링크 항목 제목","소속":["..."],"유형":["..."]}]' : "") : ""}${looks ? "," + looksJson() : ""}}
+{"facts":[{"about":"항목 제목","fact":"사실 한 문장"}],${ledger ? '"timeline":[{"year":"연도","month":3,"day":14,"about":"사건의 주체 항목 제목","event":"사건"}],' : ""}"newEntities":[{"title":"항목 제목","type":"${TYPES.join("|")} 중 하나","summary":"본문에 근거한 한 문장 정의"}],${REL_JSON},${ledger ? EVENTS_JSON + "," : ""}${TERMS_JSON},${AFFIL_JSON},${SPAN_JSON}${cats ? ',"categories":{"소속":["..."],"유형":["..."],"사건":[],"기타":[]}' + (bare.length ? ',"linkedCats":[{"title":"문서가 없는 링크 항목 제목","소속":["..."]}]' : "") : ""}${looks ? "," + looksJson() : ""}}
 ${ledger ? eventsSpec(w) + "\n" : ""}${ENTITY_DEFINITION_RULE}
 facts에는 이 문서가 링크한 항목 중 중요한 것(인물, 조직, 사건, 장소 위주) 6~10개에 대해 1개씩 넣되, 이 문서의 절정이나 큰 사건에 등장한 항목은 빠짐없이 포함해 그 사건에서 무엇을 했고 어떻게 되었는지(쓴 무기나 수단, 생사, 결과)를 사실로 남긴다. 그리고 「${temp.title}」 자체에 대한 핵심 사실 3~6개를 넣는다. about, a, b는 문서 제목이나 링크한 항목 제목 그대로 쓴다. ${ledger ? `timeline에는 연도가 적힌 사건 중 세계에 영향을 준 것만 0~2개 넣고, 현재 상태·근황·거주는 넣지 않는다. about에는 사건의 주체가 되는 항목 제목을 글자 그대로 쓴다. ${TL_DATE_SPEC}${tlDateNote(w)} ` : ""}newEntities에는 아직 정의가 없는 링크 항목만 넣는다.
 relations에는 이 문서에 나온 인물 사이의 주요 관계를 6개까지 넣는다. 관계를 채우려고 새 인물이나 연인을 지어내지 않는다. 인물이 아닌 항목만 다룬 문서라면 빈 배열. ${REL_SPEC}
 ${TERMS_SPEC} ${AFFIL_SPEC.replace("{T}", temp.title)} ${SPAN_SPEC.replace("{T}", temp.title)}${cats ? `
 ${catGuide(w, temp.key, inputs.categories ? inputs.categoriesCount : 0, temp.type || "")}${bare.length ? `
-linkedCats에는 아래 문서가 없는 링크 항목 가운데 이 문서에서 소속이나 유형을 알 수 있는 것만 넣는다. 각 항목의 문서 유형에 맞는 위 기준(기존 분류 이름 우선)으로 소속과 유형을 0~1개씩 쓰고, 모르면 빈 배열로 둔다. title은 글자 그대로 쓴다.
+linkedCats에는 아래 문서가 없는 링크 항목 가운데 이 문서에서 소속을 알 수 있는 것만 넣는다. 각 항목의 문서 유형에 맞는 위 기준(기존 분류 이름 우선)으로 소속을 0~1개 쓰고, 모르면 빈 배열로 둔다. title은 글자 그대로 쓴다.
 문서가 없는 링크 항목: ${bare.slice(0, 30).join(" / ")}` : ""}` : ""}${looks ? "\n" + looksSpec(w, temp) : ""}`;
 }
 /* 인물 문서의 외모를 이 호출에서 함께 정한다. 사용자가 직접 고친 외모는 다시 정하지 않는다 */
