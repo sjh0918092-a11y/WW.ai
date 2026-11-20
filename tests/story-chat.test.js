@@ -47,14 +47,17 @@ const server = appServer();
           return { profile:{ personality:'신중하며 약속을 지킨다', voice:'짧은 존댓말. 상대를 이름으로 부른다', examples:['기다렸습니다.','그 부탁은 어렵습니다.'] }, character:{key:talkMode==='wrongIdentity'?'hero':key,state:({ dead:'dead', asleep:'unconscious', away:'absent' })[key] || 'available',evidence:'선택한 상대에 관한 사건 본문'}, player:{key:talkMode==='wrongIdentity'?'dead':'hero',state:'available',evidence:'케빈 드와이트는 생존하여 수사를 지휘했다.'}, relationship:'협력 관계', knowledge:'현재 만남만 알고 있다' };
         }
         if (opts.taskKind === 'storyChat') {
-          const out = { reply:'내일 길목에서 기다리겠습니다.', memory:'동료는 주인공과 내일 길목에서 만나기로 약속했다.', important:talkMode==='important', character:{key:S.view.key,state:'available',evidence:'상대는 대화를 이어간다.'}, player:{key:'hero',state:talkMode==='faint'?'unconscious':'available',evidence:'주인공의 현재 상태'}, relationship:'약속한 사이', knowledge:'내일 만날 장소를 안다' };
-          opts.onText?.({text:'{"reply":"내일 길목'});
+          const out = { reply:talkMode==='important'?'검토 전의 미확정 답변입니다.':'내일 길목에서 기다리겠습니다.', memory:'동료는 주인공과 내일 길목에서 만나기로 약속했다.', important:talkMode==='important', character:{key:S.view.key,state:'available',evidence:'상대는 대화를 이어간다.'}, player:{key:'hero',state:talkMode==='faint'?'unconscious':'available',evidence:'주인공의 현재 상태'}, relationship:'약속한 사이', knowledge:'내일 만날 장소를 안다' };
+          opts.onText?.({text:'{"reply":"스트리밍 중인 미확정 답변'});
           if (talkMode==='hold') await new Promise((resolve,reject) => { globalThis.releaseTalk=resolve; opts.signal.addEventListener('abort',()=>reject({code:'cancelled'}),{once:true}); });
           if (talkMode==='failure') throw {code:'network'};
           if (opts.signal.aborted) throw {code:'cancelled'};
           return out;
         }
-        if (opts.taskKind === 'storyChatReview') return { reply:talkMode==='faint'?'주인공이 쓰러져 대화가 멈췄다.':'만나는 것은 아직 약속할 수 없습니다.', memory:talkMode==='faint'?'주인공이 기절하여 대화를 멈췄다.':'동료는 만남의 약속을 거절했다.', character:{key:S.view.key,state:'available',evidence:'상대는 대화를 이어간다.'}, player:{key:'hero',state:talkMode==='faint'?'unconscious':'available',evidence:'주인공의 현재 상태'}, relationship:'협력 관계', knowledge:'현재 만남만 안다', correction:'확정 설정에 맞춰 응답을 수정했습니다.' };
+        if (opts.taskKind === 'storyChatReview') {
+          if(talkMode==='important')await new Promise((resolve,reject)=>{globalThis.releaseReview=resolve;opts.signal.addEventListener('abort',()=>reject({code:'cancelled'}),{once:true});});
+          return { reply:talkMode==='faint'?'주인공이 쓰러져 대화가 멈췄다.':'만나는 것은 아직 약속할 수 없습니다.', memory:talkMode==='faint'?'주인공이 기절하여 대화를 멈췄다.':'동료는 만남의 약속을 거절했다.', character:{key:S.view.key,state:'available',evidence:'상대는 대화를 이어간다.'}, player:{key:'hero',state:talkMode==='faint'?'unconscious':'available',evidence:'주인공의 현재 상태'}, relationship:'협력 관계', knowledge:'현재 만남만 안다', correction:'확정 설정에 맞춰 응답을 수정했습니다.' };
+        }
         if (opts.taskKind === 'chapterPlan') return { title:'약속의 길목', era:'2026년', summary:'동료가 길목에서 기다렸다.', protagonistBlock:{heading:'약속의 길목',sections:[{heading:'만남',body:'동료는 주인공과 한 약속에 따라 길목에서 기다렸다.'}],infoboxPatch:[]}, dialogueConsequences:[{character:'동료',detail:'대화에서 약속한 길목에서 기다렸다.'}], affected:[], newEntities:[], facts:[], relations:[], timeline:[], wove:[], nextChoices:['함께 걷는다'], continuity:{updates:[],introduced:[],choiceConsequences:[]} };
         throw new Error('뜻밖의 호출: '+opts.taskKind);
       } };
@@ -82,9 +85,12 @@ const server = appServer();
     await page.evaluate(() => talkMode='hold');
     await page.locator('[data-act="talk-send"]').click();
     await page.waitForFunction(() => !!globalThis.releaseTalk);
-    assert.equal(await page.locator('#storyTalkLive').innerText(),'내일 길목');
+    assert.equal(await page.locator('#storyTalkLive').innerText(),'…');
+    assert(!(await page.locator('.story-talk').textContent()).includes('스트리밍 중인 미확정 답변'));
     assert(!(await page.locator('.story-talk').textContent()).includes('초안'));
-    await page.evaluate(()=>{S.storyTalkJob.phase='review';refreshStoryTalk(S.world,'friend');});
+    await page.evaluate(()=>{S.storyTalkJob.phase='review';S.storyTalkJob.raw='다시 그려도 노출되면 안 되는 초안';refreshStoryTalk(S.world,'friend');});
+    assert.equal(await page.locator('#storyTalkLive').innerText(),'…');
+    assert(!(await page.locator('.story-talk').textContent()).includes('다시 그려도 노출되면 안 되는 초안'));
     assert(!(await page.locator('.story-talk').textContent()).includes('검토'));
     assert(!(await page.locator('.story-talk').textContent()).includes('초안'));
     await page.evaluate(()=>S.storyTalkJob.phase='reply');
@@ -127,10 +133,18 @@ const server = appServer();
     await page.locator('#storyTalkInput').fill('別の約束 <script>alert(1)</script>');
     await page.evaluate(() => talkMode='important');
     await page.locator('[data-act="talk-send"]').click();
+    await page.waitForFunction(()=>!!globalThis.releaseReview);
+    assert.equal(await page.locator('#storyTalkLive').innerText(),'…');
+    assert(!(await page.locator('.story-talk').textContent()).includes('검토 전의 미확정 답변입니다.'));
+    assert.equal(await page.evaluate(()=>storyTalkSession(S.world,'friend').turns.length),1,'검토 중에는 응답을 확정하지 않는다');
+    await page.evaluate(()=>releaseReview());
     await page.waitForFunction(() => !S.storyTalkJob && storyTalkSession(S.world,'friend').turns.length===2);
     assert((await page.locator('.story-talk').innerText()).includes('約束 <script>'));
     assert.equal(await page.locator('.story-talk script').count(),0);
     assert.equal(await page.evaluate(()=>storyTalkSession(S.world,'friend').turns[1].reply),'만나는 것은 아직 약속할 수 없습니다.');
+    assert((await page.locator('.story-talk').textContent()).includes('만나는 것은 아직 약속할 수 없습니다.'));
+    assert(!(await page.locator('.story-talk').textContent()).includes('검토 전의 미확정 답변입니다.'));
+    assert.equal(await page.locator('#storyTalkLive').count(),0);
     assert(!(await page.locator('.story-talk').textContent()).includes('확정 설정에 맞춰 응답을 수정했습니다.'));
     await page.evaluate(()=>{storyTalkSession(S.world,'friend').turns[1].correction='기존 내부 교정 설명';renderMain();});
     assert(!(await page.locator('.story-talk').textContent()).includes('기존 내부 교정 설명'),'기존 기록의 교정 설명도 표시하지 않는다');

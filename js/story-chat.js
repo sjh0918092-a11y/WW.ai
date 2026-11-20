@@ -179,7 +179,7 @@ async function sendStoryTalk() {
   if (s.stamp !== storyTalkStamp(w, key)) { s.ready = false; await prepareStoryTalk(key); return; }
   if (!S.sample) { s.err = ERR.no_sample; refreshStoryTalk(w, key); return; }
   if (S.storyGen || S.gen || S.syncing || S.edit) { s.err = "진행 중인 작성·편집을 마친 뒤 대화할 수 있습니다."; refreshStoryTalk(w, key); return; }
-  const n = w.story.chapter, job = { ctl: new AbortController(), phase: "reply", key, wid: w.id, raw: "", user: text };
+  const n = w.story.chapter, job = { ctl: new AbortController(), phase: "reply", key, wid: w.id, user: text };
   S.storyTalkJob = job; s.err = ""; refreshStoryTalk(w, key);
   let committed = false;
   const firstTimer = gActiveTimeout(() => { job.timedOut = true; job.ctl.abort(); }, 15000);
@@ -187,7 +187,7 @@ async function sendStoryTalk() {
   try {
     const prompt = storyTalkPrompt(w, key, text);
     let out = await callJson("storyChat", prompt, { signal: job.ctl.signal, modelTier: "default", liveStream: true,
-      onText: ({ text: raw }) => { job.raw = storyTalkPartial(raw); if (job.raw) firstTimer(); const el = document.getElementById("storyTalkLive"); if (S.world === w && S.view.key === key && el) { const log = document.getElementById("storyTalkMessages"), follow = !log || log.scrollHeight - log.scrollTop - log.clientHeight < 80; el.textContent = job.raw || "응답을 기다리는 중…"; if (follow) storyTalkScroll(); } }
+      onText: ({ text: raw }) => { if (storyTalkPartial(raw)) firstTimer(); }
     }, { title: w.entities[key].title, ch: n });
     if (job.ctl.signal.aborted || S.world !== w || w.story.chapter !== n) throw { code: "cancelled" };
     if (!storyTalkAssessment(w, key, out)) throw { code: "invalid_json" };
@@ -251,7 +251,7 @@ function storyTalkHtml() {
     <nav class="talk-contacts" aria-label="대화 상대">${storyTalkers(w).map(k => `<button type="button" data-talk-key="${esc(k)}" aria-pressed="${k === key}" ${busy ? "disabled" : ""}>${esc(w.entities[k].title)}${storyTalkReady(w, k) && storyTalkSession(w, k).state !== "available" ? `<small>${esc(STORY_TALK_STATES[storyTalkSession(w, k).state])}</small>` : ""}</button>`).join("")}</nav>
     </header>
     <div class="talk-messages" id="storyTalkMessages" role="log" aria-label="대화 기록" tabindex="0">${history || (own && job.phase !== "prepare" ? "" : `<div class="talk-empty"><span aria-hidden="true">◇</span><p>${key ? `${esc(title)}에게 말을 건네 보세요.` : "아직 등장한 대화 상대가 없습니다."}</p></div>`)}
-    ${own && job.phase !== "prepare" ? `<div class="talk-message talk-self"><span class="sr-only">나</span><div class="talk-bubble">${esc(job.user || "")}</div></div><div class="talk-message talk-other"><span class="talk-speaker">${esc(title)}</span><div class="talk-bubble" id="storyTalkLive" aria-live="polite">${esc(job.raw || "답변을 기다리는 중…")}</div><span class="talk-progress">답변 중…</span></div>` : ""}</div>
+    ${own && job.phase !== "prepare" ? `<div class="talk-message talk-self"><span class="sr-only">나</span><div class="talk-bubble">${esc(job.user || "")}</div></div><div class="talk-message talk-other"><span class="talk-speaker">${esc(title)}</span><div class="talk-bubble" id="storyTalkLive" role="status" aria-label="답변을 기다리는 중">…</div></div>` : ""}</div>
     <footer class="talk-composer">${own && job.phase === "prepare" ? '<p class="talk-progress" role="status">불러오는 중…</p>' : ""}${status ? `<p class="talk-unavailable">${esc(status)}</p>` : ""}${!storyOn(w) ? '<p class="talk-progress">결말 이후의 대화입니다.</p>' : ""}
     ${s?.err ? `<p class="talk-error" role="alert">${esc(s.err)}</p>` : ""}
     ${key ? `<label class="sr-only" for="storyTalkInput">${esc(title)}에게 할 말</label><div class="talk-input-row"><textarea id="storyTalkInput" rows="1" maxlength="2000" placeholder="${blocked ? "지금은 대화할 수 없습니다" : "메시지 입력"}" ${!allowed || busy ? "disabled" : ""}>${esc(s?.draft || "")}</textarea><button type="button" class="talk-send" data-act="talk-send" aria-label="메시지 보내기" ${!allowed || busy || !s?.draft?.trim() || s?.unsaved ? "disabled" : ""}><span aria-hidden="true">↑</span></button></div>
