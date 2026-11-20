@@ -11,6 +11,7 @@ function storySideHtml(w) {
     ${(() => { const fr = (c.fresh || []).filter(k => w.entities[k]); if (!fr.length) return ""; const unread = fr.filter(k => !S.pages[k]).length;
       return `<details${unread ? " open" : ""}><summary>새로 등장 ${fr.length}곳${unread ? ` · 안 읽음 ${unread}` : ""}</summary><ul>${fr.map(k => `<li><button type="button" data-k="${k}" style="${S.pages[k] ? "" : "color:var(--red)"}">${esc(w.entities[k].title)}</button></li>`).join("")}</ul></details>`; })()}
     ${ended ? "" : `<details><summary>이번 장 탐험 ${ex.length}곳</summary>${ex.length ? `<ul>${ex.map(x => `<li><button type="button" data-k="${x.k}" title="${esc(x.kinds.join(", "))}">${esc(w.entities[x.k].title)}</button></li>`).join("")}</ul>` : `<p class="note" style="margin:4px 0 0">아직 없습니다. 문서를 열고, 만들고, 고치면 쌓입니다.</p>`}</details>`}
+    <div class="row"><button type="button" class="btn" data-act="story-talk">등장인물과 대화</button></div>
     ${busy || (ended ? `<button type="button" class="btn pri" data-act="epilogue">에필로그 보기</button>` : `<button type="button" class="btn pri" data-act="story-next" ${!S.pages[pk] ? "disabled title=\"주인공 문서가 완성된 뒤 넘어갈 수 있습니다\"" : ""}>${st.chapter + 1 >= totalOf(w) ? "마지막 장으로" : "다음 장으로"}</button>`)}
   </section>`;
 }
@@ -25,6 +26,7 @@ function storyCardHtml(w, n) {
   return `<section class="stcard" aria-label="이번 장 안내">${endBtn}<h3><span class="chb">${n}장</span>${esc(c.title)}</h3><p class="src">작중 ${esc(c.era)}${c.choice ? ` · 고른 행동: ${esc(c.choice.custom || c.choice.picked)}` : ""}</p>
     ${prev ? `<h4>지난 이야기 · ${prev.n}장 「${esc(prev.title)}」</h4><p>${esc(prev.summary)}</p>` : ""}
     <h4>이번 장에 엮인 탐험</h4>${wove.length ? `<p>${wove.map(x => linkHtml(w.entities[x.key].title)).join(" · ")}</p>` : `<p class="note">엮인 탐험이 없습니다. 이번 장은 뼈대대로 흘러갑니다.</p>`}
+    ${c.dialogueConsequences?.length ? `<h4>대화가 남긴 변화</h4><ul>${c.dialogueConsequences.map(x => `<li>${esc(x.character)}: ${esc(x.detail)}</li>`).join("")}</ul>` : ""}
     ${c.continuity?.warnings?.length ? `<p class="note">본문은 보관했습니다. 일부 진행 기록은 확인이 필요하며 이전 상태를 유지했습니다.</p>` : ""}${fresh.length ? `<h4>이번 장에 새로 등장</h4><p>${fresh.map(k => linkHtml(w.entities[k].title)).join(" · ")}</p>` : ""}
     ${aff.length ? `<h4>이번 장에 영향을 받은 문서</h4><p>${aff.map(a => linkHtml(w.entities[a.key].title)).join(" · ")}</p><p class="note" style="margin-top:4px">무엇이 바뀌었는지는 아래 ${n}장 섹션과 각 문서에서 확인할 수 있습니다. 파란 링크는 열면 이번 장의 변화를 덧붙이고, 빨간 링크는 이번 장 시점으로 새로 작성합니다.</p>` : ""}
     <div class="row" style="margin-top:10px"><button type="button" class="btn" data-act="story-card-close">안내 닫기</button></div></section>`;

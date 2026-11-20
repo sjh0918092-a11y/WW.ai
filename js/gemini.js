@@ -130,7 +130,7 @@ const gemini = {
   async stream(model, body, opts, prefix) {
     const provider = /^claude-/.test(model) ? "claude" : isOpenAITextModel(model) ? "openai" : "gemini";
     if (provider !== "gemini" && (typeof AIJobs === "undefined" || !AIJobs.enabled(provider))) throw { code: "job_unavailable", serverJob: true, message: "Claude·OpenAI는 중계 서버 연결·로그인·서버 AI 실행이 필요합니다." };
-    if (typeof AIJobs !== "undefined" && AIJobs.enabled(provider)) {
+    if (typeof AIJobs !== "undefined" && AIJobs.enabled(provider) && !(opts.liveStream && provider === "gemini")) {
       const j = await AIJobs.run(provider + ".generate", model, body, { ...opts, onStatus: j => { opts.onStatus?.(j); if(j.usage)opts.onUsage?.(j.usage); } }), c = j.candidates?.[0];
       const text = (c?.content?.parts || []).filter(p => typeof p.text === "string" && !p.thought).map(p => p.text).join("");
       if (j.usageMetadata) opts.onUsage?.(j.usageMetadata);
@@ -296,7 +296,7 @@ async function listOpenAIModels(){
 }
 const LOGK = "wwiki:log";
 const LOG = (() => { try { const v = JSON.parse(localStorage.getItem(LOGK) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })();
-const KIND = { discovery: "새 대상 탐색", angles: "각도 목록", section: "문단 다시 쓰기", prose: "단편 쓰기", image: "이미지 생성", choices: "행동 후보", read: "문서 읽기 검사", ageRule: "나이 규칙 해석", bible: "세계관 생성", storyBible: "스토리 세계관 생성", chapterPlan: "장 계획", chapterBlock: "장 섹션", page: "문서 작성", tone: "분위기 판별", check: "설정 검사", analyze: "직접 편집 설정 대조", factSync: "확정 사실·분류 정리", fix: "충돌 고치기", worldCheck: "세계 전체 점검", relMigrate: "인물 관계 정리", timelineDate: "연표 날짜", timelineCheck: "연표 점검", preWrite: "작성 전 점검", cats: "분류 다시 받기" };
+const KIND = { storyCast: "대화 인물 준비", storyChat: "등장인물 대화", storyChatReview: "중요 대화 검토", discovery: "새 대상 탐색", angles: "각도 목록", section: "문단 다시 쓰기", prose: "단편 쓰기", image: "이미지 생성", choices: "행동 후보", read: "문서 읽기 검사", ageRule: "나이 규칙 해석", bible: "세계관 생성", storyBible: "스토리 세계관 생성", chapterPlan: "장 계획", chapterBlock: "장 섹션", page: "문서 작성", tone: "분위기 판별", check: "설정 검사", analyze: "직접 편집 설정 대조", factSync: "확정 사실·분류 정리", fix: "충돌 고치기", worldCheck: "세계 전체 점검", relMigrate: "인물 관계 정리", timelineDate: "연표 날짜", timelineCheck: "연표 점검", preWrite: "작성 전 점검", cats: "분류 다시 받기" };
 function pushLog(r) {
   LOG.push(r); if (LOG.length > 40) LOG.splice(0, LOG.length - 40);
   try { localStorage.setItem(LOGK, JSON.stringify(LOG)); } catch {}
@@ -313,7 +313,7 @@ async function callJson(kind, prompt, opts = {}, meta = {}) {
   const target = opts.recoveryTarget || { wid: S.world?.id, key: S.gen?.key || S.checking || S.proseGen?.key || S.edit?.key || S.view?.key };
   const costCall = typeof DocumentCost !== "undefined" ? (opts.costSession ? DocumentCost.beginSession(opts.costSession,kind) : DocumentCost.begin(target.wid,target.key,kind)) : null;
   if(costCall){costCall.row.title=meta.title||"";DocumentCost.update(costCall);}
-  const recoveryMeta = typeof AIRecovery !== "undefined" && AIJobs.enabled("gemini") && S.world?.id === target.wid ? await AIRecovery.capture(kind, S.world, target.key, opts.recoveryMeta || (S.gen?.recovery ? { group: S.gen.recovery.group } : {})) : null;
+  const recoveryMeta = !["storyCast", "storyChat", "storyChatReview"].includes(kind) && typeof AIRecovery !== "undefined" && AIJobs.enabled("gemini") && S.world?.id === target.wid ? await AIRecovery.capture(kind, S.world, target.key, opts.recoveryMeta || (S.gen?.recovery ? { group: S.gen.recovery.group } : {})) : null;
   const jobMeta = { kind, title: meta.title || "", wid: target.wid || "", key: target.key || "", ...(recoveryMeta || {}), ...(opts.jobMeta || {}) };
   const o = { progressWatch: ["page", "check", "read", "prose", "section", "discovery"].includes(kind), ...opts, jobMeta, taskKind: kind,
     onJob: j => { if(typeof DocumentCost!=="undefined")DocumentCost.link(costCall,j.id); rec.transport = "server"; (rec.jobs ||= []).push(j.id); opts.onJob?.(j); }, onText: u => { if (first === null) first = performance.now(); chars = u.text.length; if (user) user(u); },

@@ -5,6 +5,7 @@ const AI_TASKS = [
  ["check","설정 검사"],["read","문서 내부 검사"],["fix","충돌 고치기"],
  ["factSync","확정 사실·관계·분류 정리"],["analyze","직접 편집한 문서의 설정 대조"],
  ["section","문단 다시 쓰기"],["discovery","새 대상 탐색"],["angles","각도 목록"],
+ ["storyCast","대화 인물 준비"],["storyChat","등장인물 대화"],["storyChatReview","중요 대화 검토"],
  ["prose","단편 쓰기"],["chapterPlan","장 계획"],["chapterBlock","장 섹션 작성"],["choices","행동 후보"],
  ["tone","분위기 판별"],["ageRule","나이 규칙 해석"],["timelineDate","연표 날짜 보완"],["timelineCheck","연표 점검"],
  ["cats","분류 정리"],["relMigrate","기존 인물 관계 정리"],["worldCheck","세계 전체 점검"]

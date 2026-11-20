@@ -7,7 +7,7 @@ const S = {
   creating: false, createErr: null, seed: "", seedTab: "own", ownSeed: "", dice: null, whatIfs: null, first: "", guideIn: "",
   discovery: null, worldExports: Object.create(null), confirmDel: null, confirmRewrite: null, canonFilter: "all", focusEnt: null, nf: new Set(),
   edit: null, refreshing: null, confirmDelPage: null, confirmMerge: null, compose: null, portraitJob: null, imageGen: null, proseGen: null,
-  mode: "basic", storyN: 5, protoDesc: "", cast: [], regen: null, storyGen: null, syncQ: [], syncing: null, syncErr: null, hold: null, adv: null, storyCard: null,
+  mode: "basic", storyN: 5, protoDesc: "", cast: [], regen: null, storyGen: null, storyTalkJob: null, syncQ: [], syncing: null, syncErr: null, hold: null, adv: null, storyCard: null,
   fixJobs: new Map()   // 문서별 교정 작업(문서 키 → 교정 상태). 여러 문서를 동시에 고칠 수 있다
 };
 
@@ -18,7 +18,7 @@ const Nav = {
     let view = S.view.name, key = S.view.key;
     if (view === "jobs") return { view, ...(S.view.job ? { job: S.view.job } : {}) };
     if (["loading"].includes(view)) return null;
-    if (["fix", "compose", "advance"].includes(view)) { view = "article"; key ||= S.world?.mainKey; }
+    if (["fix", "compose", "advance", "storyTalk"].includes(view)) { view = "article"; key ||= S.world?.mainKey; }
     const r = { view };
     if (view !== "home" && S.world) r.world = S.world.id;
     if (view === "article") r.key = key || S.world?.mainKey;

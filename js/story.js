@@ -64,7 +64,7 @@ function applyChapter(w, n, out, choice) {
     s.intent = stripMarks(r.intent).slice(0, 300); s.revised = true;
   }
   st.chapters.push({ n, title: chTitle(out.title).slice(0, 60), era, summary: stripMarks(out.summary).slice(0, 800), startedAt: Date.now(), explore: emptyExplore(), choice,
-    wove, affected, auto, continuity: progress.record, nextChoices: n >= totalOf(w) ? [] : (Array.isArray(out.nextChoices) ? out.nextChoices : []).map(x => stripMarks(asText(x)).slice(0, 200)).filter(Boolean).slice(0, 3) });
+    wove, affected, auto, dialogueConsequences: (Array.isArray(out.dialogueConsequences) ? out.dialogueConsequences : []).filter(x => x && typeof x.character === "string" && typeof x.detail === "string"), continuity: progress.record, nextChoices: n >= totalOf(w) ? [] : (Array.isArray(out.nextChoices) ? out.nextChoices : []).map(x => stripMarks(asText(x)).slice(0, 200)).filter(Boolean).slice(0, 3) });
   st.continuity = progress.memory;
   st.chapter = n; w.era = era;
   if (n >= totalOf(w)) { st.status = "ended"; st.endedAt = Date.now(); st.epilogue = stripMarks(out.ending?.epilogue || "").slice(0, 1200) || stripMarks(out.summary).slice(0, 800); }
@@ -77,6 +77,8 @@ function applyChapter(w, n, out, choice) {
 async function advanceChapter(skip) {
   const w = S.world; if (!storyOn(w)) return;
   if (!S.sample) { toast(ERR.no_sample); return; }
+  if (S.storyTalkJob) { toast("대화를 마치거나 중단한 뒤 다음 장으로 넘어갈 수 있습니다."); return; }
+  if (Object.values(curCh(w).dialogues || {}).some(s => s.unsaved)) { toast("대화를 먼저 저장해 주세요."); return; }
   if (S.gen || S.storyGen || S.syncing) { toast("다른 문서를 작성하는 중입니다. 끝난 뒤 진행해 주세요."); return; }
   if (S.edit) { toast("편집 중인 문서를 먼저 저장하거나 취소해 주세요."); return; }
   const st = w.story, pk = st.protagonistKey, oldP = S.pages[pk];

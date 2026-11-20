@@ -236,6 +236,7 @@ function storySources(w) {
     const parts = [p.summary, ...(p.infobox || []).map(x => `${x.label}: ${stripMarks(x.value)}`), ...(p.sections || []).filter(s => !s.ch || s.ch <= w.story.chapter).map(s => `${s.heading}\n${stripMarks(s.body)}`), ...(w.entities[key].facts || []).filter(x => !x.sup).map(x => x.t)];
     rows.push({ source: "page:" + key, title: p.title, chapter: null, text: parts.filter(Boolean).join("\n\n") });
   }
+  for (const c of w.story.chapters) for (const [key, s] of Object.entries(c.dialogues || {})) (s.turns || []).forEach((t, i) => rows.push({ source: `dialogue:${c.n}:${key}:${i}`, title: `${w.entities[key]?.title || key}와의 대화`, chapter: c.n, text: `${t.user}\n${t.reply}\n${t.memory}` }));
   return rows;
 }
 function storyMemoryBlock(w, sources = true) {
@@ -347,6 +348,7 @@ ${st.spine.map(s => `- ${s.n}단계 ${s.beat}: ${s.intent}${s.revised ? " (앞�
 ## 지금까지의 장
 ${st.chapters.map(c => `- ${c.n}장 「${c.title}」 (${c.era}): ${c.summary}${c.wove?.length ? `\n  이 장에 엮인 탐험: ${c.wove.map(x => w.entities[x.key]?.title).filter(Boolean).join(", ")}` : ""}`).join("\n")}
 
+${typeof storyDialogueBlock === "function" ? storyDialogueBlock(w) : ""}
 ## 주인공 문서의 현재 내용
 ${pp ? docText(pp, w) : "(아직 작성되지 않음)"}
 
@@ -394,7 +396,7 @@ ${entityIndex(w, [pk])}
 ## 출력
 ${ENTITY_DEFINITION_RULE}
 JSON 객체 하나만 출력:
-{"title":"이 장의 작중 사건명","era":"이 장의 작중 시점","summary":"공개 줄거리 3~5문장","timeline":[{"year":"연도","month":3,"day":14,"event":"..."}],"protagonistBlock":{"heading":"작중 사건명","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}],"infoboxPatch":[{"label":"상태","value":"..."}],"summaryPatch":""},"affected":[{"title":"항목 제목","change":"이번 장에서 이 항목에 일어난 일 한 문장","kind":"update 또는 new"}],"newEntities":[{"title":"...","type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의"}],"wove":[{"title":"탐험 항목 제목","how":"이 항목이 이번 장 사건에서 맡은 역할 한 문장"}],"facts":[{"about":"항목 제목","fact":"..."}],${REL_JSON},"spineRevise":[{"n":4,"intent":"..."}],"revealNow":[],"secretRevise":[],${STORY_CONTINUITY_OUTPUT},"nextChoices":["...","...","..."],"ending":${last ? '{"epilogue":"결말 이후 3~5문장"}' : "null"}}`;
+{"title":"이 장의 작중 사건명","era":"이 장의 작중 시점","summary":"공개 줄거리 3~5문장","timeline":[{"year":"연도","month":3,"day":14,"event":"..."}],"protagonistBlock":{"heading":"작중 사건명","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}],"infoboxPatch":[{"label":"상태","value":"..."}],"summaryPatch":""},"affected":[{"title":"항목 제목","change":"이번 장에서 이 항목에 일어난 일 한 문장","kind":"update 또는 new"}],"newEntities":[{"title":"...","type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의"}],"wove":[{"title":"탐험 항목 제목","how":"이 항목이 이번 장 사건에서 맡은 역할 한 문장"}],"facts":[{"about":"항목 제목","fact":"..."}],${REL_JSON},"spineRevise":[{"n":4,"intent":"..."}],"revealNow":[],"secretRevise":[],${STORY_CONTINUITY_OUTPUT},"dialogueConsequences":[{"character":"대화 상대 이름","detail":"이번 장 본문에 나타난 구체적인 대화의 결과. 없으면 빈 배열"}],"nextChoices":["...","...","..."],"ending":${last ? '{"epilogue":"결말 이후 3~5문장"}' : "null"}}`;
 }
 function chapterBlockPrompt(w, key, chs) {
   const p = S.pages[key], e = w.entities[key];

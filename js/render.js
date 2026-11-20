@@ -302,6 +302,7 @@ function renderMain(force) {
   else if (S.view.name === "gset") { ModelCatalog.prepare(); m.innerHTML = gsetHtml(); ModelCatalog.ensure(); }
   else if (S.view.name === "fix") m.innerHTML = fixvHtml(S.view.key);
   else if (S.view.name === "compose") m.innerHTML = composeHtml(S.view.key);
+  else if (S.view.name === "storyTalk") m.innerHTML = storyTalkHtml();
   else if (S.view.name === "advance") m.innerHTML = advanceHtml();
   else if (S.view.name === "epilogue") m.innerHTML = epilogueHtml();
   else { refreshOnOpen(S.view.key); m.innerHTML = articleHtml(S.view.key); }

@@ -407,3 +407,8 @@ details.ent li{margin-bottom:3px}
 @media(max-width:480px) { .ai-input { flex-wrap:wrap; } .ai-input > label:first-child { min-width:65%; } }
 .job-diag{margin:14px 0;font-size:13px}.job-diag summary{cursor:pointer;line-height:1.6}.job-diag li small{color:var(--muted);line-height:1.5}.job-diag li.diag-bad small{color:var(--red)}.job-diag li.diag-warn small{color:var(--warn-fg)}
 .looks-box input{width:100%;box-sizing:border-box}
+
+/* 스토리 대화 */
+.story-talk .talk-turn { margin: 16px 0; padding: 12px 16px; border: 1px solid var(--line); border-radius: 8px; }
+.story-talk .talk-turn p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.story-talk textarea { width: 100%; box-sizing: border-box; }

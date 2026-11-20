@@ -143,10 +143,16 @@ document.addEventListener("click", ev => {
   if (d.termPick !== undefined) { chooseTerm(Number(d.termPick), Number(d.alt)); return; }
   if (d.mode) { S.mode = d.mode === "story" ? "story" : "basic"; if (S.seedTab === "dice" && S.dice) S.seed = diceSeed(S.dice); renderMain(); return; }   // 주사위 원안은 모드에 맞게 다시 쓴다
   if (d.chn) { S.storyN = Math.min(STORY_MAX, Math.max(STORY_MIN, +d.chn)); renderMain(); return; }
+  if (d.talkKey) { openStoryTalk(d.talkKey); return; }
   if (d.castDel !== undefined) { S.cast.splice(Number(d.castDel), 1); renderMain(); return; }
   if (d.epsec) { const w = S.world; if (!w) return; const pk = w.story.protagonistKey, i = d.epsec; S.view = { name: "article", key: pk }; renderAll(); const el = document.getElementById("s-" + i); if (el) el.scrollIntoView({ block: "start" }); return; }
   switch (d.act) {
     case "home": if (S.view.name === "home") return; S.view = { name: "home" }; if (!S.gen && !S.storyGen && !S.syncing) S.world = null; renderAll(); window.scrollTo({ top: 0 }); break;
+    case "story-talk": openStoryTalk(); break;
+    case "talk-prepare": prepareStoryTalk(S.view.key); break;
+    case "talk-send": sendStoryTalk(); break;
+    case "talk-stop": S.storyTalkJob?.ctl.abort(); break;
+    case "talk-save": saveStoryTalk(); break;
     case "story-next": openAdvance(); break;
     case "story-go": { const ta = $("#advCustom"); if (ta && S.adv) S.adv.custom = ta.value; advanceChapter(false); break; }
     case "story-skip": advanceChapter(true); break;
@@ -326,6 +332,7 @@ document.addEventListener("input", ev => {
     const ta = $("#seedTa"); if (ta) ta.value = S.seed;
     const lb = document.querySelector(`[data-lock="${k}"]`); if (lb) { lb.setAttribute("aria-pressed", "true"); lb.textContent = "고정됨"; }
   }
+  if (ev.target.id === "storyTalkInput") { const s = storyTalkSession(S.world, S.view.key, true); s.draft = ev.target.value; const b = document.querySelector('[data-act="talk-send"]'); if (b) b.disabled = !s.draft.trim() || !!s.unsaved || storyTalkBusy(); }
   if (ev.target.id === "firstIn") S.first = ev.target.value;
   if (ev.target.id === "protoDesc") S.protoDesc = ev.target.value;
   if (ev.target.id === "regenKeep" && S.regen) { S.regen.keep = ev.target.checked; renderMain(); }
