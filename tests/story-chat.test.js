@@ -40,15 +40,19 @@ const server = appServer();
       S.pages.hero.sections.push({heading:'저격 사건',level:1,body:'마이클 쇼는 공연 도중 총상을 입고 사망했다. 케빈 드와이트는 생존하여 현장 수사를 지휘했다.'});
       curCh(w).dialogues = { dead: {ready:true,state:'available',stamp:storyTalkStamp(w,'dead'),turns:[],draft:'',reason:'케빈 드와이트가 살아 있으므로 대화할 수 있다.'} };
       await Store.saveWorld(w); for (const p of Object.values(S.pages)) await Store.savePage(w.id,p);
+      globalThis.privateFact='비공개 문서의 보관 장소는 지하 서고다.';
+      w.userCanon=privateFact;w.story.chapters[0].summary+=' '+privateFact;w.entities.friend.facts.push({t:privateFact,src:'hero'});w.story.secrets.push({id:'public-in-story',truth:privateFact,cover:'장소는 알려지지 않았다',revealed:true});
       globalThis.talkCalls = []; globalThis.talkMode = 'normal';
       S.sample = { json: async (prompt,opts) => {
         talkCalls.push({ prompt, kind: opts.taskKind, tier: opts.modelTier, live:opts.liveStream });
         if (opts.taskKind === 'storyCast') {
           const key = S.view.key;
-          return { profile:{ personality:'신중하며 약속을 지킨다', voice:'짧은 존댓말. 상대를 이름으로 부른다', examples:['기다렸습니다.','그 부탁은 어렵습니다.'] }, character:{key:talkMode==='wrongIdentity'?'hero':key,state:({ dead:'dead', asleep:'unconscious', away:'absent' })[key] || 'available',evidence:'선택한 상대에 관한 사건 본문'}, player:{key:talkMode==='wrongIdentity'?'dead':'hero',state:'available',evidence:'케빈 드와이트는 생존하여 수사를 지휘했다.'}, relationship:'협력 관계', knowledge:'현재 만남만 알고 있다' };
+          return { profile:{ personality:'신중하며 약속을 지킨다', voice:'짧은 존댓말. 상대를 이름으로 부른다', examples:['기다렸습니다.','그 부탁은 어렵습니다.'] }, character:{key:talkMode==='wrongIdentity'?'hero':key,state:({ dead:'dead', asleep:'unconscious', away:'absent' })[key] || 'available',evidence:'선택한 상대에 관한 사건 본문'}, player:{key:talkMode==='wrongIdentity'?'dead':'hero',state:'available',evidence:'케빈 드와이트는 생존하여 수사를 지휘했다.'}, relationship:'협력 관계', scene:'현재 두 인물이 마주 보고 있다.',knowledge:storyTalkKnowledgeValid(storyTalkSession(S.world,key)?.knowledge)?structuredClone(storyTalkSession(S.world,key).knowledge):{known:[]} };
         }
         if (opts.taskKind === 'storyChat') {
-          const out = { reply:talkMode==='important'?'검토 전의 미확정 답변입니다.':'내일 길목에서 기다리겠습니다.', memory:'동료는 주인공과 내일 길목에서 만나기로 약속했다.', important:talkMode==='important', character:{key:S.view.key,state:'available',evidence:'상대는 대화를 이어간다.'}, player:{key:'hero',state:talkMode==='faint'?'unconscious':'available',evidence:'주인공의 현재 상태'}, relationship:'약속한 사이', knowledge:'내일 만날 장소를 안다' };
+          const out = { reply:talkMode==='important'?'검토 전의 미확정 답변입니다.':'내일 길목에서 기다리겠습니다.', memory:'동료는 주인공과 내일 길목에서 만나기로 약속했다.', important:talkMode==='important', character:{key:S.view.key,state:'available',evidence:'상대는 대화를 이어간다.'}, player:{key:'hero',state:talkMode==='faint'?'unconscious':'available',evidence:'주인공의 현재 상태'}, relationship:'약속한 사이', scene:'현재 두 인물이 마주 보고 있다.',knowledge:{known:[]} };
+          if(talkMode==='hold'){out.reply=privateFact;out.knowledge={known:[{fact:privateFact,via:'public',source:'chapter:1',evidence:'줄거리에 적혀 있다.'}]};}
+          globalThis.lastTalkDraft=out;
           opts.onText?.({text:'{"reply":"스트리밍 중인 미확정 답변'});
           if (talkMode==='hold') await new Promise((resolve,reject) => { globalThis.releaseTalk=resolve; opts.signal.addEventListener('abort',()=>reject({code:'cancelled'}),{once:true}); });
           if (talkMode==='failure') throw {code:'network'};
@@ -57,7 +61,8 @@ const server = appServer();
         }
         if (opts.taskKind === 'storyChatReview') {
           if(talkMode==='important')await new Promise((resolve,reject)=>{globalThis.releaseReview=resolve;opts.signal.addEventListener('abort',()=>reject({code:'cancelled'}),{once:true});});
-          return { reply:talkMode==='faint'?'주인공이 쓰러져 대화가 멈췄다.':'만나는 것은 아직 약속할 수 없습니다.', memory:talkMode==='faint'?'주인공이 기절하여 대화를 멈췄다.':'동료는 만남의 약속을 거절했다.', character:{key:S.view.key,state:'available',evidence:'상대는 대화를 이어간다.'}, player:{key:'hero',state:talkMode==='faint'?'unconscious':'available',evidence:'주인공의 현재 상태'}, relationship:'협력 관계', knowledge:'현재 만남만 안다', correction:'확정 설정에 맞춰 응답을 수정했습니다.' };
+          if(talkMode!=='important'&&talkMode!=='faint')return {...lastTalkDraft,reply:'내일 길목에서 기다리겠습니다.',knowledge:structuredClone(storyTalkSession(S.world,S.view.key).knowledge)};
+          return { reply:talkMode==='faint'?'주인공이 쓰러져 대화가 멈췄다.':'만나는 것은 아직 약속할 수 없습니다.', memory:talkMode==='faint'?'주인공이 기절하여 대화를 멈췄다.':'동료는 만남의 약속을 거절했다.', character:{key:S.view.key,state:'available',evidence:'상대는 대화를 이어간다.'}, player:{key:'hero',state:talkMode==='faint'?'unconscious':'available',evidence:'주인공의 현재 상태'}, relationship:'협력 관계', scene:'현재 두 인물이 마주 보고 있다.',knowledge:talkMode==='important'?{known:[{fact:'사용자가 '+privateFact+'라고 말했다.',via:'told',source:'user',evidence:privateFact}]}:structuredClone(storyTalkSession(S.world,S.view.key).knowledge), correction:'확정 설정에 맞춰 응답을 수정했습니다.' };
         }
         if (opts.taskKind === 'chapterPlan') return { title:'약속의 길목', era:'2026년', summary:'동료가 길목에서 기다렸다.', protagonistBlock:{heading:'약속의 길목',sections:[{heading:'만남',body:'동료는 주인공과 한 약속에 따라 길목에서 기다렸다.'}],infoboxPatch:[]}, dialogueConsequences:[{character:'동료',detail:'대화에서 약속한 길목에서 기다렸다.'}], affected:[], newEntities:[], facts:[], relations:[], timeline:[], wove:[], nextChoices:['함께 걷는다'], continuity:{updates:[],introduced:[],choiceConsequences:[]} };
         throw new Error('뜻밖의 호출: '+opts.taskKind);
@@ -95,6 +100,29 @@ const server = appServer();
     assert.equal(await page.locator('.talk-profile').count(),0);
     assert(!(await page.locator('.story-talk').textContent()).includes('짧은 존댓말'));
     assert.equal(await page.evaluate(()=>S.world.story.dialogueProfiles.friend.voice),'짧은 존댓말. 상대를 이름으로 부른다','캐릭터 지침은 유지한다');
+    const boundary=await page.evaluate(()=>{
+      const session=storyTalkSession(S.world,'friend');session.turns.push({user:'예전 질문',reply:'미승인 답변에만 있던 비밀',memory:'미승인 답변에만 있던 비밀'});
+      const prompt=storyTalkPrompt(S.world,'friend','안녕');session.turns.pop();
+      return {leak:prompt.includes('미승인 답변에만 있던 비밀'),rules:storyTalkCastPrompt(S.world,'friend')};
+    });
+    assert(!boundary.leak);
+    assert(boundary.rules.includes('직접 경험, 실제 전달'));
+    assert(boundary.rules.includes('공개되었다는 묘사 없이 공개 정보라고 가정하지 않는다'));
+    const evidenceBoundary=await page.evaluate(()=>{
+      const session=storyTalkSession(S.world,'friend'), old=session.knowledge;
+      session.knowledge={known:[{fact:'행사가 열렸다.',via:'public',source:'chapter:1',evidence:privateFact}]};
+      const prompt=storyTalkPrompt(S.world,'friend','안녕');session.knowledge=old;
+      return {publicFact:prompt.includes('행사가 열렸다.'),privateDetail:prompt.includes(privateFact)};
+    });
+    assert(evidenceBoundary.publicFact);assert(!evidenceBoundary.privateDetail,'근거 인용문에 섞인 미공유 정보도 생성 모델에서 제외한다');
+    const legacyKnowledge=await page.evaluate(async()=>{
+      const session=storyTalkSession(S.world,'friend'), before=talkCalls.filter(c=>c.kind==='storyCast').length;
+      session.knowledge=privateFact;delete session.knowledgeVersion;
+      await prepareStoryTalk('friend');
+      return {calls:talkCalls.filter(c=>c.kind==='storyCast').length-before,version:session.knowledgeVersion,known:session.knowledge.known};
+    });
+    assert.equal(legacyKnowledge.calls,1);assert.equal(legacyKnowledge.version,1);assert.deepEqual(legacyKnowledge.known,[],'기존 자유 형식 지식을 그대로 재사용하지 않는다');
+
     const reuse=await page.evaluate(async()=>{
       const before=talkCalls.filter(c=>c.kind==='storyCast').length, w=S.world;
       w.entities.friend.facts.reverse(); w.entities.friend.facts.forEach(f=>{f.at=999;f.checkedAt=1000;});
@@ -132,7 +160,12 @@ const server = appServer();
     await page.waitForFunction(() => !S.storyTalkJob);
     assert.equal(await page.evaluate(() => storyTalkSession(S.world,'friend').turns.length),1);
     assert.equal(await page.evaluate(() => talkCalls.find(c=>c.kind==='storyChat').tier),'default','등장인물 대화는 기본 모델 사용');
-    assert.equal(await page.evaluate(() => talkCalls.filter(c=>c.kind==='storyChatReview').length),0,'일반 대화는 별도 검사 호출 없음');
+    assert.equal(await page.evaluate(() => talkCalls.filter(c=>c.kind==='storyChatReview').length),1,'일반 응답도 지식 누설 검사를 거친다');
+    assert.equal(await page.evaluate(()=>storyTalkSession(S.world,'friend').knowledge.known.length),0,'초안의 근거 없는 지식을 승인하지 않는다');
+    assert(!(await page.locator('.story-talk').textContent()).includes('비공개 문서의 보관 장소는 지하 서고다.'));
+    const initialPrompts=await page.evaluate(()=>({actor:talkCalls.find(c=>c.kind==='storyChat').prompt,review:talkCalls.find(c=>c.kind==='storyChatReview').prompt}));
+    assert(!initialPrompts.actor.includes('비공개 문서의 보관 장소는 지하 서고다.'),'위키·줄거리·공개 표시의 사실을 대화 모델에 직접 전달하지 않는다');
+    assert(initialPrompts.review.includes('비공개 문서의 보관 장소는 지하 서고다.'),'검사 모델은 전체 자료와 습득 경로를 대조한다');
     const beforeReentry=await page.evaluate(()=>talkCalls.filter(c=>c.kind==='storyCast').length);
     await page.locator('[data-act="story-back"]').click();
     await page.locator('#side [data-act="story-talk"]').click();
@@ -187,7 +220,7 @@ const server = appServer();
       assert(await page.locator('#storyTalkInput').isDisabled());
     }
     await page.locator('[data-talk-key="friend"]').click();
-    await page.locator('#storyTalkInput').fill('別の約束 <script>alert(1)</script>');
+    await page.locator('#storyTalkInput').fill('別の約束 <script>alert(1)</script> 비공개 문서의 보관 장소는 지하 서고다.');
     await page.evaluate(() => talkMode='important');
     await page.locator('[data-act="talk-send"]').click();
     await page.waitForFunction(()=>!!globalThis.releaseReview);
@@ -202,6 +235,8 @@ const server = appServer();
     assert((await page.locator('.story-talk').textContent()).includes('만나는 것은 아직 약속할 수 없습니다.'));
     assert(!(await page.locator('.story-talk').textContent()).includes('검토 전의 미확정 답변입니다.'));
     assert.equal(await page.locator('#storyTalkLive').count(),0);
+    assert.equal(await page.evaluate(()=>storyTalkSession(S.world,'friend').knowledge.known[0].via),'told','직접 전달된 내용은 전언으로만 기록한다');
+    assert(await page.evaluate(()=>storyTalkPrompt(S.world,'friend','알고 있습니까?').includes(privateFact)),'전달 이후에만 대화 모델이 해당 내용을 사용할 수 있다');
     assert(!(await page.locator('.story-talk').textContent()).includes('확정 설정에 맞춰 응답을 수정했습니다.'));
     await page.evaluate(()=>{storyTalkSession(S.world,'friend').turns[1].correction='기존 내부 교정 설명';renderMain();});
     assert(!(await page.locator('.story-talk').textContent()).includes('기존 내부 교정 설명'),'기존 기록의 교정 설명도 표시하지 않는다');
@@ -239,6 +274,7 @@ const server = appServer();
     await page.evaluate(()=>openStoryTalk('friend'));
     await page.waitForFunction(()=>!S.storyTalkJob && storyTalkSession(S.world,'friend').ready);
     assert.equal(await page.evaluate(()=>talkCalls.filter(c=>c.kind==='storyCast').length),beforeNewChapter+1,'새 장에서는 새 상태를 판단한다');
+    assert(await page.evaluate(()=>{const prompt=talkCalls.filter(c=>c.kind==='storyCast').at(-1).prompt;return prompt.includes('priorKnowledge')&&prompt.includes('사용자가 '+privateFact+'라고 말했다.');}),'다음 장 준비에도 검토된 습득 경로를 전달한다');
     assert.equal(await page.evaluate(()=>storyTalkSession(S.world,'friend').turns.length),0);
     assert.equal(await page.locator('.talk-turn').count(),3,'이전 장 대화는 보존');
     await page.evaluate(async()=>{
