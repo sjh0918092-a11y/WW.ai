@@ -285,6 +285,9 @@ function renderMain(force) {
   Nav.sync();
   updateDiscoveryButton();
   const m = $("#main");
+  const oldTalk = document.getElementById("storyTalkMessages"), oldTalkKey = document.querySelector(".story-talk")?.dataset.talkCurrent,
+    talkScroll = oldTalk?.scrollTop || 0, followTalk = !oldTalk || oldTalk.scrollHeight - talkScroll - oldTalk.clientHeight < 80;
+  document.body.classList.toggle("story-chat-open", S.ready && S.view.name === "storyTalk");
   if (S.ready && S.view.name === "article" && S.edit && S.edit.key === S.view.key && S.pages[S.view.key]) {
     if (!force && m.dataset.ed === S.edit.key) return;   // 편집 중에는 다른 갱신으로 입력란을 다시 그리지 않는다
     m.innerHTML = editHtml(S.view.key); m.dataset.ed = S.edit.key; return;
@@ -308,6 +311,11 @@ function renderMain(force) {
   else { refreshOnOpen(S.view.key); m.innerHTML = articleHtml(S.view.key); }
   if(typeof DocumentCost!=="undefined")DocumentCost.render();
   document.querySelectorAll("textarea.die-v").forEach(fitDie);
+  if (S.view.name === "storyTalk") {
+    storyTalkViewport();
+    if (followTalk || oldTalkKey !== S.view.key) storyTalkScroll();
+    else { const log = document.getElementById("storyTalkMessages"); if (log) log.scrollTop = talkScroll; }
+  }
   if (S.view.name === "canon" && S.focusEnt) { const d = document.getElementById("ent-" + S.focusEnt); if (d) { d.open = true; d.scrollIntoView({ block: "center" }); } S.focusEnt = null; }
 }
 

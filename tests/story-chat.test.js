@@ -33,25 +33,27 @@ const server = appServer();
     assert.deepEqual(transport.chunks,['안녕','안녕하세요']); assert.equal(transport.reply,'안녕하세요');
     await page.evaluate(async () => {
       const entity = title => ({ title, type: '인물', summary: title + '의 설정', facts: [], mentions: [], page: true });
-      const w = { id: 'talk-test', kind: 'world', title: '대화 세계', mode: 'story', mainKey: 'hero', seed: '서로 협력하는 인물들', era: '2026년', rules: [], relations: [], timeline: [], navboxes: {}, entities: { hero: entity('주인공'), friend: entity('동료'), dead: entity('죽은 인물'), asleep: entity('기절한 인물'), away: entity('멀리 떠난 인물') }, story: { protagonistKey: 'hero', protagonist: {}, chapter: 1, total: 5, status: 'active', cast: [], secrets: [{ id: 's1', truth: '누설하면 안 되는 진실', cover: '아직 알려지지 않았다', revealed: false }], spine: ['발단','전개','위기','절정','결말'].map((beat,i) => ({ n:i+1, beat, intent: '관계가 이어진다' })), chapters: [{ n: 1, title: '만남', era: '2026년', summary: '동료는 기다리고 있으며, 다른 인물은 각각 사망하거나 기절하거나 멀리 떠났다.', explore: { opened: {}, created: [], edited: [], searched: [] }, affected: [], nextChoices: ['동료를 돕는다'] }] } };
+      const w = { id: 'talk-test', kind: 'world', title: '대화 세계', mode: 'story', mainKey: 'hero', seed: '서로 협력하는 인물들', era: '2026년', rules: [], relations: [], timeline: [], navboxes: {}, entities: { hero: entity('케빈 드와이트'), friend: entity('동료'), dead: entity('마이클 쇼'), asleep: entity('기절한 인물'), away: entity('멀리 떠난 인물') }, story: { protagonistKey: 'hero', protagonist: {}, chapter: 1, total: 5, status: 'active', cast: [], secrets: [{ id: 's1', truth: '누설하면 안 되는 진실', cover: '아직 알려지지 않았다', revealed: false }], spine: ['발단','전개','위기','절정','결말'].map((beat,i) => ({ n:i+1, beat, intent: '관계가 이어진다' })), chapters: [{ n: 1, title: '만남', era: '2026년', summary: '동료는 기다리고 있으며, 다른 인물은 각각 사망하거나 기절하거나 멀리 떠났다.', explore: { opened: {}, created: [], edited: [], searched: [] }, affected: [], nextChoices: ['동료를 돕는다'] }] } };
       S.world = w; S.worlds = [w]; S.pages = Object.fromEntries(Object.entries(w.entities).map(([key,e]) => [key, { key, title:e.title, type:'인물', summary:e.summary, infobox:[], sections:[{ heading:'개요', level:1, body:e.summary }], categories:[], links:[], createdAt:1 }]));
+      S.pages.hero.sections.push({heading:'저격 사건',level:1,body:'마이클 쇼는 공연 도중 총상을 입고 사망했다. 케빈 드와이트는 생존하여 현장 수사를 지휘했다.'});
+      curCh(w).dialogues = { dead: {ready:true,state:'available',stamp:storyTalkStamp(w,'dead'),turns:[],draft:'',reason:'케빈 드와이트가 살아 있으므로 대화할 수 있다.'} };
       await Store.saveWorld(w); for (const p of Object.values(S.pages)) await Store.savePage(w.id,p);
       globalThis.talkCalls = []; globalThis.talkMode = 'normal';
       S.sample = { json: async (prompt,opts) => {
         talkCalls.push({ prompt, kind: opts.taskKind, tier: opts.modelTier, live:opts.liveStream });
         if (opts.taskKind === 'storyCast') {
           const key = S.view.key;
-          return { profile:{ personality:'신중하며 약속을 지킨다', voice:'짧은 존댓말. 상대를 이름으로 부른다', examples:['기다렸습니다.','그 부탁은 어렵습니다.'] }, state:({ dead:'dead', asleep:'unconscious', away:'absent' })[key] || 'available', playerState:'available', reason:'현재 사건에 따른 상태', relationship:'협력 관계', knowledge:'현재 만남만 알고 있다' };
+          return { profile:{ personality:'신중하며 약속을 지킨다', voice:'짧은 존댓말. 상대를 이름으로 부른다', examples:['기다렸습니다.','그 부탁은 어렵습니다.'] }, character:{key:talkMode==='wrongIdentity'?'hero':key,state:({ dead:'dead', asleep:'unconscious', away:'absent' })[key] || 'available',evidence:'선택한 상대에 관한 사건 본문'}, player:{key:talkMode==='wrongIdentity'?'dead':'hero',state:'available',evidence:'케빈 드와이트는 생존하여 수사를 지휘했다.'}, relationship:'협력 관계', knowledge:'현재 만남만 알고 있다' };
         }
         if (opts.taskKind === 'storyChat') {
-          const out = { reply:'내일 길목에서 기다리겠습니다.', memory:'동료는 주인공과 내일 길목에서 만나기로 약속했다.', important:talkMode==='important', state:'available', playerState:talkMode==='faint'?'unconscious':'available', reason:'약속을 정했다', relationship:'약속한 사이', knowledge:'내일 만날 장소를 안다' };
+          const out = { reply:'내일 길목에서 기다리겠습니다.', memory:'동료는 주인공과 내일 길목에서 만나기로 약속했다.', important:talkMode==='important', character:{key:S.view.key,state:'available',evidence:'상대는 대화를 이어간다.'}, player:{key:'hero',state:talkMode==='faint'?'unconscious':'available',evidence:'주인공의 현재 상태'}, relationship:'약속한 사이', knowledge:'내일 만날 장소를 안다' };
           opts.onText?.({text:'{"reply":"내일 길목'});
           if (talkMode==='hold') await new Promise((resolve,reject) => { globalThis.releaseTalk=resolve; opts.signal.addEventListener('abort',()=>reject({code:'cancelled'}),{once:true}); });
           if (talkMode==='failure') throw {code:'network'};
           if (opts.signal.aborted) throw {code:'cancelled'};
           return out;
         }
-        if (opts.taskKind === 'storyChatReview') return { reply:talkMode==='faint'?'주인공이 쓰러져 대화가 멈췄다.':'만나는 것은 아직 약속할 수 없습니다.', memory:talkMode==='faint'?'주인공이 기절하여 대화를 멈췄다.':'동료는 만남의 약속을 거절했다.', state:'available', playerState:talkMode==='faint'?'unconscious':'available', relationship:'협력 관계', knowledge:'현재 만남만 안다', correction:'확정 설정에 맞춰 응답을 수정했습니다.' };
+        if (opts.taskKind === 'storyChatReview') return { reply:talkMode==='faint'?'주인공이 쓰러져 대화가 멈췄다.':'만나는 것은 아직 약속할 수 없습니다.', memory:talkMode==='faint'?'주인공이 기절하여 대화를 멈췄다.':'동료는 만남의 약속을 거절했다.', character:{key:S.view.key,state:'available',evidence:'상대는 대화를 이어간다.'}, player:{key:'hero',state:talkMode==='faint'?'unconscious':'available',evidence:'주인공의 현재 상태'}, relationship:'협력 관계', knowledge:'현재 만남만 안다', correction:'확정 설정에 맞춰 응답을 수정했습니다.' };
         if (opts.taskKind === 'chapterPlan') return { title:'약속의 길목', era:'2026년', summary:'동료가 길목에서 기다렸다.', protagonistBlock:{heading:'약속의 길목',sections:[{heading:'만남',body:'동료는 주인공과 한 약속에 따라 길목에서 기다렸다.'}],infoboxPatch:[]}, dialogueConsequences:[{character:'동료',detail:'대화에서 약속한 길목에서 기다렸다.'}], affected:[], newEntities:[], facts:[], relations:[], timeline:[], wove:[], nextChoices:['함께 걷는다'], continuity:{updates:[],introduced:[],choiceConsequences:[]} };
         throw new Error('뜻밖의 호출: '+opts.taskKind);
       } };
@@ -71,6 +73,20 @@ const server = appServer();
     assert.equal(await page.evaluate(() => storyTalkSession(S.world,'friend').turns.length),1);
     assert.equal(await page.evaluate(() => talkCalls.find(c=>c.kind==='storyChat').tier),'default','등장인물 대화는 기본 모델 사용');
     assert.equal(await page.evaluate(() => talkCalls.filter(c=>c.kind==='storyChatReview').length),0,'일반 대화는 별도 검사 호출 없음');
+    assert(!(await page.locator('.story-talk').innerText()).includes('케빈 드와이트가 살아 있으므로'),'기존 내부 사유는 표시하지 않는다');
+    await page.evaluate(()=>{talkMode='wrongIdentity';openStoryTalk('dead');});
+    await page.waitForFunction(()=>!S.storyTalkJob && !!storyTalkSession(S.world,'dead').err);
+    assert(await page.locator('#storyTalkInput').isDisabled(),'주인공을 상대라고 반환한 응답은 대화를 열지 않는다');
+    assert.equal(await page.evaluate(()=>storyTalkReady(S.world,'dead')),false,'구형 대화 가능 캐시를 신뢰하지 않는다');
+    await page.evaluate(()=>talkMode='normal');
+    await page.locator('[data-act="talk-prepare"]').click();
+    await page.waitForFunction(()=>!S.storyTalkJob && storyTalkReady(S.world,'dead'));
+    assert.equal(await page.locator('.talk-unavailable').innerText(),'사망');
+    const deadPrompt=await page.evaluate(()=>talkCalls.find(c=>c.kind==='storyCast'&&c.prompt.includes('선택한 대화 상대: 마이클 쇼')).prompt);
+    assert(deadPrompt.includes('사용자가 맡은 주인공: 케빈 드와이트'));
+    assert(deadPrompt.includes('마이클 쇼는 공연 도중 총상을 입고 사망했다.'));
+    assert(deadPrompt.includes('주인공이 살아 있다는 사실은 대화 상대가 살아 있다는 근거가 아니다'));
+    assert.equal(await page.evaluate(()=>talkCalls.filter(c=>c.kind==='storyChat').length),1,'사망한 상대에게 대화 요청을 보내지 않는다');
     for (const [key,state] of [['dead','dead'],['asleep','unconscious'],['away','absent']]) {
       await page.locator(`[data-talk-key="${key}"]`).click();
       await page.waitForFunction(key => !S.storyTalkJob && storyTalkSession(S.world,key)?.ready,key);
@@ -129,9 +145,28 @@ const server = appServer();
     await page.evaluate(()=>{ S.world.story.status='ended'; renderMain(); });
     assert(!(await page.locator('#storyTalkInput').isDisabled()),'결말 시점에도 가능한 인물과 대화 가능');
     assert.equal(await page.locator('.story-talk [data-act="story-next"]').count(),0);
+    assert.equal(await page.locator('.talk-result[open]').count(),0,'대화 결과는 기본으로 접는다');
+    assert(!(await page.locator('.story-talk').innerText()).includes('대화 가능'),'대화 가능 설명은 표시하지 않는다');
     await page.setViewportSize({width:390,height:844});
-    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'모바일에서 가로 넘침 없음');
+    await page.evaluate(()=>{
+      const session=storyTalkSession(S.world,'friend');
+      for(let i=0;i<24;i++)session.turns.push({user:'화면을 넘겨도 입력창은 제자리에 남아야 합니다. '+i,reply:'대화 기록만 스크롤됩니다.',memory:'화면 검증',at:Date.now()});
+      renderMain();
+    });
+    const layout=await page.evaluate(()=>{
+      const box=s=>document.querySelector(s).getBoundingClientRect();
+      return {composerBottom:box('.talk-composer').bottom,viewport:window.innerHeight,headerTop:box('.talk-header').top,scrolling:document.querySelector('.talk-messages').scrollHeight>document.querySelector('.talk-messages').clientHeight,selfLeft:box('.talk-self .talk-bubble').left,otherLeft:box('.talk-other .talk-bubble').left};
+    });
+    assert(layout.scrolling); assert(layout.composerBottom<=layout.viewport+1); assert(layout.headerTop<5); assert(layout.selfLeft>layout.otherLeft,'내 말은 오른쪽, 상대 말은 왼쪽');
+    await page.evaluate(()=>document.getElementById('toast').hidden=true);
     await page.screenshot({path:'/tmp/ww-story-talk-mobile.png',fullPage:true});
+    await page.emulateMedia({colorScheme:'dark'});
+    await page.screenshot({path:'/tmp/ww-story-talk-dark.png',fullPage:true});
+    await page.setViewportSize({width:390,height:460});
+    await page.waitForFunction(()=>document.querySelector('.talk-composer').getBoundingClientRect().bottom<=window.innerHeight+1);
+    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'모바일에서 가로 넘침 없음');
+    await page.locator('[data-act="story-back"]').click();
+    assert.equal(await page.evaluate(()=>document.body.classList.contains('story-chat-open')),false,'대화를 나가면 일반 화면 복원');
     assert.deepEqual(errors,[]);
     console.log('✓ 스트리밍·일반/중요 대화 경로·상태 차단·중단/실패·장 전환·기록 복원·HTML 이스케이프 통과 (유료 API 0회)');
   } finally { await browser.close(); await new Promise(r=>server.close(r)); }

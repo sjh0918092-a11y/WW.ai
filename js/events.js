@@ -332,7 +332,7 @@ document.addEventListener("input", ev => {
     const ta = $("#seedTa"); if (ta) ta.value = S.seed;
     const lb = document.querySelector(`[data-lock="${k}"]`); if (lb) { lb.setAttribute("aria-pressed", "true"); lb.textContent = "고정됨"; }
   }
-  if (ev.target.id === "storyTalkInput") { const s = storyTalkSession(S.world, S.view.key, true); s.draft = ev.target.value; const b = document.querySelector('[data-act="talk-send"]'); if (b) b.disabled = !s.draft.trim() || !!s.unsaved || storyTalkBusy(); }
+  if (ev.target.id === "storyTalkInput") { const s = storyTalkSession(S.world, S.view.key, true); s.draft = ev.target.value; ev.target.style.height = "auto"; ev.target.style.height = Math.min(ev.target.scrollHeight, 120) + "px"; const b = document.querySelector('[data-act="talk-send"]'); if (b) b.disabled = !s.draft.trim() || !!s.unsaved || storyTalkBusy(); }
   if (ev.target.id === "firstIn") S.first = ev.target.value;
   if (ev.target.id === "protoDesc") S.protoDesc = ev.target.value;
   if (ev.target.id === "regenKeep" && S.regen) { S.regen.keep = ev.target.checked; renderMain(); }
@@ -423,6 +423,7 @@ document.addEventListener("visibilitychange", () => {   // 다른 기기에서 �
 window.addEventListener("storage", ev => { if ([AKEY, GKEY].includes(ev.key)) { Sync.acct = LS.get(AKEY); AIRecovery.authChanged(); AISettingsSync.external(); } else if (ev.key?.startsWith(AIJobs.prefix) && S.ready) AIRecovery.refresh(); });
 window.addEventListener("online", () => { if (S.ready) {AIRecovery.refresh();AISettingsSync.load();} });
 document.addEventListener("keydown", ev => {
+  if (ev.target.id === "storyTalkInput" && ev.key === "Enter" && !ev.shiftKey && !ev.isComposing && !window.matchMedia("(max-width: 700px)").matches) { ev.preventDefault(); if (!ev.target.disabled) sendStoryTalk(); return; }
   if (ev.key === "Escape") document.querySelectorAll(".portrait-menu[open]").forEach(m => { m.open = false; m.querySelector("summary").focus(); });
   if (ev.key === "Escape") $("#sugg").hidden = true;
   if (ev.key === "Enter" && ev.target.matches?.("textarea.die-v")) { ev.preventDefault(); ev.target.blur(); }   // 주사위 칸은 한 줄. Enter는 입력을 마친다
