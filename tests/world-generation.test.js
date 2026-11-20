@@ -30,7 +30,7 @@ const { appServer } = require('./helpers/app');
       };
       gemini.stream = async (model, body, opts, prefix) => {
         const prompt = body.contents[0].parts.map(p => p.text).join('');
-        const part = opts.jobMeta.worldPart, repair = prompt.includes('## 응답 형식 복구');
+        const part = /## 단계별 세계관 생성: (\w+)/.exec(prompt)?.[1], repair = prompt.includes('## 응답 형식 복구');
         calls.push({ part, repair, prompt, prefix, kind: opts.taskKind, recovery: opts.recoveryTarget });
         const overview = { title: '항구 세계', mainTitle: S.first, era: '2030년', historical: false, rules: ['항구에서는 누구나 축제에 참여한다.'], tone: { label: '일상', guide: ['따뜻한 어휘를 쓴다.'] }, calendars: [], undatedCalendars: [] };
         const stage = { stage: { units: [{ name: '항구 도서관', kind: '조직', desc: '이웃이 모이는 곳', rel: '축제 준비를 돕는다' }], now: '항구 도서관에서 축제를 준비한다.', parties: [] }, title: '덮어쓰면 안 되는 이름', rules: ['덮어쓰면 안 되는 규칙'] };

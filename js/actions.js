@@ -23,7 +23,8 @@ async function generateWorldBible(input, draft, costSession) {
     S.createPhase = `${index + 1}/${parts.length} · ${part.label}`;
     if (S.view.name === "home") renderMain();
     const prompt = biblePartPrompt(seed, first, guide, story, user, part, draft.data);
-    const opts = { modelTier: "default", progressWatch: true, costSession, recoveryTarget: { wid: "", key: "" }, jobMeta: { worldPart: part.id } };
+    // 단계는 draft와 화면에서 관리한다. 서버에는 기존 작업 메타데이터만 보낸다.
+    const opts = { modelTier: "default", progressWatch: true, costSession, recoveryTarget: { wid: "", key: "" } };
     const receive = async text => {
       const b = await callJson(kind, text, opts, { title: first || part.label });
       // JSON 구조만 확인한다. 설정의 타당성과 문장 분량은 작성 지침과 모델이 판단한다.
@@ -93,7 +94,9 @@ async function createWorld() {
     await openWorld(w.id);
   } catch (e) {
     S.creating = false; S.createPhase = "";
-    const reason = e.code === "invalid_json" ? "응답을 완성된 형식으로 받지 못했습니다." : errMsg(e);
+    const reason = e.code === "invalid_json" ? "응답을 완성된 형식으로 받지 못했습니다."
+      : ["job_api", "job_auth"].includes(e.code) ? `${e.message || "서버 요청을 처리하지 못했습니다."} (${e.code}${e.status ? " · HTTP " + e.status : ""})`
+      : errMsg(e);
     S.createErr = `${draft.failed ? draft.failed + " 단계에서 중단되었습니다. " : ""}${reason}`;
     renderMain();
   }

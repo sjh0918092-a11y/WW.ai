@@ -9,7 +9,7 @@ const assert=require('node:assert/strict'),{chromium}=require('playwright'),{app
   openWorld=async id=>{S.world=S.worlds.find(w=>w.id===id);S.world.relMigrated=true;S.world.angleOff=true;S.pages={};S.view={name:'canon'};renderAll();};
   S.sample={json:async(prompt,opts)=>{
    const kind=opts.jobMeta.kind;costCalls.push(kind);const model=kind==='timelineDate'?GS.quick:GS.main;opts.onMeta?.({model});
-   if(kind==='bible' && opts.jobMeta.worldPart==='overview')await new Promise(r=>window.releaseBible=r);
+   if(kind==='bible' && prompt.includes('## 단계별 세계관 생성: overview'))await new Promise(r=>window.releaseBible=r);
    if(kind==='timelineDate')await new Promise(r=>window.releaseDate=r);
    const usage=kind==='timelineCheck'?{promptTokenCount:0,candidatesTokenCount:0}:{promptTokenCount:kind==='timelineDate'?500:1000,candidatesTokenCount:kind==='timelineDate'?100:200};opts.onUsage?.(usage);opts.onMeta?.({model,usage});
    if(kind==='bible')return{title:'항구 세계',era:'2000년',rules:['항구는 섬에 있다'],mainTitle:'항구',stage:{units:[],now:'',parties:[]},timeline:[{year:'1999년',event:'항구를 건설하였다'}]};
