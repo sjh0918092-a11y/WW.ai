@@ -134,7 +134,7 @@ const ax = (o) => Object.entries(o).flatMap(([axis, xs]) => xs.map(name => ({ na
     assert(!/navboxes/.test(pp), '프롬프트에 navboxes 출력 지시가 없다'); assert(!pp.includes('구성원 명단을 틀로 만든다'));
     assert(!pp.includes('"categories"') && !pp.includes('"facts"') && !pp.includes('"terms"') && !pp.includes('"affiliations"') && !pp.includes('"existence"') && !pp.includes('"relations"'), '작성 호출은 분류·사실·관계·용어·소속 이력·존속 기간을 받지 않는다');
     assert(pp.includes('"timeline"') && pp.includes('"events"'), '연표와 사건 장부는 작성 호출이 받는다');
-    assert(sp.includes('"categories":{"소속"') && sp.includes('이 문서의 유형은 인물이다') && /- 소속: [^\n]*베타국\(2\)/.test(sp) && sp.includes('같은 뜻의 분류가 이미 둘 이상 있으면 문서 수가 많은 쪽 하나만 쓴다') && sp.includes('"linkedCats"') && /문서가 없는 링크 항목:\n- 아름/.test(sp) && sp.includes('함께 등장하거나 관계가 있다는 이유로 링크 항목에 옮겨 붙이지 않는다'));
+    assert(sp.includes('"categories":{"소속"') && sp.includes('이 문서의 유형은 인물이다') && /- 소속: [^\n]*베타국\(2\)/.test(sp) && sp.includes('같은 뜻의 분류가 이미 둘 이상 있으면 문서 수가 많은 쪽 하나만 쓴다') && sp.includes('"linkedCats"') && sp.includes('문서가 없는 링크 항목: 아름'));
     assert(!sp.includes('"timeline"') && !sp.includes('"events"'), '고치지 않은 새 문서는 연표·사건 장부를 다시 뽑지 않는다');
     pass('문서 작성 프롬프트에는 분류 지침이 없고, 확정 사실 정리 프롬프트가 문서 유형별 분류 지침과 축별 기존 분류(문서 수 포함)를 보여 준다');
     await page.waitForFunction(t => document.querySelector('h1.t')?.textContent === t, '사랑');
