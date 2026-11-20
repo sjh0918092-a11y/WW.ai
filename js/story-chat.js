@@ -166,12 +166,12 @@ ${prompt}
 검토 자료: ${JSON.stringify(storyTalkContext(w, key))}
 미공개 진실(누설 금지): ${JSON.stringify(hiddenSecrets(w))}
 초안: ${JSON.stringify(out)}
-출력 형식은 초안과 같으며 correction에 실제 수정한 경우만 짧은 설명을 추가한다.`, { signal: job.ctl.signal, modelTier: "check" }, { title: w.entities[key].title, ch: n });
+출력 형식은 초안과 같다. reply에는 수정이 끝난 캐릭터의 응답만 쓴다. 검토 과정이나 수정 이유를 설명하는 교정 메모는 출력하지 않는다.`, { signal: job.ctl.signal, modelTier: "check" }, { title: w.entities[key].title, ch: n });
     }
     if (job.ctl.signal.aborted || S.world !== w || w.story.chapter !== n || s.stamp !== storyTalkStamp(w, key)) throw { code: "cancelled" };
     if (!out?.reply?.trim() || !out?.memory?.trim() || !storyTalkAssessment(w, key, out)) throw { code: "invalid_json" };
     applyStoryTalkAssessment(w, key, s, out);
-    s.turns.push({ user: text, reply: out.reply, memory: out.memory, state: out.character.state, correction: out.correction || "", at: Date.now() });
+    s.turns.push({ user: text, reply: out.reply, memory: out.memory, state: out.character.state, at: Date.now() });
     Object.assign(s, { draft: "", relationship: out.relationship || s.relationship, knowledge: out.knowledge || s.knowledge });
     committed = true;
     firstTimer();
@@ -210,7 +210,7 @@ function storyTalkHtml() {
     const turns = c.dialogues?.[key]?.turns || [];
     return turns.length ? `<section class="talk-chapter"><h2>${c.n}장</h2>${turns.map(t => `<div class="talk-turn">
       <div class="talk-message talk-self"><span class="sr-only">${esc(w.entities[w.story.protagonistKey]?.title)}</span><div class="talk-bubble">${esc(t.user)}</div></div>
-      <div class="talk-message talk-other"><span class="talk-speaker">${esc(title)}</span><div class="talk-bubble">${esc(t.reply)}</div>${t.correction ? `<span class="talk-correction">수정 반영: ${esc(t.correction)}</span>` : ""}
+      <div class="talk-message talk-other"><span class="talk-speaker">${esc(title)}</span><div class="talk-bubble">${esc(t.reply)}</div>
       <details class="talk-result"><summary>남은 변화</summary><p>${esc(t.memory)}</p></details></div></div>`).join("")}</section>` : "";
   }).join("");
   return `<section class="story-talk" aria-label="등장인물과 대화" data-talk-current="${esc(key || "")}">
