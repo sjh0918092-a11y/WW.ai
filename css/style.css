@@ -451,3 +451,6 @@ details.ent li{margin-bottom:3px}
   .talk-title h1{font-size:17px}
   .talk-message{max-width:88%}
 }
+
+.talk-document{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.talk-document p{font-size:13px;color:var(--muted);margin:0}
