@@ -255,7 +255,8 @@ document.addEventListener("click", ev => {
     case "angles-regen": regenAngles(); break;
     case "angles-open": if (S.world) { S.view = { name: "canon" }; renderAll(); document.getElementById("angles")?.scrollIntoView({ block: "start" }); } break;
     case "discovery-back": if (S.world) openEntity(S.world.mainKey); break;
-    case "create": { const ta = $("#seedTa"); if (ta) S.seed = ta.value; createWorld(); break; }
+    case "create":
+    case "create-retry": { const ta = $("#seedTa"); if (ta) S.seed = ta.value; createWorld(); break; }
     case "stop": S.gen?.ctl.abort(); break;
     case "del-no": S.confirmDel = null; renderMain(); break;
     case "rw-no": S.confirmRewrite = null; renderMain(); break;

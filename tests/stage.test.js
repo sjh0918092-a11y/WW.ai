@@ -35,7 +35,7 @@ const server = appServer();
           out.push({ w: structuredClone(w), prompt: pagePrompt(w, w.mainKey), canon: canonBlock(w), gaps: worldGapSignals(w) });
         }
         S.seed = fixtures[1].seed; S.mode = 'story';
-        callJson = async () => ({...fixtures[1], chapter1:{summary:'축제 준비가 시작된다',era:'2026년',nextChoices:[]}});
+        callJson = async () => ({...fixtures[1], protagonist:{}, spine:[], secrets:[], chapter1:{summary:'축제 준비가 시작된다',era:'2026년',nextChoices:[]}});
         await createWorld();
         if (S.createErr) throw new Error(S.createErr);
         out.push({w:structuredClone(S.world)});

@@ -501,7 +501,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     await page.click('[data-act="create"]'); await waitArticle(page, "대문 항목");
     const newBasic = await worldOf(page, "기본 세계"), keys16 = (await idbAll(page)).map(x => x[0]).filter(k => k.startsWith("p:" + oldBasic.id + ":"));
     assert.strictEqual(newBasic.id, oldBasic.id, "같은 세계관 자리에 다시 만든다");
-    assert.strictEqual(count("bible"), nBible + 1);
+    assert.strictEqual(count("bible"), nBible + 3, "개요, 무대, 연표를 각각 생성한다");
     assert(!Object.values(newBasic.entities).some(o => o.title === "마커스 벡") && keys16.length === 1, "기존 문서는 모두 지워지고 첫 문서만 남는다");
     assert.strictEqual((await page.locator(".wcard").count().catch(() => 0)), 0);
     ok("세계관 다시 만들기: 처음 원안으로 연표와 설정을 새로 만들고 기존 문서를 지운다");

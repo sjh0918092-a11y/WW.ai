@@ -1,18 +1,67 @@
 "use strict";
 /* 세계관 생성, 문서 열기·생성·통합 */
 /* ---------- actions ---------- */
+function worldCreationInput() {
+  const story = S.mode === "story";
+  return { seed: S.seed.trim(), first: norm(S.first).slice(0, 60), story,
+    guide: String(S.guideIn || "").replace(/\r/g, "").trim().slice(0, 1000),
+    user: story ? { total: Math.min(STORY_MAX, Math.max(STORY_MIN, +S.storyN || STORY_DEF)), desc: String(S.protoDesc || "").replace(/\r/g, "").trim().slice(0, 500), cast: (S.cast || []).map(c => ({ name: norm(c.name).slice(0, 40), desc: norm(c.desc).slice(0, 300), rel: norm(c.rel).slice(0, 120) })).filter(c => c.name).slice(0, 8) } : {} };
+}
+function worldCreationSignature(input) {
+  return JSON.stringify([input, S.regen, Sync.base(), Sync.acct?.id || "local"]);
+}
+function currentWorldDraft() {
+  const d = S.createDraft;
+  return d?.signature === worldCreationSignature(worldCreationInput()) ? d : null;
+}
+async function generateWorldBible(input, draft, costSession) {
+  const { seed, first, guide, story, user } = input, kind = story ? "storyBible" : "bible";
+  const parts = bibleParts(story);
+  for (const [index, part] of parts.entries()) {
+    if (draft.done.includes(part.id)) continue;
+    draft.failed = part.label;
+    S.createPhase = `${index + 1}/${parts.length} · ${part.label}`;
+    if (S.view.name === "home") renderMain();
+    const prompt = biblePartPrompt(seed, first, guide, story, user, part, draft.data);
+    const opts = { modelTier: "default", progressWatch: true, costSession, recoveryTarget: { wid: "", key: "" }, jobMeta: { worldPart: part.id } };
+    const receive = async text => {
+      const b = await callJson(kind, text, opts, { title: first || part.label });
+      // JSON 구조만 확인한다. 설정의 타당성과 문장 분량은 작성 지침과 모델이 판단한다.
+      if (!b || typeof b !== "object" || Array.isArray(b) || !part.keys.some(k => Object.hasOwn(b, k)) ||
+          (part.id === "overview" && !(typeof b.title === "string" && b.title.trim())) ||
+          (part.id === "timeline" && !Array.isArray(b.timeline)) ||
+          (part.id === "chapter1" && !(typeof b.chapter1?.summary === "string" && b.chapter1.summary.trim())))
+        throw { code: "invalid_json", text: JSON.stringify(b) };
+      return b;
+    };
+    let result;
+    try { result = await receive(prompt); }
+    catch (e) {
+      if (e.code !== "invalid_json" || !e.text || e.message === "MAX_TOKENS") throw e;
+      S.createPhase = `${index + 1}/${parts.length} · ${part.label} 응답 형식 복구 중`;
+      if (S.view.name === "home") renderMain();
+      result = await receive(`${prompt}\n\n## 응답 형식 복구\n아래 응답의 JSON 문법과 요구 필드의 구조만 복구한다. 이미 작성된 내용·이름·수치·문장과 배열 항목을 유지한다. 새 설정을 창작하거나 내용을 다시 쓰거나 요약하지 않는다. 설명이나 코드 블록 없이 복구한 JSON 객체 하나만 출력한다.\n복구할 응답:\n${e.text}`);
+    }
+    // 이번 단계의 필드만 합친다. 뒤 응답이 완료된 개요나 규칙을 덮어쓸 수 없다.
+    for (const k of part.keys) if (Object.hasOwn(result, k)) draft.data[k] = result[k];
+    draft.done.push(part.id); draft.failed = "";
+  }
+  return draft.data;
+}
 async function createWorld() {
+  if (S.creating) return;
   const seed = S.seed.trim();
   if (seed.length < 10) { toast("원안을 한두 문장 이상 적어 주세요."); return; }
   if (!S.sample) { S.createErr = ERR.no_sample; renderMain(); return; }
-  const worldCost = typeof DocumentCost!=="undefined" ? DocumentCost.startWorld() : null;
+  const input = worldCreationInput(), signature = worldCreationSignature(input);
+  const draft = currentWorldDraft() || (S.createDraft = { signature, data: {}, done: [], failed: "", costSession: null });
+  const worldCost = typeof DocumentCost!=="undefined" ? DocumentCost.startWorld(draft.costSession) : null;
+  draft.costSession = worldCost;
   let timelineWork;
   S.creating = true; S.createErr = null; renderMain();
   try {
-    const first = norm(S.first).slice(0, 60), story = S.mode === "story";
-    const guide = String(S.guideIn || "").replace(/\r/g, "").trim().slice(0, 1000);
-    const user = story ? { total: Math.min(STORY_MAX, Math.max(STORY_MIN, +S.storyN || STORY_DEF)), desc: String(S.protoDesc || "").replace(/\r/g, "").trim().slice(0, 500), cast: (S.cast || []).map(c => ({ name: norm(c.name).slice(0, 40), desc: norm(c.desc).slice(0, 300), rel: norm(c.rel).slice(0, 120) })).filter(c => c.name).slice(0, 8) } : {};
-    const b = await callJson(story ? "storyBible" : "bible", biblePrompt(seed, first, guide, story, user), { modelTier: "default", costSession: worldCost }, { title: first });
+    const { first, story, guide, user } = input;
+    const b = await generateWorldBible(input, draft, worldCost);
     if (!b || !b.title) throw { code: "invalid_json" };
     if (story && !(b.chapter1 && b.chapter1.summary)) throw { code: "invalid_json" };
     const w = { kind: "world", id: "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
@@ -20,6 +69,7 @@ async function createWorld() {
       era: String(b.era || "미상").slice(0, 40), historical: b.historical === true || b.historical === "true", guide, tone: normTone(b.tone, ""), rules: (Array.isArray(b.rules) ? b.rules : []).map(r => stripMarks(asText(r))).filter(Boolean).slice(0, 10),
       calendars: cleanCalendars(b.calendars), ...(cleanCalendars(b.undatedCalendars).length ? { undatedCalendars: cleanCalendars(b.undatedCalendars) } : {}), timeline: [], userCanon: "", entities: {}, mainKey: null, createdAt: Date.now() };
     for (const t of (Array.isArray(b.timeline) ? b.timeline : [])) addTimeline(w, t, "seed");
+    S.createPhase = "연표 점검과 저장"; if (S.view.name === "home") renderMain();
     await checkTimelineAtCreate(w, { costSession: worldCost });   // 원안 연표가 핵심 규칙과 함께 성립하지 않으면 문서를 쓰기 전에 고친다
     timelineWork = afterTimeline(w, { costSession: worldCost });   // 날짜 보완은 뒤에서 계속하고 같은 세계관 비용으로 집계한다
     const mt = first || norm(b.mainTitle || b.title);
@@ -38,10 +88,15 @@ async function createWorld() {
     }
     if(worldCost)DocumentCost.bindWorld(worldCost,w.id);
     await Store.saveWorld(w);
-    S.worlds.unshift(w); S.creating = false; S.regen = null;
+    S.worlds.unshift(w); S.creating = false; S.regen = null; S.createDraft = null; S.createPhase = "";
     S.seed = S.ownSeed = S.first = S.guideIn = S.protoDesc = ""; S.cast = []; S.seedTab = "own"; S.dice = null; S.whatIfs = null;   // 만들고 나면 입력란을 모두 비운다
     await openWorld(w.id);
-  } catch (e) { S.creating = false; S.createErr = errMsg(e); renderMain(); }
+  } catch (e) {
+    S.creating = false; S.createPhase = "";
+    const reason = e.code === "invalid_json" ? "응답을 완성된 형식으로 받지 못했습니다." : errMsg(e);
+    S.createErr = `${draft.failed ? draft.failed + " 단계에서 중단되었습니다. " : ""}${reason}`;
+    renderMain();
+  }
   finally {
     if(worldCost){
       if(timelineWork)Promise.resolve(timelineWork).then(()=>DocumentCost.finish(worldCost),()=>DocumentCost.finish(worldCost));
@@ -247,12 +302,12 @@ function openRegen() {
   S.protoDesc = story ? (inp.protoDesc ?? w.story.protagonist?.desc ?? "") : "";
   if (story) S.storyN = totalOf(w);
   S.cast = story ? (inp.cast || (w.story.cast || []).map(c => ({ name: w.entities[c.key]?.title || c.name, desc: c.desc || "", rel: c.rel || "" }))).map(c => ({ ...c })) : [];
-  S.createErr = null;
+  S.createErr = null; S.createDraft = null;
   S.view = { name: "home" }; renderAll(); window.scrollTo({ top: 0 });
 }
 function cancelRegen() {
   const wid = S.regen?.wid; S.regen = null;
-  S.seed = S.ownSeed = S.first = S.guideIn = S.protoDesc = ""; S.cast = []; S.createErr = null;
+  S.seed = S.ownSeed = S.first = S.guideIn = S.protoDesc = ""; S.cast = []; S.createErr = null; S.createDraft = null;
   if (wid && S.worlds.some(x => x.id === wid)) { if (S.world?.id === wid) { S.view = { name: "canon" }; renderAll(); } else openWorld(wid); }
   else renderMain();
 }

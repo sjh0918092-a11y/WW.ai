@@ -320,6 +320,8 @@ function renderMain(force) {
 }
 
 function homeHtml() {
+  const creationDraft = currentWorldDraft(), creationParts = bibleParts(S.mode === "story");
+  const completed = creationParts.filter(p => creationDraft?.done.includes(p.id)).map(p => p.label);
   const tab = (id, label) => `<button type="button" role="tab" class="stab" data-stab="${id}" aria-selected="${S.seedTab === id}">${esc(label)}</button>`;
   const ex = `<div class="stabs-row">${tab("own", "직접 작성") + tab("dice", "원안 주사위") + tab("whatif", "만약에")}</div><div class="stabs-row"><span class="stab-sep" aria-hidden="true">예시</span>${EXAMPLES.map((x, i) => tab(String(i), x.label)).join("")}</div>`;
   const list = S.worlds.length ? S.worlds.map(w => {
@@ -367,12 +369,13 @@ function homeHtml() {
       <label class="lb" for="guideIn">작가 지침 <span class="note" style="font-weight:400">선택 · 세계관 전체에 걸쳐 지킬 방향. 모든 문서에 함께 전달됩니다</span></label>
       <textarea id="guideIn" rows="3" maxlength="1000" placeholder="예: 일본 거대 로봇 메카닉 SF풍으로. 네임드 파일럿에게는 전용기를 준다. 양산기 바리에이션을 풍부하게. 잔혹한 묘사는 피한다." ${S.creating ? "disabled" : ""}>${esc(S.guideIn)}</textarea>
       <div class="row" ${S.seedTab === "whatif" && !S.creating && !S.createErr ? "hidden" : ""}>
-        <button type="button" class="btn pri" data-act="create" ${S.creating || !S.sampleReady ? "disabled" : ""}>${S.creating ? "설정 노트를 만드는 중…" : S.regen ? (S.regen.keep ? "새 세계관으로 다시 만들기" : "지우고 다시 만들기") : S.mode === "story" ? "이야기 시작하기" : "세계관 만들기"}</button>
-        ${S.creating ? `<span class="genpill"><span class="dot"></span>${S.mode === "story" ? "핵심 규칙, 연표, 주인공과 1장을 정리하고 있습니다" : "핵심 규칙과 연표를 정리하고 있습니다"}</span>` : ""}
+        <button type="button" class="btn pri" data-act="create" ${S.creating || !S.sampleReady ? "disabled" : ""}>${S.creating ? "설정 노트를 만드는 중…" : completed.length ? "남은 설정 이어 만들기" : S.regen ? (S.regen.keep ? "새 세계관으로 다시 만들기" : "지우고 다시 만들기") : S.mode === "story" ? "이야기 시작하기" : "세계관 만들기"}</button>
+        ${S.creating ? `<span class="genpill" role="status"><span class="dot"></span>${esc(S.createPhase || "세계관 생성을 준비하고 있습니다")}</span>` : ""}
         ${!S.sampleReady ? `<span class="note">생성 기능을 준비하는 중…</span>` : (!S.sample ? `<span class="note">${esc(ERR.no_sample)}</span>` : "")}
       </div>
       <div id="worldCostMount"></div>
-      ${S.createErr ? `<div class="banner warn">${esc(S.createErr)}</div>` : ""}
+      ${completed.length ? `<p class="note" data-world-completed>완료: ${esc(completed.join(" · "))}</p>` : ""}
+      ${S.createErr ? `<div class="banner warn" role="alert">${esc(S.createErr)}${creationDraft ? `<p>${completed.length ? "완료된 설정은 유지됩니다. 중단된 단계부터 이어서 생성합니다." : "중단된 단계만 다시 시도합니다."} 입력을 바꾸면 처음부터 생성합니다.</p><button type="button" class="btn" data-act="create-retry" ${S.creating || !S.sample ? "disabled" : ""}>${creationDraft.failed ? esc(creationDraft.failed) + " 다시 시도" : "이어서 다시 시도"}</button>` : ""}</div>` : ""}
       <ol class="how">
         <li><span>1</span>원안에서 핵심 규칙, 연표, 작중 기준 시점을 뽑아 설정 노트를 만듭니다.</li>
         <li><span>2</span>문서를 쓸 때 링크한 항목마다 한 줄 정의와 언급 문장을 미리 기록합니다.</li>

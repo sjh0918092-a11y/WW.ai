@@ -4,7 +4,7 @@
 const S = {
   ready: false, worlds: [], world: null, pages: {}, view: { name: "home" }, recent: [],
   gen: null, genQ: [], genErr: null, checking: null, sample: null, sampleReady: false,
-  creating: false, createErr: null, seed: "", seedTab: "own", ownSeed: "", dice: null, whatIfs: null, first: "", guideIn: "",
+  creating: false, createErr: null, createDraft: null, createPhase: "", seed: "", seedTab: "own", ownSeed: "", dice: null, whatIfs: null, first: "", guideIn: "",
   discovery: null, worldExports: Object.create(null), confirmDel: null, confirmRewrite: null, canonFilter: "all", focusEnt: null, nf: new Set(),
   edit: null, refreshing: null, confirmDelPage: null, confirmMerge: null, compose: null, portraitJob: null, imageGen: null, proseGen: null,
   mode: "basic", storyN: 5, protoDesc: "", cast: [], regen: null, storyGen: null, storyTalkJob: null, syncQ: [], syncing: null, syncErr: null, hold: null, adv: null, storyCard: null,

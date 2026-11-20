@@ -115,6 +115,28 @@ JSON 객체 하나만 출력:
 JSON 객체 하나만 출력:
 {"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"calendars":["서기 말고 이 세계가 쓰는 기년법·연호 이름"],"undatedCalendars":["calendars 중 달과 날이 없는 기년법(없으면 빈 배열)"],"timeline":[{"year":"1947","month":3,"day":14,"event":"..."}],"mainTitle":"...","stage":{"units":[{"name":"고유명사","kind":"TYPES 중 하나","desc":"한 줄 성격","rel":"다른 단위와의 관계 한 줄"}],"now":"작중 기준 시점에 진행 중인 일 한두 문장","parties":[{"name":"당사자 고유명사","kind":"TYPES 중 하나","want":"지금 진행 중인 일에서 원하는 것 한 줄"}]},"tone":{"label":"...","guide":["..."]}}`}`;
 }
+/* 설정 노트는 단계마다 작은 JSON 하나만 받는다. 내용 판단은 위 작성 지침을 따른다. */
+function bibleParts(story) {
+  const overview = { id: "overview", label: "개요와 핵심 규칙", keys: ["title", "tagline", "era", "historical", "mainTitle", "rules", "tone", "calendars", "undatedCalendars"],
+    schema: { title: "세계관 이름", tagline: "한 줄 소개", era: "작중 기준 시점", historical: false, mainTitle: "첫 문서 제목", rules: ["핵심 규칙 한 문장"], tone: { label: "분위기", guide: ["지침 한 문장"] }, calendars: [], undatedCalendars: [] } };
+  const timeline = { id: "timeline", label: "연표", keys: ["timeline"], schema: { timeline: [{ year: "연도", month: 1, day: 1, event: "사건 한두 문장" }] } };
+  if (!story) return [overview, { id: "stage", label: "주요 무대와 현재 상황", keys: ["stage"], schema: { stage: { units: [{ name: "고유명사", kind: "항목 유형", desc: "한 줄 성격", rel: "관계 한 줄" }], now: "진행 중인 일 한두 문장", parties: [{ name: "당사자", kind: "항목 유형", want: "목표 한 줄" }] } } }, timeline];
+  return [overview, { id: "storyPlan", label: "주인공과 이야기 뼈대", keys: ["protagonist", "storyPromise", "spine", "secrets"], schema: { protagonist: { summary: "한 문장 정의", want: "바라는 것", wound: "필요 없으면 빈 문자열" }, storyPromise: { focus: "약속한 이야기 경험", central: { kind: "goal/relationship/promise/conflict/consequence/ongoing/mystery", subject: "이어갈 중심 내용" } }, spine: [{ n: 1, beat: "장 구간", intent: "이 장의 의도 한두 문장" }], secrets: [{ truth: "감춰진 진실", cover: "알려진 겉모습", reveal: 3 }] } },
+    { id: "chapter1", label: "1장과 다음 행동", keys: ["chapter1"], schema: { chapter1: { title: "작중 사건명", era: "개요와 같은 시점", summary: "공개 줄거리 3~5문장", incident: "발단 사건 한 문장", nextChoices: ["행동 후보", "행동 후보", "행동 후보"] } } }, timeline];
+}
+function biblePartPrompt(seed, first, guide, story, user, part, accepted) {
+  const full = biblePrompt(seed, first, guide, story, user);
+  const instructions = full.slice(0, full.lastIndexOf("\nJSON 객체 하나만 출력:"));
+  return `${instructions}
+
+## 단계별 세계관 생성: ${part.id}
+이번에는 '${part.label}'만 작성한다. 위 지침 중 다른 항목은 이후 단계에서 작성하므로 이번 출력에 넣지 않는다.
+이미 완료한 설정은 아래와 같다. 그 내용과 고유명사·기준 시점을 그대로 유지하고, 새 항목만 이어 작성한다.
+${JSON.stringify(accepted)}
+사용자가 요청한 전체 범위는 단계들을 합쳐 완성한다. 이번 응답에 모든 설정이나 위키 본문을 몰아 쓰지 않는다. 각 설명은 위 지침의 문장 수에 맞춰 간결하게 쓴다.
+출력 필드는 ${part.keys.join(", ")}뿐이다. 아래 예시의 배열 항목 수는 형식 예시이며 실제 개수는 위 작성 지침을 따른다. 설명이나 코드 블록 없이 완결된 JSON 객체 하나만 출력한다.
+${JSON.stringify(part.schema)}`;
+}
 /* 세계에서 아직 비어 있는 영역: 항목 유형 분포와 연표의 긴 공백 */
 /* 몇 안 되는 인물·개체를 수로만 말하고("A국은 ○○ 2기를 운용 중이다") 누구인지 밝히지 않는 버릇을 막는다 */
 const FEW_NAMED_RULE = "몇 안 되는 인물이나 개체를 수로만 말하지 않는다(나쁜 예: 'A국은 ○○ 2기를 운용 중이다', '○○ 세 명이 이 부대에 있다'). 독자는 그것이 누구인지 궁금해한다. 그 수가 다섯 이하면 처음 말할 때 하나하나 이름을 밝히고 [[링크]]한다(좋은 예: 'A국은 ○○ 2기([[이름A]], [[이름B]])를 운용 중이다'). 이미 있는 항목이면 목록의 제목을 그대로 쓰고, 없으면 이름을 지어 링크한다. 수십 이상의 큰 수만 수로 써도 된다.";

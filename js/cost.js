@@ -118,7 +118,10 @@ const DocumentCost = {
     const r = { id: crypto.randomUUID(), storageKey:this.key(wid,key), wid,key,at:Math.max(Date.now(),(this.ledger(wid).resetAt||0)+1),finished:false,rows:[] };
     this.records.set(r.storageKey,r); this.active.add(r.id); this.save(r); return r;
   },
-  startWorld() {
+  startWorld(previous) {
+    if(previous && this.records.get(previous.storageKey)===previous){
+      previous.finished=false;this.active.add(previous.id);this.creation=previous;this.save(previous);return previous;
+    }
     const r=this.start("creating:"+crypto.randomUUID(),"@world");r.category="world";this.creation=r;this.save(r);return r;
   },
   bindWorld(r,wid) {
