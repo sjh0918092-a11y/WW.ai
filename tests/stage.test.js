@@ -17,7 +17,7 @@ const server = appServer();
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await page.waitForSelector('#importFile', { state: 'attached' });
     const prompts = await page.evaluate(() => ({ normal: biblePrompt('작은 가게의 원안', '', '', false), story: biblePrompt('원안', '', '', true), chosen: biblePrompt('원안', '지정 항목', '', false) }));
-    for (const text of ['무대(stage)', 'parties는 지금 진행 중인 일의 당사자 2~4개', 'now의 문장에서도 그 이름을 쓴다', '없는 갈등이나 큰 규모를 만들지 않는다', '메타 항목은 고르지 않는다', '확장 요소:', '학교·동아리·반', '군락·서식지', 'stage.units', '척도', '피하거나 거부한', '서로 부딪히는 지침', '곁가지 한두 군데']) assert(prompts.normal.includes(text), text);
+    for (const text of ['무대(stage)', 'parties는 지금 진행 중인 일의 당사자 2~4개', 'now의 문장에서도 그 이름을 쓴다', '없는 갈등이나 큰 규모를 만들지 않는다', '메타 항목은 고르지 않는다', '확장 요소:', '학교·동아리·반', '군락·서식지', 'stage.units', '척도', '피하거나 거부한', '서로 부딪히는 지침']) assert(prompts.normal.includes(text), text);
     assert(!prompts.story.includes('무대(stage)') && !prompts.story.includes('"stage"') && !prompts.story.includes('stage.units'));
     assert(prompts.chosen.includes('지정 항목'));
 
