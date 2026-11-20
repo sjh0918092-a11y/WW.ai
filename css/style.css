@@ -385,8 +385,6 @@ details.ent li{margin-bottom:3px}
 .cast-row textarea{grid-column:1 / -1;min-height:0}
 .cast-row input.txt,.cast-row textarea{background:var(--sheet)}
 @media (max-width:560px){.cast-row{grid-template-columns:minmax(0,1fr) auto}.cast-row .cast-rel{grid-column:1 / -1;grid-row:2}}
-.spine{margin:6px 0 0;padding-left:18px;font-size:13.5px}
-.spine li{margin-bottom:6px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 .angles{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:12px}
 .angles li{border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;background:var(--paper)}
@@ -422,9 +420,6 @@ details.ent li{margin-bottom:3px}
 .talk-contacts button{flex:none;display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:20px;background:transparent;padding:6px 12px;font-size:13px;cursor:pointer}
 .talk-contacts button[aria-pressed=true]{border-color:var(--link);color:var(--link);background:var(--tint);font-weight:600}
 .talk-contacts small{color:var(--muted);font-size:11px}
-.talk-profile{font-size:12px;color:var(--muted);margin-top:4px}
-.talk-profile summary{cursor:pointer;width:fit-content}
-.talk-profile>div{max-height:22dvh;overflow:auto;padding:4px 0}
 .talk-messages{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:20px;background:var(--paper);scrollbar-width:thin}
 .talk-chapter h2{text-align:center;font:12px var(--f-body);color:var(--muted);border:0;margin:12px 0 24px}
 .talk-message{display:flex;flex-direction:column;align-items:flex-start;max-width:84%;margin:0 0 18px}

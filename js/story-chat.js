@@ -237,7 +237,7 @@ function storyTalkHtml() {
   const key = S.view.key, s = storyTalkSession(w, key), job = S.storyTalkJob, busy = !!job,
     own = job?.wid === w.id && job?.key === key, ready = storyTalkReady(w, key),
     playerState = storyTalkPlayerState(w), blocked = ready && (s.state !== "available" || playerState !== "available"),
-    allowed = ready && !blocked, title = w.entities[key]?.title || "등장인물과 대화", profile = w.story.dialogueProfiles?.[key];
+    allowed = ready && !blocked, title = w.entities[key]?.title || "등장인물과 대화";
   const status = blocked ? (playerState !== "available" ? `주인공 · ${STORY_TALK_STATES[playerState]}` : STORY_TALK_STATES[s.state]) : "";
   const history = w.story.chapters.map(c => {
     const turns = c.dialogues?.[key]?.turns || [];
@@ -249,11 +249,11 @@ function storyTalkHtml() {
   return `<section class="story-talk" aria-label="등장인물과 대화" data-talk-current="${esc(key || "")}">
     <header class="talk-header"><div class="talk-heading"><button type="button" class="talk-back btn" data-act="story-back" aria-label="문서로 돌아가기">←</button><div class="talk-title"><h1>${esc(title)}</h1><span>${w.story.chapter}장 · ${esc(w.entities[w.story.protagonistKey]?.title)}으로 대화</span></div>${storyOn(w) ? '<button type="button" class="btn talk-next" data-act="story-next">다음 장</button>' : ""}</div>
     <nav class="talk-contacts" aria-label="대화 상대">${storyTalkers(w).map(k => `<button type="button" data-talk-key="${esc(k)}" aria-pressed="${k === key}" ${busy ? "disabled" : ""}>${esc(w.entities[k].title)}${storyTalkReady(w, k) && storyTalkSession(w, k).state !== "available" ? `<small>${esc(STORY_TALK_STATES[storyTalkSession(w, k).state])}</small>` : ""}</button>`).join("")}</nav>
-    ${ready && profile ? `<details class="talk-profile"><summary>성격과 말투</summary><div><p>${esc(profile.personality || "")}</p><p>${esc(profile.voice || "")}</p></div></details>` : ""}</header>
+    </header>
     <div class="talk-messages" id="storyTalkMessages" role="log" aria-label="대화 기록" tabindex="0">${history || (own && job.phase !== "prepare" ? "" : `<div class="talk-empty"><span aria-hidden="true">◇</span><p>${key ? `${esc(title)}에게 말을 건네 보세요.` : "아직 등장한 대화 상대가 없습니다."}</p></div>`)}
-    ${own && job.phase !== "prepare" ? `<div class="talk-message talk-self"><span class="sr-only">나</span><div class="talk-bubble">${esc(job.user || "")}</div></div><div class="talk-message talk-other"><span class="talk-speaker">${esc(title)}</span><div class="talk-bubble" id="storyTalkLive" aria-live="polite">${esc(job.raw || "답변을 기다리는 중…")}</div><span class="talk-progress">${job.phase === "review" ? "중요한 변화를 검토하고 있습니다 · 초안" : "답변 중 · 초안"}</span></div>` : ""}</div>
-    <footer class="talk-composer">${own && job.phase === "prepare" ? '<p class="talk-progress" role="status">대화를 준비하고 있습니다…</p>' : ""}${status ? `<p class="talk-unavailable">${esc(status)}</p>` : ""}${!storyOn(w) ? '<p class="talk-progress">결말 이후의 대화입니다.</p>' : ""}
+    ${own && job.phase !== "prepare" ? `<div class="talk-message talk-self"><span class="sr-only">나</span><div class="talk-bubble">${esc(job.user || "")}</div></div><div class="talk-message talk-other"><span class="talk-speaker">${esc(title)}</span><div class="talk-bubble" id="storyTalkLive" aria-live="polite">${esc(job.raw || "답변을 기다리는 중…")}</div><span class="talk-progress">답변 중…</span></div>` : ""}</div>
+    <footer class="talk-composer">${own && job.phase === "prepare" ? '<p class="talk-progress" role="status">불러오는 중…</p>' : ""}${status ? `<p class="talk-unavailable">${esc(status)}</p>` : ""}${!storyOn(w) ? '<p class="talk-progress">결말 이후의 대화입니다.</p>' : ""}
     ${s?.err ? `<p class="talk-error" role="alert">${esc(s.err)}</p>` : ""}
     ${key ? `<label class="sr-only" for="storyTalkInput">${esc(title)}에게 할 말</label><div class="talk-input-row"><textarea id="storyTalkInput" rows="1" maxlength="2000" placeholder="${blocked ? "지금은 대화할 수 없습니다" : "메시지 입력"}" ${!allowed || busy ? "disabled" : ""}>${esc(s?.draft || "")}</textarea><button type="button" class="talk-send" data-act="talk-send" aria-label="메시지 보내기" ${!allowed || busy || !s?.draft?.trim() || s?.unsaved ? "disabled" : ""}><span aria-hidden="true">↑</span></button></div>
-    <div class="talk-actions">${!ready && !busy ? '<button type="button" class="btn" data-act="talk-prepare">대화 준비 다시 시도</button>' : ""}${own ? '<button type="button" class="btn" data-act="talk-stop">중단</button>' : ""}${s?.unsaved ? '<button type="button" class="btn" data-act="talk-save">저장 다시 시도</button>' : ""}</div>` : ""}</footer></section>`;
+    <div class="talk-actions">${!ready && !busy ? '<button type="button" class="btn" data-act="talk-prepare">다시 시도</button>' : ""}${own ? '<button type="button" class="btn" data-act="talk-stop">중단</button>' : ""}${s?.unsaved ? '<button type="button" class="btn" data-act="talk-save">저장 다시 시도</button>' : ""}</div>` : ""}</footer></section>`;
 }

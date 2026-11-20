@@ -25,22 +25,10 @@ function storyCardHtml(w, n) {
   const endBtn = w.story.status === "ended" && n === w.story.chapter ? `<div class="row" style="margin:0 0 10px"><button type="button" class="btn pri" data-act="epilogue">에필로그로</button><span class="note">마지막 장입니다. 아래 ${n}장 섹션을 읽은 뒤 에필로그를 보세요.</span></div>` : "";
   return `<section class="stcard" aria-label="이번 장 안내">${endBtn}<h3><span class="chb">${n}장</span>${esc(c.title)}</h3><p class="src">작중 ${esc(c.era)}${c.choice ? ` · 고른 행동: ${esc(c.choice.custom || c.choice.picked)}` : ""}</p>
     ${prev ? `<h4>지난 이야기 · ${prev.n}장 「${esc(prev.title)}」</h4><p>${esc(prev.summary)}</p>` : ""}
-    <h4>이번 장에 엮인 탐험</h4>${wove.length ? `<p>${wove.map(x => linkHtml(w.entities[x.key].title)).join(" · ")}</p>` : `<p class="note">엮인 탐험이 없습니다. 이번 장은 뼈대대로 흘러갑니다.</p>`}
-    ${c.dialogueConsequences?.length ? `<h4>대화가 남긴 변화</h4><ul>${c.dialogueConsequences.map(x => `<li>${esc(x.character)}: ${esc(x.detail)}</li>`).join("")}</ul>` : ""}
-    ${c.continuity?.warnings?.length ? `<p class="note">본문은 보관했습니다. 일부 진행 기록은 확인이 필요하며 이전 상태를 유지했습니다.</p>` : ""}${fresh.length ? `<h4>이번 장에 새로 등장</h4><p>${fresh.map(k => linkHtml(w.entities[k].title)).join(" · ")}</p>` : ""}
+    ${wove.length ? `<h4>이번 장에 엮인 탐험</h4><p>${wove.map(x => linkHtml(w.entities[x.key].title)).join(" · ")}</p>` : ""}
+    ${fresh.length ? `<h4>이번 장에 새로 등장</h4><p>${fresh.map(k => linkHtml(w.entities[k].title)).join(" · ")}</p>` : ""}
     ${aff.length ? `<h4>이번 장에 영향을 받은 문서</h4><p>${aff.map(a => linkHtml(w.entities[a.key].title)).join(" · ")}</p><p class="note" style="margin-top:4px">무엇이 바뀌었는지는 아래 ${n}장 섹션과 각 문서에서 확인할 수 있습니다. 파란 링크는 열면 이번 장의 변화를 덧붙이고, 빨간 링크는 이번 장 시점으로 새로 작성합니다.</p>` : ""}
     <div class="row" style="margin-top:10px"><button type="button" class="btn" data-act="story-card-close">안내 닫기</button></div></section>`;
-}
-function storyRecordNotes(w) {
-  const notes = w.story.chapters.filter(c => c.continuity?.warnings?.length);
-  return notes.length ? `<details class="story-record-notes"><summary>진행 기록 확인 메모 · ${notes.length}개 장</summary>${notes.map(c => `<p>${c.n}장: 본문은 보관했으며 확인하지 못한 갱신은 이전 상태를 유지했습니다.</p><ul>${c.continuity.warnings.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`).join("")}</details>` : "";
-}
-function storyMemoryHtml(w) {
-  if (![1, 2].includes(w.story.continuity?.version)) return "";
-  const memory = storyMemory(w);
-  return `<details class="story-memory memo"><summary>이어지는 이야기와 선택의 영향 · ${memory.threads.length}건</summary><div style="padding:12px">
-    ${storyRecordNotes(w)}${memory.focus ? `<p class="note">${esc(memory.focus)}</p>` : ""}<ul>${memory.threads.map(t => `<li><b>${esc(t.subject)}</b> <span class="src">· ${esc(STORY_THREAD_KINDS[t.kind] || "이전 기록")} · ${esc(STORY_THREAD_STATES[t.status] || "이어짐")}</span><p>${esc((STORY_THREAD_CLOSED.includes(t.status) ? t.outcome : "") || t.development || "")}</p>${t.consequence ? `<p>${esc(t.consequence)}</p>` : ""}<span class="src">출처: ${esc(t.origin.title || "이전 기록")} · “${esc(t.origin.quote)}”</span></li>`).join("")}</ul>
-    ${memory.choices.length ? `<h4>선택이 남긴 변화</h4><ul>${memory.choices.map(c => `<li>${c.chapter}장 · ${esc(c.choice)}<ul>${c.consequences.map(x => `<li>${esc(x.detail)}</li>`).join("")}</ul>${c.pending ? `<span class="src">고른 행동은 보관됨 · 결과 기록 확인 필요</span>` : ""}</li>`).join("")}</ul>` : ""}</div></details>`;
 }
 function advanceHtml() {
   const w = S.world; if (!isStory(w)) return `<div class="sheet"><p class="note">스토리 모드 세계관이 아닙니다.</p></div>`;
@@ -55,7 +43,6 @@ function advanceHtml() {
   return head + `<p class="note">${c.n}장 「${esc(c.title)}」 · 작중 ${esc(c.era)}</p>
     <h2 class="nf-h">이번 장에 탐험한 곳</h2>
     ${ex.length ? `<ul class="adv-list">${ex.slice(0, 12).map(x => `<li><span>${linkHtml(w.entities[x.k].title)}</span><span class="src">${esc(x.kinds.join(" · "))}</span></li>`).join("")}</ul>${ex.length > 8 ? `<p class="note">최근 탐험 중 8곳까지 참고합니다. 실제 인과가 있을 때만 줄거리에 쓰이며, 앞서 기록한 목표·관계·약속·여파는 탐험 여부와 관계없이 이어집니다.</p>` : `<p class="note">직접 고친 사실은 지킵니다. 탐험한 항목을 장면에 억지로 등장시키지는 않습니다.</p>`}` : ""}
-    ${storyMemoryHtml(w)}
     <h2 class="nf-h">주인공의 다음 행동</h2>
     ${!choices.length ? `<div class="row" style="margin:6px 0 4px"><button type="button" class="btn" data-act="choices-regen" ${!S.sample || a.regen ? "disabled" : ""}>${a.regen ? "선택지를 만드는 중…" : "선택지 다시 만들기"}</button><span class="note">이 장의 행동 후보가 없습니다. 지금까지의 줄거리로 새로 만들 수 있습니다. 직접 정하거나 선택 없이 진행해도 됩니다.</span></div>` : ""}
     <div class="fx-list">${choices.map((x, i) => `<label class="fx-pick"><input type="radio" name="advPick" value="${i}" ${a.pick === i ? "checked" : ""}><span>${esc(x)}</span></label>`).join("")}
@@ -64,10 +51,6 @@ function advanceHtml() {
     ${a.err ? `<div class="banner warn">${esc(a.err)}</div>` : ""}
     <div class="row"><button type="button" class="btn pri" data-act="story-go" ${!S.sample || (a.pick === -1) || (a.pick === -2 && !norm(a.custom)) ? "disabled" : ""}>이 행동으로 ${n}장 진행</button><button type="button" class="btn" data-act="story-skip" ${!S.sample ? "disabled" : ""}>선택 없이 진행</button><button type="button" class="btn" data-act="story-back">돌아가기</button></div>
     <p class="note" style="margin-top:10px">${n >= totalOf(w) ? "마지막 장에서 결말이 납니다. 이후에도 세계관은 '결말 이후' 시점으로 계속 탐험할 수 있습니다." : `주인공 문서에 ${n}장 섹션이 덧붙고, 이번 장에서 영향을 받은 문서는 열 때 ${n}장의 변화가 반영됩니다.`}${S.sample ? "" : " " + esc(ERR.no_sample)}</p></div>`;
-}
-function spineHtml(w) {
-  const sec = secretsOf(w);
-  return `<details class="memo"><summary>숨겨진 뼈대 보기</summary><ol class="spine">${w.story.spine.map(s => `<li><b>${esc(s.beat)}</b> — ${esc(s.intent)}${s.revised && s.orig ? `<br><span class="src">처음 계획: <del>${esc(s.orig)}</del> · 사건과 선택에 따라 바뀜</span>` : ""}</li>`).join("")}</ol>${sec.length ? `<h4 style="margin:10px 12px 4px">공개된 진실과 미사용 계획</h4><ul class="spine">${sec.map(x => `<li>${x.revealed ? "" : "미공개 집필 계획: "}${esc(x.truth)}<br><span class="src">드러나기 전: ${esc(x.cover)} · ${x.revealedAt ? `${x.revealedAt}장에서 드러남` : `미공개 · ${x.reveal}장 공개 검토 계획`}</span></li>`).join("")}</ul>` : ""}</details>`;
 }
 function epilogueHtml() {
   const w = S.world; if (!isStory(w)) return `<div class="sheet"><p class="note">스토리 모드 세계관이 아닙니다.</p></div>`;
@@ -80,8 +63,6 @@ function epilogueHtml() {
       <p>${esc(c.summary)}</p>
       ${wove.length ? `<ul>${wove.map(x => `<li>탐험 반영: ${linkHtml(w.entities[x.key].title)} — ${esc(x.how)}</li>`).join("")}</ul>` : ""}
       ${i >= 0 ? `<div class="row" style="margin-top:8px"><button type="button" class="btn" data-epsec="${i}">주인공 문서의 ${c.n}장 섹션</button></div>` : ""}</section>`; }).join("")}
-    ${storyMemoryHtml(w)}
-    ${st.status === "ended" ? spineHtml(w) : ""}
     <div class="row"><button type="button" class="btn" data-k="${pk}">주인공 문서로</button></div>
     ${st.status === "ended" ? `<p class="note" style="margin-top:10px">이야기는 끝났지만 세계관은 계속 탐험할 수 있습니다. 새 문서는 결말 직후 시점으로 쓰입니다.</p>` : ""}</div>`;
 }
@@ -208,10 +189,10 @@ function canonHtml() {
     <label class="lb">원안</label><div class="seedbox">${esc(w.seed)}</div>
     <div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="regen-open" ${S.gen || S.storyGen || S.syncing ? "disabled" : ""}>이 원안으로 다시 만들기</button><span class="note">연표, 핵심 규칙, 분위기${isStory(w) ? ", 이야기" : ""}를 처음부터 새로 만듭니다. 처음 입력값을 고쳐서 만들 수도 있습니다.</span></div>
     ${isStory(w) ? `<h2>이야기</h2>
-    <p class="note">주인공 ${linkHtml(w.entities[w.story.protagonistKey].title)} · ${w.story.status === "ended" ? "완결" : `현재 ${w.story.chapter}장 / ${totalOf(w)}장`}. 이야기의 뼈대는 ${w.story.status === "ended" ? "아래 '숨겨진 뼈대 보기'에서" : "결말이 난 뒤에"} 볼 수 있습니다.</p>
+    <p class="note">주인공 ${linkHtml(w.entities[w.story.protagonistKey].title)} · ${w.story.status === "ended" ? "완결" : `현재 ${w.story.chapter}장 / ${totalOf(w)}장`}.</p>
     <div style="overflow-x:auto"><table class="tl">${w.story.chapters.map(c => `<tr><td>${c.n}장</td><td><b>${esc(c.title)}</b> <span class="src">· ${esc(c.era)}</span><br>${c.n < w.story.chapter || w.story.status === "ended" ? esc(c.summary) : `<span class="note">진행 중인 장입니다. 줄거리는 다음 장으로 넘어가면 공개됩니다.</span>`}</td></tr>`).join("")}</table></div>
     ${w.story.protagonist?.desc || w.story.cast?.length ? `<dl class="kv" style="margin-top:12px">${w.story.protagonist?.desc ? `<dt>주인공 특징</dt><dd>${esc(w.story.protagonist.desc)}</dd>` : ""}${(w.story.cast || []).filter(c => w.entities[c.key]).map(c => `<dt>${linkHtml(w.entities[c.key].title)}</dt><dd>${esc([c.rel && "관계: " + c.rel, c.desc].filter(Boolean).join(" · ") || "(설명 없음)")}</dd>`).join("")}</dl><p class="note">처음에 정한 주인공 특징과 등장인물입니다. 사용자 확정 설정으로 모든 장과 문서에 반영됩니다.</p>` : ""}
-    ${w.story.status === "ended" ? storyMemoryHtml(w) + spineHtml(w) : ""}` : ""}
+` : ""}
     ${nameTwinsHtml(w)}
     <h2>이미지 지침</h2>
     <label class="lb" for="wImageGuide">세계관 공통 이미지 지침</label><textarea id="wImageGuide" rows="4" maxlength="2000" placeholder="예: 1990년대 셀 애니메이션 화풍, 푸른 회색 팔레트, 시대에 맞는 복장, 글자 없는 그림">${esc(w.imageGuide || "")}</textarea>
