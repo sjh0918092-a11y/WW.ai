@@ -1,7 +1,7 @@
 /* 브라우저 → 인증된 Worker → SQLite → 단계별 alarm. 제공자 호출은 모두 대체한다. */
 const cacheCalls=[];
 const assert=require('node:assert/strict'),{chromium}=require('playwright'),{appServer}=require('./helpers/app');
-const server=appServer();let browser,context,page,n=0,hold=true,release,calls=[],errors=[],loseSubmit=false,identityFailure='';
+const server=appServer();let browser,context,page,n=0,hold=true,release,calls=[],errors=[],submissions=[],loseSubmit=false,identityFailure='';
 const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
 const until=async(fn,ms=20000)=>{const t=Date.now();while(Date.now()-t<ms){if(await fn())return;await new Promise(r=>setTimeout(r,30));}throw Error('브라우저 작업 대기 시간 초과')};
 (async()=>{
@@ -27,7 +27,7 @@ const until=async(fn,ms=20000)=>{const t=Date.now();while(Date.now()-t<ms){if(aw
    window.testHidden=false;Object.defineProperty(document,'hidden',{configurable:true,get:()=>window.testHidden});
   });
   await context.route('https://fonts.googleapis.com/**',r=>r.abort());await context.route('https://fonts.gstatic.com/**',r=>r.abort());
-  await context.route('**/api/**',async route=>{const req=route.request(),body=req.postData();const res=await worker.fetch(new Request(req.url(),{method:req.method(),headers:await req.allHeaders(),...(body?{body}:{})}),env);if(loseSubmit&&req.method()==='POST'&&req.url().endsWith('/jobs')){loseSubmit=false;return route.abort()}try{await route.fulfill({status:res.status,headers:Object.fromEntries(res.headers),body:await res.text()})}catch{}});
+  await context.route('**/api/**',async route=>{const req=route.request(),body=req.postData();if(req.method()==='POST'&&req.url().endsWith('/jobs'))submissions.push(JSON.parse(body));const res=await worker.fetch(new Request(req.url(),{method:req.method(),headers:await req.allHeaders(),...(body?{body}:{})}),env);if(loseSubmit&&req.method()==='POST'&&req.url().endsWith('/jobs')){loseSubmit=false;return route.abort()}try{await route.fulfill({status:res.status,headers:Object.fromEntries(res.headers),body:await res.text()})}catch{}});
   await context.route('**/v1beta/**',r=>{errors.push('직접 AI 호출');r.abort()});
   const open=async()=>{const p=await context.newPage();p.on('pageerror',e=>errors.push(e.stack));await p.goto(origin);await p.waitForFunction(()=>S.ready);return p};
   page=await open();
@@ -123,6 +123,22 @@ const until=async(fn,ms=20000)=>{const t=Date.now();while(Date.now()-t<ms){if(aw
   identityFailure='';await page.evaluate(k=>generatePage(k),failedKey);
   assert(await page.evaluate(k=>!!S.pages[k],failedKey),'남겨 둔 검색 후보도 다시 작성할 수 있다');
   pass('실패한 검색 후보와 초안을 보존하면서 최신 저장본으로 후속·재시도 문서를 작성하고 실제 미저장 편집은 보호한다');
+
+  await fixture('작성 경로 기준');
+  await page.evaluate(()=>composeFromSearch('방향 작성 선원'));
+  const guided=await page.evaluate(()=>S.view.key);
+  await page.fill('#cpDir','항해 경력에 집중해 작성한다.');await page.click('[data-compose-go]');
+  await page.waitForFunction(()=>!S.gen);
+  assert.equal(await page.evaluate(()=>S.genErr?.msg||''),'','방향 작성의 guided 경로를 서버가 접수한다');
+  assert(await page.evaluate(k=>!!S.pages[k],guided));
+  assert.equal(submissions.find(b=>b.meta.title==='방향 작성 선원').input.entity.src,'guided');
+  assert.equal(jobs().at(-1).meta.direction,'항해 경력에 집중해 작성한다.');
+  await page.evaluate(()=>{S.view={name:'notfound',title:'강제 작성 선원'};S.nf.add(keyOf('강제 작성 선원'));renderAll();});
+  await page.click('[data-force]');await page.waitForFunction(()=>!S.gen);
+  assert.equal(await page.evaluate(()=>S.genErr?.msg||''),'','강제 작성의 force 경로를 서버가 접수한다');
+  assert(await page.evaluate(()=>!!S.pages[keyOf('강제 작성 선원')]));
+  assert.equal(submissions.find(b=>b.meta.title==='강제 작성 선원').input.entity.src,'force');
+  pass('방향 작성과 없는 문서의 강제 작성도 해당 경로로 접수해 서버에서 문서를 완성한다');
 
   assert.deepEqual(errors,[]);pass('공유 엔진·작업 화면·문서 열기에서 브라우저 오류가 없다');
  }finally{globalThis.fetch=originalFetch;for(const e of entries.values())clearTimeout(e.timer);await context?.close();await browser?.close();await new Promise(r=>server.close(r));db.sqlite.close()}

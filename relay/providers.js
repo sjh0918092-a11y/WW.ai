@@ -23,7 +23,12 @@ export function validateJob(b) {
   if (b.meta !== undefined && !validMeta(b.meta)) return "작업 복구 정보를 확인해 주세요.";
   if (b.credential !== undefined && (!only(b.credential, ["type", "key"]) || b.credential.type !== "personal" || typeof b.credential.key !== "string" || !/^[\x21-\x7e]{8,512}$/.test(b.credential.key))) return "개인 API 키 형식을 확인해 주세요.";
   const i = b.input;
-  if (b.type === "document.pipeline") return validPipeline(i) && !(b.credential && [b.model, i?.settings?.main, i?.settings?.quick, i?.settings?.check, ...Object.values(i?.settings?.taskModels || {}).map(v => v?.model)].some(m => /^claude-/.test(m || "") || isOpenAITextModel(m))) ? null : "서버 문서 작업의 대상·원본·모델 설정을 확인해 주세요.";
+  if (b.type === "document.pipeline") {
+    const invalid = pipelineInputError(i); if (invalid) return invalid;
+    if (b.credential && [b.model, i.settings.main, i.settings.quick, i.settings.check, ...Object.values(i.settings.taskModels || {}).map(v => v?.model)].some(m => /^claude-/.test(m || "") || isOpenAITextModel(m)))
+      return "Claude·OpenAI 문서 작업은 서버 키를 사용해 주세요.";
+    return null;
+  }
   if (b.type === "openai.image") {
     if (!/^gpt-image-/.test(b.model) || !only(i, ["prompt", "size", "quality", "reference"]) || typeof i.prompt !== "string" || !i.prompt.trim() || i.prompt.length > 200000 || !SIZES.includes(i.size) || !["low", "medium", "high", "auto"].includes(i.quality) || (i.reference !== undefined && !reference(i.reference))) return "OpenAI 이미지 요청·참고 이미지를 확인해 주세요.";
     return null;
@@ -341,13 +346,32 @@ export function mergeGeminiStream(text) {
   };
 }
 
-function validPipeline(i) {
+function pipelineInputError(i) {
   const str = (v, max) => typeof v === "string" && v.length > 0 && v.length <= max;
   const settings = ["main", "quick", "check", "mainThink", "quickThink", "checkThink", "preCheck", "taskModels", "prompt"];
-  return only(i, ["action", "wid", "key", "rewrite", "direction", "novel", "angleId", "entity", "settings", "worldHash", "pageHash"]) &&
-    ["generate", "check"].includes(i.action) && str(i.wid,200) && str(i.key,200) && [i.worldHash,i.pageHash].every(h => /^[a-f0-9]{64}$/.test(h)) &&
-    ["rewrite","novel"].every(k => i[k] === undefined || typeof i[k] === "boolean") &&
-    (i.direction === undefined || typeof i.direction === "string" && i.direction.length <= 10000) && (i.angleId === undefined || str(i.angleId,200)) &&
-    (i.entity === undefined || only(i.entity,["title","type","summary","src","searched"]) && str(i.entity.title,300) && typeof i.entity.type === "string" && i.entity.type.length <= 100 && typeof i.entity.summary === "string" && i.entity.summary.length <= 2000 && (i.entity.src === undefined || i.entity.src === "search" || i.entity.src === "discovery") && (i.entity.searched === undefined || typeof i.entity.searched === "boolean")) &&
-    only(i.settings,settings) && settings.every(k => i.settings[k] === undefined || (k === "taskModels" ? validTaskModels(i.settings[k]) : k === "prompt" ? validPromptOptions(i.settings[k]) : k === "preCheck" ? typeof i.settings[k] === "boolean" : k.endsWith("Think") ? ["", "none", "minimal", "low", "medium", "high", "xhigh", "max"].includes(i.settings[k]) : i.settings[k] === "" || MODEL.test(i.settings[k]) && !/image|tts|live|audio|embedding|transcribe|robotics/i.test(i.settings[k])));
+  if (!only(i, ["action", "wid", "key", "rewrite", "direction", "novel", "angleId", "entity", "settings", "worldHash", "pageHash"])) return "서버 문서 작업의 요청 형식이 올바르지 않습니다.";
+  if (!["generate", "check"].includes(i.action) || !str(i.wid,200) || !str(i.key,200)) return "문서 작업의 종류·세계관·대상 항목을 확인해 주세요.";
+  if (![i.worldHash,i.pageHash].every(h => typeof h === "string" && /^[a-f0-9]{64}$/.test(h))) return "문서 작업의 원본 확인 정보가 올바르지 않습니다.";
+  if (!["rewrite","novel"].every(k => i[k] === undefined || typeof i[k] === "boolean")) return "문서의 다시 쓰기·새 대상 작성 옵션이 올바르지 않습니다.";
+  if (i.direction !== undefined && (typeof i.direction !== "string" || i.direction.length > 10000)) return "문서 작성 방향은 10,000자 이내의 글로 입력해 주세요.";
+  if (i.angleId !== undefined && !str(i.angleId,200)) return "문서 작성에 선택한 각도 정보가 올바르지 않습니다.";
+  if (i.entity !== undefined) {
+    const e = i.entity;
+    if (!only(e,["title","type","summary","src","searched"])) return "새 문서 항목의 요청 형식이 올바르지 않습니다.";
+    if (!str(e.title,300)) return "새 문서의 제목은 1~300자로 입력해 주세요.";
+    if (typeof e.type !== "string" || e.type.length > 100 || typeof e.summary !== "string" || e.summary.length > 2000) return "새 문서의 유형·요약을 확인해 주세요. 요약은 2,000자 이내여야 합니다.";
+    if (e.src !== undefined && !["search","guided","force","discovery"].includes(e.src)) return "새 문서의 작성 경로 정보가 올바르지 않습니다.";
+    if (e.searched !== undefined && typeof e.searched !== "boolean") return "새 문서의 검색 여부 정보가 올바르지 않습니다.";
+  }
+  if (!only(i.settings,settings)) return "서버가 지원하지 않는 문서 작업 설정 항목이 있습니다.";
+  const labels = {main:"기본 모델",quick:"빠른 모델",check:"검사 모델",mainThink:"기본 모델의 생각 수준",quickThink:"빠른 모델의 생각 수준",checkThink:"검사 모델의 생각 수준"};
+  for (const k of settings) {
+    const v = i.settings[k]; if (v === undefined) continue;
+    if (k === "taskModels") { if (!validTaskModels(v)) return "작업별 모델·생각 수준 설정이 올바르지 않습니다."; }
+    else if (k === "prompt") { if (!validPromptOptions(v)) return "문서 작성 입력의 항목·개수 설정이 올바르지 않습니다."; }
+    else if (k === "preCheck") { if (typeof v !== "boolean") return "자동 검사 설정이 올바르지 않습니다."; }
+    else if (k.endsWith("Think")) { if (!["", "none", "minimal", "low", "medium", "high", "xhigh", "max"].includes(v)) return labels[k] + " 설정이 올바르지 않습니다."; }
+    else if (typeof v !== "string" || v !== "" && (!MODEL.test(v) || /image|tts|live|audio|embedding|transcribe|robotics/i.test(v))) return labels[k] + " 이름이 올바르지 않습니다.";
+  }
+  return null;
 }
