@@ -120,6 +120,10 @@ const AIRecovery = {
     let r = this.local().find(r => r.id === id);
     try {
       if (!r) throw new Error("이 계정의 작업을 찾을 수 없습니다.");
+      // 접수 거절은 서버에 작업 번호가 없으므로 다시 조회하면 원래 거절 사유가 404 안내에 가려진다.
+      if (r.error?.message && (r.status === "rejected" || r.status === "not_received" && ["job_api","job_auth"].includes(r.error.code))) {
+        r.status = "rejected"; AIJobs.save(r); this.detail = { receipt:r, error:r.error.message }; return;
+      }
       const result = await this.result(r, ctx); if (!current()) return;
       const image = r.type.endsWith(".image");
       const text = image || result === undefined ? "" : (result.candidates?.[0]?.content?.parts || []).filter(p => typeof p.text === "string" && !p.thought).map(p => p.text).join("");

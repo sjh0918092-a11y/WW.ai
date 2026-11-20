@@ -1,7 +1,7 @@
 /* 브라우저 → 인증된 Worker → SQLite → 단계별 alarm. 제공자 호출은 모두 대체한다. */
 const cacheCalls=[];
 const assert=require('node:assert/strict'),{chromium}=require('playwright'),{appServer}=require('./helpers/app');
-const server=appServer();let browser,context,page,n=0,hold=true,release,calls=[],errors=[],submissions=[],loseSubmit=false,identityFailure='';
+const server=appServer();let browser,context,page,n=0,hold=true,release,calls=[],errors=[],submissions=[],loseSubmit=false,identityFailure='',legacyInput=false;
 const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
 const until=async(fn,ms=20000)=>{const t=Date.now();while(Date.now()-t<ms){if(await fn())return;await new Promise(r=>setTimeout(r,30));}throw Error('브라우저 작업 대기 시간 초과')};
 (async()=>{
@@ -27,7 +27,18 @@ const until=async(fn,ms=20000)=>{const t=Date.now();while(Date.now()-t<ms){if(aw
    window.testHidden=false;Object.defineProperty(document,'hidden',{configurable:true,get:()=>window.testHidden});
   });
   await context.route('https://fonts.googleapis.com/**',r=>r.abort());await context.route('https://fonts.gstatic.com/**',r=>r.abort());
-  await context.route('**/api/**',async route=>{const req=route.request(),body=req.postData();if(req.method()==='POST'&&req.url().endsWith('/jobs'))submissions.push(JSON.parse(body));const res=await worker.fetch(new Request(req.url(),{method:req.method(),headers:await req.allHeaders(),...(body?{body}:{})}),env);if(loseSubmit&&req.method()==='POST'&&req.url().endsWith('/jobs')){loseSubmit=false;return route.abort()}try{await route.fulfill({status:res.status,headers:Object.fromEntries(res.headers),body:await res.text()})}catch{}});
+  await context.route('**/api/**',async route=>{
+   const req=route.request(),body=req.postData();
+   if(req.method()==='POST'&&req.url().endsWith('/jobs')){
+    const b=JSON.parse(body);submissions.push(b);
+    // 구형 서버의 선택적 출처 필드 제한을 재현한다. 신규 경로를 그대로 보내면 유료 호출 전에 거절한다.
+    if(legacyInput&&b.input.entity?.src!==undefined&&!['search','discovery'].includes(b.input.entity.src))
+     return route.fulfill({status:400,contentType:'application/json',body:JSON.stringify({error:{message:'서버 문서 작업의 대상·원본·모델 설정을 확인해 주세요.'}})});
+   }
+   const res=await worker.fetch(new Request(req.url(),{method:req.method(),headers:await req.allHeaders(),...(body?{body}:{})}),env);
+   if(loseSubmit&&req.method()==='POST'&&req.url().endsWith('/jobs')){loseSubmit=false;return route.abort()}
+   try{await route.fulfill({status:res.status,headers:Object.fromEntries(res.headers),body:await res.text()})}catch{}
+  });
   await context.route('**/v1beta/**',r=>{errors.push('직접 AI 호출');r.abort()});
   const open=async()=>{const p=await context.newPage();p.on('pageerror',e=>errors.push(e.stack));await p.goto(origin);await p.waitForFunction(()=>S.ready);return p};
   page=await open();
@@ -124,21 +135,39 @@ const until=async(fn,ms=20000)=>{const t=Date.now();while(Date.now()-t<ms){if(aw
   assert(await page.evaluate(k=>!!S.pages[k],failedKey),'남겨 둔 검색 후보도 다시 작성할 수 있다');
   pass('실패한 검색 후보와 초안을 보존하면서 최신 저장본으로 후속·재시도 문서를 작성하고 실제 미저장 편집은 보호한다');
 
-  await fixture('작성 경로 기준');
+  legacyInput=true;await fixture('작성 경로 기준');
   await page.evaluate(()=>composeFromSearch('방향 작성 선원'));
   const guided=await page.evaluate(()=>S.view.key);
   await page.fill('#cpDir','항해 경력에 집중해 작성한다.');await page.click('[data-compose-go]');
   await page.waitForFunction(()=>!S.gen);
   assert.equal(await page.evaluate(()=>S.genErr?.msg||''),'','방향 작성의 guided 경로를 서버가 접수한다');
   assert(await page.evaluate(k=>!!S.pages[k],guided));
-  assert.equal(submissions.find(b=>b.meta.title==='방향 작성 선원').input.entity.src,'guided');
+  assert.equal(submissions.find(b=>b.meta.title==='방향 작성 선원').input.entity.src,undefined);
+  assert(submissions.find(b=>b.meta.title==='방향 작성 선원').input.direction.includes('사용자가 방향을 정해 새로 만들기로 한 항목'));
+  assert(submissions.find(b=>b.meta.title==='방향 작성 선원').input.direction.includes('항해 경력에 집중해 작성한다.'));
+  assert.equal(submissions.filter(b=>b.meta.title==='방향 작성 선원').length,1);
   assert.equal(jobs().at(-1).meta.direction,'항해 경력에 집중해 작성한다.');
   await page.evaluate(()=>{S.view={name:'notfound',title:'강제 작성 선원'};S.nf.add(keyOf('강제 작성 선원'));renderAll();});
   await page.click('[data-force]');await page.waitForFunction(()=>!S.gen);
   assert.equal(await page.evaluate(()=>S.genErr?.msg||''),'','강제 작성의 force 경로를 서버가 접수한다');
   assert(await page.evaluate(()=>!!S.pages[keyOf('강제 작성 선원')]));
-  assert.equal(submissions.find(b=>b.meta.title==='강제 작성 선원').input.entity.src,'force');
-  pass('방향 작성과 없는 문서의 강제 작성도 해당 경로로 접수해 서버에서 문서를 완성한다');
+  assert.equal(submissions.find(b=>b.meta.title==='강제 작성 선원').input.entity.src,undefined);
+  assert(submissions.find(b=>b.meta.title==='강제 작성 선원').input.direction.includes('사용자가 이 이름으로 항목을 새로 만들기로 했다'));
+  assert.equal(submissions.filter(b=>b.meta.title==='강제 작성 선원').length,1);
+  pass('방향·강제 작성은 구형 접수 규격에서도 창작 의도와 사용자 방향을 유지해 한 번의 접수로 저장한다');
+
+  const beforeRejection=calls.length;
+  const rejected=await page.evaluate(async()=>{
+   try{await AIJobs.run('document.pipeline',GS.main,{action:'generate',wid:S.world.id,key:keyOf('거절 예제'),worldHash:'a'.repeat(64),pageHash:'b'.repeat(64),settings:{main:GS.main},entity:{title:'거절 예제',type:'',summary:'',src:'guided'}},{jobMeta:{kind:'page',title:'거절 예제',wid:S.world.id,key:keyOf('거절 예제'),recoveryV:1}});throw Error('구형 서버가 거절하지 않았다');}
+   catch(e){if(e.status!==400)throw e;return {id:e.jobId,status:e.status};}
+  });
+  await page.evaluate(id=>AIRecovery.open(id),rejected.id);
+  await page.waitForSelector('.job-detail [role="alert"]');
+  const rejectionText=await page.locator('.job-detail').innerText();
+  assert(rejectionText.includes('접수 거절'));assert(rejectionText.includes('대상·원본·모델 설정'));assert(rejectionText.includes('HTTP 400'));
+  assert(!rejectionText.includes('서버에서 이 번호를 찾지 못했습니다'));
+  assert.equal(calls.length,beforeRejection,'거절 기록 열기는 AI를 다시 실행하지 않는다');
+  pass('서버가 접수하지 않은 요청도 원래 거절 사유와 HTTP 상태를 작업 화면에 보존한다');
 
   assert.deepEqual(errors,[]);pass('공유 엔진·작업 화면·문서 열기에서 브라우저 오류가 없다');
  }finally{globalThis.fetch=originalFetch;for(const e of entries.values())clearTimeout(e.timer);await context?.close();await browser?.close();await new Promise(r=>server.close(r));db.sqlite.close()}

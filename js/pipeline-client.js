@@ -73,9 +73,12 @@ const DocumentPipeline = {
       throw new Error("화면의 설정과 저장된 원본이 다릅니다. 세계관을 다시 열고 시작해 주세요.");
     }
     const settings = Object.fromEntries(["main","mainThink","quick","quickThink","check","checkThink","preCheck","taskModels","prompt"].map(key => [key,GS[key]]));
-    const input = { action,wid:w.id,key:k,rewrite:!!rewrite,direction:direction || "",novel:!!novel,settings,
+    // guided·force는 구형 서버가 거절하는 선택적 출처 값이다. 창작 의도는 방향에 실어 구형 접수 규격에서도 보존한다.
+    const intent = pending?.src === "guided" ? "사용자가 방향을 정해 새로 만들기로 한 항목이다. 아래 작성 방향에 맞춰 정의한다. 현실에도 있는 말이면 방향이 달리 말하지 않는 한 현실의 의미를 바탕으로 이 세계에서의 모습을 쓴다."
+      : pending?.src === "force" ? "사용자가 이 이름으로 항목을 새로 만들기로 했다. 의미 없는 문자열처럼 보여도 이 세계 안의 고유명사(암호명, 인물의 별칭, 지명, 조직명, 제품명 등)로 해석해 창작하고, 그 이름이 왜 그렇게 붙었는지도 설명한다." : "";
+    const input = { action,wid:w.id,key:k,rewrite:!!rewrite,direction:[intent,direction || ""].filter(Boolean).join("\n\n"),novel:!!novel,settings,
       ...(angle?.id ? { angleId: angle.id } : {}),
-      ...(pending ? { entity: { title: pending.title,type:pending.type || "",summary:pending.summary || "", ...(pending.src ? {src:pending.src}:{}), ...(pending.searched ? {searched:true}:{}) } } : {}),
+      ...(pending ? { entity: { title: pending.title,type:pending.type || "",summary:pending.summary || "", ...(["search","discovery"].includes(pending.src) ? {src:pending.src}:{}), ...(pending.searched ? {searched:true}:{}) } } : {}),
       worldHash:storedHash,pageHash:await AIRecovery.hash(this.sourcePage(page)) };
     const meta = await AIRecovery.capture(action === "check" ? "check" : "page",w,k,{rewrite:!!rewrite,direction:(direction || "").slice(0,300)});
     const costSession = typeof DocumentCost!=="undefined" ? (action==="generate"?DocumentCost.get(w.id,k):DocumentCost.start(w.id,k)) : null;

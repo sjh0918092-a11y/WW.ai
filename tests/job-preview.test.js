@@ -36,6 +36,14 @@ async function run() {
   assert.match(html, /rate_limited.*HTTP 429/);
   assert.match(html, /초안 생성 완료 · 설정 대조 실패/);
   assert.doesNotMatch(html, /id="job-result-first"/);
+  for(const status of ['rejected','not_received']){
+    rows.push({id:'rejected-'+status,owner:'owner',base:'relay',type:'document.pipeline',status,createdAt:4,meta:{title:'접수 거절 문서',kind:'page'},error:{code:'job_api',message:'서버 문서 작업의 대상·원본·모델 설정을 확인해 주세요.',httpStatus:400}});
+    const id=rows.at(-1).id;await c.AIRecovery.preview(id);
+    assert.equal(pending.has(id),false,'확정된 접수 거절은 다시 조회하거나 생성하지 않는다');
+    assert.equal(rows.at(-1).status,'rejected');
+    assert.match(c.jobsHtml(),/접수 거절/);assert.match(c.jobsHtml(),/대상·원본·모델 설정/);assert.match(c.jobsHtml(),/HTTP 400/);
+    assert.doesNotMatch(c.jobsHtml(),/서버에서 이 번호를 찾지 못했습니다/);
+  }
   console.log("선택 카드 아래 로딩과 오류를 표시하며, 늦게 도착한 이전 결과는 선택을 바꾸지 않는다");
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

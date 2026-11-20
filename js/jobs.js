@@ -118,7 +118,7 @@ const AIJobs = {
         await gSleep(1500, opts.signal);
       }
     } catch (e) {
-      if (!accepted && e.status && e.status < 500) { receipt.status = "rejected"; receipt.error = { code: e.code, message: e.message }; this.save(receipt); }
+      if (!accepted && e.status && e.status < 500) { receipt.status = "rejected"; receipt.error = { code: e.code, message: e.message, httpStatus:e.status }; this.save(receipt); }
       throw { ...e, serverJob: true, jobId: id };
     } finally { this.active.delete(id); opts.signal?.removeEventListener("abort", onAbort); }
   },
