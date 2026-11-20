@@ -63,6 +63,7 @@ const until = async (fn, msg, ms = 15000) => { const t0 = Date.now(); while (Dat
     await B.page.fill("#acId", "테스터"); await B.page.fill("#acPw", "secret1"); await B.page.click('[data-act="acct-login"]');
     await B.page.waitForFunction(() => document.querySelector("#acctBox")?.textContent.includes("로그인되어 있습니다"));
     await B.page.click('#side [data-act="home"]');
+    await until(async () => (await listTitles(B.page)).includes("동기화 세계"), "B의 초기 동기화 완료");
     assert.deepStrictEqual(await listTitles(B.page), ["동기화 세계"]);
     await B.page.click('.wcard button.open:has-text("동기화 세계")'); await B.page.waitForSelector(".article h2");
     assert((await B.page.locator(".article").innerText()).includes("원래 본문이다."));

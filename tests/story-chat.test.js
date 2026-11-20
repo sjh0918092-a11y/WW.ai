@@ -124,6 +124,8 @@ const server = appServer();
     assert(!(await page.locator('.story-talk').textContent()).includes('검토'));
     assert(!(await page.locator('.story-talk').textContent()).includes('초안'));
     await page.evaluate(()=>S.storyTalkJob.phase='reply');
+    const busySync=await page.evaluate(async()=>{const original=S.world,job=S.storyTalkJob;await Sync.refresh();return{worldSame:S.world===original,jobSame:S.storyTalkJob===job,view:S.view.name,key:S.view.key,aborted:job.ctl.signal.aborted};});
+    assert.deepEqual(busySync,{worldSame:true,jobSame:true,view:'storyTalk',key:'friend',aborted:false},'수신·검토 중 동기화가 진행 중인 대화를 교체하지 않는다');
     await page.evaluate(() => advanceChapter(true));
     assert.equal(await page.evaluate(() => S.world.story.chapter),1,'대화 도중 장 전환 금지');
     await page.evaluate(() => releaseTalk());
@@ -138,6 +140,31 @@ const server = appServer();
     assert.equal(await page.evaluate(()=>talkCalls.filter(c=>c.kind==='storyCast').length),beforeReentry,'화면 재입장으로 준비를 반복하지 않는다');
     assert.equal(await page.locator('.talk-result').count(),0);
     assert(!(await page.locator('.story-talk').textContent()).includes('남은 변화'));
+    await page.locator('#storyTalkInput').fill('동기화 중에도 남아야 할 입력');
+    await page.locator('#storyTalkInput').focus();
+    const syncView=await page.evaluate(async()=>{
+      const original=S.world, remote=JSON.parse(JSON.stringify(original)), before=talkCalls.length;
+      remote.tagline='다른 기기에서 바뀐 세계관 소개';
+      await Store.putWorldRaw(remote);
+      document.getElementById('storyTalkInput').setSelectionRange(3,7);
+      await Sync.refresh();
+      const input=document.getElementById('storyTalkInput');
+      return {view:S.view.name,key:S.view.key,changed:S.world!==original,tagline:S.world.tagline,draft:input?.value,focus:document.activeElement===input,start:input?.selectionStart,end:input?.selectionEnd,calls:talkCalls.length-before,route:Nav.read()};
+    });
+    assert.equal(syncView.view,'storyTalk');assert.equal(syncView.key,'friend');assert(syncView.changed);assert.equal(syncView.tagline,'다른 기기에서 바뀐 세계관 소개');
+    assert.equal(syncView.draft,'동기화 중에도 남아야 할 입력');assert(syncView.focus);assert.equal(syncView.start,3);assert.equal(syncView.end,7);assert.equal(syncView.calls,0);
+    assert.equal(syncView.route.view,'storyTalk');assert.equal(syncView.route.key,'friend');
+    const order=await page.evaluate(()=>{
+      const w=JSON.parse(JSON.stringify(S.world));for(const c of w.story.chapters)c.dialogues={};
+      w.story.chapters[0].dialogues={friend:{turns:[{at:100},{at:200}]},dead:{turns:[{}]}};
+      w.story.chapters.push({n:2,dialogues:{unwritten:{turns:[{at:400}]},asleep:{turns:[{at:300}]}}});
+      w.story.lastDialogueKey='away';return storyTalkers(w);
+    });
+    assert.deepEqual(order,['unwritten','asleep','friend','dead','away'],'모든 장의 마지막 대화 시각 순으로 정렬하며 열람만으로 순서를 바꾸지 않는다');
+    await page.locator('#storyTalkInput').fill('');
+    await page.evaluate(async()=>{const remote=JSON.parse(JSON.stringify(S.world));storyTalkSession(remote,'friend',true).draft='다른 기기의 이전 입력';await Store.putWorldRaw(remote);await Sync.refresh();});
+    assert.equal(await page.locator('#storyTalkInput').inputValue(),'','지운 입력이 동기화로 다시 나타나지 않는다');
+
 
     assert(!(await page.locator('.story-talk').innerText()).includes('케빈 드와이트가 살아 있으므로'),'기존 내부 사유는 표시하지 않는다');
     await page.evaluate(()=>{talkMode='wrongIdentity';openStoryTalk('dead');});
@@ -222,7 +249,9 @@ const server = appServer();
       if(s.unsaved || s.err)throw new Error('저장 재시도 실패');
     });
     await page.reload(); await page.waitForFunction(()=>S.ready && Nav.active && !Nav.restoring);
-    await page.evaluate(async()=>{globalThis.reloadPrepCalls=0;S.sample={json:async(prompt,opts)=>{if(opts.taskKind==='storyCast'){reloadPrepCalls++;throw new Error('재입장 준비가 실행됨');}return {};}};await openWorld('talk-test');openStoryTalk();});
+    assert.equal(await page.evaluate(()=>S.view.name),'storyTalk','새로고침 후에도 대화창을 복원한다');
+    assert.equal(await page.evaluate(()=>S.view.key),'friend');
+    await page.evaluate(()=>{globalThis.reloadPrepCalls=0;S.sample={json:async(prompt,opts)=>{if(opts.taskKind==='storyCast'){reloadPrepCalls++;throw new Error('재입장 준비가 실행됨');}return {};}};});
     await page.waitForFunction(()=>S.view.name==='storyTalk');
     assert.equal(await page.locator('.talk-turn').count(),3,'새로고침 후 대화 복원');
     assert.equal(await page.evaluate(()=>reloadPrepCalls),0,'새로고침 후에도 저장된 준비 결과 재사용');
@@ -242,6 +271,12 @@ const server = appServer();
       for(let i=0;i<24;i++)session.turns.push({user:'화면을 넘겨도 입력창은 제자리에 남아야 합니다. '+i,reply:'대화 기록만 스크롤됩니다.',memory:'화면 검증',at:Date.now()});
       renderMain();
     });
+    const readingPosition=await page.evaluate(async()=>{
+      const log=document.getElementById('storyTalkMessages');log.scrollTop=120;
+      await Store.putWorldRaw(JSON.parse(JSON.stringify(S.world)));await Sync.refresh();
+      return document.getElementById('storyTalkMessages').scrollTop;
+    });
+    assert.equal(readingPosition,120,'동기화 중 읽던 대화 위치를 유지한다');
     const layout=await page.evaluate(()=>{
       const box=s=>document.querySelector(s).getBoundingClientRect();
       return {composerBottom:box('.talk-composer').bottom,viewport:window.innerHeight,headerTop:box('.talk-header').top,scrolling:document.querySelector('.talk-messages').scrollHeight>document.querySelector('.talk-messages').clientHeight,selfLeft:box('.talk-self .talk-bubble').left,otherLeft:box('.talk-other .talk-bubble').left};

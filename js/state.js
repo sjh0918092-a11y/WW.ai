@@ -18,10 +18,10 @@ const Nav = {
     let view = S.view.name, key = S.view.key;
     if (view === "jobs") return { view, ...(S.view.job ? { job: S.view.job } : {}) };
     if (["loading"].includes(view)) return null;
-    if (["fix", "compose", "advance", "storyTalk"].includes(view)) { view = "article"; key ||= S.world?.mainKey; }
+    if (["fix", "compose", "advance"].includes(view)) { view = "article"; key ||= S.world?.mainKey; }
     const r = { view };
     if (view !== "home" && S.world) r.world = S.world.id;
-    if (view === "article") r.key = key || S.world?.mainKey;
+    if (view === "article" || view === "storyTalk") r.key = key || S.world?.mainKey;
     if (view === "notfound") r.title = S.view.title;
     if (view === "category") r.cat = S.view.cat;
     return r;
@@ -31,7 +31,7 @@ const Nav = {
     const q = new URLSearchParams(location.hash.slice(1));
     if (!q.has("view")) return null;
     const view = q.get("view");
-    if (!["home", "gset", "log", "jobs", "article", "canon", "notfound", "discovery", "epilogue", "category", "categories"].includes(view)) return { view: "home" };
+    if (!["home", "gset", "log", "jobs", "article", "canon", "notfound", "discovery", "epilogue", "category", "categories", "storyTalk"].includes(view)) return { view: "home" };
     return { view, ...(q.get("job") ? { job: q.get("job") } : {}), ...(q.get("cat") ? { cat: q.get("cat") } : {}), ...(q.get("world") ? { world: q.get("world") } : {}), ...(q.get("key") ? { key: q.get("key") } : {}), ...(q.get("title") ? { title: q.get("title") } : {}) };
   },
   write(replace = false, y = 0) {
@@ -54,6 +54,10 @@ const Nav = {
       if (S.world?.id !== r.world) return;
     } else if (!["home", "gset", "log"].includes(r.view)) { S.view = { name: "home" }; return; }
     if (!r.world && !S.gen && !S.storyGen && !S.syncing) S.world = null;
+    if (r.view === "storyTalk") {
+      S.view = isStory(S.world) ? { name: "storyTalk", key: storyTalkKey(S.world, r.key) } : { name: "article", key: S.world.mainKey };
+      return;
+    }
     if (r.view === "article") {
       let k = r.key; const w = S.world;
       if (!w.entities[k] && w.aliases?.[k]) k = w.aliases[k];
@@ -87,7 +91,7 @@ window.addEventListener("popstate", () => {
   const r = Nav.read() || { view: "home" }, state = history.state?.wwNav;
   if (!Nav.restoring && Nav.hash(r) === Nav.current) return;
   const crossWorld = r.world && r.world !== S.world?.id;
-  if (S.edit || S.discovery?.busy || (crossWorld && (S.gen || S.storyGen || S.syncing || S.checking || S.portraitJob || S.imageGen?.busy || S.proseGen?.busy))) {
+  if (S.edit || S.discovery?.busy || (crossWorld && (S.gen || S.storyGen || S.storyTalkJob || S.syncing || S.checking || S.portraitJob || S.imageGen?.busy || S.proseGen?.busy))) {
     toast(S.edit ? "편집 내용을 저장하거나 취소한 뒤 이동해 주세요." : "진행 중인 작업을 마치거나 중단한 뒤 이동해 주세요.");
     if (state && state.pos !== Nav.pos) history.go(Nav.pos - state.pos);
     else Nav.write(true);

@@ -337,19 +337,34 @@ const Sync = {
   },
   /* 받아 온 변경을 화면에 반영한다. 작업 중이면 지금 연 세계관은 그대로 두고 알려 준다 */
   async refresh() {
+    const working = () => S.gen || S.storyGen || S.storyTalkJob || S.syncing || S.checking || S.edit || S.bgSync || S.portraitJob || S.imageGen?.busy || S.proseGen?.busy || S.discovery?.busy;
     const cur = S.world?.id, key = S.view.key;
     S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     if (S.view.name === "jobs") {
-      if (cur && !S.gen && !S.storyGen && !S.checking && !S.syncing && !S.edit && !S.imageGen?.busy && !S.proseGen?.busy) {
+      if (cur && !S.gen && !S.storyGen && !S.storyTalkJob && !S.checking && !S.syncing && !S.edit && !S.imageGen?.busy && !S.proseGen?.busy) {
         S.world = S.worlds.find(w => w.id === cur) || null;
         S.pages = S.world ? await Store.listPages(cur) : {};
       }
       renderSide(); return;
     }
     if (cur) {
-      const busy = S.gen || S.storyGen || S.syncing || S.checking || S.edit || S.bgSync || S.portraitJob || S.imageGen?.busy || S.proseGen?.busy || S.discovery?.busy;
+      const busy = working();
       if (!S.worlds.some(x => x.id === cur)) { if (!busy) { S.world = null; S.view = { name: "home" }; renderAll(); } toast("다른 기기에서 이 세계관을 지웠습니다."); return; }
       if (busy) { toast("다른 기기에서 바뀐 내용을 받았습니다. 작업이 끝난 뒤 세계관을 다시 열면 보입니다."); return; }
+      if (S.view.name === "storyTalk" && S.world?.id === cur) {
+        const original = S.world, incoming = S.worlds.find(w => w.id === cur), pages = await Store.listPages(cur);
+        if (S.world !== original || S.view.name !== "storyTalk" || S.view.key !== key || working()) return;
+        if (isStory(incoming)) {
+          const selected = storyTalkKey(incoming, key), input = document.getElementById("storyTalkInput"), focused = input === document.activeElement,
+            start = input?.selectionStart, end = input?.selectionEnd, draft = storyTalkSession(original, key)?.draft;
+          if (selected === key && typeof draft === "string") storyTalkSession(incoming, selected, true).draft = draft;
+          S.world = incoming; S.pages = pages; S.view = { name: "storyTalk", key: selected };
+          renderAll();
+          const restored = document.getElementById("storyTalkInput");
+          if (focused && restored && !restored.disabled) { restored.focus({ preventScroll: true }); restored.setSelectionRange(start, end); }
+          return;
+        }
+      }
       await openWorld(cur, key); toast("다른 기기에서 바뀐 내용을 받았습니다.");
     } else renderAll();
   },

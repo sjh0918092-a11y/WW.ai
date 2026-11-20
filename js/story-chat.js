@@ -29,7 +29,16 @@ function storyTalkStatusOutput(w, key) {
   return `"character":{"key":${JSON.stringify(key)},"state":"available/dead/unconscious/absent/unable 중 상대의 상태","evidence":"선택한 상대에 관한 본문 근거"},"player":{"key":${JSON.stringify(w.story.protagonistKey)},"state":"available/dead/unconscious/absent/unable 중 주인공의 상태","evidence":"주인공에 관한 본문 근거"}`;
 }
 function storyTalkers(w) {
-  return Object.keys(w.entities).filter(k => k !== w.story.protagonistKey && (w.entities[k].type === "인물" || w.story.cast?.some(c => c.key === k)));
+  const latest = new Map();
+  for (const c of w.story.chapters) for (const [key, session] of Object.entries(c.dialogues || {})) {
+    for (const t of session.turns || []) latest.set(key, Math.max(latest.get(key) || 0, Number(t.at) || 0));
+  }
+  return Object.keys(w.entities).filter(k => k !== w.story.protagonistKey && (w.entities[k].type === "인물" || w.story.cast?.some(c => c.key === k)))
+    .sort((a, b) => (latest.get(b) || 0) - (latest.get(a) || 0) || Number(latest.has(b)) - Number(latest.has(a)));
+}
+function storyTalkKey(w, key) {
+  const keys = storyTalkers(w), preferred = w.aliases?.[key] || key || w.story.lastDialogueKey;
+  return keys.includes(preferred) ? preferred : keys.includes(w.story.lastDialogueKey) ? w.story.lastDialogueKey : keys[0];
 }
 function storyTalkSession(w, key, create = false) {
   const c = curCh(w);
@@ -130,8 +139,7 @@ function storyTalkPartial(raw) {
 function openStoryTalk(key) {
   const w = S.world; if (!isStory(w)) return;
   if (S.storyTalkJob) { if (S.storyTalkJob.wid !== w.id) { toast("진행 중인 대화를 마친 뒤 열 수 있습니다."); return; } key = S.storyTalkJob.key; }
-  const preferred = key || w.story.lastDialogueKey;
-  key = storyTalkers(w).includes(preferred) ? preferred : storyTalkers(w)[0];
+  key = storyTalkKey(w, key);
   if (key && w.story.lastDialogueKey !== key) {
     w.story.lastDialogueKey = key;
     if (storyTalkReady(w, key)) Store.saveWorld(w).catch(e => toast("대화 상대를 저장하지 못했습니다. " + errMsg(e)));
