@@ -26,7 +26,7 @@ const server = appServer();
         c.enqueue(enc.encode(event('하세요","memory":"인사","important":false,"state":"available"}')));
         c.close();
       }}),{headers:{'Content-Type':'text/event-stream'}});};
-      try { const out=await gemini.json('가짜 스트리밍 테스트',{modelTier:'quick',taskKind:'storyChat',liveStream:true,onText:u=>chunks.push(storyTalkPartial(u.text))}); return {queued,chunks,requests,reply:out.reply}; }
+      try { const out=await gemini.json('가짜 스트리밍 테스트',{modelTier:'default',taskKind:'storyChat',liveStream:true,onText:u=>chunks.push(storyTalkPartial(u.text))}); return {queued,chunks,requests,reply:out.reply}; }
       finally {window.fetch=originalFetch;AIJobs.enabled=enabled;AIJobs.run=run;}
     });
     assert.equal(transport.queued,false); assert.equal(transport.requests,1);
@@ -69,6 +69,7 @@ const server = appServer();
     await page.evaluate(() => releaseTalk());
     await page.waitForFunction(() => !S.storyTalkJob);
     assert.equal(await page.evaluate(() => storyTalkSession(S.world,'friend').turns.length),1);
+    assert.equal(await page.evaluate(() => talkCalls.find(c=>c.kind==='storyChat').tier),'default','등장인물 대화는 기본 모델 사용');
     assert.equal(await page.evaluate(() => talkCalls.filter(c=>c.kind==='storyChatReview').length),0,'일반 대화는 별도 검사 호출 없음');
     for (const [key,state] of [['dead','dead'],['asleep','unconscious'],['away','absent']]) {
       await page.locator(`[data-talk-key="${key}"]`).click();

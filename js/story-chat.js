@@ -121,7 +121,7 @@ async function sendStoryTalk() {
   const totalTimer = gActiveTimeout(() => { job.timedOut = true; job.ctl.abort(); }, 60000);
   try {
     const prompt = storyTalkPrompt(w, key, text);
-    let out = await callJson("storyChat", prompt, { signal: job.ctl.signal, modelTier: "quick", liveStream: true,
+    let out = await callJson("storyChat", prompt, { signal: job.ctl.signal, modelTier: "default", liveStream: true,
       onText: ({ text: raw }) => { job.raw = storyTalkPartial(raw); if (job.raw) firstTimer(); const el = document.getElementById("storyTalkLive"); if (S.world === w && S.view.key === key && el) el.textContent = job.raw || "응답을 기다리는 중…"; }
     }, { title: w.entities[key].title, ch: n });
     if (job.ctl.signal.aborted || S.world !== w || w.story.chapter !== n) throw { code: "cancelled" };
