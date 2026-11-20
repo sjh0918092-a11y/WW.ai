@@ -99,7 +99,7 @@ function conflictContext(w, k, linkKeys) {
 function factSyncPrompt(w, temp, linkKeys, opts = {}) {
   const ledger = opts.ledger !== false, cats = !!opts.cats;
   const linked = linkKeys.filter(k => w.entities[k]).map(k => w.entities[k].title).join(" / ") || "(없음)";
-  const bare = cats ? linkKeys.filter(k => w.entities[k] && !w.entities[k].page && k !== temp.key).map(k => w.entities[k].title) : [];
+  const bare = cats ? linkKeys.filter(k => w.entities[k] && !w.entities[k].page && k !== temp.key).map(k => w.entities[k]) : [];
   const inputs = writingOptions();
   const doc = docText(temp, w, temp.navboxes), gl = glossaryBlock(w, doc);
   const looks = wantLooks(temp);
@@ -118,7 +118,9 @@ relations에는 이 문서에 나온 인물 사이의 주요 관계를 6개까�
 ${TERMS_SPEC} ${AFFIL_SPEC.replace("{T}", temp.title)} ${SPAN_SPEC.replace("{T}", temp.title)}${cats ? `
 ${catGuide(w, temp.key, inputs.categories ? inputs.categoriesCount : 0, temp.type || "")}${bare.length ? `
 linkedCats에는 아래 문서가 없는 링크 항목 가운데 이 문서에서 소속이나 유형을 알 수 있는 것만 넣는다. 각 항목의 문서 유형에 맞는 위 기준(기존 분류 이름 우선)으로 소속과 유형을 0~1개씩 쓰고, 모르면 빈 배열로 둔다. title은 글자 그대로 쓴다.
-문서가 없는 링크 항목: ${bare.slice(0, 30).join(" / ")}` : ""}` : ""}${looks ? "\n" + looksSpec(w, temp) : ""}`;
+링크 항목의 유형은 이 문서나 그 항목의 정의가 그 항목 자체를 그런 존재·종류라고 밝힐 때만 붙인다. 이 문서의 유형 분류나 이 문서의 주인공·주변 인물이 가진 신분을, 함께 등장하거나 관계가 있다는 이유로 링크 항목에 옮겨 붙이지 않는다. 이 세계 고유의 종류를 먼저 쓰라는 위 기준도 그 항목이 실제로 그 종류일 때만 적용한다.
+문서가 없는 링크 항목:
+${bare.slice(0, 30).map(o => `- ${o.title}${o.type ? " — " + o.type : ""}${o.summary ? ". " + o.summary.slice(0, 60) : ""}`).join("\n")}` : ""}` : ""}${looks ? "\n" + looksSpec(w, temp) : ""}`;
 }
 /* 인물 문서의 외모를 이 호출에서 함께 정한다. 사용자가 직접 고친 외모는 다시 정하지 않는다 */
 const wantLooks = temp => temp.type === "인물" && !S.pages[temp.key]?.looksEditedAt;
