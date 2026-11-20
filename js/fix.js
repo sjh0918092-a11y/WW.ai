@@ -318,8 +318,9 @@ async function applyFix() {
   S.view = { name: "article", key: k }; renderAll(); window.scrollTo({ top: 0 });
   try { await Store.savePage(w.id, page); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); return; }
   toast(`${applied}곳을 고쳤습니다.${missed ? ` 겹쳐서 적용하지 못한 수정 ${missed}곳은 건너뛰었습니다.` : ""}`);
-  bgSync(k);
-  recheckAfterFix(k);
+  // 서버 검사는 동기화된 원본으로 시작한다. 사실 정리가 뒤늦게 저장되면 검사 중 원본이 바뀌므로 먼저 마친다.
+  await bgSync(k);
+  if (S.world === w && S.pages[k] === page && !page.stale) recheckAfterFix(k);
 }
 /* 고치기는 검사 결과를 지운다. 고친 문서가 다른 문서와 다시 어긋나는지 설정 검사만 다시 돌려 메모로 보여 준다(자동 수정은 하지 않는다).
    작성 직후 검사를 끈 사용자에게는 돌리지 않는다 */

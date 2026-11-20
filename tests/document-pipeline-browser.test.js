@@ -69,6 +69,33 @@ const until=async(fn,ms=20000)=>{const t=Date.now();while(Date.now()-t<ms){if(aw
   assert.equal(await page.evaluate(()=>S.genQ.length),0);assert.equal(jobs().filter(j=>j.meta?.title==='검색 선원').length,1);
   pass('서버 작성 중 검색창으로 넣은 대기 문서도 앞 문서가 끝난 뒤 건너뛰지 않고 작성한다');
 
+  // 교정 뒤 사실 정리의 저장이 끝나기 전에 서버 검사를 접수하면 같은 원본을 서로 바꾸게 된다.
+  await fixture('교정 대기 항목');
+  const beforeFixJobs=jobs().length;
+  await page.evaluate(()=>{
+   const k=S.world.mainKey,p=S.pages[k],original=callJson;
+   window.restoreFixCalls=()=>{callJson=original};
+   callJson=async(kind,...args)=>{
+    if(kind!=='factSync')return original(kind,...args);
+    await new Promise(r=>{window.releaseFixFacts=r});
+    return {facts:[{about:p.title,fact:'교역의 중심지이다.'}],relations:[],timeline:[]};
+   };
+   startFix({key:k,items:[{claim:'거대한 항구이다.',conflict:'항구의 역할을 밝혀야 한다.',severity:'high'}],sel:new Set([0]),phase:'review',
+    edits:[{n:0,field:'body',old:'거대한 항구이다.',new:'교역의 중심지이다.',on:true}],note:'',err:'',skipped:0},{run:false});
+   window.fixedFlow=applyFix();
+  });
+  await page.waitForFunction(()=>!!window.releaseFixFacts);
+  assert.equal(await page.evaluate(()=>S.checking),null,'사실 정리를 기다리는 동안 설정 검사를 시작하지 않는다');
+  assert.equal(jobs().length,beforeFixJobs,'사실 정리의 저장 전에는 서버 검사 작업도 접수하지 않는다');
+  await page.evaluate(()=>{window.releaseFixFacts();return window.fixedFlow});
+  await until(()=>jobs().length>beforeFixJobs&&jobs().at(-1).status==='succeeded');
+  await page.waitForFunction(()=>!S.checking&&!!S.pages[S.world.mainKey].check);
+  const fixedKey=await page.evaluate(()=>S.world.mainKey),fixedPage=JSON.parse(db.sqlite.prepare('SELECT data FROM pages WHERE pkey=?').get(fixedKey).data);
+  assert.equal(fixedPage.sections[0].body,'교역의 중심지이다.');assert(fixedPage.check);
+  assert(JSON.parse(db.sqlite.prepare("SELECT data FROM worlds WHERE wid='browser-world'").get().data).entities[fixedKey].facts.some(f=>f.t==='교역의 중심지이다.'));
+  assert.equal(await page.evaluate(()=>Sync.pending()),0);await page.evaluate(()=>window.restoreFixCalls());
+  pass('교정 뒤 사실 정리·저장·동기화를 마친 원본으로 서버 검사를 진행해 충돌 없이 수정과 검사 결과를 보존한다');
+
   assert.deepEqual(errors,[]);pass('공유 엔진·작업 화면·문서 열기에서 브라우저 오류가 없다');
  }finally{globalThis.fetch=originalFetch;for(const e of entries.values())clearTimeout(e.timer);await context?.close();await browser?.close();await new Promise(r=>server.close(r));db.sqlite.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});
