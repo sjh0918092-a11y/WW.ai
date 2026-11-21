@@ -80,7 +80,7 @@ test('새 문서 생성과 읽기 검사는 긴 원문의 참조와 앞뒤 문�
   c.S.pages[child.key] = child; w.entities[child.key].page = true;
   const read = c.readPrompt(w, child.key);
   for (const prompt of [generated, read]) for (const text of [before, ref, after]) assert.ok(prompt.includes(text), text);
-  assert.ok(read.includes('이 문서가 설명할 내용을 쓴 대목이면 축약·삭제로 지적하지 않는다'));
+  assert.ok(read.includes('상대 원문에 이름·결과만 있으면 설명을 되풀이한 것이 아니다'));
   assert.equal(JSON.stringify(parent), snapshot);
   assert.equal(parent.autoConflicts, undefined);
 });
@@ -99,7 +99,7 @@ test('참고 문구 없이 지명을 링크하고 결과만 쓴 사건 원문도
   for (const prompt of [c.pagePrompt(w, place.key), c.readPrompt(w, place.key)]) {
     assert.ok(prompt.includes('북부 협곡의 결전'));
     assert.ok(prompt.includes(event.sections[0].body));
-    assert.ok(prompt.includes('명시적인 참고 문구가 없어도'));
+    assert.ok(prompt.includes('이름·링크·결과 요약만 있는 곳으로 설명을 넘기지 않는다'));
   }
 });
 test('관련 대목을 넓혀도 이야기 모드의 미래 원문은 전달하지 않는다', () => {

@@ -121,12 +121,23 @@ test('사건 장부: 상세 서술을 맡은 참가자 문서는 먼저 쓴 개�
   assert.match(c.eventBlock(w, K('레베카'), []), /장부는 어긋남을 막는 기준이지 채워 넣을 재료가 아니다/);
 });
 
-test('다른 항목과 얽힌 일: 세 경우로 주인을 가르고, 참고 문구는 사건에만, 큰 일은 사건 항목으로 만든다', () => {
+test('요약뿐인 사건 문서가 있어도 상세 설명이 있다고 단정해 참조를 강제하지 않는다', () => {
+  const ev = page('남부 공세', '사건', '[[북부 협곡]]에서 결전을 벌여 방어선을 돌파했다.', 1);
+  const place = page('북부 협곡', '지명', '공세의 통로로 쓰였다. 자세한 내용은 [[남부 공세]] 참고.', 2);
+  const w = world([ev, place]);
+  w.events = [{ k: ev.key, name: ev.title, date: '2003년', place: place.title, nums: [], parts: [place.key], result: '돌파', src: ev.key, createdAt: 1 }];
+  const block = c.eventBlock(w, place.key, [ev.key]);
+  assert.ok(block.includes(ev.title));
+  assert.doesNotMatch(block, /문서에 자세히 서술되어 있다|2~3문장으로 요약하고|장면을 다시 묘사하지 않는다/);
+  assert.doesNotMatch(c.pagePrompt(w, place.key), /세부는 그 사건의 문서가 정하도록 비워 둔다/);
+});
+
+test('다른 항목과 얽힌 일: 상대 원문의 실제 설명을 확인하고 요약하며 새 링크 때문에 비우지 않는다', () => {
   const w = world([page('러시아', '국가', '러시아다.', 1), page('옥사나', '인물', '1992년 옥사나는 [[러시아]] 해군으로 옮겼다.', 2)]);
   const pr = c.pagePrompt(w, K('러시아'));
-  assert.match(pr, /다른 항목과 얽힌 일: 관련 원문이 이 항목의 일을 이름·결과만 적었다면/);
-  assert.match(pr, /1\. 사건 항목이 있는 일:/); assert.match(pr, /2\. 사건 항목이 없고 이 항목만 겪은 일: 이 문서가 주인이다/); assert.match(pr, /3\. 사건 항목이 없고 다른 인물과 함께 겪은 일: 공통 사실/);
-  assert.match(pr, /참고 문구의 대상은 1의 사건뿐이다/); assert.match(pr, /개요만 한두 문장으로 쓰고/); assert.match(pr, /혁명, 체제 붕괴, 조약 체결, 재난처럼 여러 세력이 얽힌 일\)이나 실제 역사의 큰 사건/); assert.match(pr, /나쁜 예: '2003년 3월 20일/);
+  assert.match(pr, /다른 항목과 얽힌 일: 관련 원문과 이 문서의 범위를 읽고/);
+  assert.match(pr, /1\. 사건 원문에 해당 설명이 있는 일:/); assert.match(pr, /2\. 사건 항목이 없고 이 항목만 겪은 일: 이 문서가 주인이다/); assert.match(pr, /3\. 사건 항목이 없고 다른 인물과 함께 겪은 일: 공통 사실/);
+  assert.match(pr, /참고 문구의 대상은 1의 사건뿐이다/); assert.match(pr, /새 링크나 아직 없는 문서를 이유로 이 문서에서 설명할 내용을 비워 두지 않는다/); assert.doesNotMatch(pr, /세부는 그 사건의 문서가 정하도록 비워 둔다/);
   assert.match(pr, /필요한 만큼 만들어 링크한다/); assert.doesNotMatch(pr, /두세 개 만들어/);
   assert.match(pr, /장면의 주체는 이 항목 자신이다/); assert.match(pr, /다른 인물이 주인공인 장면/); assert.match(pr, /절정은 이 문서만의 장면이어야 한다/);
   const ex = c.ownerExcerptBlock(w, K('러시아'), [K('옥사나')]);
@@ -139,7 +150,7 @@ test('참고로 넘길 사건 목록은 앱이 항목 유형으로 정한다(인
   w.entities[K('조슬린')] = { ...c.newEntity('조슬린', '인물', ''), page: false, facts: [{ t: '조슬린은 스프래틀리 군도 대치에 나섰다.', src: K('전략 소녀') }],
     mentions: [{ from: K('바그다드 공방전'), text: '조슬린이 나온다.' }, { from: K('레이첼'), text: '레이첼이 조슬린을 만났다.' }, { from: K('전략 소녀'), text: '조슬린이 대치 중이다.' }] };
   const pr = c.pagePrompt(w, K('조슬린'));
-  const b = pr.slice(pr.indexOf('## 참고로 넘길 사건')).split('\n\n')[0];
+  const b = pr.slice(pr.indexOf('## 대조할 관련 사건')).split('\n\n')[0];
   assert.match(b, /\[\[바그다드 공방전\]\]/); assert.match(b, /\[\[스프래틀리 군도 대치\]\] \(아직 문서 없음\)/);
   assert.doesNotMatch(b, /\[\[레이첼\]\]|\[\[전략 소녀\]\]/);
 });
@@ -149,7 +160,7 @@ test('엔진: 이 문서가 주인인 일만 크게 쓰는 전제, 사람의 끝
   const pr = c.pagePrompt(w, K('레이첼'));
   const engine = pr.slice(pr.indexOf('## 이 문서의 엔진'), pr.indexOf('## 이 문서의 엔진') + 3000);
   assert.match(engine, /세 가지를 먼저 정하고/); assert.match(engine, /전제: 이 문서가 크게 쓰는 것은 이 문서가 주인인 일뿐이다/);
-  assert.match(engine, /참고 문구는 세부를 대신하는 것이므로/); assert.match(engine, /절정과 큰길은 이 문서가 주인인 일에서 고른다/); assert.match(engine, /무대는 이 항목의 눈에 보인 것/);
+  assert.match(engine, /사건 이름이나 링크가 있다는 이유로 이 문서의 핵심 장면을 비우지 않는다/); assert.match(engine, /절정과 큰길은 이 문서가 주인인 일에서 고른다/); assert.match(engine, /무대는 이 항목의 눈에 보인 것/);
   assert.doesNotMatch(pr, /사람의 끝/); assert.doesNotMatch(engine, /4\. /);
   assert.match(pr, /상대 인물의 직위, 그 인물이 내린 결정, 그 인물의 이후 경력은 그 인물의 문서에 남긴다/);
 });
@@ -162,7 +173,7 @@ test('원안의 지금 진행 중인 일은 짧게 만들게 하고, 넘길 때�
   assert.match(pr, /## 지금 진행 중인 일\n관리국과 사령부가[^\n]*\n\(무대 설명이다\. 문서에서는 이 항목이 이 일에서 맡은 역할만 쓰고/);
 });
 
-test('문서 읽기 검사: 앱이 정한 사건의 재서술을 다듬을 곳으로 짚게 하고, 자동 수정은 문단째 줄이게 한다', () => {
+test('재서술 검사와 수정: 상대 원문의 실제 설명을 근거로 중복만 줄이며 설명 공백은 보완한다', () => {
   const ev = page('바그다드 참호 돌파', '사건', '2003년 3월 20일 새벽 5시 15분에 시작했다.', 1);
   const con = page('전략 소녀', '개념', '개념이다.', 2);
   const per = page('레베카 헤이즈', '인물', '2003년 [[바그다드 참호 돌파]]에서 새벽 5시 15분 참호에 도달했다. 152mm 포탄이 쏟아졌다. 자세한 내용은 [[바그다드 참호 돌파]] 참고.\n\n[[전략 소녀]]로 복무했다.', 3);
@@ -173,12 +184,14 @@ test('문서 읽기 검사: 앱이 정한 사건의 재서술을 다듬을 곳�
   c.S.pages[K('레베카 헤이즈')].links.push(K('남중국해 대치'));
   const rp = c.readPrompt(w, K('레베카 헤이즈'));
   const b = rp.slice(rp.indexOf('## 다른 사건의 재서술'), rp.indexOf('## 다른 사건의 재서술') + 2500);
-  assert.match(b, /\[\[바그다드 참호 돌파\]\]/); assert.match(b, /\[\[남중국해 대치\]\] \(아직 문서 없음\)/); assert.doesNotMatch(b.slice(0, b.indexOf('이 사건들을')), /\[\[전략 소녀\]\]/);
-  assert.match(b, /문단마다 하나씩 severity high로 지적하되/); assert.match(b, /'재서술\(줄임\):'으로 시작해/); assert.match(b, /'재서술\(지움\):'으로 시작해/); assert.match(b, /같은 섹션 안에서 같은 사건의 요약이 되풀이된 곳/); assert.match(b, /인물 관계, 현재처럼 다른 목적의 섹션이/); assert.match(b, /참고 문구 앞이든 뒤든/);
-  const none = c.readPrompt(w, K('전략 소녀'));   // 연결된 사건이 없어도 사건 항목 없는 큰 사건의 재서술은 짚는다
-  assert.match(none, /## 다른 사건의 재서술 \(앱이 정한 목록\)\n아래[^\n]*\n- \(없음\)/); assert.match(none, /사건 항목 없음: \[\[붙일 사건 이름\]\]/); assert.match(none, /체제 붕괴/);
+  assert.match(b, /\[\[바그다드 참호 돌파\]\]/); assert.match(b, /\[\[남중국해 대치\]\] \(아직 문서 없음\)/);
+  assert.match(b, /evidence에는 같은 경위를 실제로 서술한 상대 원문의 구절/);
+  assert.match(b, /서술 분량만으로 축약·삭제를 요구하지 않는다/);
+  assert.match(b, /'서술 공백:'으로 시작하는 conflict로 high/);
+  const none = c.readPrompt(w, K('전략 소녀'));
+  assert.doesNotMatch(none, /사건 항목 없음: \[\[붙일 사건 이름\]\]/);
   const fp = c.fixBatchPrompt(w, c.S.pages[K('레베카 헤이즈')], { summary: '', cats: '', infobox: '', body: '본문' }, [{ claim: '2003년', conflict: '근거: 참고로 넘길 사건: [[바그다드 참호 돌파]] · 재서술: 줄인다' }]);
-  assert.match(fp, /'재서술\(지움\):' 메모는 지적된 문단이나 인용문 전체를 old로 잡아 new를 빈 문자열로 둔다/); assert.match(fp, /'재서술\(줄임\):' 메모는/); assert.match(fp, /근거가 '사건 항목 없음:'이면/); assert.match(fp, /이 대상의 일로 바꾸지 않는다/);
+  assert.match(fp, /'재서술\(지움\):' 메모는 지적된 문단이나 인용문 전체를 old로 잡아 new를 빈 문자열로 둔다/); assert.match(fp, /'재서술\(줄임\):' 메모는/); assert.match(fp, /상대 원문에 그 설명이 없으면 축약·삭제하지 않고 메모를 건너뛴다/); assert.ok(fp.includes(ev.sections[0].body)); assert.match(fp, /이 대상의 일로 바꾸지 않는다/);
 });
 
 test('설정 검사: 같은 이름이 날짜·나이로 맞지 않으면 단정하지 않고 보이는 메모(low)로 남기게 한다', () => {
@@ -193,6 +206,27 @@ test('작업별 생각 수준: OpenAI 모델에서 공통 배정 따름이 "inhe
   const html = c.taskThinkOptions('gpt-6-luna', 'inherit');
   assert.equal((html.match(/value="inherit"/g) || []).length, 1);
   assert.doesNotMatch(html, /inherit \(지원하지 않음\)/); assert.match(html, /value="inherit" selected>공통 배정 따름/);
+});
+
+test('작성 직후 설명 공백 수정은 상대 원문을 받고 현재 문서만 보완한다', async () => {
+  const original = '돌파로로 쓰였다. 자세한 내용은 [[남부 공세]] 참고.';
+  const event = page('남부 공세', '사건', '협곡에서 결전을 벌여 방어선을 돌파했다.', 1);
+  const place = page('북부 협곡', '지명', original, 2);
+  const w = world([event, place]), before = JSON.stringify(event);
+  const expanded = '선봉 부대는 관개수로를 건너 방호벽 측면을 뚫었다. 후속 부대는 열린 통로로 진입했다.';
+  c.__gap = { original, expanded, evidence: event.sections[0].body, fixPrompt: '' };
+  vm.runInContext(`callJson = async (kind, prompt) => {
+    if (kind === 'read') return { issues: [{ claim: __gap.original, evidence: __gap.evidence, conflict: '서술 공백: 이곳에서 방어선을 돌파한 경위를 현재 문서에 설명한다.', severity: 'high' }] };
+    if (kind !== 'fix') return { issues: [] };
+    __gap.fixPrompt = prompt;
+    return { edits: [{ memo: 1, field: 'body', old: __gap.original, new: __gap.expanded }] };
+  }`, c);
+  const res = await c.preCheck(w, place.key, place, { ctl: new AbortController() }, () => {});
+  assert.ok(c.__gap.fixPrompt.includes(event.sections[0].body), '현재 이름을 쓰지 않은 상대 원문도 수정 모델에 전달한다');
+  assert.ok(res.page.sections.some(s => s.body.includes(expanded)));
+  assert.equal(res.fixed, 1);
+  assert.equal(JSON.stringify(c.S.pages[event.key]), before);
+  assert.equal(event.autoConflicts, undefined);
 });
 
 test('자동 수정: 같은 문단에 재서술(지움)과 다른 수정이 겹치면 지움을 먼저 적용하고, 지워진 문장의 메모는 남기지 않는다', async () => {
@@ -293,13 +327,15 @@ test('참고 문구는 문서에서 한 번만: 중복은 참고 문장만 지�
   assert.match(fp, /'재서술\(참고 중복\):' 메모는 지적된 참고 문장 하나만/); assert.match(fp, /인물 관계 항목을 사건 요약이나 참고 문구로 바꾸지 않는다/);
 });
 
-test('사건 문서가 다른 사건 항목을 다룰 때는 그 사건 문서가 주인이고, 의미를 두세 문장으로 쓰게 한다', () => {
+test('사건·인물 모두 다른 사건의 실제 설명을 확인하며 유형별 문장 수로 축약하지 않는다', () => {
   const big = page('쿠바 미사일 위기', '사건', '위기다. [[카리브해 대치]]가 있었다.', 1), sub = page('카리브해 대치', '사건', '대치다.', 2), per = page('캔자스', '인물', '[[카리브해 대치]]에 나갔다.', 3);
   const w = world([big, sub, per]); for (const t of ['쿠바 미사일 위기', '카리브해 대치']) w.entities[K(t)].type = '사건'; w.entities[K('캔자스')].type = '인물';
-  assert.match(c.pagePrompt(w, K('쿠바 미사일 위기')), /사건 문서에서는 그 사건이 전체 흐름에서 어떤 의미였는지 두세 문장으로 쓰고/);
-  const rb = c.readPrompt(w, K('쿠바 미사일 위기'));
-  assert.match(rb, /그 사건이 이 사건의 흐름에서 어떤 의미였는지 두세 문장으로만 쓰고/); assert.match(rb, /이 항목이 한 일 두세 문장을 넘는 서술/);
-  assert.match(c.readPrompt(w, K('캔자스')), /이 항목이 한 일 한두 문장을 넘는 서술/);
+  assert.match(c.pagePrompt(w, K('쿠바 미사일 위기')), /해당 사건 원문에 실제로 설명되어 있으면 그 부분은 요약한다/);
+  for (const key of [K('쿠바 미사일 위기'), K('캔자스')]) {
+    const read = c.readPrompt(w, key);
+    assert.match(read, /서술 분량만으로 축약·삭제를 요구하지 않는다/);
+    assert.doesNotMatch(read, /이 항목이 한 일 (한두|두세) 문장을 넘는 서술/);
+  }
 });
 
 test('작성 직후 리뷰가 실패하면 진단 기록에 남긴다', async () => {
@@ -324,7 +360,7 @@ test('작성 직후 리뷰에서 고칠 곳이 없어도 검사 요약을 진단
 test('자동 수정 지침: 지운 문단에 기대는 앞뒤 문장도 고치고, 참고 문장은 문서에서 한 번만 붙인다', () => {
   const w = world([page('카일', '인물', '카일은 병사다.', 1)]);
   const p = c.fixBatchPrompt(w, c.S.pages[K('카일')], { summary: '', cats: '', infobox: '', body: '카일은 병사다.' }, [{ claim: '카일은 병사다.', conflict: '재서술(지움): x', severity: 'high' }]);
-  assert.match(p, /참고 문장은 문서 전체에서 한 번만/); assert.match(p, /반드시 하나는 남긴다/); assert.match(p, /참여하지 않고 다른 항목의 일이나 배경으로만 나오는 문단이면, 짧게 줄이되 참고 문장을 붙이지 않고/); assert.match(p, /개요가 아닌 첫 섹션의 수정 하나에 붙이고/); assert.match(p, /이름을 문장마다 주어로 되풀이하지 않고/); assert.match(p, /그 내용을 전제로 하는 앞뒤 문장/); assert.match(p, /되풀이하게 되면/);
+  assert.match(p, /참고 문장은 실제 설명이 있는 문서로 한 번만/); assert.match(p, /배경 언급은 링크만 남긴다/); assert.match(p, /문장 수를 강제로 맞추거나 날짜·수치를 일괄 삭제하지 않는다/); assert.match(p, /그 내용을 전제로 하는 앞뒤 문장/); assert.match(p, /되풀이하게 되면/);
 });
 
 test('일반 서술: 작성은 원문 사례와 맞을 때만 묶어 쓰고, 리뷰는 양쪽 방향으로 개별 사례와 대조한다', () => {

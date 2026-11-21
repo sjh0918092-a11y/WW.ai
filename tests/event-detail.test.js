@@ -53,18 +53,19 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
 
     await page.evaluate(k => openEntity(k), K('신참')); await page.waitForFunction(k => S.pages[k] && !S.gen, K('신참')); await page.evaluate(() => Store.q);
     const pp = calls.filter(c => c.includes('## 작성할 문서: 「신참」')).pop();
-    for (const t of ['### 자세한 서술을 맡은 문서', '이 사건은 「동료」 문서에 자세히 서술되어 있다', '이 항목의 관점에서 2~3문장으로 요약하고', "'자세한 내용은 [[동료]] 문서 참조'를 붙인다", '장면을 다시 묘사하지 않는다', '상세 서술 문서에 없는 이 항목만의 관점',
+    for (const t of ['### 사건 관련 문서', '「기지 요격전」: 「동료」', '이 기록만으로 해당 대목이 자세히 서술되어 있다고 가정하지 않고',
       '### 핵심 경과', '「기지 요격전」 (「주인공」): 동맹 북부군 사령부 — 요격 명령 → 주인공 — 양팔을 등 뒤로 꺾어 결속 → 주인공 — 진정제 직접 투여', '이 경과의 주체와 행위는 바꾸지 않는다. 세부 묘사는 덧붙여도 된다', '"detail":"true 또는 false"', '"beats":[{"actor"', '한 문단 넘게 자세히 서술했으면 true'])
       assert(pp.includes(t), t);
     const mine = await page.evaluate(k => S.world.events.find(x => x.src === k), K('신참'));
     assert.deepStrictEqual([mine.detail, mine.detailIn, mine.beats.length], [undefined, K('동료'), 3]);
-    pass('detailIn이 다른 문서인 사건을 다루면 요약·참조 링크 지시와 기준 핵심 경과가 프롬프트에 들어가고, 생성 응답의 beats·detail도 장부에 저장된다');
+    pass('detailIn이 다른 문서인 사건을 다루면 대조할 문서 후보와 기준 핵심 경과가 프롬프트에 들어가고, 생성 응답의 beats·detail도 장부에 저장된다');
 
     const named = await page.evaluate(() => { const w = S.world, k = keyOf('기지 요격전'); S.pages[k] = { key: k, title: '기지 요격전', type: '사건', summary: '요격전', infobox: [], sections: [{ heading: '개요', level: 1, body: '요격전.' }], links: [], createdAt: 9 }; w.entities[k].page = true;
       const r = { d: eventDetailIn(w, k), block: eventBlock(w, keyOf('신참'), []), own: eventBlock(w, k, []) }; return r; });
-    assert.equal(named.d, K('기지 요격전')); assert(named.block.includes('이 사건은 「기지 요격전」 문서에 자세히 서술되어 있다') && named.block.includes('[[기지 요격전]] 문서 참조'));
-    assert(!named.own.includes('### 자세한 서술을 맡은 문서'), '사건 이름의 문서 자신에게는 요약 지시를 넣지 않는다');
-    pass('사건 이름으로 된 문서가 있으면 그 문서가 상세 서술을 맡는다');
+    assert.equal(named.d, K('기지 요격전')); assert(named.block.includes('「기지 요격전」: 「기지 요격전」'));
+    assert(!named.block.includes('문서에 자세히 서술되어 있다') && !named.block.includes('2~3문장으로 요약하고'), '한 문장뿐인 문서를 상세 서술이 있는 곳으로 단정하지 않는다');
+    assert(!named.own.includes('### 사건 관련 문서'), '사건 이름의 문서 자신에게는 요약 지시를 넣지 않는다');
+    pass('사건 이름의 문서는 대조 후보가 되지만 설명이 실제로 있다고 단정하지 않는다');
 
     const chk = await page.evaluate(() => { const w = S.world; return { read2: readPrompt(w, keyOf('동료')), read1: readPrompt(w, keyOf('주인공')), check2: checkPrompt(w, keyOf('동료')) }; });
     for (const t of ['## 다른 문서가 먼저 기록한 사건의 핵심 경과', '주체(누가)와 행위(무엇을)를 다르게 썼는지', '동맹 북부군 사령부 — 요격 명령', 'evidence에 아래 경과 줄을 옮긴다']) assert(chk.read2.includes(t), t);
