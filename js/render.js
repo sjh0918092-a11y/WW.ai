@@ -330,7 +330,7 @@ function prefsFormHtml() {
       <summary>분위기 조절 <span class="note" style="font-weight:400">선택 · 고르지 않은 항목은 원안에 맡깁니다${set ? " · 조절함" : ""}</span></summary>
       ${WORLD_AXES.map(ax).join("\n      ")}
       <div class="pref-ax pref-avoid" role="group" aria-label="피하고 싶은 것"><span class="pref-nm">피하고 싶은 것</span>
-        ${WORLD_AVOID.map(x => `<button type="button" class="stab" data-pref-avoid="${x.id}" aria-pressed="${p.avoid.includes(x.id)}" ${dis}>${esc(x.name)}</button>`).join("")}</div>
+        ${avoidFor(S.mode === "story").map(x => `<button type="button" class="stab" data-pref-avoid="${x.id}" aria-pressed="${p.avoid.includes(x.id)}" ${dis}>${esc(x.name)}</button>`).join("")}</div>
       <input id="avoidIn" class="txt" type="text" maxlength="${WORLD_AVOID_TEXT_MAX}" value="${esc(S.prefs?.avoidText || "")}" placeholder="직접 입력 (예: 동물이 다치는 장면, 학교 폭력)" aria-label="피하고 싶은 것 직접 입력" ${dis}>
     </details>`;
 }

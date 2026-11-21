@@ -19,11 +19,13 @@ const server = appServer();
 
     // 프롬프트: 고르지 않으면 블록이 없고, 고르면 긍정형 서술만 들어간다
     const pr = await page.evaluate(() => {
-      const prefs = { axes: { light: 2, focus: 5, scale: 9 }, avoid: ['war', 'tragic', 'nope'], avoidText: '동물이 다치는 장면' };
+      const prefs = { axes: { light: 2, focus: 5, scale: 9 }, avoid: ['war', 'tragic', 'grim', 'nope'], avoidText: '동물이 다치는 장면' };
       return { none: biblePrompt('원안', '', '', false), empty: biblePrompt('원안', '', '', false, {}, { axes: {}, avoid: [], avoidText: '  ' }),
         set: biblePrompt('원안', '', '', false, {}, prefs), story: biblePrompt('원안', '', '', true, { total: 5 }, prefs),
         part: biblePartPrompt('원안', '', '', false, {}, bibleParts(false)[0], {}, prefs), norm: normPrefs(prefs),
-        light2: WORLD_AXES[0].say[1], focus5: WORLD_AXES[3].say[4], war: WORLD_AVOID.find(x => x.id === 'war').say };
+        light2: WORLD_AXES[0].say[1], focus5: WORLD_AXES[3].say[4], war: WORLD_AVOID.find(x => x.id === 'war').say,
+        grim: WORLD_AVOID.find(x => x.id === 'grim').say, tragic: WORLD_AVOID.find(x => x.id === 'tragic').say,
+        onlyStory: biblePrompt('원안', '', '', false, {}, { avoid: ['tragic', 'death'] }) };
     });
     assert(!pr.none.includes('사용자가 고른 방향') && !pr.empty.includes('사용자가 고른 방향'));
     for (const t of [pr.set, pr.story, pr.part]) {
@@ -31,7 +33,11 @@ const server = appServer();
       assert(!t.includes('전쟁 중심') && !t.includes('비극적 결말') && !t.includes('디스토피아'), '칩 이름은 모델에 보내지 않는다');
       assert(t.includes('긍정형'));
     }
-    assert.deepStrictEqual(pr.norm, { axes: { light: 2, focus: 5 }, avoid: ['tragic', 'war'], avoidText: '동물이 다치는 장면' });
+    // 모드별 칩: 위키는 비참한 최후, 스토리는 비극적 결말
+    for (const t of [pr.set, pr.part]) assert(t.includes(pr.grim) && !t.includes(pr.tragic));
+    assert(pr.story.includes(pr.tragic) && !pr.story.includes(pr.grim));
+    assert(!pr.onlyStory.includes('사용자가 고른 방향'), '그 모드에 없는 칩만 고른 경우 블록을 넣지 않는다');
+    assert.deepStrictEqual(pr.norm, { axes: { light: 2, focus: 5 }, avoid: ['grim', 'tragic', 'war'], avoidText: '동물이 다치는 장면' });
 
     // 화면: 단계를 고르고, 같은 단계를 다시 누르면 자동으로 돌아간다
     await page.evaluate(() => { S.view = { name: 'home' }; S.mode = 'basic'; renderMain(); });
@@ -42,8 +48,9 @@ const server = appServer();
     await page.click('[data-pref-ax="scale"][data-pref-lv="1"]');
     await page.click('[data-pref-ax="scale"][data-pref-lv="1"]');
     assert.strictEqual(await page.getAttribute('[data-pref-ax="scale"][data-pref-lv="0"]', 'aria-pressed'), 'true');
-    await page.click('[data-pref-avoid="death"]');
-    assert.strictEqual(await page.getAttribute('[data-pref-avoid="death"]', 'aria-pressed'), 'true');
+    assert(!(await page.$('[data-pref-avoid="death"]')) && !(await page.$('[data-pref-avoid="tragic"]')), '위키 모드에는 이야기용 칩이 없다');
+    await page.click('[data-pref-avoid="grim"]');
+    assert.strictEqual(await page.getAttribute('[data-pref-avoid="grim"]', 'aria-pressed'), 'true');
     await page.fill('#avoidIn', '학교 폭력');
     assert(await page.evaluate(() => document.getElementById('prefsBox').open), '고른 뒤에도 펼친 상태를 유지한다');
 
@@ -64,7 +71,9 @@ const server = appServer();
     });
     const bible = made.seen.filter(x => x.kind === 'bible');
     assert(bible.length && bible.every(x => x.text.includes('사용자가 고른 방향') && x.text.includes('학교 폭력')));
-    assert.deepStrictEqual(made.saved, { axes: { light: 4 }, avoid: ['death'], avoidText: '학교 폭력' });
+    assert.deepStrictEqual(made.saved, { axes: { light: 4 }, avoid: ['grim'], avoidText: '학교 폭력' });
+    await page.evaluate(() => { S.mode = 'story'; renderMain(); });
+    assert(await page.$('[data-pref-avoid="tragic"]') && await page.$('[data-pref-avoid="death"]') && !(await page.$('[data-pref-avoid="grim"]')), '스토리 모드 칩');
     assert(!made.page.includes('사용자가 고른 방향') && !made.page.includes('학교 폭력'), '문서 프롬프트에는 보내지 않는다');
     assert(made.tone.includes('사용자가 고른 방향'), '분위기 지침을 다시 만들 때도 반영한다');
     assert.strictEqual(made.cleared, null);

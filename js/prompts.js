@@ -66,13 +66,17 @@ const WORLD_AXES = [
     "인물과 관계를 중심에 두되, 그들이 사는 세계의 설정을 함께 보여 준다.",
     "인물과 관계가 중심인 위키. 사람들의 선택, 감정, 관계와 그 결과를 가장 많이 다룬다."] }
 ];
+/* only: 그 모드에서만 보이고 보낸다. 위키는 정지한 시점의 기록이라 역사 속 인물의 죽음은 자연스럽고 '결말'이 없으므로,
+   이야기의 결말·주요 인물의 죽음 대신 '비참한 최후' 하나를 둔다 */
 const WORLD_AVOID = [
-  { id: "tragic", name: "비극적 결말", say: "인물들의 이야기는 희망이나 회복의 여지를 남기며 맺는다." },
+  { id: "grim", name: "비참한 최후", only: "basic", say: "인물의 생애와 사건은 성취, 회복, 남긴 것이 보이도록 정리한다. 세월에 따른 자연스러운 죽음은 그대로 다룬다." },
+  { id: "tragic", name: "비극적 결말", only: "story", say: "인물들의 이야기는 희망이나 회복의 여지를 남기며 맺는다." },
   { id: "gore", name: "잔혹한 묘사", say: "폭력과 피해는 결과와 무게로 전하고, 신체의 상처와 고통을 자세히 묘사하지 않는다." },
-  { id: "death", name: "주요 인물의 죽음", say: "주요 인물들은 위기를 겪더라도 살아남아 이야기를 이어 간다." },
+  { id: "death", name: "주요 인물의 죽음", only: "story", say: "주요 인물들은 위기를 겪더라도 살아남아 이야기를 이어 간다." },
   { id: "war", name: "전쟁 중심", say: "세계의 중심 갈등은 경쟁, 협상, 탐험, 생활의 문제처럼 사람과 공동체 사이의 일로 다룬다." }
 ];
 const WORLD_AVOID_TEXT_MAX = 200;
+const avoidFor = story => WORLD_AVOID.filter(x => !x.only || x.only === (story ? "story" : "basic"));
 function normPrefs(p) {
   const axes = {}, src = p && typeof p === "object" && p.axes && typeof p.axes === "object" ? p.axes : {};
   for (const a of WORLD_AXES) { const v = src[a.id]; if (Number.isInteger(v) && v >= 1 && v <= 5) axes[a.id] = v; }
@@ -81,11 +85,12 @@ function normPrefs(p) {
   return { axes, avoid, avoidText };
 }
 const prefsEmpty = p => { const n = normPrefs(p); return !Object.keys(n.axes).length && !n.avoid.length && !n.avoidText; };
-function prefsBlock(p) {
+function prefsBlock(p, story = false) {
   if (prefsEmpty(p)) return "";
   const n = normPrefs(p);
   const lines = [...WORLD_AXES.filter(a => n.axes[a.id]).map(a => `- ${a.name}: ${a.say[n.axes[a.id] - 1]}`),
-    ...WORLD_AVOID.filter(x => n.avoid.includes(x.id)).map(x => "- " + x.say)];
+    ...avoidFor(story).filter(x => n.avoid.includes(x.id)).map(x => "- " + x.say)];
+  if (!lines.length && !n.avoidText) return "";
   return `
 사용자가 고른 방향:
 ${lines.join("\n")}${n.avoidText ? `${lines.length ? "\n" : ""}- 사용자가 이 세계에서 두드러지지 않기를 바라는 것(아래 글):
@@ -104,7 +109,7 @@ function tonePrompt(w, label) {
 ${w.seed}
 """
 작중 기준 시점: ${w.era}
-${w.guide ? `작가 지침:\n${w.guide}\n` : ""}${prefsBlock(w.prefs)}핵심 규칙:
+${w.guide ? `작가 지침:\n${w.guide}\n` : ""}${prefsBlock(w.prefs, isStory(w))}핵심 규칙:
 ${(w.rules || []).map(r => "- " + r).join("\n") || "(없음)"}
 지금까지의 항목:
 ${titles}
@@ -131,7 +136,7 @@ ${guide ? `
 ${guide}
 """
 이 지침을 세계관 이름, 핵심 규칙, 연표, 분위기 지침에 반영한다. 원안과 어긋나면 원안을 따른다.
-` : ""}${prefsBlock(prefs)}
+` : ""}${prefsBlock(prefs, story)}
 규칙:
 - 원안의 내용은 모두 그대로 유지하고, 빈 부분만 그럴듯하게 채운다.
 - 원안의 "확장 요소:", "추가 요소:", "넣고 싶은 것:" 목록은 사용자가 위키에서 다루고 싶은 주제이지 작중 항목의 이름이 아니다. 그 단어를 그대로 mainTitle로 쓰지 않는다.
