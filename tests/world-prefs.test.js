@@ -19,17 +19,17 @@ const server = appServer();
 
     // 프롬프트: 고르지 않으면 블록이 없고, 고르면 긍정형 서술만 들어간다
     const pr = await page.evaluate(() => {
-      const prefs = { axes: { light: 2, focus: 5, scale: 9 }, avoid: ['war', 'tragic', 'grim', 'nope'], avoidText: '동물이 다치는 장면' };
+      const prefs = { axes: { light: 2, focus: 5, humor: 5, scale: 9 }, avoid: ['war', 'tragic', 'grim', 'nope'], avoidText: '동물이 다치는 장면' };
       return { none: biblePrompt('원안', '', '', false), empty: biblePrompt('원안', '', '', false, {}, { axes: {}, avoid: [], avoidText: '  ' }),
         set: biblePrompt('원안', '', '', false, {}, prefs), story: biblePrompt('원안', '', '', true, { total: 5 }, prefs),
         part: biblePartPrompt('원안', '', '', false, {}, bibleParts(false)[0], {}, prefs), norm: normPrefs(prefs),
-        light2: WORLD_AXES[0].say[1], focus5: WORLD_AXES[3].say[4], war: WORLD_AVOID.find(x => x.id === 'war').say,
+        light2: WORLD_AXES[0].say[1], focus5: WORLD_AXES.find(a => a.id === 'focus').say[4], humor5: WORLD_AXES.find(a => a.id === 'humor').say[4], war: WORLD_AVOID.find(x => x.id === 'war').say,
         grim: WORLD_AVOID.find(x => x.id === 'grim').say, tragic: WORLD_AVOID.find(x => x.id === 'tragic').say,
         onlyStory: biblePrompt('원안', '', '', false, {}, { avoid: ['tragic', 'death'] }) };
     });
     assert(!pr.none.includes('사용자가 고른 방향') && !pr.empty.includes('사용자가 고른 방향'));
     for (const t of [pr.set, pr.story, pr.part]) {
-      assert(t.includes('사용자가 고른 방향') && t.includes(pr.light2) && t.includes(pr.focus5) && t.includes(pr.war) && t.includes('동물이 다치는 장면'));
+      assert(t.includes('사용자가 고른 방향') && t.includes(pr.light2) && t.includes(pr.focus5) && t.includes(pr.humor5) && t.includes(pr.war) && t.includes('동물이 다치는 장면'));
       assert(!t.includes('전쟁 중심') && !t.includes('비극적 결말') && !t.includes('디스토피아'), '칩 이름은 모델에 보내지 않는다');
       assert(t.includes('긍정형'));
     }
@@ -37,7 +37,7 @@ const server = appServer();
     for (const t of [pr.set, pr.part]) assert(t.includes(pr.grim) && !t.includes(pr.tragic));
     assert(pr.story.includes(pr.tragic) && !pr.story.includes(pr.grim));
     assert(!pr.onlyStory.includes('사용자가 고른 방향'), '그 모드에 없는 칩만 고른 경우 블록을 넣지 않는다');
-    assert.deepStrictEqual(pr.norm, { axes: { light: 2, focus: 5 }, avoid: ['grim', 'tragic', 'war'], avoidText: '동물이 다치는 장면' });
+    assert.deepStrictEqual(pr.norm, { axes: { light: 2, humor: 5, focus: 5 }, avoid: ['grim', 'tragic', 'war'], avoidText: '동물이 다치는 장면' });
 
     // 화면: 단계를 고르고, 같은 단계를 다시 누르면 자동으로 돌아간다
     await page.evaluate(() => { S.view = { name: 'home' }; S.mode = 'basic'; renderMain(); });
