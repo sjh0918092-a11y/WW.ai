@@ -99,7 +99,7 @@ test('참고 문구 없이 지명을 링크하고 결과만 쓴 사건 원문도
   for (const prompt of [c.pagePrompt(w, place.key), c.readPrompt(w, place.key)]) {
     assert.ok(prompt.includes('북부 협곡의 결전'));
     assert.ok(prompt.includes(event.sections[0].body));
-    assert.ok(prompt.includes('이름·링크·결과 요약만 있는 곳으로 설명을 넘기지 않는다'));
+    assert.ok(prompt.includes('핵심 행동·원인·결과는 각 문서의 대상을 설명하는 데 필요하면 함께 쓴다'));
   }
 });
 test('관련 대목을 넓혀도 이야기 모드의 미래 원문은 전달하지 않는다', () => {

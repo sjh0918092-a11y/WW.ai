@@ -135,8 +135,8 @@ test('요약뿐인 사건 문서가 있어도 상세 설명이 있다고 단정�
 test('다른 항목과 얽힌 일: 상대 원문의 실제 설명을 확인하고 요약하며 새 링크 때문에 비우지 않는다', () => {
   const w = world([page('러시아', '국가', '러시아다.', 1), page('옥사나', '인물', '1992년 옥사나는 [[러시아]] 해군으로 옮겼다.', 2)]);
   const pr = c.pagePrompt(w, K('러시아'));
-  assert.match(pr, /다른 항목과 얽힌 일: 관련 원문과 이 문서의 범위를 읽고/);
-  assert.match(pr, /1\. 사건 원문에 해당 설명이 있는 일:/); assert.match(pr, /2\. 사건 항목이 없고 이 항목만 겪은 일: 이 문서가 주인이다/); assert.match(pr, /3\. 사건 항목이 없고 다른 인물과 함께 겪은 일: 공통 사실/);
+  assert.match(pr, /다른 항목과 얽힌 일: 같은 사건의 핵심 행동·원인·결과는/);
+  assert.match(pr, /1\. 다른 사건의 상세를 생략하는 경우:/); assert.match(pr, /2\. 사건 항목이 없고 이 항목만 겪은 일: 이 문서가 주인이다/); assert.match(pr, /3\. 사건 항목이 없고 다른 인물과 함께 겪은 일: 공통 사실/);
   assert.match(pr, /참고 문구의 대상은 1의 사건뿐이다/); assert.match(pr, /새 링크나 아직 없는 문서를 이유로 이 문서에서 설명할 내용을 비워 두지 않는다/); assert.doesNotMatch(pr, /세부는 그 사건의 문서가 정하도록 비워 둔다/);
   assert.match(pr, /필요한 만큼 만들어 링크한다/); assert.doesNotMatch(pr, /두세 개 만들어/);
   assert.match(pr, /장면의 주체는 이 항목 자신이다/); assert.match(pr, /다른 인물이 주인공인 장면/); assert.match(pr, /절정은 이 문서만의 장면이어야 한다/);
@@ -330,7 +330,7 @@ test('참고 문구는 문서에서 한 번만: 중복은 참고 문장만 지�
 test('사건·인물 모두 다른 사건의 실제 설명을 확인하며 유형별 문장 수로 축약하지 않는다', () => {
   const big = page('쿠바 미사일 위기', '사건', '위기다. [[카리브해 대치]]가 있었다.', 1), sub = page('카리브해 대치', '사건', '대치다.', 2), per = page('캔자스', '인물', '[[카리브해 대치]]에 나갔다.', 3);
   const w = world([big, sub, per]); for (const t of ['쿠바 미사일 위기', '카리브해 대치']) w.entities[K(t)].type = '사건'; w.entities[K('캔자스')].type = '인물';
-  assert.match(c.pagePrompt(w, K('쿠바 미사일 위기')), /해당 사건 원문에 실제로 설명되어 있으면 그 부분은 요약한다/);
+  assert.match(c.pagePrompt(w, K('쿠바 미사일 위기')), /관련 문서와 공통인 경과도 이 사건의 흐름에 필요한 만큼 직접 쓴다/);
   for (const key of [K('쿠바 미사일 위기'), K('캔자스')]) {
     const read = c.readPrompt(w, key);
     assert.match(read, /서술 분량만으로 축약·삭제를 요구하지 않는다/);
