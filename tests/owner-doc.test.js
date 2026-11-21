@@ -80,7 +80,7 @@ test('새 문서 생성과 읽기 검사는 긴 원문의 참조와 앞뒤 문�
   c.S.pages[child.key] = child; w.entities[child.key].page = true;
   const read = c.readPrompt(w, child.key);
   for (const prompt of [generated, read]) for (const text of [before, ref, after]) assert.ok(prompt.includes(text), text);
-  assert.ok(read.includes('넘겨받은 설명을 쓴 대목이면 축약·삭제로 지적하지 않는다'));
+  assert.ok(read.includes('이 문서가 설명할 내용을 쓴 대목이면 축약·삭제로 지적하지 않는다'));
   assert.equal(JSON.stringify(parent), snapshot);
   assert.equal(parent.autoConflicts, undefined);
 });
@@ -90,6 +90,17 @@ test('직접 관련 목록에 없는 역참조 원문도 읽고, 관계없는 �
   const text = c.relatedExcerptBlock(w, target.key, []);
   assert.ok(text.includes('진입 경위는 [[협곡 돌파전]]에서 다룬다.'));
   assert.ok(!text.includes('관련 없는 기록이다.'));
+});
+test('참고 문구 없이 지명을 링크하고 결과만 쓴 사건 원문도 생성과 읽기 검사에 전달한다', () => {
+  const event = page('남부 공세', '사건', '[[북부 협곡]]에서 결전을 벌여 방어선을 돌파했다.', 1);
+  event.sections[0].heading = '북부 협곡의 결전';
+  const place = page('북부 협곡', '지명', '공세의 통로로 쓰였다. 자세한 내용은 [[남부 공세]] 참고.', 2);
+  const w = world([event, place]);
+  for (const prompt of [c.pagePrompt(w, place.key), c.readPrompt(w, place.key)]) {
+    assert.ok(prompt.includes('북부 협곡의 결전'));
+    assert.ok(prompt.includes(event.sections[0].body));
+    assert.ok(prompt.includes('명시적인 참고 문구가 없어도'));
+  }
 });
 test('관련 대목을 넓혀도 이야기 모드의 미래 원문은 전달하지 않는다', () => {
   const target = { ...owner(), syncedTo: 2 }, future = { ...hub(), syncedTo: 3 };

@@ -299,7 +299,7 @@ function sourceBatches(w, key, focus, outgoing = [], eligible = () => true) {
   return out;
 }
 /* 관련 원문은 생성·재서술 검사가 함께 읽는다. 참조의 의미는 모델이 판단하며, 문단을 중간에서 자르지 않는다. */
-const HANDOFF_RULE = "관련 문서가 이 문서로 넘긴 설명은 여기서 직접 서술하고, 같은 문서로 되넘기지 않는다. 이 설명에는 다른 사건을 요약·참조하도록 하는 기준을 적용하지 않는다.";
+const HANDOFF_RULE = "관련 원문이 이 항목의 일을 이름·결과만 적었다면, 명시적인 참고 문구가 없어도 원문의 문맥과 이 문서의 범위를 보고 여기서 설명할 내용인지 판단한다. 여기서 설명할 내용은 직접 서술하며, 다른 사건을 요약·참조하는 기준으로 생략하거나 상대 문서로 되넘기지 않는다.";
 function relatedExcerptBlock(w, key, rel, n = 8) {
   if (n <= 0) return "";
   const e = w.entities[key], names = namesOf(e.title), out = [];
@@ -321,7 +321,7 @@ ${out.join("\n")}
 }
 function ownerExcerptBlock(w, key, rel, n = 8) {
   const text = relatedExcerptBlock(w, key, rel, n);
-  return text ? text + "위 원문에 명시된 공통 사실은 지킨다. 이 문서로 넘긴 설명의 세부는 기존 사실과 모순되지 않게 여기서 정하며, 그 밖의 일은 작성 규칙의 '다른 항목과 얽힌 일'을 따른다.\n\n" : "";
+  return text ? text + "위 원문에 명시된 공통 사실은 지킨다. 기존 사실과 모순되지 않는 세부의 작성 범위는 작성 규칙의 '다른 항목과 얽힌 일'에 따라 판단한다.\n\n" : "";
 }
 function sourceBlock(text) {
   return text ? `## 연결된 문서 원문
@@ -753,7 +753,7 @@ function restateCheckBlock(w, key) {
   return relatedExcerptBlock(w, key, [...new Set([...related(w, key), ...(p.links || [])])]) + `## 다른 사건의 재서술 (앱이 정한 목록)
 아래 사건은 각 사건의 문서가 주인이다(문서가 아직 없어도 같다).
 ${list.length ? list.map(k => refEventLine(w, k)).join("\n") : "- (없음)"}
-${parentEventNote(w, key) ? parentEventNote(w, key) + "이 사건 자체의 경과를 쓴 문단은 재서술이 아니므로 지적하지 않는다.\n" : ""}먼저 적용 범위를 구분한다. ${HANDOFF_RULE} 함께 제공된 관련 원문과 대조해 넘겨받은 설명을 쓴 대목이면 축약·삭제로 지적하지 않는다. 아래 예외를 먼저 적용한 뒤, 남은 대목에만 축약·삭제 기준을 적용한다.
+${parentEventNote(w, key) ? parentEventNote(w, key) + "이 사건 자체의 경과를 쓴 문단은 재서술이 아니므로 지적하지 않는다.\n" : ""}먼저 적용 범위를 구분한다. ${HANDOFF_RULE} 함께 제공된 관련 원문과 대조해 이 문서가 설명할 내용을 쓴 대목이면 축약·삭제로 지적하지 않는다. 아래 예외를 먼저 적용한 뒤, 남은 대목에만 축약·삭제 기준을 적용한다.
 - 이 항목이 그 사건에 참여하지 않고 사건이 다른 항목의 일이나 배경으로만 나오면, 사건의 시각·수치·경과 같은 세부 없이 짧게 언급하고 사건 이름에 링크만 건 대목은 지적하지 않고 참고 문구도 요구하지 않는다. 사건의 경과를 길게 풀어 쓴 경우에는 이 예외를 적용하지 않는다.
 - 개요의 첫 문장(이 항목이 무엇인지 밝히는 정의)과 인물 관계 항목은 재서술로 줄이거나 지우라고 짚지 않는다(참고 중복만 짚는다).
 - 개요, 인물 관계, 현재처럼 다른 목적의 섹션이 그 사건을 ${n}으로 언급한 것은 재서술이 아니다. 그런 곳에 시각·수치·경과가 들어 있으면 지우지 말고 '재서술(줄임):'으로만 짚는다. 지울 문단은 그 사건을 다룬 섹션 안의 문단뿐이다.
