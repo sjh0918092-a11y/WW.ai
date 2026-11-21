@@ -92,12 +92,12 @@ function renderSide() {
     ${S.syncing ? `<section><h4>장 반영 중</h4><div class="genpill"><span class="dot"></span><button type="button" class="btn" data-k="${S.syncing}" style="padding:2px 8px">${esc(w.entities[S.syncing]?.title || "")}</button></div></section>` : ""}
     ${rec.length ? `<section class="rec"><h4>최근 본 문서</h4><ul>${rec.map(k => `<li><button type="button" data-k="${k}" class="${k === cur ? "cur" : ""}" ${isStory(w) && missingChs(w, k).length ? `title="이번 장의 변화가 아직 반영되지 않았습니다. 열면 반영합니다"` : ""}>${esc(w.entities[k].title)}${isStory(w) && missingChs(w, k).length ? " •" : ""}</button></li>`).join("")}</ul></section>` : ""}`;
 }
-/* 작성 대기열: 지금 작성 중인 문서와 기다리는 문서. 작성 중인 문서는 검사·수정 단계면 검사를 건너뛰고, 그 전이면 작성을 멈춘다 */
+/* 작성 대기열: 지금 작성 중인 문서와 기다리는 문서. 작성 중인 문서는 검사·수정 단계면 미완료 초안으로 중단하고, 그 전이면 작성을 멈춘다 */
 function genQueueHtml(w) {
   const q = S.genQ.filter(x => x.wid === w.id && w.entities[x.key]);
   if (!S.gen && !q.length) return "";
-  const checking = S.gen && !S.gen.serverPipeline && !!S.gen.phase;   // 문서 화면의 중단 버튼과 같은 기준: 검사 단계에서 멈추면 쓴 문서를 그대로 보여 준다
-  const cur = S.gen ? `<li class="genpill"><span class="dot"></span><span class="gq-st">작성 중</span><button type="button" class="btn gq-t" data-k="${S.gen.key}">${esc(S.gen.title)}</button><button type="button" class="btn gq-x" data-act="stop" title="${checking ? "검사를 건너뛰고 지금까지 쓴 문서를 보여 줍니다" : "이 문서 작성을 멈춥니다"}">${checking ? "검사 건너뛰기" : "취소"}</button></li>` : "";
+  const checking = S.gen && !S.gen.serverPipeline && !!S.gen.phase;   // 문서 화면의 중단 버튼과 같은 기준: 검사 단계에서 멈추면 미완료 초안을 보존한다
+  const cur = S.gen ? `<li class="genpill"><span class="dot"></span><span class="gq-st">작성 중</span><button type="button" class="btn gq-t" data-k="${S.gen.key}">${esc(S.gen.title)}</button><button type="button" class="btn gq-x" data-act="stop" title="${checking ? "자동 검토를 중단하고 미완료 초안을 보존합니다" : "이 문서 작성을 멈춥니다"}">${checking ? "검토 중단" : "취소"}</button></li>` : "";
   const wait = q.map((x, i) => `<li class="genpill"><span class="gq-n">${i + 1}</span><span class="gq-st">대기</span><button type="button" class="btn gq-t" data-k="${x.key}">${esc(w.entities[x.key].title)}</button><button type="button" class="btn gq-x" data-unq="${x.key}" title="대기열에서 뺍니다">취소</button></li>`).join("");
   return `<section class="genq"><h4>작성 대기열${q.length ? ` · 대기 ${q.length}` : ""}</h4><ul>${cur}${wait}</ul></section>`;
 }
@@ -392,7 +392,7 @@ function articleHtml(k) {
   const crumb = `<div class="crumb"><span>${esc(w.title)}</span><span>작중 기준 ${esc(w.era)}</span>${e.type ? `<span>분류: ${(p || S.pages[k]) ? `<button type="button" class="cat" data-cat="${esc(e.type)}" title="「${esc(e.type)}」 문서 모두 보기">${esc(e.type)}</button>` : esc(e.type)}</span>` : ""}${p ? `<span>작성 ${fmtDate(p.createdAt)}</span>` : ""}${p?.editedAt ? `<span>직접 수정 ${fmtDate(p.editedAt)}</span>` : ""}</div>`;
   if (S.gen && S.gen.key === k) {
     return `<div class="sheet">${crumb}<h1 class="t">${esc(e.title)}</h1>
-      <div class="gen-live"><span class="dot"></span><span id="genCount">${S.gen.phase === "check" ? "설정과 맞춰 보는 중" : S.gen.phase === "fix" ? `설정과 어긋난 ${S.gen.nFix}곳을 고치는 중` : "문서를 작성하는 중"}</span><button type="button" class="btn" data-act="stop">${S.gen.phase ? "검사 건너뛰고 보기" : "작성 중단"}</button></div>
+      <div class="gen-live"><span class="dot"></span><span id="genCount">${S.gen.phase === "check" ? "설정과 맞춰 보는 중" : S.gen.phase === "fix" ? `설정과 어긋난 ${S.gen.nFix}곳을 고치는 중` : "문서를 작성하는 중"}</span><button type="button" class="btn" data-act="stop">${S.gen.phase ? "검토 중단" : "작성 중단"}</button></div>
       ${promiseHtml(w, e, "이 문서가 지켜야 할 확정 내용")}
       <ul class="heads" id="genHeads"></ul>
       <div style="margin-top:14px"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div></div>`;
@@ -434,13 +434,15 @@ function articleHtml(k) {
   const out = (p.links || []).filter(x => w.entities[x]);
   const newOut = out.filter(x => !S.pages[x]).length;
   const chk = p.check;
+  const reviewError = chk?.incomplete && !(S.gen?.key === k || S.checking === k) ? `<div class="banner warn">자동 검토를 완료하지 못했습니다. ${esc(chk.error || "남은 메모를 처리하는 중입니다.")} ${!S.gen && !S.checking ? `<button type="button" class="btn" data-check="${k}">자동 검토 재시도</button>` : ""}</div>` : "";
+  const structurallyBlocked = (chk?.issues || []).length > 0 && (chk.issues || []).every(i => i.blocked);
   const hi = (chk?.issues || []).filter(i => i.severity === "high"), lo = (chk?.issues || []).filter(i => i.severity !== "high");   // 편집자 메모는 설정 충돌만 다룬다
   S.memo = { k, items: [...hi, ...lo] };
   const fixBtn = n => `<button type="button" class="btn memo-fix" data-fix="${n}" data-fixk="${k}" ${fixActive(k) || (S.gen && S.gen.key === k) || !S.sample ? "disabled" : ""}>고치기</button>`;
   const item = (i, n, cls) => `<li class="${cls}">${esc(i.claim)}${i.conflict ? `<span class="memo-why">${esc(i.conflict)}</span>` : ""}${i.target && i.target !== k ? "" : fixBtn(n)}<button type="button" class="memo-del" data-memo-del="${n}" data-memo-k="${k}" aria-label="이 메모 삭제" ${S.fixing && S.fixing.key === k ? "disabled" : ""}>[삭제]</button></li>`;   // 다른 문서가 고칠 대상이면 이 문서의 고치기 버튼은 두지 않는다
   const chkHtml = S.bgSync === k ? `<p class="memo-line"><span class="dot"></span>확정 사실을 정리하는 중</p>` : S.checking === k ? `<p class="memo-line"><span class="dot"></span>설정 노트와 맞춰 보는 중 <span class="src" id="chkTick"></span></p>`
-    : (hi.length || lo.length) ? `<details class="memo"${hi.length ? " open" : ""}><summary><span class="memo-dot${hi.length ? " on" : ""}"></span>편집자 메모${hi.length ? ` · 다듬을 곳 ${hi.length}` : ""}${lo.length ? ` · 참고 ${lo.length}` : ""}${chk ? `<span class="src">${fmtDate(chk.at)}</span>` : ""}</summary><ul>${hi.map((i, n) => item(i, n, "")).join("")}${lo.map((i, n) => item(i, hi.length + n, "lo")).join("")}</ul>${hi.length + lo.length > 1 ? `<div class="memo-foot"><button type="button" class="btn" data-act="fixv-open" ${(S.gen && S.gen.key === k) || fixActive(k) ? "disabled" : ""}>여러 곳 한꺼번에 교정하기</button></div>` : ""}</details>`
-    : chk ? `<p class="memo-line">설정 노트와 맞춰 봤습니다 <span class="src">${fmtDate(chk.at)}</span></p>` : "";
+    : (hi.length || lo.length) ? `<details class="memo"${hi.length ? " open" : ""}><summary><span class="memo-dot${hi.length ? " on" : ""}"></span>편집자 메모${structurallyBlocked ? ` · 구조적 해결 불가 ${hi.length + lo.length}` : `${hi.length ? ` · 다듬을 곳 ${hi.length}` : ""}${lo.length ? ` · 참고 ${lo.length}` : ""}`}${chk ? `<span class="src">${fmtDate(chk.at)}</span>` : ""}</summary><ul>${hi.map((i, n) => item(i, n, "")).join("")}${lo.map((i, n) => item(i, hi.length + n, "lo")).join("")}</ul>${hi.length + lo.length > 1 ? `<div class="memo-foot"><button type="button" class="btn" data-act="fixv-open" ${(S.gen && S.gen.key === k) || fixActive(k) ? "disabled" : ""}>여러 곳 한꺼번에 교정하기</button></div>` : ""}</details>`
+    : chk?.incomplete ? "" : chk ? `<p class="memo-line">설정 노트와 맞춰 봤습니다 <span class="src">${fmtDate(chk.at)}</span></p>` : "";
   const rw = `<button type="button" class="btn" data-rw="${k}" aria-expanded="${S.confirmRewrite === k}" ${S.gen || S.storyGen || S.syncing === k || !S.sample ? "disabled" : ""}>다시 쓰기</button>`;
   const binding = e.mentions.filter(m => m.from !== k).length + e.facts.filter(f => f.src !== k).length;
   const rwBox = S.confirmRewrite === k ? `<div class="rwbox">
@@ -470,7 +472,7 @@ function articleHtml(k) {
     ${p.pending?.length ? `<div class="banner warn"><b>이 문서의 수정 내용이 직접 정한 설정과 충돌한 채 저장되었습니다.</b>
       <ul>${p.pending.map(c => `<li><span class="sev">${esc(c.label)}</span>${esc(c.old)} <span class="src">↔ 수정본: ${esc(c.claim)}</span></li>`).join("")}</ul>
       <div class="row" style="margin-top:4px"><button type="button" class="btn" data-edit="${k}">편집</button><button type="button" class="btn" data-act="canon">설정 노트 열기</button><button type="button" class="btn" data-dismiss="${k}" data-field="pending">표시 지우기</button></div></div>` : ""}
-    ${rwBox}${syncHtml}${p.renamedFrom && Date.now() - p.renamedFrom.at < 864e5 ? `<p class="memo-line">제목을 「${esc(p.renamedFrom.from)}」에서 「${esc(p.title)}」(으)로 바꿨습니다. 옛 제목은 별칭으로 남아 링크가 이어집니다 <span class="src">${fmtDate(p.renamedFrom.at)}</span></p>` : ""}${p.autoFixed && Date.now() - p.autoFixed.at < 864e5 ? `<p class="memo-line">작성 직후 설정과 어긋난 ${p.autoFixed.n}곳을 자동으로 고쳤습니다 <span class="src">${fmtDate(p.autoFixed.at)}</span></p>` : ""}${chkHtml}
+    ${rwBox}${syncHtml}${p.renamedFrom && Date.now() - p.renamedFrom.at < 864e5 ? `<p class="memo-line">제목을 「${esc(p.renamedFrom.from)}」에서 「${esc(p.title)}」(으)로 바꿨습니다. 옛 제목은 별칭으로 남아 링크가 이어집니다 <span class="src">${fmtDate(p.renamedFrom.at)}</span></p>` : ""}${p.autoFixed && Date.now() - p.autoFixed.at < 864e5 ? `<p class="memo-line">작성 직후 설정과 어긋난 ${p.autoFixed.n}곳을 자동으로 고쳤습니다 <span class="src">${fmtDate(p.autoFixed.at)}</span></p>` : ""}${reviewError}${chkHtml}
     ${p.rewrittenAt ? `<p class="src" style="margin:8px 0 0">${fmtDate(p.rewrittenAt)} 다시 씀</p>` : ""}
     <div class="article">${stNotice}${p.notices?.length ? `<div class="notice">${p.notices.map(n => `<div>${blocks(n, fns).replace(/^<p>|<\/p>$/g, "")}</div>`).join("")}</div>` : ""}${box}${toc}${secs}${fnHtml}</div>
     ${navboxesHtml(w, k)}

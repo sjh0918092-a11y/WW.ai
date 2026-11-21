@@ -27,7 +27,17 @@ const pass=s=>console.log(`  ✓ ${++n}. ${s}`);
 // 두 검사는 병렬로 준비하므로 둘 사이의 접수 순서만 정규화한다.
 const orderedChecks=rows=>{const out=[...rows];for(let i=0;i<out.length-1;i++)if(out[i].kind==='read'&&out[i+1].kind==='check')[out[i],out[i+1]]=[out[i+1],out[i]];return out;};
 const originalFetch=globalThis.fetch;
-const response=(kind)=> kind==='page'?{title:'선장',type:'인물',summary:'해양 탐험가',infobox:[{label:'성별',value:'남성'}],sections:[{heading:'개요',level:1,body:'선장은 푸른 바다를 항해한다.'}],categories:['소속:항구','유형:인물'],facts:[],newEntities:[],relations:[],timeline:behavior==='dedupe'?[{year:'1900',month:1,day:1,about:'선장',event:'선장이 참여한 항구 항해법 공표가 이루어지다.'}]:[]}:kind==='check'&&behavior==='dedupe'?{issues:[],timelineSame:[1]}:kind==='fix'?{edits:fixEdits||[{field:'body',old:'푸른',new:'붉은',memo:1}]}:kind==='factSync'?{facts:[{about:'선장',fact:'붉은 바다를 항해한다.'}],relations:[],timeline:[]}:kind==='check'&&['fix','timeout-fix','parallel'].includes(behavior)?{issues:[{claim:fixClaim,evidence:'세계의 바다는 붉다.',conflict:'붉은 바다여야 한다.',severity:'high'},...extraIssues]}:{issues:[]};
+const baseResponse=(kind)=> kind==='page'?{title:'선장',type:'인물',summary:'해양 탐험가',infobox:[{label:'성별',value:'남성'}],sections:[{heading:'개요',level:1,body:'선장은 푸른 바다를 항해한다.'}],categories:['소속:항구','유형:인물'],facts:[],newEntities:[],relations:[],timeline:behavior==='dedupe'?[{year:'1900',month:1,day:1,about:'선장',event:'선장이 참여한 항구 항해법 공표가 이루어지다.'}]:[]}:kind==='check'&&behavior==='dedupe'?{issues:[],timelineSame:[1]}:kind==='fix'?{edits:fixEdits||[{field:'body',old:'푸른',new:'붉은',memo:1}]}:kind==='factSync'?{facts:[{about:'선장',fact:'붉은 바다를 항해한다.'}],relations:[],timeline:[]}:kind==='check'&&['fix','fix-retry','fix-low','dismiss','blocked','timeout-fix','parallel'].includes(behavior)?{issues:[{claim:fixClaim,evidence:'세계의 바다는 붉다.',conflict:'붉은 바다여야 한다.',severity:behavior==='fix-low'?'low':'high'},...extraIssues]}:{issues:[]};
+const response = kind => {
+ if(kind==='fix' && behavior==='dismiss')return {edits:[],dismissed:[{memo:1,reason:'다른 대상의 기록을 비교한 오탐이다.'}]};
+ if(kind==='fix' && behavior==='blocked')return {edits:[],blocked:[{memo:1,kind:'structural',reason:'양립할 수 없는 사용자 확정 설정을 현재 문서가 바꿀 수 없다.'}]};
+ if(kind==='fix' && behavior==='fix-retry' && calls.filter(c=>c.kind==='fix').length>1){
+  const prompt=calls.at(-1).body.contents.flatMap(c=>c.parts.map(p=>p.text||'')).join('\n');
+  const memos=[...prompt.matchAll(/^(\d+)\. 문서의 서술: (.*)$/gm)];
+  return {edits:memos.filter(m=>m[2]===fixClaim).map(m=>({memo:+m[1],field:'body',old:'푸른 바다',new:'붉은 바다'})),dismissed:memos.filter(m=>m[2]!==fixClaim).map(m=>({memo:+m[1],reason:'현재 원문에는 이 서술이 없으며 다른 항목을 잘못 비교했다.'}))};
+ }
+ return baseResponse(kind);
+};
 // 스텝 종류는 큐의 공개 상태로 확인한다. 프롬프트 문구 변경에 테스트가 의존하지 않는다.
 let activeEntry;
 let tokenCounts=0, liveSeen=null;
@@ -187,13 +197,13 @@ try {
  fixEdits=null;fixClaim='푸른 바다를 항해한다.';
  pass('메모의 일부 표현이 남거나 저장 시 링크·줄바꿈이 정리되거나 문장을 삭제해도 적용한 수정의 메모를 닫는다');
 
- for (const [edit, fixed] of [[{field:'body',old:'푸른 바다',new:'붉은 바다'},1],[{field:'body',old:'푸른',new:'붉은'},0]]) {
-  e=await reset({rewrite:true});behavior='fix';fixEdits=[edit];extraIssues=[{claim:'선장은 푸른 옷을 입는다.',evidence:'제복은 검다.',conflict:'제복 색이 다르다.',severity:'high'}];
+ for (const edit of [{field:'body',old:'푸른 바다',new:'붉은 바다'},{field:'body',old:'푸른',new:'붉은'}]) {
+  e=await reset({rewrite:true});behavior='fix-retry';fixEdits=[edit];extraIssues=[{claim:'선장은 푸른 옷을 입는다.',evidence:'제복은 검다.',conflict:'제복 색이 다르다.',severity:'high'}];
   await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));
-  assert.equal(r.result.pipeline.fixed,fixed,JSON.stringify(edit));assert.equal(storedPage(B).check.issues.length,2-fixed);
+  assert.equal(r.result.pipeline.fixed,1,JSON.stringify(edit));assert.equal(storedPage(B).check.issues.length,0);assert.equal(calls.filter(c=>c.kind==='fix').length,2);
  }
  fixEdits=null;extraIssues=[];
- pass('메모 번호가 빠진 수정은 고친 구절과 겹치는 메모가 하나뿐일 때만 그 메모를 닫는다');
+ pass('메모 번호 누락·일부 수정 후 남은 메모를 다음 alarm에서 다시 처리하고 오탐은 원문 변경 없이 닫는다');
 
  for (const edits of [
   [{field:'body',old:'원문에 없는 구절',new:'붉은',memo:1}],
@@ -201,11 +211,21 @@ try {
   [{field:'body',old:'푸른',new:'아주 푸른',memo:1}],
  ]) {
   e=await reset({rewrite:true});behavior='fix';fixEdits=edits;fixClaim='선장의 항해지가 푸른 바다로 설정되어 있다';
-  await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));
-  assert.equal(r.result.pipeline.fixed,0);assert.equal(r.result.pipeline.remaining,1);assert.equal(storedPage(B).check.issues.length,1);
+  await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'failed',JSON.stringify(r));
+  assert.equal(r.result.pipeline.saved,false);assert.equal(r.result.pipeline.checked,false);assert.deepEqual(storedPage(B),e.pages[B]);
  }
  fixEdits=null;fixClaim='푸른 바다를 항해한다.';
- pass('적용 실패·잘못된 메모 번호·기존 구절이 남은 수정은 경고를 닫지 않는다');
+ pass('반복 적용 실패·잘못된 메모 번호는 완료로 저장하지 않고 원본을 유지한다');
+
+ for(const mode of ['fix-low','dismiss','blocked']){
+  e=await reset({rewrite:true});behavior=mode;await request(e,'',e.body);r=await run(e);
+  assert.equal(r.job.status,'succeeded',JSON.stringify(r));assert.equal(r.result.pipeline.saved,true);
+  const p=storedPage(B);assert.equal(p.check.incomplete,false);
+  if(mode==='fix-low'){assert.equal(r.result.pipeline.fixed,1);assert.equal(p.check.issues.length,0);}
+  if(mode==='dismiss'){assert.equal(r.result.pipeline.fixed,0);assert.equal(p.check.issues.length,0);assert(p.sections[0].body.includes('푸른 바다'));}
+  if(mode==='blocked'){assert.equal(p.check.issues.length,1);assert.equal(p.check.issues[0].blocked,true);assert(p.check.issues[0].blockedReason);}
+ }
+ pass('서버도 참고 수정·오탐 삭제·이유 있는 구조적 해결 불가만 남기는 판정을 저장한다');
 
  e=await reset({rewrite:true,settings:{taskModels:{page:{model:'gemini-writer',think:'minimal'},check:{model:'claude-sonnet-4-6',think:'high'},read:{model:'claude-haiku-4-5',think:'low'},fix:{model:'gemini-fixer',think:''},factSync:{model:'gemini-extractor',think:'minimal'}},prompt:{seed:false,guidelines:false}}});behavior='fix';await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'succeeded',JSON.stringify(r));
  assert.deepEqual(orderedChecks(r.job.steps).map(s=>[s.kind,s.model]),[['page','gemini-writer'],['check','claude-sonnet-4-6'],['read','claude-haiku-4-5'],['fix','gemini-fixer'],['factSync','gemini-extractor']]);

@@ -264,7 +264,7 @@ test('집필에는 확정 사실과 언급을 주고, 설정 대조에서는 양
   assert(generation.includes('유리 도시는 둑 안쪽에 있다.'));
   assert(generation.includes('유리 도시는 은빛 강을 끼고 있다.'));
   assert(!generation.includes('## 연결된 문서 원문'));
-  assert(!generation.includes('앞 절의 기록은 우기에만 적용된다.'));
+  assert(generation.includes('앞 절의 기록은 우기에만 적용된다.'));
   assert(!generation.includes('폐문은 다음 날 이루어졌다.'));
   c.S.pages[city] = doc('유리 도시', '[[검은 항구|밤의 관문]]에서 출발했다.', { links: [port] });
   const check = c.checkPrompt(w, city, []);

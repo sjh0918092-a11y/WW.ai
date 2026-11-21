@@ -53,11 +53,11 @@
       const redirect = w?.aliases?.[k], targetKey = pages[k] ? k : redirect && pages[redirect] ? redirect : k;
       const page = pages[targetKey];
       const required = runtime.failures.filter(f => ["page", "check", "read", "fix", "analyze", "factSync"].includes(f.kind));
-      const error = S.genErr || (!page && !S.nf.has(k) ? { msg: "문서 결과를 완성하지 못했습니다." } : null);
+      const error = S.genErr || (page?.check?.incomplete ? { code: page.check.errorCode || "review_incomplete", msg: page.check.error || "자동 검토를 완료하지 못했습니다." } : !page && !S.nf.has(k) ? { msg: "문서 결과를 완성하지 못했습니다." } : null);
       const changed = Object.fromEntries(Object.entries(pages).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(basePages[key])));
       const removed = Object.keys(basePages).filter(key => !pages[key]);
       return { world: copy(w), pages: copy(changed), removed, page: page ? copy(page) : null, targetKey,
-        checked: !!page?.check && !required.some(f => ["check", "read"].includes(f.kind)), fixed: page?.autoFixed?.n || 0, remaining: page?.check?.issues?.length || 0,
+        checked: !!page?.check && !page.check.incomplete && !required.some(f => ["check", "read"].includes(f.kind)), fixed: page?.autoFixed?.n || 0, remaining: (page?.check?.issues?.length || 0) + (page?.check?.pending?.length || 0),
         notFound: S.nf.has(k), redirectTo: redirect || null, sceneUsed: outcome?.sceneUsed || "", failures: required, error,
         warnings: runtime.failures.filter(f => !required.includes(f)) };
     }

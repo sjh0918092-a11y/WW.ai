@@ -55,6 +55,13 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
     assert.deepEqual(await issues(), ["다른 이유로 지적했다."]);
     pass("원문에 그대로 있는 서술은 해결 신호 없이 닫지 않는다");
 
+    answer = { edits: [], dismissed: [{ memo: 1, reason: "같은 대상을 비교한 지적이 아니다." }] };
+    const unchanged = await page.evaluate(k => JSON.stringify(S.pages[k].sections), base);
+    await page.click('[data-act="fixv-run"]');
+    await page.waitForFunction(k => !S.pages[k].check.issues.length, base);
+    assert.equal(await page.evaluate(k => JSON.stringify(S.pages[k].sections), base), unchanged);
+    pass("수정 모델이 오탐으로 판정하면 문장을 바꾸지 않고 메모만 닫는다");
+
     const auto = await page.evaluate(async ({ world, page0, base }) => {
       S.world = world; S.pages = { [base]: page0 }; S.view = { name: "article", key: base };
       const original = callJson, kinds = [];
@@ -76,6 +83,29 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
     assert((await page.locator("#main").textContent()).includes("자동으로 고쳤습니다"));
     assert(!(await page.locator("#main").textContent()).includes("준공 연도를 고쳐야 한다."));
     pass("작성 직후 자동 수정은 메모의 주어가 본문에 남아도 메모를 닫아 보여 주며 AI 재검사를 하지 않는다");
+
+    await page.evaluate(async base => {
+      window.beforeReviewRetry = callJson;
+      window.failReviewRetry = true;
+      callJson = async kind => {
+        if (kind === 'check') return { issues: [{ claim: '북해 기지', evidence: '다른 문서의 기록', conflict: '원문과 대조한다.', severity: 'low' }] };
+        if (kind === 'read') return { issues: [] };
+        if (window.failReviewRetry) throw { code: 'api_524' };
+        return { edits: [], dismissed: [{ memo: 1, reason: '다른 기지의 기록을 잘못 비교했다.' }] };
+      };
+      try { await preCheck(S.world, base, S.pages[base], { ctl: new AbortController() }, () => {}); }
+      catch (e) { if (e.code !== 'api_524') throw e; }
+      window.failReviewRetry = false;
+      renderMain();
+    }, base);
+    assert((await page.locator('#main').innerText()).includes('자동 검토를 완료하지 못했습니다'));
+    assert.equal(await page.locator('details.memo:not(.doc-cost)').count(), 0, '미완료 메모를 완료 문서의 메모로 노출하지 않는다');
+    await page.locator('.banner.warn [data-check]').click();
+    await page.waitForFunction(k => S.pages[k].check.incomplete === false && !S.checking, base);
+    assert(!(await page.locator('#main').innerText()).includes('자동 검토를 완료하지 못했습니다'));
+    assert.equal(await page.locator('details.memo:not(.doc-cost)').count(), 0);
+    await page.evaluate(() => { callJson = window.beforeReviewRetry; });
+    pass("자동 수정 오류는 재시도 가능한 미완료 상태로 보이고 재개 후 오탐 메모를 정리한다");
     assert.deepEqual(errors, []);
     console.log(`\n모두 통과 (${n}개). 유료 AI 호출 0회.`);
   } catch (e) { console.error("실패:", e); process.exitCode = 1; }

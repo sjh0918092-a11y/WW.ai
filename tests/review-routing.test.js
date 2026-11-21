@@ -191,7 +191,7 @@ test('재서술 검사와 수정: 상대 원문의 실제 설명을 근거로 �
   const none = c.readPrompt(w, K('전략 소녀'));
   assert.doesNotMatch(none, /사건 항목 없음: \[\[붙일 사건 이름\]\]/);
   const fp = c.fixBatchPrompt(w, c.S.pages[K('레베카 헤이즈')], { summary: '', cats: '', infobox: '', body: '본문' }, [{ claim: '2003년', conflict: '근거: 참고로 넘길 사건: [[바그다드 참호 돌파]] · 재서술: 줄인다' }]);
-  assert.match(fp, /'재서술\(지움\):' 메모는 지적된 문단이나 인용문 전체를 old로 잡아 new를 빈 문자열로 둔다/); assert.match(fp, /'재서술\(줄임\):' 메모는/); assert.match(fp, /상대 원문에 그 설명이 없으면 축약·삭제하지 않고 메모를 건너뛴다/); assert.ok(fp.includes(ev.sections[0].body)); assert.match(fp, /이 대상의 일로 바꾸지 않는다/);
+  assert.match(fp, /'재서술\(지움\):' 메모는 지적된 문단이나 인용문 전체를 old로 잡아 new를 빈 문자열로 둔다/); assert.match(fp, /'재서술\(줄임\):' 메모는/); assert.match(fp, /상대 원문에 그 설명이 없으면 축약·삭제하지 않고 오탐으로 dismissed에 쓴다/); assert.ok(fp.includes(ev.sections[0].body)); assert.match(fp, /이 대상의 일로 바꾸지 않는다/);
 });
 
 test('설정 검사: 같은 이름이 날짜·나이로 맞지 않으면 단정하지 않고 보이는 메모(low)로 남기게 한다', () => {
@@ -232,7 +232,7 @@ test('작성 직후 설명 공백 수정은 상대 원문을 받고 현재 문�
 test('자동 수정: 같은 문단에 재서술(지움)과 다른 수정이 겹치면 지움을 먼저 적용하고, 지워진 문장의 메모는 남기지 않는다', async () => {
   const P1 = '2003년 [[이라크 침공]] 때 진격로를 열었다. 자세한 내용은 [[이라크 침공]] 참고.';
   const S1 = '바그다드 외곽에서 케인은 메디나 기갑사단과 정면으로 맞닥뜨렸다.', S2 = '사령부는 케인을 달래려고 포도당을 공급했다.';
-  const per = { ...page('케인', '인물', P1 + '\n\n' + S1 + ' ' + S2, 2), sections: [{ heading: '개요', level: 1, body: '케인은 전략 소녀다.' }, { heading: '이라크', level: 1, body: P1 + '\n\n' + S1 + ' ' + S2 }] };
+  const per = { ...page('케인', '인물', P1 + '\n\n' + S1 + ' ' + S2, 2), infobox: [{ label: '성별', value: '여성' }], sections: [{ heading: '개요', level: 1, body: '케인은 전략 소녀다.' }, { heading: '이라크', level: 1, body: P1 + '\n\n' + S1 + ' ' + S2 }] };
   const w = world([page('이라크 침공', '사건', '침공이다.', 1), per]);
   w.entities[K('이라크 침공')].type = '사건'; w.entities[K('케인')].type = '인물';
   c.__mock = { check: { issues: [{ claim: S2, evidence: '핵심 규칙: 진정제를 쓴다', conflict: '절차가 다르다', severity: 'high' }] },
@@ -284,15 +284,17 @@ test('문서 내부 검사: 링크 표기를 살리고 인물의 이명을 넘�
   assert.match(rp, /이런 곳은 severity high로 써서 작성 직후 자동으로 고치게 한다/);
 });
 
-test('자동 수정: 재서술 지움으로 섹션이 통째로 비면 그 지움은 되돌린다', async () => {
+test('자동 수정: 섹션을 비우는 수정안은 재호출하고 오탐 판정을 받으면 원문을 남긴다', async () => {
   const R = '[[적벽]]: 2016년 [[스카버러 해상 대치]]에서 맞선 상대다.';
-  const per = { ...page('네브래스카', '인물', '네브래스카다.', 2), sections: [{ heading: '개요', level: 1, body: '네브래스카는 전략 소녀다.' }, { heading: '대치', level: 1, body: '2016년 [[스카버러 해상 대치]]에서 맞섰다. 자세한 내용은 [[스카버러 해상 대치]] 참고.' }, { heading: '인물 관계', level: 1, body: R }] };
+  const per = { ...page('네브래스카', '인물', '네브래스카다.', 2), infobox: [{ label: '성별', value: '여성' }], sections: [{ heading: '개요', level: 1, body: '네브래스카는 전략 소녀다.' }, { heading: '대치', level: 1, body: '2016년 [[스카버러 해상 대치]]에서 맞섰다. 자세한 내용은 [[스카버러 해상 대치]] 참고.' }, { heading: '인물 관계', level: 1, body: R }] };
   const w = world([page('스카버러 해상 대치', '사건', '대치다.', 1), per]);
   w.entities[K('스카버러 해상 대치')].type = '사건'; w.entities[K('네브래스카')].type = '인물';
   const claim = '적벽: 2016년 스카버러 해상 대치에서 맞선 상대다.';
   c.__mock = { check: { issues: [] }, read: { issues: [{ claim, evidence: '참고로 넘길 사건: [[스카버러 해상 대치]]', conflict: '재서술(지움): 되풀이', severity: 'high' }] } };
+  c.__fixAttempt = 0;
   vm.runInContext(`callJson = async (kind, prompt) => {
     if (kind !== 'fix') return JSON.parse(JSON.stringify(__mock[kind] || { issues: [] }));
+    if (++__fixAttempt > 1) return { edits: [], dismissed: [{ memo: 1, reason: '인물 관계를 설명한 문장은 재서술 삭제 대상이 아니다.' }] };
     const n = {}; for (const m of prompt.matchAll(/(\\d+)\\. 문서의 서술: (.*)/g)) n[m[2].trim()] = +m[1];
     return { edits: [{ memo: n[${JSON.stringify(claim)}], field: 'body', old: ${JSON.stringify(R)}, new: '' }] };
   }`, c);
@@ -342,9 +344,9 @@ test('작성 직후 리뷰가 실패하면 진단 기록에 남긴다', async ()
   const ev = page('디에고 사건', '사건', '사건이다.', 1);
   const w = world([ev]); w.entities[K('디에고 사건')].type = '사건';
   vm.runInContext(`callJson = async () => { throw { code: 'api_524' }; }`, c);
-  const res = await c.preCheck(w, K('디에고 사건'), c.S.pages[K('디에고 사건')], { ctl: new AbortController() }, () => {});
-  assert.equal(res.done, false);
-  const log = res.page.checkLog || [];
+  await assert.rejects(() => c.preCheck(w, K('디에고 사건'), c.S.pages[K('디에고 사건')], { ctl: new AbortController() }, () => {}), e => e.code === 'api_524');
+  const log = c.S.pages[K('디에고 사건')].checkLog || [];
+  assert.equal(c.S.pages[K('디에고 사건')].check.incomplete, true);
   assert.equal(log.at(-1).event, '작성 직후 리뷰 실패'); assert.equal(log.at(-1).code, 'api_524');
 });
 

@@ -129,11 +129,12 @@ async function closeMemos(k, items, field) {
   try { await Store.savePage(S.world.id, p); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
 }
 /* ---------- 교정 페이지: 편집자 메모를 한 번에 고치고, 대조는 뒤에서 ---------- */
-function fixBatchPrompt(w, p, f, issues) {
+function fixBatchPrompt(w, p, f, issues, review = {}) {
   return `다음은 가상 세계관 위키 「${w.title}」(작중 기준 시점 ${w.era})의 문서 「${p.title}」의 원문과, 편집자가 남긴 메모 ${issues.length}개다. 메모마다 지적된 부분만 최소한으로 고친다.
 
 ## 메모
-${issues.map((i, n) => `${n + 1}. 문서의 서술: ${i.claim}\n   이유: ${i.conflict || "(없음)"}`).join("\n")}
+${issues.map((i, n) => `${n + 1}. 문서의 서술: ${i.claim}\n   이유: ${i.conflict || "(없음)"}${i.target && i.target !== p.key ? "\n   현재 문서 밖의 수정 대상으로 지목됨: " + (w.entities[i.target]?.title || i.target) : ""}${i.unrouted ? "\n   수정 대상 원문을 찾지 못한 상태: " + i.unrouted : ""}`).join("\n")}
+${review.feedback ? "\n## 재처리할 이유\n" + review.feedback : ""}
 
 ${canonBlock({ ...w, timeline: (w.timeline || []).filter(t => t.src !== p.key) })}
 ${isStory(w) ? "" : relatedExcerptBlock(w, p.key, [...new Set([...related(w, p.key), ...(p.links || [])])])}
@@ -157,17 +158,20 @@ ${f.body}
 - 고친 부분은 원래 문체('~이다'체), 링크 표기([[...]]), 말투를 그대로 유지한다. 가능하면 모순을 지우기보다 세계의 디테일로 풀어 낸다. 'A가 아니라 B' 꼴의 반전 대구는 쓰지 않는다.
 - 고치면서 링크를 넣을 때: ${linkNameRule()}
 - old에는 원문에서 고칠 부분을 글자 하나 다르지 않게 복사한다. 문장 하나나 인포박스 한 줄 단위로 잡고, 서로 다른 수정이 같은 문장을 겹쳐 잡지 않게 한다.
-- 메모와 상관없는 부분은 건드리지 않는다. 고칠 필요가 없다고 판단한 메모는 건너뛴다.
+- 메모와 상관없는 부분은 건드리지 않는다. 메모 자체가 잘못됐는지 원문과 근거를 먼저 읽는다. 오탐이면 문장을 억지로 바꾸지 말고 dismissed에 메모 번호와 이유를 쓴다.
+- 등급이나 참고 여부와 관계없이 모든 메모 번호를 빠짐없이 처리한다. 수정은 edits, 이미 해결된 메모는 resolved, 오탐은 dismissed로 답한다.
+- 현재 문서 안에서 사용자 확정 설정을 지키며 해결할 수 없는 구조적 문제만 blocked에 kind를 structural로 쓰고 구체적인 이유를 적는다. 다른 문서를 고쳐야만 하는 실제 모순 등이 여기에 해당한다. 수정이 어렵거나 원문을 잘못 복사한 것, 응답 누락, 근거 부족 자체는 구조적 해결 불가가 아니다.
+- 여기서 수정할 문서는 현재 문서뿐이다. 다른 문서가 수정 대상으로 지목된 메모는 그 판단부터 검토하고, 옳다면 blocked, 오탐이면 dismissed로 처리한다.
 - 소속 분류를 고치는 메모는 cats에서 본문·인포박스가 밝힌 국가·세력·조직의 실제 이름으로 고친다. 소속된 곳의 유형이나 정체를 소속 이름으로 대신 쓰지 않는다.
 - 고친 문장이 같은 섹션의 다른 문장과 같은 내용을 되풀이하게 되면 고친 문장 쪽을 줄이거나 지운다.
 - ${HANDOFF_RULE}
 - '서술 공백:' 메모는 지적된 대목이 설명해야 할 내용을 기존 사실과 모순되지 않게 직접 서술한다. 참고 문구만 바꾸거나 다른 문서로 다시 넘기는 것으로 끝내지 않는다.
-- 이유에 '재서술(줄임):'이나 '재서술(지움):'이 있는 메모도 관련 원문의 실제 설명을 대조한다. 상대 원문에 그 설명이 없으면 축약·삭제하지 않고 메모를 건너뛴다. 중복이 확인된 메모에는 위의 '메모 하나에 많아야 3곳'과 '디테일로 풀어 낸다'를 적용하지 않는다. '재서술(줄임):' 메모는 지적된 문단 전체를 old로 잡아 중복된 부분만 줄이고, 흐름을 잇는 핵심 사실의 요약과 상대 원문에 없는 필요한 경위·반응·영향은 남긴다. 문장 수를 강제로 맞추거나 날짜·수치를 일괄 삭제하지 않는다. 참고 문장은 실제 설명이 있는 문서로 한 번만 붙이며, 배경 언급은 링크만 남긴다. '재서술(지움):' 메모는 지적된 문단이나 인용문 전체를 old로 잡아 new를 빈 문자열로 둔다. 지운 문단이나 인용문을 가리키거나 그 내용을 전제로 하는 앞뒤 문장(인용을 여는 '…답했다.', 지운 사건의 결과로 시작하는 다음 문단의 첫 문장 등)도 같은 메모 번호로 함께 고쳐, 지운 뒤에도 앞뒤가 이어지게 한다. 지우면 섹션의 내용이 모두 사라지는 경우에는 지우지 말고 그 섹션의 목적에 맞는 한 문장으로 줄인다. '재서술(참고 중복):' 메모는 지적된 참고 문장 하나만 old로 잡아 new를 빈 문자열로 둔다. 그 섹션의 다른 문장은 건드리지 않는다. 재서술 메모를 고칠 때도 개요의 첫 문장(이 항목이 무엇인지 밝히는 정의)은 남기고, 인물 관계 항목은 그 인물과 이 항목이 어떤 사이였는지 한 문장을 남긴다. 인물 관계 항목을 사건 요약이나 참고 문구로 바꾸지 않는다.
+- 이유에 '재서술(줄임):'이나 '재서술(지움):'이 있는 메모도 관련 원문의 실제 설명을 대조한다. 상대 원문에 그 설명이 없으면 축약·삭제하지 않고 오탐으로 dismissed에 쓴다. 중복이 확인된 메모에는 위의 '메모 하나에 많아야 3곳'과 '디테일로 풀어 낸다'를 적용하지 않는다. '재서술(줄임):' 메모는 지적된 문단 전체를 old로 잡아 중복된 부분만 줄이고, 흐름을 잇는 핵심 사실의 요약과 상대 원문에 없는 필요한 경위·반응·영향은 남긴다. 문장 수를 강제로 맞추거나 날짜·수치를 일괄 삭제하지 않는다. 참고 문장은 실제 설명이 있는 문서로 한 번만 붙이며, 배경 언급은 링크만 남긴다. '재서술(지움):' 메모는 지적된 문단이나 인용문 전체를 old로 잡아 new를 빈 문자열로 둔다. 지운 문단이나 인용문을 가리키거나 그 내용을 전제로 하는 앞뒤 문장(인용을 여는 '…답했다.', 지운 사건의 결과로 시작하는 다음 문단의 첫 문장 등)도 같은 메모 번호로 함께 고쳐, 지운 뒤에도 앞뒤가 이어지게 한다. 지우면 섹션의 내용이 모두 사라지는 경우에는 지우지 말고 그 섹션의 목적에 맞는 한 문장으로 줄인다. '재서술(참고 중복):' 메모는 지적된 참고 문장 하나만 old로 잡아 new를 빈 문자열로 둔다. 그 섹션의 다른 문장은 건드리지 않는다. 재서술 메모를 고칠 때도 개요의 첫 문장(이 항목이 무엇인지 밝히는 정의)은 남기고, 인물 관계 항목은 그 인물과 이 항목이 어떤 사이였는지 한 문장을 남긴다. 인물 관계 항목을 사건 요약이나 참고 문구로 바꾸지 않는다.
 - 확정 설정에 맞춘다며, 이 문서의 대상이 아직 태어나지 않았거나 그 일을 할 수 없는 나이였던 시점의 일을 이 대상의 일로 바꾸지 않는다. 그렇게 고칠 수밖에 없는 메모는 건너뛴다.
 
 JSON 객체 하나만 출력:
-{"edits":[{"memo":1,"field":"summary, cats, infobox, body 중 하나","old":"원문 그대로의 일부","new":"고친 내용"}],"resolved":[],"note":"전체적으로 무엇을 고쳤는지 한 문장"}
-지적된 서술이 원문에 더 이상 없거나 이미 고쳐져 있는 메모는 edits를 만들지 않고 그 메모 번호를 resolved에 넣는다.`;
+{"edits":[{"memo":1,"field":"summary, cats, infobox, body 중 하나","old":"원문 그대로의 일부","new":"고친 내용"}],"resolved":[],"dismissed":[{"memo":1,"reason":"오탐인 이유"}],"blocked":[{"memo":2,"kind":"structural","reason":"현재 문서에서 해결할 수 없는 구체적인 이유"}],"note":"전체적으로 무엇을 고쳤는지 한 문장"}
+각 배열은 해당하는 항목이 없으면 빈 배열로 쓴다. 지적된 서술이 원문에 더 이상 없거나 이미 고쳐져 있는 메모는 edits를 만들지 않고 그 메모 번호를 resolved에 넣는다.`;
 }
 /* 교정 작업 목록: 문서마다 하나씩, 서로 독립적으로 진행한다. 화면에서 보는 교정은 지금 열린 문서의 것이다 */
 const curFix = () => S.view.name === "fix" ? S.fixJobs.get(S.view.key) || null : null;
@@ -222,12 +226,24 @@ async function runFixBatch(v = curFix()) {
   try {
     const r = await callJson("fix", fixBatchPrompt(w, p, f, picked.map(n => v.items[n])), { modelTier: "default", ...PAGE_MODEL, effort: "low" }, { title: p.title + ` · ${picked.length}곳` });
     if (gone()) return;
-    const edits = parseFixEdits(r, f, picked.length).map(e => ({ n: picked[e.mi - 1], field: e.field, old: e.old, new: e.new, on: true }));
+    const rejected = new Set([...(Array.isArray(r?.dismissed) ? r.dismissed : []).filter(x => x?.reason), ...(Array.isArray(r?.blocked) ? r.blocked : []).filter(x => x?.kind === "structural" && x.reason)].map(x => Number(x.memo)));
+    const edits = parseFixEdits(r, f, picked.length).filter(e => !rejected.has(e.mi)).map(e => ({ n: picked[e.mi - 1], field: e.field, old: e.old, new: e.new, on: true }));
+    for (const x of Array.isArray(r?.blocked) ? r.blocked : []) {
+      const index = Number(x?.memo) - 1, i = v.items[picked[index]], reason = String(x?.reason || "").trim();
+      if (!i || x.kind !== "structural" || !reason) continue;
+      i.memoId = memoKey(i); i.originalConflict ||= i.conflict; i.blocked = true; i.blockedReason = reason;
+      i.conflict = `${i.originalConflict} · 구조적 해결 불가: ${reason}`;
+    }
+    if (p.check) p.check.reviewStamp = memoSourceStamp(p);
     // 수정안이 없는 메모 가운데 이미 원문에 반영된 것은 닫는다.
-    const said = new Set((Array.isArray(r?.resolved) ? r.resolved : []).map(x => parseInt(x, 10)).filter(x => x >= 1 && x <= picked.length).map(x => picked[x - 1]));
+    const said = new Set([...(Array.isArray(r?.resolved) ? r.resolved : []), ...(Array.isArray(r?.dismissed) ? r.dismissed : []).filter(x => x?.reason).map(x => x.memo)].map(x => parseInt(x, 10)).filter(x => x >= 1 && x <= picked.length).map(x => picked[x - 1]));
     const raw = Array.isArray(r?.edits) ? r.edits : [];
     const done = S.pages[v.key] === p ? picked.filter(n => !edits.some(e => e.n === n) && memoResolved(p, f, v.items[n], said.has(n), raw.filter(ed => picked[(parseInt(ed?.memo, 10) || (picked.length === 1 ? 1 : 0)) - 1] === n))) : [];
     if (done.length) {
+      if (!v.fromConflicts && p.check) {
+        p.check.closedMemos = uniqueMemos([...(p.check.closedMemos || []), ...done.filter(n => said.has(n)).map(n => ({ ...v.items[n], disposition: "resolved" }))]);
+        p.check.reviewStamp = memoSourceStamp(p);
+      }
       const field = v.fromConflicts ? (v.fromConflicts === true ? "conflicts" : v.fromConflicts) : null;
       await closeMemos(v.key, field ? done : done.map(n => v.items[n]), field);
       if (gone()) return;
@@ -239,7 +255,8 @@ async function runFixBatch(v = curFix()) {
     v.skipped = picked.filter(n => !edits.some(e => e.n === n) && !done.includes(n)).length;
     v.closed = done.length;
     v.phase = edits.length ? "review" : "pick";
-    if (!edits.length) v.err = done.length ? `이미 원문에 반영된 메모 ${done.length}개를 닫았습니다.${v.items.length ? "" : " 남은 메모가 없습니다."}` : "고칠 곳을 원문에서 찾지 못했습니다. 다시 시도하거나 편집에서 직접 고쳐 주세요.";
+    if (!edits.length && picked.some(n => v.items[n]?.blocked) && !done.length) { v.err = "현재 문서에서 구조적으로 해결할 수 없는 메모만 남았습니다."; await Store.savePage(w.id, p); }
+    else if (!edits.length) v.err = done.length ? `이미 원문에 반영되었거나 오탐으로 판정된 메모 ${done.length}개를 닫았습니다.${v.items.length ? "" : " 남은 메모가 없습니다."}` : "고칠 곳을 원문에서 찾지 못했습니다. 다시 시도하거나 편집에서 직접 고쳐 주세요.";
   } catch (err) { if (gone()) return; v.phase = "pick"; v.err = errMsg(err); }
   if (S.view.name === "fix" && S.view.key === v.key) { renderMain(); renderSide(); return; }
   renderAll();

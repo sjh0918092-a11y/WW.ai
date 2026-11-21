@@ -57,11 +57,11 @@ test('근거에 「문서 제목」: 접두어와 따옴표가 붙어도 수정 
     assert.ok(c.S.pages[K('러시아')].sections[0].body.replace(/\[\[|\]\]/g, '').includes(is[0].targetOld), is[0].targetOld);
   }
 });
-test('근거 구절을 못 찾아 수정 요청을 못 보내면 주인 문서를 자동으로 고치지 않고 기록한다', () => {
+test('근거 구절을 못 찾은 메모도 모델 검토에는 넘기며 현재 문서의 수정 대상으로 바꾸지는 않는다', () => {
   const w = world([hub(), owner()]);
   const is = c.parseIssues({ issues: [{ claim: '우크라이나 해군으로 옮겨', evidence: '「러시아」: “지어낸 문장이 여기에 있다”', conflict: '다르다', severity: 'high', fixDoc: '러시아' }] }, w, K('옥사나 체르넨코'));
   assert.equal(is[0].target, undefined); assert.equal(is[0].unrouted, '러시아'); assert.equal(is[0].severity, 'low');
-  assert.equal(c.autoFixList(is, K('옥사나 체르넨코')).length, 0);
+  assert.equal(c.autoFixList(is, K('옥사나 체르넨코')).length, 1);
 });
 test('허브 작성 입력에 관련 항목 문서의 해당 문단이 들어간다', () => {
   const w = world([page('러시아', '국가', '러시아다.', 1), page('옥사나 체르넨코', '인물', '1992년 체르넨코는 [[우크라이나]] 해군으로 옮겼다.\n\n1994년 [[러시아]]로 귀환해 흑해함대에 복귀했다.', 2)]);

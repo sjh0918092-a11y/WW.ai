@@ -22,15 +22,15 @@ const AI_R4={rules:[{rule:'R1',subjects:['전략체'],startMin:14,startMax:19,en
 const world=(pages,rules=[R4],ai=AI_R4)=>{c.S.pages=pages;const entities={};for(const [k,p] of Object.entries(pages))entities[k]={title:p.title,type:p.type,facts:[],mentions:[]};const w={era:'2016년',rules,entities};w.ageRules={text:rules.join('\n'),rules:c.parseAgeRules(ai,w)};return w;};
 const box=o=>Object.entries(o).map(([label,value])=>({label,value}));
 
-test('해결할 수 없는 나이 규칙 충돌은 먼저 쓴 문서로 넘기고 자동 수정에서 뺀다',()=>{
+test('해결할 수 없는 나이 규칙 충돌은 먼저 쓴 문서로 넘기고 모델 검토에 넘긴다',()=>{
   const viet=page('베트남 전쟁','사건',{createdAt:1,body:'[[컬럼비아 3호]]는 1965년 다낭에 상륙했다. 정글 백병전에서 관절 파쇄와 심각한 척추 손상을 입은 [[컬럼비아 3호]]는 1973년 신체 축소를 마치고 통상 체구로 복귀했다.'});
   const col=page('컬럼비아 3호','인물',{createdAt:2,summary:'미국의 3세대 전략체',infobox:box({'출생년도':'1953년','현역 기간':'1965년 ~ 1973년','성별':'여성'})});
   const w=world({viet,col});
   const is=c.ageRuleIssues(w,'col');
   assert.equal(is.length,1);assert.equal(is[0].target,'viet');assert.equal(is[0].severity,'low');assert.equal(is[0].by,'num');
   assert(is[0].conflict.includes('· 나이 규칙:'));assert(is[0].targetOld.includes('1965년'));
-  assert.equal(c.autoFixList(is,'col').length,0);
-  assert.equal(c.autoFixList([{...is[0],severity:'high'}],'col').length,0,'고칠 대상이 다른 문서인 다듬을 곳도 자동 수정에 보내지 않는다');
+  assert.equal(c.autoFixList(is,'col').length,is.length);
+  assert.equal(c.autoFixList([{...is[0],severity:'high'}],'col').length,1,'다른 문서가 대상으로 지목된 메모도 검토하되 현재 문서를 억지로 수정하지 않는다');
   assert.deepEqual(c.routeAutoConflicts(w,'col',is),['viet']);
   assert.equal(viet.autoConflicts.length,1);assert.equal(viet.autoConflicts[0].by,'col');assert.equal(viet.autoConflicts[0].byTitle,'컬럼비아 3호');
   c.routeAutoConflicts(w,'col',is);assert.equal(viet.autoConflicts.length,1,'같은 (by, old)는 한 번만 단다');
@@ -44,7 +44,7 @@ test('실제 문장처럼 다른 이름이 함께 나와도 연도를 정한 기
   const w=world(mk());
   const is=c.ageRuleIssues(w,'col');
   assert.equal(is.length,1);assert.equal(is[0].severity,'low');assert.equal(is[0].target,'viet');assert(is[0].targetOld.includes('다낭 해안'));
-  assert.equal(c.autoFixList(is,'col').length,0,'자동 수정이 현역 시작을 1967~1972년으로 고치지 않는다');
+  assert.equal(c.autoFixList(is,'col').length,is.length,'수정 대상 판단도 모델에 넘긴다');
 });
 test('기준 문서가 이 항목에 대해 확정한 사실(facts)의 연도도 근거로 인정한다',()=>{
   const pages=()=>({usmc:page('미 해병대','조직',{createdAt:1}),viet:page('베트남 전쟁','사건',{createdAt:1,body:REAL_1965}),

@@ -60,15 +60,15 @@ test('같은 인물·날짜·결론의 본문·연표·장부 근거는 한 건�
   const body = '엘리너 레이놀즈는 1954년 3월 1일 거체화했다.';
   const w = world({ p: page('엘리너 레이놀즈', '1940년 5월 27일', body + '\n\n' + body) }, { timeline: [{ year: '1954', month: 3, day: 1, event: body, src: 'p' }], events: [{ name: '비키니 쇼크', date: '1954년 3월 1일', src: 'p', beats: [{ actor: '엘리너 레이놀즈', action: '거체화했다.' }] }] });
   const issues = c.ageRuleIssues(w, 'p'); assert.equal(issues.length, 1); assert.equal(issues[0].severity, 'low');
-  assert.equal(c.autoFixList(issues, 'p').length, 0);
-  assert.equal(c.autoFixList(issues.map(i => ({ ...i, severity: 'high' })), 'p').length, 0, '참고 지적은 자동 수정에서 명시적으로 제외한다');
+  assert.equal(c.autoFixList(issues, 'p').length, issues.length);
+  assert.equal(c.autoFixList(issues.map(i => ({ ...i, severity: 'high' })), 'p').length, issues.length, '참고 지적도 모델이 오탐 여부와 처리 방법을 판단한다');
   const merged = c.mergeIssues([...issues, { ...issues[0], claim: '다른 표현의 같은 결론', severity: 'high' }]); assert.equal(merged.length, 1); assert.equal(merged[0].severity, 'low');
 });
 test('새 퇴역 연도·신장 지적은 모두 low이며 다른 문서의 자동 교정 표시로 보내지 않는다', () => {
   const p = page('엘리자베스 해밀턴', '', '해밀턴은 1985년 명예 전역했다.', { infobox: [{ label: '전성기 전고', value: '61.8m' }] });
   const q = page('전역 기록', '', '해밀턴은 1987년 명예 전역했다. 신장 60.4미터의 해밀턴은 출격했다.', { type: '사건', createdAt: 2 });
   const w = world({ p, q });
-  for (const k of ['p', 'q']) { const issues = c.numericIssues(w, k); assert(issues.length > 0); assert(issues.every(i => i.severity === 'low')); assert.equal(c.autoFixList(issues, k).length, 0); c.routeAutoConflicts(w, k, issues); }
+  for (const k of ['p', 'q']) { const issues = c.numericIssues(w, k); assert(issues.length > 0); assert(issues.every(i => i.severity === 'low')); assert.equal(c.autoFixList(issues, k).length, issues.length); c.routeAutoConflicts(w, k, issues); }
   assert.equal(q.autoConflicts?.length || 0, 0); assert.equal(p.autoConflicts?.length || 0, 0);
   const issue = c.numericIssues(w, 'q')[0]; const merged = c.mergeIssues([issue, { claim: issue.claim, conflict: '별도의 AI 판단', severity: 'high' }]);
   assert(merged.find(i => i.advisory)?.severity === 'low');

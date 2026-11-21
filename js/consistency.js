@@ -831,7 +831,9 @@ function editPropagation(w, k, oldPage, newPage) {
 }
 /* 결정론 지적 전부 (숫자 대조 → 나이 규칙 → 인용 대조 → 성별 규칙 → 사건 장부 → 텍스트 결함). 하나가 실패해도 나머지는 쓴다 */
 function detIssues(w, k) {
-  return withNameCheckContext(w, () => detIssuesInContext(w, k));
+  const issues = withNameCheckContext(w, () => detIssuesInContext(w, k)), p = S.pages[k];
+  const closed = p?.check?.reviewStamp === memoSourceStamp(p) ? new Set([...(p.check.closedMemos || []).map(memoKey), ...(p.check.issues || []).filter(i => i.blocked).map(i => i.memoId)]) : new Set();
+  return issues.filter(i => !closed.has(memoKey(i)));
 }
 function detIssuesInContext(w, k) {
   let num = [];
@@ -855,10 +857,13 @@ function mergeIssues(list) {
     seen.set(ck, i); all.push(i);
   }
   all.sort((a, b) => (b.severity === "high") - (a.severity === "high"));
-  return all.slice(0, 10);
+  return all;
 }
-/* 작성 직후 자동으로 고칠 지적: 다듬을 곳 중 고칠 대상이 이 문서인 것만. 다른 문서가 고칠 대상이면 이 문서를 고쳐도 풀리지 않고 다른 서술만 망가진다 */
-const autoFixList = (issues, k) => issues.filter(i => !i.advisory && i.severity === "high" && !i.unrouted && (!i.target || i.target === k));   // 수정 요청을 못 보낸 지적은 주인 문서 쪽을 고치지 않는다
+/* 등급·참고 여부와 무관하게 모든 메모를 모델이 검토한다. 다른 문서의 수정 필요 여부도 모델이 판정한다. */
+const autoFixList = issues => issues.slice();
+const memoKey = i => JSON.stringify([i.issueKey || "", i.claim, i.conflict, i.target || "", i.unrouted || ""]);
+const memoSourceStamp = p => p ? String(cyrb53(JSON.stringify([p.title, p.summary, p.infobox, p.sections]))) : "";
+const uniqueMemos = issues => [...new Map(issues.map(i => [memoKey(i), i])).values()];
 /* 다른 문서가 고칠 대상인 지적을 그 문서의 autoConflicts에 단다. 이 문서(k)를 다시 검사해 더 이상 나오지 않는 지적은 지운다.
    p.conflicts는 직접 수정한 문서가 낸 것만 남기므로(cleanAiSupersede) 따로 둔다. 바뀐 문서 키들을 돌려준다 */
 function routeAutoConflicts(w, k, issues) {
@@ -885,7 +890,7 @@ function routeAutoConflicts(w, k, issues) {
 function refreshNumeric(w, k) {
   const p = S.pages[k]; if (!p?.check || p.check.numV === numStamp(w)) return null;
   const fresh = detIssues(w, k);
-  const old = p.check.issues || [], ai = [...old.filter(i => !isNumIssue(i)), ...old.filter(isNumIssue).flatMap(i => i.ai || [])];   // 결정론 지적에 합쳐졌던 AI 지적도 남긴다
+  const old = p.check.issues || [], ai = [...old.filter(i => !isNumIssue(i) || i.blocked), ...old.filter(isNumIssue).flatMap(i => i.ai || [])];   // 결정론 지적에 합쳐졌던 AI 지적도 남긴다
   p.check = { ...p.check, issues: mergeIssues([...fresh, ...ai]), numV: numStamp(w) };
   return routeAutoConflicts(w, k, fresh);
 }
@@ -937,13 +942,13 @@ function saveRouted(w, keys) { for (const x of keys || []) if (S.pages[x]) Store
 function refreshOnOpen(k) {
   const w = S.world, p = w && S.pages[k];
   // 다른 문서의 자동 저장도 서버 작업의 원본 버전을 바꾸므로 작업 중에는 갱신을 미룬다.
-  if (!p?.check || S.checking || S.gen || p.check.numV === numStamp(w) || isHeld(k)) return;
+  if (!p?.check || p.check.incomplete || S.checking || S.gen || p.check.numV === numStamp(w) || isHeld(k)) return;
   let routed = null;
   try { routed = refreshNumeric(w, k); } catch (e) { console.warn("[숫자 대조 갱신]", e); p.check.numV = numStamp(w); }
   Store.savePage(w.id, p).catch(() => {}); saveRouted(w, routed);
 }
 function parseIssues(r, w = null, k = null) {
-  return (Array.isArray(r?.issues) ? r.issues : []).filter(i => i && i.claim && (i.evidence || i.conflict)).slice(0, 8)   // 근거 없는 지적은 버린다
+  return (Array.isArray(r?.issues) ? r.issues : []).filter(i => i && i.claim && (i.evidence || i.conflict))   // 근거 없는 지적은 버린다
     .map(i => ownerTarget(w, k, i, { claim: String(i.claim).replace(/^\s*#+\s*/, "").replace(/^\[(인포박스|본문)\]\s*/, "").slice(0, 300), conflict: [i.evidence ? `근거: ${stripMarks(i.evidence)}` : "", stripMarks(i.conflict || "")].filter(Boolean).join(" · ").slice(0, 400), severity: i.severity === "high" ? "high" : "low" }));
 }
 /* 주인 문서 원칙: 검사가 고칠 쪽으로 다른 문서를 지목하면 그 문서에 수정 요청으로 보낸다.
@@ -973,90 +978,162 @@ function ownerTarget(w, k, raw, issue) {
   if (!found) return { ...issue, severity: "low", unrouted: P.title, conflict: `${issue.conflict.slice(0, 300)} · 고칠 쪽으로 지목된 「${P.title}」에서 근거 구절을 찾지 못해 수정 요청을 보내지 못함`.slice(0, 400) };
   return { ...issue, severity: "low", target: x, targetOld: found.slice(0, 300), targetClaim: `「${here.title}」(이 항목의 단독 문서) 서술: ${stripMarks(raw.claim)}`.slice(0, 400), conflict: `${issue.conflict} · 고칠 쪽: 「${P.title}」`.slice(0, 400) };
 }
-/* 작성 직후, 문서를 보여 주기 전에 설정 검사를 돌리고 '다듬을 곳'은 자동으로 고친다.
-   실패하거나 사용자가 건너뛰면 작성된 문서를 그대로 쓴다. 고쳤으면 { page: 고친 문서, fixed, keep: 남은 지적 } */
+/* 수정안 적용은 원문 교체만 확인한다. 내용의 타당성과 오탐·해결 불가 판정은 모델이 맡는다. */
+function applyAutoEdits(w, k, page, high, fr, skip = new Set()) {
+  const issues = high, res = { page, fixed: 0, keep: issues, edited: [], fresh: [], patched: false, failures: [] };
+  const f = pageToSource(w, page), nf = { ...f }, fixedEdits = []; let applied = 0;
+  // 재서술(줄임·지움) 수정을 먼저 적용한다. 같은 문단의 다른 수정이 먼저 들어가면 지울 문단이 원문과 달라져 찾지 못한다
+  const restate = ed => /재서술\(/.test(high[Number(ed?.memo) - 1]?.conflict || "") ? 1 : 0;
+  const restated = [], edits = (Array.isArray(fr?.edits) ? fr.edits : []).slice(0, 16).map((ed, i) => ({ ed, i })).sort((a, b) => restate(b.ed) - restate(a.ed) || a.i - b.i).map(x => x.ed);
+  for (const ed of edits) {
+    const fld = ["summary", "cats", "infobox", "body"].includes(ed?.field) ? ed.field : null;
+    let old = String(ed?.old || ""); const nw = String(ed?.new ?? "");
+    if (!fld || !old.trim() || old === nw) { res.failures.push("수정 필드·원문·교체문이 유효하지 않다."); continue; }
+    let memo = Number(ed.memo ?? (high.length === 1 ? 1 : NaN));
+    if (ed.memo === undefined && !Number.isInteger(memo)) {
+      const o = stripMarks(old), hits = high.map((i, x) => [stripMarks(i.claim), x + 1]).filter(([c]) => c && o && (c.includes(o) || o.includes(c)));
+      if (hits.length === 1) memo = hits[0][1];
+    }
+    if (!Number.isInteger(memo) || memo < 1 || memo > high.length) { res.failures.push("수정안의 메모 번호를 연결하지 못했다."); continue; }
+    const issue = high[memo - 1];
+    if (skip.has(issue)) continue;
+    if (issue.unrouted || issue.target && issue.target !== k) { res.failures.push(`${memo}번은 다른 문서가 수정 대상으로 지목되어 현재 문서에 적용하지 않았다. 대상 판정을 다시 검토한다.`); continue; }
+    let at = nf[fld].indexOf(old); if (at < 0) { old = old.trim(); at = nf[fld].indexOf(old); } if (at < 0) { res.failures.push(`${memo}번의 old가 현재 원문과 일치하지 않는다. 원문에서 다시 복사한다.`); continue; }
+    const prev = nf[fld];
+    nf[fld] = nf[fld].slice(0, at) + nw + nf[fld].slice(at + old.length);
+    // 재서술을 지우다가 섹션 하나가 통째로 비면(인물 관계·현재 등) 그 지움은 되돌린다. 제목만 남은 섹션을 만들지 않는다
+    if (fld === "body" && restate(ed) && !nw.trim()) { const empty = src => sourceToOut(src).sections.filter(x => !String(x.body || "").trim()).length; if (empty(nf) > empty({ ...nf, body: prev })) { nf[fld] = prev; res.failures.push(`${memo}번은 섹션을 통째로 비우므로 적용하지 않았다. 필요한 설명을 남기는 수정안을 작성한다.`); continue; } }
+    applied++;
+    if (Number.isInteger(memo) && memo >= 1 && memo <= high.length) fixedEdits.push({ memo, field: fld, old, new: nw });
+    if (restate(ed)) restated.push(stripMarks(old).replace(/\s+/g, " "));   // 재서술로 줄이거나 지운 원문 구간
+  }
+  if (!applied) return res;
+  dropDuplicateRefs(nf);   // 줄임 수정 여러 개가 같은 참고 문장을 붙였으면 첫 번째만 남긴다
+  const out = sourceToOut(nf); if (!out.sections.some(x => x.body.trim())) { res.failures.push("수정안이 문서 본문 전체를 비우므로 적용하지 않았다."); return res; }
+  autoLink(w, k, out);
+  const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], events: w.events || [], glossary: w.glossary || [] });
+  let np;
+  try {
+    for (const o of Object.values(w.entities)) o.mentions = o.mentions.filter(m => m.from !== k);   // 링크와 언급은 고친 본문 기준으로 다시 계산
+    for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === k) delete w.navboxes[id];
+    np = integrate(w, k, out);
+  } catch (err) { restoreRewrite(w, backup); throw err; }
+  for (const x of PAGE_KEEP) if (page[x] !== undefined) np[x] = page[x];
+  cleanupOrphans(w, k);
+  S.pages[k] = np;
+  np.check = { ...page.check, at: Date.now() };
+  Object.assign(res, { page: np, keep: issues, patched: true });
+  // claim은 수정 후에도 남는 주어나 문장 일부일 수 있다. 메모 번호와 실제 원문 교체로 확인한다.
+  const verified = detIssues(w, k);
+  const finalSource = pageToSource(w, np);
+  const edited = new Set(fixedEdits.filter(e => {
+    // 자동 링크와 원문 왕복의 공백 정리를 허용한다. 링크 대상만 고친 경우에는 원래 표기를 대조한다.
+    const marks = stripMarks(e.old) !== stripMarks(e.new) ? stripMarks : t => t;
+    const text = t => marks(t).replace(/\s+/g, " ").trim();
+    const old = text(e.old), nw = text(e.new), final = text(finalSource[e.field]);
+    return old && old !== nw && f[e.field].includes(e.old) && !final.includes(old) && final.includes(nw);
+  }).map(e => high[e.memo - 1]).filter(i => !verified.some(x => x.conflict === i.conflict)));
+  // 재서술로 줄이거나 지운 원문 구간 안에 있던 지적은, 그 문장이 고친 뒤 문서에서 사라졌으면 풀린 것이다
+  const after = stripMarks(Object.values(finalSource).join("\n")).replace(/\s+/g, " ");
+  for (const i of issues) {
+    if (edited.has(i) || isNumIssue(i)) continue;
+    const cl = stripMarks(String(i.claim || "")).replace(/\s+/g, " ").trim();
+    if (cl.length >= 12 && restated.some(r => r.includes(cl)) && !after.includes(cl)) edited.add(i);
+  }
+  const keep = mergeIssues([...verified, ...issues.filter(i => !edited.has(i) && !isNumIssue(i))]);
+  const fixed = edited.size;
+  np.check = { ...np.check, issues: keep, numV: numStamp(w), fixed: [...edited].map(i => ({ claim: String(i.claim).slice(0, 200), conflict: String(i.conflict).slice(0, 300) })) };
+  if (fixed) np.autoFixed = { at: Date.now(), n: fixed };
+  Object.assign(res, { fixed, keep, edited: [...edited], fresh: verified });
+  return res;
+}
+
+/* 메모가 수정·해결·오탐으로 처리되거나 구조적 해결 불가로 판정될 때까지 반복한다. */
 async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 직후") {
-  const res = { page, fixed: 0, keep: null, done: false };
+  const res = { page, fixed: 0, keep: null, done: false, patched: false };
+  const closed = [], fixed = [], blocked = []; let pending = [], feedback = "", idle = 0, round = 0;
   show ||= () => { if (S.view.name === "article" && S.view.key === k) renderMain(); else renderSide(); };
+  const current = () => S.world === w && S.pages[k] === res.page;
+  const publish = incomplete => {
+    const p = res.page;
+    p.check = { ...p.check, issues: uniqueMemos(blocked), pending: incomplete ? pending : [], incomplete,
+      closedMemos: closed, reviewStamp: memoSourceStamp(p), numV: numStamp(w), fixed,
+      rounds: round };
+    if (res.fixed) p.autoFixed = { at: Date.now(), n: res.fixed };
+    if (!incomplete) { delete p.check.error; delete p.check.errorCode; }
+    res.keep = p.check.issues;
+  };
   try {
     g.phase = "check"; show();
-    const issues = await runChecks(w, k, { signal: g.ctl.signal }, page.title + label), high = autoFixList(issues, k);
-    page.check = { at: Date.now(), issues, auto: true, numV: numStamp(w), ...(issues.meta || {}) }; res.done = true;
-    if (S.world === w && S.pages[k] === page) saveRouted(w, routeAutoConflicts(w, k, issues));
-    if (!high.length || S.world !== w || S.pages[k] !== page) return res;
-    g.phase = "fix"; g.nFix = high.length; show();
-    const f = pageToSource(w, page);
-    const fr = await callJson("fix", fixBatchPrompt(w, page, f, high), { modelTier: "default", ...PAGE_MODEL, signal: g.ctl.signal }, { title: page.title + ` · 자동 ${high.length}곳` });
-    if (S.world !== w || S.pages[k] !== page) return res;
-    const nf = { ...f }, fixedEdits = []; let applied = 0;
-    // 재서술(줄임·지움) 수정을 먼저 적용한다. 같은 문단의 다른 수정이 먼저 들어가면 지울 문단이 원문과 달라져 찾지 못한다
-    const restate = ed => /재서술\(/.test(high[Number(ed?.memo) - 1]?.conflict || "") ? 1 : 0;
-    const restated = [], edits = (Array.isArray(fr?.edits) ? fr.edits : []).slice(0, 16).map((ed, i) => ({ ed, i })).sort((a, b) => restate(b.ed) - restate(a.ed) || a.i - b.i).map(x => x.ed);
-    for (const ed of edits) {
-      const fld = ["summary", "cats", "infobox", "body"].includes(ed?.field) ? ed.field : null;
-      let old = String(ed?.old || ""); const nw = String(ed?.new ?? "");
-      if (!fld || !old.trim() || old === nw) continue;
-      let at = nf[fld].indexOf(old); if (at < 0) { old = old.trim(); at = nf[fld].indexOf(old); } if (at < 0) continue;
-      const prev = nf[fld];
-      nf[fld] = nf[fld].slice(0, at) + nw + nf[fld].slice(at + old.length);
-      // 재서술을 지우다가 섹션 하나가 통째로 비면(인물 관계·현재 등) 그 지움은 되돌린다. 제목만 남은 섹션을 만들지 않는다
-      if (fld === "body" && restate(ed) && !nw.trim()) { const empty = src => sourceToOut(src).sections.filter(x => !String(x.body || "").trim()).length; if (empty(nf) > empty({ ...nf, body: prev })) { nf[fld] = prev; continue; } }
-      applied++;
-      // 메모 번호가 빠졌으면 고친 구절과 지적된 서술이 겹치는 메모가 하나뿐일 때만 그 메모에 연결한다.
-      let memo = Number(ed.memo ?? (high.length === 1 ? 1 : NaN));
-      if (ed.memo === undefined && !Number.isInteger(memo)) {
-        const o = stripMarks(old), hits = high.map((i, x) => [stripMarks(i.claim), x + 1]).filter(([c]) => c && o && (c.includes(o) || o.includes(c)));
-        if (hits.length === 1) memo = hits[0][1];
+    const issues = await runChecks(w, k, { signal: g.ctl.signal }, page.title + label);
+    if (!current()) return res;
+    pending = uniqueMemos([...(page.check?.pending || []), ...(page.check?.incomplete ? page.check.issues || [] : []), ...issues].map(i => i.blocked ? { ...i, conflict: i.originalConflict || i.conflict, blocked: false } : i));
+    if (page.check?.reviewStamp === memoSourceStamp(page)) closed.push(...(page.check.closedMemos || []));
+    if (page.check?.incomplete) { fixed.push(...(page.check.fixed || [])); res.fixed = fixed.length; }
+    page.check = { at: Date.now(), issues: [], pending, auto: true, numV: numStamp(w), ...(issues.meta || {}) };
+    publish(true);
+    while (pending.length) {
+      if (g.ctl.signal.aborted) throw { code: "cancelled" };
+      if (!current()) return res;
+      const batch = autoFixList(pending, k).slice(0, 8), before = memoSourceStamp(res.page);
+      g.phase = "fix"; g.nFix = pending.length; round++; show();
+      const f = pageToSource(w, res.page);
+      const fr = await callJson("fix", fixBatchPrompt(w, res.page, f, batch, { auto: true, feedback }),
+        { modelTier: "default", ...PAGE_MODEL, signal: g.ctl.signal }, { title: page.title + ` · 자동 수정 ${round}차 · ${pending.length}곳` });
+      if (!current()) return res;
+      if (g.ctl.signal.aborted) throw { code: "cancelled" };
+      if (!Array.isArray(fr?.edits)) throw { code: "invalid_fix", message: "수정 응답 형식을 확인하지 못했습니다." };
+      const picked = n => Number.isInteger(Number(n)) && Number(n) >= 1 && Number(n) <= batch.length ? batch[Number(n) - 1] : null;
+      const dismissed = new Map(), impossible = new Map(), resolved = new Set();
+      for (const x of Array.isArray(fr.dismissed) ? fr.dismissed : []) {
+        const i = picked(x?.memo), reason = String(x?.reason || "").trim();
+        if (i && reason) dismissed.set(i, reason);
       }
-      if (Number.isInteger(memo) && memo >= 1 && memo <= high.length) fixedEdits.push({ memo, field: fld, old, new: nw });
-      if (restate(ed)) restated.push(stripMarks(old).replace(/\s+/g, " "));   // 재서술로 줄이거나 지운 원문 구간
+      for (const x of Array.isArray(fr.blocked) ? fr.blocked : []) {
+        const i = picked(x?.memo), reason = String(x?.reason || "").trim();
+        if (i && x.kind === "structural" && reason && !dismissed.has(i)) impossible.set(i, reason);
+      }
+      for (const n of Array.isArray(fr.resolved) ? fr.resolved : []) {
+        const i = picked(n);
+        // 적용하지 못한 수정안을 해결됐다는 신호만으로 닫지 않는다.
+        if (i && !dismissed.has(i) && !impossible.has(i) && !fr.edits.some(ed => picked(ed?.memo ?? (batch.length === 1 ? 1 : NaN)) === i)) resolved.add(i);
+      }
+      const step = applyAutoEdits(w, k, res.page, batch, fr, new Set([...dismissed.keys(), ...impossible.keys(), ...resolved]));
+      res.page = step.page; res.patched ||= step.patched;
+      const done = new Set([...step.edited, ...dismissed.keys(), ...resolved]);
+      for (const i of done) {
+        const reason = dismissed.get(i);
+        closed.push({ ...i, disposition: reason ? "dismissed" : resolved.has(i) ? "resolved" : "fixed", ...(reason ? { reason } : {}) });
+        if (step.edited.includes(i)) { fixed.push({ claim: String(i.claim).slice(0, 200), conflict: String(i.conflict).slice(0, 300) }); res.fixed++; }
+      }
+      for (const [i, reason] of impossible) blocked.push({ ...i, memoId: memoKey(i), originalConflict: i.conflict, blocked: true, blockedReason: reason,
+        conflict: `${i.conflict} · 구조적 해결 불가: ${reason}` });
+      const removed = new Set([...done, ...impossible.keys()].map(memoKey));
+      const closedKeys = new Set(closed.map(memoKey)), blockedKeys = new Set(blocked.map(i => i.memoId));
+      pending = uniqueMemos([...pending.filter(i => !removed.has(memoKey(i))), ...step.fresh.filter(i => !closedKeys.has(memoKey(i)) && !blockedKeys.has(memoKey(i)))]);
+      publish(true);
+      const progress = done.size || impossible.size || before !== memoSourceStamp(res.page);
+      idle = progress ? 0 : idle + 1;
+      feedback = pending.length ? `${step.failures.length ? step.failures.join("\n") + "\n" : ""}이전 응답 뒤에도 아래 메모가 남았다. 수정 누락, 원문 불일치, 적용 뒤 남은 문제를 다시 확인한다. 각 번호를 수정안·이미 해결·오탐·구조적 해결 불가 중 하나로 빠짐없이 처리한다.${idle ? " 직전 응답에서 적용 가능한 수정안이나 유효한 판정이 없었다. 원문에서 old를 다시 복사한다. 응답 누락과 적용 실패는 구조적 해결 불가가 아니다." : ""}` : "";
     }
-    if (!applied) return res;
-    dropDuplicateRefs(nf);   // 줄임 수정 여러 개가 같은 참고 문장을 붙였으면 첫 번째만 남긴다
-    const out = sourceToOut(nf); if (!out.sections.some(x => x.body.trim())) return res;
-    autoLink(w, k, out);
-    const backup = JSON.stringify({ entities: w.entities, timeline: w.timeline, navboxes: w.navboxes || {}, relations: w.relations || [], events: w.events || [], glossary: w.glossary || [] });
-    let np;
-    try {
-      for (const o of Object.values(w.entities)) o.mentions = o.mentions.filter(m => m.from !== k);   // 링크와 언급은 고친 본문 기준으로 다시 계산
-      for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === k) delete w.navboxes[id];
-      np = integrate(w, k, out);
-    } catch { restoreRewrite(w, backup); return res; }
-    for (const x of PAGE_KEEP) if (page[x] !== undefined) np[x] = page[x];
-    cleanupOrphans(w, k);
-    S.pages[k] = np;
-    np.check = { ...page.check, at: Date.now() };
-    Object.assign(res, { page: np, keep: issues, patched: true });
-    // claim은 수정 후에도 남는 주어나 문장 일부일 수 있다. 메모 번호와 실제 원문 교체로 확인한다.
-    const verified = detIssues(w, k);
-    const finalSource = pageToSource(w, np);
-    const edited = new Set(fixedEdits.filter(e => {
-      // 자동 링크와 원문 왕복의 공백 정리를 허용한다. 링크 대상만 고친 경우에는 원래 표기를 대조한다.
-      const marks = stripMarks(e.old) !== stripMarks(e.new) ? stripMarks : t => t;
-      const text = t => marks(t).replace(/\s+/g, " ").trim();
-      const old = text(e.old), nw = text(e.new), final = text(finalSource[e.field]);
-      return old && old !== nw && f[e.field].includes(e.old) && !final.includes(old) && final.includes(nw);
-    }).map(e => high[e.memo - 1]).filter(i => !verified.some(x => x.conflict === i.conflict)));
-    // 재서술로 줄이거나 지운 원문 구간 안에 있던 지적은, 그 문장이 고친 뒤 문서에서 사라졌으면 풀린 것이다
-    const after = stripMarks(Object.values(finalSource).join("\n")).replace(/\s+/g, " ");
-    for (const i of issues) {
-      if (edited.has(i) || isNumIssue(i)) continue;
-      const cl = stripMarks(String(i.claim || "")).replace(/\s+/g, " ").trim();
-      if (cl.length >= 12 && restated.some(r => r.includes(cl)) && !after.includes(cl)) edited.add(i);
+    publish(false); res.done = true;
+    saveRouted(w, routeAutoConflicts(w, k, res.keep));
+  } catch (err) {
+    if (err?.code === "pipeline_yield") throw err;
+    if (current()) {
+      publish(true);
+      res.page.check.error = errMsg(err); res.page.check.errorCode = err?.code || "review_failed";
+      noteEvent(res.page, round ? "자동 수정 실패" : "작성 직후 리뷰 실패", err);
+      // 미완료 초안은 오류와 함께 보존하며 완료 문서로 내보내지 않는다.
+      await Store.savePage(w.id, res.page).catch(() => {});
     }
-    const keep = mergeIssues([...verified, ...issues.filter(i => !edited.has(i) && !isNumIssue(i))]);
-    const fixed = edited.size;
-    np.check = { ...np.check, issues: keep, numV: numStamp(w), fixed: [...edited].map(i => ({ claim: String(i.claim).slice(0, 200), conflict: String(i.conflict).slice(0, 300) })) };
-    if (fixed) np.autoFixed = { at: Date.now(), n: fixed };
-    saveRouted(w, routeAutoConflicts(w, k, keep));
-    Object.assign(res, { fixed, keep });
-  } catch (err) {   // 건너뛰었거나 실패: 작성된 문서를 그대로 보여 주며 자동 재검사를 예약하지 않는다. 진단 기록에는 남긴다
-    if (err?.code !== "pipeline_yield") noteEvent(res.page, res.done ? "자동 수정 실패" : "작성 직후 리뷰 실패", err);
-  } finally {   // 고칠 곳이 없어 일찍 끝난 경우도 남긴다
+    throw err;
+  } finally {
     if (res.done) noteCheck(res.page);
   }
   return res;
 }
+
 /* 작성 직후의 preCheck 외에는 사용자가 설정 검사 버튼을 눌렀을 때만 실행한다. */
 async function checkPage(k) {
   if (!S.sample) { toast(ERR.no_sample); return; }
@@ -1066,6 +1143,11 @@ async function checkPage(k) {
   if (typeof DocumentPipeline !== "undefined" && DocumentPipeline.enabled()) return DocumentPipeline.check(k);
   S.checking = k; S.checkT0 = performance.now(); renderMain();
   try {
+    if (p.check?.incomplete) {
+      const result = await preCheck(w, k, p, { ctl: new AbortController() }, () => renderMain(), " · 자동 검토 재개");
+      await Store.savePage(w.id, result.page); await Store.saveWorld(w);
+      return;
+    }
     const beforeTimeline = w.timeline;
     const group = typeof AIRecovery !== "undefined" && AIJobs.enabled("gemini") ? crypto.randomUUID() : "", issues = await runChecks(w, k, { recoveryMeta: { group } }, p.title);
     if (S.pages[k] === p) {   // 검사하는 동안 문서가 바뀌었으면(장 반영 등) 옛 문서를 저장하지 않는다
@@ -1074,8 +1156,5 @@ async function checkPage(k) {
       try { await Store.savePage(w.id, p); if (w.timeline !== beforeTimeline) await Store.saveWorld(w); if (typeof AIRecovery !== "undefined") AIRecovery.handled(group); } catch (err) { toast("검사 결과를 저장하지 못했습니다. " + errMsg(err)); }
     }
   } catch (err) { toast(errMsg(err)); }
-  S.checking = null;
-  const here = S.view.name === "article" && S.view.key === k;
-  if (here) renderMain();
-  renderSide();   // 편집자 메모가 바뀌면 수정 요청 목록도 바뀐다
+  finally { S.checking = null; if (S.view.name === "article" && S.view.key === k) renderMain(); renderSide(); }
 }
