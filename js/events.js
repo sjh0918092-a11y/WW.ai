@@ -87,6 +87,8 @@ document.addEventListener("click", ev => {
     renderMain(); return;
   }
   if (d.lock) { S.dice.locks[d.lock] = !S.dice.locks[d.lock]; renderMain(); return; }
+  if (d.prefAx && !S.creating) { const p = normPrefs(S.prefs), v = +d.prefLv; if (v >= 1 && v <= 5 && p.axes[d.prefAx] !== v) p.axes[d.prefAx] = v; else delete p.axes[d.prefAx]; S.prefs = { ...p, avoidText: S.prefs?.avoidText || "" }; S.prefsOpen = true; renderMain(); return; }   // 같은 단계를 다시 누르거나 자동을 누르면 원안에 맡긴다
+  if (d.prefAvoid && !S.creating) { const p = normPrefs(S.prefs); p.avoid = p.avoid.includes(d.prefAvoid) ? p.avoid.filter(x => x !== d.prefAvoid) : [...p.avoid, d.prefAvoid]; S.prefs = { ...p, avoidText: S.prefs?.avoidText || "" }; S.prefsOpen = true; renderMain(); return; }
   if (d.whatif) { S.seed = whatIfSeed(d.whatif); createWorld(); return; }
   if (d.world) { openWorld(d.world); return; }
   if (d.del) { S.confirmDel = d.del; renderMain(); return; }
@@ -340,6 +342,7 @@ document.addEventListener("input", ev => {
   if (ev.target.dataset?.cast !== undefined && ev.target.dataset.cf) { const c = S.cast[Number(ev.target.dataset.cast)]; if (c) c[ev.target.dataset.cf] = ev.target.value; }
   if (ev.target.id === "cpDir" && S.compose) S.compose.dir = ev.target.value;
   if (ev.target.id === "guideIn") S.guideIn = ev.target.value;
+  if (ev.target.id === "avoidIn") S.prefs = { ...normPrefs(S.prefs), avoidText: ev.target.value };   // 입력 중에는 자르지 않고, 만들 때 정리한다
   if (ev.target.name === "advPick" && S.adv) { S.adv.pick = Number(ev.target.value); renderMain(); if (S.adv.pick === -2) $("#advCustom")?.focus(); }
   if (ev.target.id === "advCustom" && S.adv) { S.adv.custom = ev.target.value; const b = $('[data-act="story-go"]'); if (b) b.disabled = !S.sample || !norm(ev.target.value); }
   const fv = curFix();
@@ -434,3 +437,4 @@ document.addEventListener("keydown", ev => {
 document.addEventListener("input",ev=>{if(ev.target.closest?.(".gset")&&ev.target.id?.startsWith("g"))AISettingsSync.formDirty=true});
 
 window.addEventListener("focus",()=>{if(S.ready)AISettingsSync.load()});
+document.addEventListener("toggle", ev => { if (ev.target.id === "prefsBox") S.prefsOpen = ev.target.open; }, true);   // 분위기 조절을 펼친 상태는 다시 그려도 유지한다

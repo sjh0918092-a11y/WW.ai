@@ -319,6 +319,21 @@ function renderMain(force) {
   if (S.view.name === "canon" && S.focusEnt) { const d = document.getElementById("ent-" + S.focusEnt); if (d) { d.open = true; d.scrollIntoView({ block: "center" }); } S.focusEnt = null; }
 }
 
+/* 세계관 만들기의 선택 방향: 축 5단계(고르지 않으면 자동)와 피하고 싶은 것 */
+function prefsFormHtml() {
+  const p = normPrefs(S.prefs), dis = S.creating ? "disabled" : "", set = !prefsEmpty(p);
+  const ax = a => `<div class="pref-ax" role="group" aria-label="${esc(a.name)}">
+        <span class="pref-nm">${esc(a.name)}</span><button type="button" class="pref-auto" data-pref-ax="${a.id}" data-pref-lv="0" aria-pressed="${!p.axes[a.id]}" ${dis}>자동</button><span class="pref-br"></span><span class="pref-end">${esc(a.lo)}</span>
+        ${[1, 2, 3, 4, 5].map(v => `<button type="button" class="pref-lv" data-pref-ax="${a.id}" data-pref-lv="${v}" aria-pressed="${p.axes[a.id] === v}" aria-label="${esc(a.name)} ${v}단계 (${esc(a.lo)} 1 · ${esc(a.hi)} 5)" title="${esc(a.say[v - 1])}" ${dis}>${v}</button>`).join("")}
+        <span class="pref-end">${esc(a.hi)}</span></div>`;
+  return `<details class="prefs" id="prefsBox" ${S.prefsOpen || set ? "open" : ""}>
+      <summary>분위기 조절 <span class="note" style="font-weight:400">선택 · 고르지 않은 항목은 원안에 맡깁니다${set ? " · 조절함" : ""}</span></summary>
+      ${WORLD_AXES.map(ax).join("\n      ")}
+      <div class="pref-ax pref-avoid" role="group" aria-label="피하고 싶은 것"><span class="pref-nm">피하고 싶은 것</span>
+        ${WORLD_AVOID.map(x => `<button type="button" class="stab" data-pref-avoid="${x.id}" aria-pressed="${p.avoid.includes(x.id)}" ${dis}>${esc(x.name)}</button>`).join("")}</div>
+      <input id="avoidIn" class="txt" type="text" maxlength="${WORLD_AVOID_TEXT_MAX}" value="${esc(S.prefs?.avoidText || "")}" placeholder="직접 입력 (예: 동물이 다치는 장면, 학교 폭력)" aria-label="피하고 싶은 것 직접 입력" ${dis}>
+    </details>`;
+}
 function homeHtml() {
   const creationDraft = currentWorldDraft(), creationParts = bibleParts(S.mode === "story");
   const completed = creationParts.filter(p => creationDraft?.done.includes(p.id)).map(p => p.label);
@@ -368,6 +383,7 @@ function homeHtml() {
       <input id="firstIn" class="txt" type="text" maxlength="60" value="${esc(S.first)}" placeholder="예: 위화도 회군, 태조 전용기, 한양 궤도 거주구" ${S.creating ? "disabled" : ""}>`}
       <label class="lb" for="guideIn">작가 지침 <span class="note" style="font-weight:400">선택 · 세계관 전체에 걸쳐 지킬 방향. 모든 문서에 함께 전달됩니다</span></label>
       <textarea id="guideIn" rows="3" maxlength="1000" placeholder="예: 일본 거대 로봇 메카닉 SF풍으로. 네임드 파일럿에게는 전용기를 준다. 양산기 바리에이션을 풍부하게. 잔혹한 묘사는 피한다." ${S.creating ? "disabled" : ""}>${esc(S.guideIn)}</textarea>
+      ${prefsFormHtml()}
       <div class="row" ${S.seedTab === "whatif" && !S.creating && !S.createErr ? "hidden" : ""}>
         <button type="button" class="btn pri" data-act="create" ${S.creating || !S.sampleReady ? "disabled" : ""}>${S.creating ? "설정 노트를 만드는 중…" : completed.length ? "남은 설정 이어 만들기" : S.regen ? (S.regen.keep ? "새 세계관으로 다시 만들기" : "지우고 다시 만들기") : S.mode === "story" ? "이야기 시작하기" : "세계관 만들기"}</button>
         ${S.creating ? `<span class="genpill" role="status"><span class="dot"></span>${esc(S.createPhase || "세계관 생성을 준비하고 있습니다")}</span>` : ""}

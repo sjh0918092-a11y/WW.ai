@@ -37,6 +37,64 @@ ${w.tone.guide.map(g => "- " + g).join("\n")}
 
 `;
 }
+/* 세계관을 만들 때 사용자가 고르는 방향(선택). 축은 5단계이며 고르지 않은 축은 보내지 않고 원안에 맡긴다.
+   모델에는 단계별 긍정형 서술만 보낸다(피할 것의 이름을 보내면 '이곳은 ~가 아니다'처럼 되레 꺼내 쓰므로).
+   세계관 생성과 분위기 지침 생성에만 쓰고, 문서 프롬프트에는 보내지 않는다(분위기 지침을 거쳐 반영된다). */
+const WORLD_AXES = [
+  { id: "light", name: "명암", lo: "밝음", hi: "어두움", say: [
+    "밝고 따뜻한 세계. 사람들은 대체로 서로를 돕고 일상에 희망이 있으며, 갈등은 회복할 수 있는 규모로 일어난다.",
+    "대체로 따뜻하지만 그늘이 있는 세계. 일상은 굴러가고, 갈등과 상실은 이야기의 한 부분으로 존재한다.",
+    "밝음과 어둠이 비슷하게 섞인 세계.",
+    "긴장과 그늘이 짙은 세계. 체제나 환경의 압박이 일상에 스며 있고, 희망은 대가를 치러야 얻는다.",
+    "어둡고 가혹한 세계. 억압과 결핍이 일상이며, 생존과 저항이 이야기의 중심이 된다."] },
+  { id: "scale", name: "규모", lo: "일상", hi: "대서사", say: [
+    "작은 공동체와 개인의 일상이 중심인 이야기. 사건은 이웃, 가게, 동네, 가족 규모로 일어난다.",
+    "한 도시나 조직 정도의 규모. 개인의 삶과 그 주변 사회가 함께 움직인다.",
+    "개인의 이야기와 사회 전체의 흐름을 함께 다루는 규모.",
+    "국가와 세력이 움직이는 규모. 큰 사건이 여러 사람의 삶을 함께 바꾼다.",
+    "문명과 시대가 걸린 대서사. 세계의 운명을 좌우하는 사건과 세력이 중심이 된다."] },
+  { id: "real", name: "현실성", lo: "엄밀", hi: "판타지", say: [
+    "엄밀한 논리와 현실적인 인과를 따르는 세계. 기술과 현상은 그럴듯한 원리, 한계, 대가를 가진다.",
+    "대체로 현실적인 인과를 따르되, 원안의 핵심 설정 몇 가지만 현실을 벗어난다.",
+    "현실적인 인과와 상상력 있는 설정이 균형을 이루는 세계.",
+    "상상력이 앞서는 세계. 원리의 세부 설명보다 분위기와 경이, 볼거리를 우선한다.",
+    "자유로운 판타지. 현실의 법칙에 얽매이지 않는 경이롭고 신비한 현상이 자연스럽게 존재한다."] },
+  { id: "focus", name: "초점", lo: "설정", hi: "인물", say: [
+    "설정과 체계가 중심인 위키. 제도, 기술, 역사, 지리의 구조와 원리를 자세히 다룬다.",
+    "설정을 중심에 두되, 그 설정을 움직이는 사람들을 함께 보여 준다.",
+    "설정과 인물을 고르게 다룬다.",
+    "인물과 관계를 중심에 두되, 그들이 사는 세계의 설정을 함께 보여 준다.",
+    "인물과 관계가 중심인 위키. 사람들의 선택, 감정, 관계와 그 결과를 가장 많이 다룬다."] }
+];
+const WORLD_AVOID = [
+  { id: "tragic", name: "비극적 결말", say: "인물들의 이야기는 희망이나 회복의 여지를 남기며 맺는다." },
+  { id: "gore", name: "잔혹한 묘사", say: "폭력과 피해는 결과와 무게로 전하고, 신체의 상처와 고통을 자세히 묘사하지 않는다." },
+  { id: "death", name: "주요 인물의 죽음", say: "주요 인물들은 위기를 겪더라도 살아남아 이야기를 이어 간다." },
+  { id: "war", name: "전쟁 중심", say: "세계의 중심 갈등은 경쟁, 협상, 탐험, 생활의 문제처럼 사람과 공동체 사이의 일로 다룬다." }
+];
+const WORLD_AVOID_TEXT_MAX = 200;
+function normPrefs(p) {
+  const axes = {}, src = p && typeof p === "object" && p.axes && typeof p.axes === "object" ? p.axes : {};
+  for (const a of WORLD_AXES) { const v = src[a.id]; if (Number.isInteger(v) && v >= 1 && v <= 5) axes[a.id] = v; }
+  const avoid = WORLD_AVOID.map(x => x.id).filter(id => Array.isArray(p?.avoid) && p.avoid.includes(id));
+  const avoidText = String(p?.avoidText || "").replace(/\r/g, "").trim().slice(0, WORLD_AVOID_TEXT_MAX);
+  return { axes, avoid, avoidText };
+}
+const prefsEmpty = p => { const n = normPrefs(p); return !Object.keys(n.axes).length && !n.avoid.length && !n.avoidText; };
+function prefsBlock(p) {
+  if (prefsEmpty(p)) return "";
+  const n = normPrefs(p);
+  const lines = [...WORLD_AXES.filter(a => n.axes[a.id]).map(a => `- ${a.name}: ${a.say[n.axes[a.id] - 1]}`),
+    ...WORLD_AVOID.filter(x => n.avoid.includes(x.id)).map(x => "- " + x.say)];
+  return `
+사용자가 고른 방향:
+${lines.join("\n")}${n.avoidText ? `${lines.length ? "\n" : ""}- 사용자가 이 세계에서 두드러지지 않기를 바라는 것(아래 글):
+"""
+${n.avoidText}
+"""` : ""}
+이 방향을 세계관 이름, 핵심 규칙, 연표, 주요 무대에 반영하고, 분위기 지침(tone.guide)에는 이후 문서 작성자가 따를 수 있는 문장으로 옮긴다. 원안과 어긋나면 이 방향을 따른다. 분위기 지침과 설정에는 사용자가 바라지 않는다고 적은 말을 그대로 옮기거나 '~이 아니다', '~은 없다'처럼 부정하는 문장으로 쓰지 않고, 바라는 상태를 긍정형으로 쓴다.
+`;
+}
 function tonePrompt(w, label) {
   const titles = Object.values(w.entities).slice(0, 40).map(o => o.title + (o.summary ? ": " + o.summary.slice(0, 50) : "")).join("\n") || "(없음)";
   return `다음 가상 세계관 위키의 분위기 지침을 만든다.
@@ -46,7 +104,7 @@ function tonePrompt(w, label) {
 ${w.seed}
 """
 작중 기준 시점: ${w.era}
-${w.guide ? `작가 지침:\n${w.guide}\n` : ""}핵심 규칙:
+${w.guide ? `작가 지침:\n${w.guide}\n` : ""}${prefsBlock(w.prefs)}핵심 규칙:
 ${(w.rules || []).map(r => "- " + r).join("\n") || "(없음)"}
 지금까지의 항목:
 ${titles}
@@ -60,7 +118,7 @@ async function detectTone(w, label) {
   return normTone(t, label);
 }
 function castText(cast) { return cast.map(c => `- ${c.name}${c.desc ? ` — 특징: ${c.desc}` : ""}${c.rel ? ` — 주인공과의 관계: ${c.rel}` : ""}`).join("\n"); }
-function biblePrompt(seed, first, guide, story, user = {}) {
+function biblePrompt(seed, first, guide, story, user = {}, prefs = null) {
   return `너는 가상 세계관 위키의 편집장이다. 사용자가 준 원안을 바탕으로 이 세계관 위키의 '설정 노트' 초안을 만든다.
 
 원안:
@@ -73,7 +131,7 @@ ${guide ? `
 ${guide}
 """
 이 지침을 세계관 이름, 핵심 규칙, 연표, 분위기 지침에 반영한다. 원안과 어긋나면 원안을 따른다.
-` : ""}
+` : ""}${prefsBlock(prefs)}
 규칙:
 - 원안의 내용은 모두 그대로 유지하고, 빈 부분만 그럴듯하게 채운다.
 - 원안의 "확장 요소:", "추가 요소:", "넣고 싶은 것:" 목록은 사용자가 위키에서 다루고 싶은 주제이지 작중 항목의 이름이 아니다. 그 단어를 그대로 mainTitle로 쓰지 않는다.
@@ -124,8 +182,8 @@ function bibleParts(story) {
   return [overview, { id: "storyPlan", label: "주인공과 이야기 뼈대", keys: ["protagonist", "storyPromise", "spine", "secrets"], schema: { protagonist: { summary: "한 문장 정의", want: "바라는 것", wound: "필요 없으면 빈 문자열" }, storyPromise: { focus: "약속한 이야기 경험", central: { kind: "goal/relationship/promise/conflict/consequence/ongoing/mystery", subject: "이어갈 중심 내용" } }, spine: [{ n: 1, beat: "장 구간", intent: "이 장의 의도 한두 문장" }], secrets: [{ truth: "감춰진 진실", cover: "알려진 겉모습", reveal: 3 }] } },
     { id: "chapter1", label: "1장과 다음 행동", keys: ["chapter1"], schema: { chapter1: { title: "작중 사건명", era: "개요와 같은 시점", summary: "공개 줄거리 3~5문장", incident: "발단 사건 한 문장", nextChoices: ["행동 후보", "행동 후보", "행동 후보"] } } }, timeline];
 }
-function biblePartPrompt(seed, first, guide, story, user, part, accepted) {
-  const full = biblePrompt(seed, first, guide, story, user);
+function biblePartPrompt(seed, first, guide, story, user, part, accepted, prefs = null) {
+  const full = biblePrompt(seed, first, guide, story, user, prefs);
   const instructions = full.slice(0, full.lastIndexOf("\nJSON 객체 하나만 출력:"));
   return `${instructions}
 

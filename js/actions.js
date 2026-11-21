@@ -4,7 +4,7 @@
 function worldCreationInput() {
   const story = S.mode === "story";
   return { seed: S.seed.trim(), first: norm(S.first).slice(0, 60), story,
-    guide: String(S.guideIn || "").replace(/\r/g, "").trim().slice(0, 1000),
+    guide: String(S.guideIn || "").replace(/\r/g, "").trim().slice(0, 1000), prefs: normPrefs(S.prefs),
     user: story ? { total: Math.min(STORY_MAX, Math.max(STORY_MIN, +S.storyN || STORY_DEF)), desc: String(S.protoDesc || "").replace(/\r/g, "").trim().slice(0, 500), cast: (S.cast || []).map(c => ({ name: norm(c.name).slice(0, 40), desc: norm(c.desc).slice(0, 300), rel: norm(c.rel).slice(0, 120) })).filter(c => c.name).slice(0, 8) } : {} };
 }
 function worldCreationSignature(input) {
@@ -15,14 +15,14 @@ function currentWorldDraft() {
   return d?.signature === worldCreationSignature(worldCreationInput()) ? d : null;
 }
 async function generateWorldBible(input, draft, costSession) {
-  const { seed, first, guide, story, user } = input, kind = story ? "storyBible" : "bible";
+  const { seed, first, guide, story, user, prefs } = input, kind = story ? "storyBible" : "bible";
   const parts = bibleParts(story);
   for (const [index, part] of parts.entries()) {
     if (draft.done.includes(part.id)) continue;
     draft.failed = part.label;
     S.createPhase = `${index + 1}/${parts.length} · ${part.label}`;
     if (S.view.name === "home") renderMain();
-    const prompt = biblePartPrompt(seed, first, guide, story, user, part, draft.data);
+    const prompt = biblePartPrompt(seed, first, guide, story, user, part, draft.data, prefs);
     // 단계는 draft와 화면에서 관리한다. 서버에는 기존 작업 메타데이터만 보낸다.
     const opts = { modelTier: "default", progressWatch: true, costSession, recoveryTarget: { wid: "", key: "" } };
     const receive = async text => {
@@ -67,7 +67,7 @@ async function createWorld() {
     if (story && !(b.chapter1 && b.chapter1.summary)) throw { code: "invalid_json" };
     const w = { kind: "world", id: "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       title: norm(b.title).slice(0, 40), tagline: String(b.tagline || "").slice(0, 160), seed, style: "encyc",
-      era: String(b.era || "미상").slice(0, 40), historical: b.historical === true || b.historical === "true", guide, tone: normTone(b.tone, ""), rules: (Array.isArray(b.rules) ? b.rules : []).map(r => stripMarks(asText(r))).filter(Boolean).slice(0, 10),
+      era: String(b.era || "미상").slice(0, 40), historical: b.historical === true || b.historical === "true", guide, ...(prefsEmpty(input.prefs) ? {} : { prefs: normPrefs(input.prefs) }), tone: normTone(b.tone, ""), rules: (Array.isArray(b.rules) ? b.rules : []).map(r => stripMarks(asText(r))).filter(Boolean).slice(0, 10),
       calendars: cleanCalendars(b.calendars), ...(cleanCalendars(b.undatedCalendars).length ? { undatedCalendars: cleanCalendars(b.undatedCalendars) } : {}), timeline: [], userCanon: "", entities: {}, mainKey: null, createdAt: Date.now() };
     for (const t of (Array.isArray(b.timeline) ? b.timeline : [])) addTimeline(w, t, "seed");
     S.createPhase = "연표 점검과 저장"; if (S.view.name === "home") renderMain();
@@ -90,7 +90,7 @@ async function createWorld() {
     if(worldCost)DocumentCost.bindWorld(worldCost,w.id);
     await Store.saveWorld(w);
     S.worlds.unshift(w); S.creating = false; S.regen = null; S.createDraft = null; S.createPhase = "";
-    S.seed = S.ownSeed = S.first = S.guideIn = S.protoDesc = ""; S.cast = []; S.seedTab = "own"; S.dice = null; S.whatIfs = null;   // 만들고 나면 입력란을 모두 비운다
+    S.seed = S.ownSeed = S.first = S.guideIn = S.protoDesc = ""; S.cast = []; S.prefs = null; S.seedTab = "own"; S.dice = null; S.whatIfs = null;   // 만들고 나면 입력란을 모두 비운다
     await openWorld(w.id);
   } catch (e) {
     S.creating = false; S.createPhase = "";
@@ -300,7 +300,7 @@ function openRegen() {
   S.regen = { wid: w.id, title: w.title, keep: false };
   S.mode = story ? "story" : "basic";
   S.seed = S.ownSeed = w.seed || ""; S.seedTab = "own"; S.dice = null; S.whatIfs = null;
-  S.guideIn = w.guide || "";
+  S.guideIn = w.guide || ""; S.prefs = w.prefs ? normPrefs(w.prefs) : null;
   S.first = inp.first ?? (story ? w.entities[w.story.protagonistKey]?.title || "" : "");
   S.protoDesc = story ? (inp.protoDesc ?? w.story.protagonist?.desc ?? "") : "";
   if (story) S.storyN = totalOf(w);
@@ -310,7 +310,7 @@ function openRegen() {
 }
 function cancelRegen() {
   const wid = S.regen?.wid; S.regen = null;
-  S.seed = S.ownSeed = S.first = S.guideIn = S.protoDesc = ""; S.cast = []; S.createErr = null; S.createDraft = null;
+  S.seed = S.ownSeed = S.first = S.guideIn = S.protoDesc = ""; S.cast = []; S.prefs = null; S.createErr = null; S.createDraft = null;
   if (wid && S.worlds.some(x => x.id === wid)) { if (S.world?.id === wid) { S.view = { name: "canon" }; renderAll(); } else openWorld(wid); }
   else renderMain();
 }
