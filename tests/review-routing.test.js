@@ -124,13 +124,13 @@ test('사건 장부: 상세 서술을 맡은 참가자 문서는 먼저 쓴 개�
 test('다른 항목과 얽힌 일: 세 경우로 주인을 가르고, 참고 문구는 사건에만, 큰 일은 사건 항목으로 만든다', () => {
   const w = world([page('러시아', '국가', '러시아다.', 1), page('옥사나', '인물', '1992년 옥사나는 [[러시아]] 해군으로 옮겼다.', 2)]);
   const pr = c.pagePrompt(w, K('러시아'));
-  assert.match(pr, /다른 항목과 얽힌 일: 그 일을 누가 정하는지\(주인\)는 아래 세 경우로만 가른다/);
+  assert.match(pr, /다른 항목과 얽힌 일: 관련 문서가 이 문서로 넘긴 설명은 여기서 직접 서술하고/);
   assert.match(pr, /1\. 사건 항목이 있는 일:/); assert.match(pr, /2\. 사건 항목이 없고 이 항목만 겪은 일: 이 문서가 주인이다/); assert.match(pr, /3\. 사건 항목이 없고 다른 인물과 함께 겪은 일: 공통 사실/);
   assert.match(pr, /참고 문구의 대상은 1의 사건뿐이다/); assert.match(pr, /개요만 한두 문장으로 쓰고/); assert.match(pr, /혁명, 체제 붕괴, 조약 체결, 재난처럼 여러 세력이 얽힌 일\)이나 실제 역사의 큰 사건/); assert.match(pr, /나쁜 예: '2003년 3월 20일/);
   assert.match(pr, /필요한 만큼 만들어 링크한다/); assert.doesNotMatch(pr, /두세 개 만들어/);
   assert.match(pr, /장면의 주체는 이 항목 자신이다/); assert.match(pr, /다른 인물이 주인공인 장면/); assert.match(pr, /절정은 이 문서만의 장면이어야 한다/);
   const ex = c.ownerExcerptBlock(w, K('러시아'), [K('옥사나')]);
-  assert.match(ex, /옮겨 쓸 재료가 아니라 어긋나지 않기 위한 기준이며/); assert.doesNotMatch(ex, /참고\.'를 붙인다/);
+  assert.match(ex, /위 원문에 명시된 공통 사실은 지킨다/); assert.doesNotMatch(ex, /참고\.'를 붙인다/);
 });
 test('참고로 넘길 사건 목록은 앱이 항목 유형으로 정한다(인물·개념은 들어가지 않는다)', () => {
   const w = world([page('전략 소녀', '개념', '개념이다.', 1), page('바그다드 공방전', '사건', '[[조슬린]]과 [[레이첼]]이 나온다.', 2), page('레이첼', '인물', '레이첼이다.', 3)]);
@@ -139,7 +139,7 @@ test('참고로 넘길 사건 목록은 앱이 항목 유형으로 정한다(인
   w.entities[K('조슬린')] = { ...c.newEntity('조슬린', '인물', ''), page: false, facts: [{ t: '조슬린은 스프래틀리 군도 대치에 나섰다.', src: K('전략 소녀') }],
     mentions: [{ from: K('바그다드 공방전'), text: '조슬린이 나온다.' }, { from: K('레이첼'), text: '레이첼이 조슬린을 만났다.' }, { from: K('전략 소녀'), text: '조슬린이 대치 중이다.' }] };
   const pr = c.pagePrompt(w, K('조슬린'));
-  const b = pr.slice(pr.indexOf('## 참고로 넘길 사건'), pr.indexOf('## 참고로 넘길 사건') + 400);
+  const b = pr.slice(pr.indexOf('## 참고로 넘길 사건')).split('\n\n')[0];
   assert.match(b, /\[\[바그다드 공방전\]\]/); assert.match(b, /\[\[스프래틀리 군도 대치\]\] \(아직 문서 없음\)/);
   assert.doesNotMatch(b, /\[\[레이첼\]\]|\[\[전략 소녀\]\]/);
 });

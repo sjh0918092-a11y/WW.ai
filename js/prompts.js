@@ -298,22 +298,30 @@ function sourceBatches(w, key, focus, outgoing = [], eligible = () => true) {
   out.titles = titles;   // 진단 기록용: 이번 검사에 원문이 함께 넘어간 문서들
   return out;
 }
-/* 작성 입력: 관련 항목의 단독 문서에서 이 항목이 나오는 문단(그 항목이 주인인 경위). 다시 서술할 때 세부를 지어내지 않게 한다 */
-const OWNER_PARA_MAX = 700, OWNER_PER_DOC = 2;
-function ownerExcerptBlock(w, key, rel, n = 8) {
+/* 관련 원문은 생성·재서술 검사가 함께 읽는다. 참조의 의미는 모델이 판단하며, 문단을 중간에서 자르지 않는다. */
+const HANDOFF_RULE = "관련 문서가 이 문서로 넘긴 설명은 여기서 직접 서술하고, 같은 문서로 되넘기지 않는다. 이 설명에는 다른 사건을 요약·참조하도록 하는 기준을 적용하지 않는다.";
+function relatedExcerptBlock(w, key, rel, n = 8) {
   if (n <= 0) return "";
   const e = w.entities[key], names = namesOf(e.title), out = [];
-  for (const k of rel) {
+  const incoming = Object.keys(S.pages).filter(k => (S.pages[k].links || []).includes(key) || names.some(nm => hasName(pageTexts(S.pages[k]).join("\n"), nm)));
+  for (const k of new Set([...rel, ...e.mentions.filter(live).map(m => m.from), ...incoming])) {
     const p = S.pages[k]; if (!p || k === key || out.length >= n) continue;
     if (isStory(w) && (p.syncedTo || p.baseAsOf || 1) > (S.pages[key]?.syncedTo || w.story.chapter)) continue;
-    const paras = p.sections.flatMap(s => String(s.body).split(/\n{2,}/).map(t => ({ h: s.heading, t: stripMarks(t).trim() }))).filter(x => x.t && names.some(nm => hasName(x.t, nm)));
-    for (const x of paras.slice(0, OWNER_PER_DOC)) { if (out.length >= n) break; out.push(`- 「${p.title}」 / ${x.h}${p.editedAt ? " [사용자 수정]" : ""}: ${x.t.length > OWNER_PARA_MAX ? x.t.slice(0, OWNER_PARA_MAX) + "…" : x.t}`); }
+    const sections = p.sections.flatMap(s => {
+      const paras = String(s.body).split(/\n{2,}/).map(t => t.trim()), keep = new Set();
+      paras.forEach((t, i) => { if (names.some(nm => hasName(t, nm) || hasName(stripMarks(t), nm))) for (let j = Math.max(0, i - 1); j <= Math.min(paras.length - 1, i + 1); j++) keep.add(j); });
+      return keep.size ? [`### ${s.heading}\n${paras.filter((_, i) => keep.has(i)).join("\n\n")}`] : [];
+    });
+    if (sections.length) out.push(`### 문서 「${p.title}」${p.editedAt ? " [사용자 수정]" : ""}\n${sections.join("\n\n")}`);
   }
-  return out.length ? `## 관련 항목 문서의 해당 대목 (그 항목이 주인인 경위)
-아래는 관련 항목의 단독 문서가 이 항목과 얽힌 일을 서술한 문단이다. 옮겨 쓸 재료가 아니라 어긋나지 않기 위한 기준이며, 어떻게 쓸지는 작성 규칙의 '다른 항목과 얽힌 일'을 따른다. 사건 항목이 있는 일과 다른 인물과 함께 겪은 일은 이 대목과 다른 공통 사실을 쓰거나 대목에 없는 공통 사실을 더하지 않는다.
+  return out.length ? `## 관련 항목 문서의 해당 대목
 ${out.join("\n")}
 
 ` : "";
+}
+function ownerExcerptBlock(w, key, rel, n = 8) {
+  const text = relatedExcerptBlock(w, key, rel, n);
+  return text ? text + "위 원문에 명시된 공통 사실은 지킨다. 이 문서로 넘긴 설명의 세부는 기존 사실과 모순되지 않게 여기서 정하며, 그 밖의 일은 작성 규칙의 '다른 항목과 얽힌 일'을 따른다.\n\n" : "";
 }
 function sourceBlock(text) {
   return text ? `## 연결된 문서 원문
@@ -368,7 +376,7 @@ function pageCommonRules() {
 - 분량: ${st.len}.
 - 하이퍼링크: 다른 항목은 [[제목]] 또는 [[제목|본문에 보일 말]]로 감싼다. 링크는 공격적으로 건다. 본문과 인포박스에서 따로 문서가 될 만한 이름을 쓸 때마다 링크한다. 앞에서 링크한 이름도 다시 나오면 링크한다. 이름 있는 인물, 장소, 조직, 사건, 문서나 기록, 물건, 제도, 그리고 이 세계에만 있는 용어(예: 어떤 존재들의 방언, 고유한 직업이나 의식)가 여기에 해당한다. 본문에 이름이 나온 인물, 조직, 장소, 사건은 매번 빠짐없이 링크한다. 그 밖의 용어까지 합친 서로 다른 링크 대상의 목표는 문서당 12~18개이고, 꼭 눌러 보고 싶은 것부터 건다. 이미 있는 항목도 본문에 자연스럽게 나왔다면 위 목록의 제목을 글자 그대로 써서 링크한다. ${linkNameRule()} 같은 대상을 다른 이름으로 링크해 새 항목을 만들지 않는다. 다만 링크하려고 기존 항목을 "~의 사례로 꼽힌다", "~와도 관련이 있다"처럼 억지로 끌어오지는 않는다. 현실의 일반 명사(소, 정오, 철도)는 이 세계에서 특별한 의미가 없으면 링크하지 않는다. 자기 자신은 링크하지 않는다.
 - 인포박스: 유형에 맞는 4~8개 항목(label/value). value에도 [[링크]]를 쓸 수 있다. 값은 이 항목에만 해당하는 구체적인 사실(이름, 수, 날짜, 장소)로 채운다. 세계 공통 규칙이나 다른 제도의 내용(상한, 정의, 일반 원리)을 옮겨 적지 않고, 제목을 되풀이하는 줄('명칭' 등)은 쓰지 않는다. 채울 사실이 없으면 줄 수를 줄인다. 조직·국가이면 우두머리(이름)와 규모(인원·예산 등)를 먼저 넣는다. 소속 인물의 명단은 본문에 쓰고 '구성원 목록' 지시를 따른다. 인물이면 '성별' 줄을 반드시 넣는다(남성 또는 여성. 그 인물이나 세계 설정상 의미가 있을 때만 논바이너리나 그 세계의 표현을 쓰고, 사람이 아닌 존재는 '해당 없음'이나 그 존재에 맞는 말을 쓴다). 본문의 대명사와 서술도 이 성별과 맞춘다. 인물의 제목이 호출부호·코드명·칭호·예명·필명처럼 본명이 아닌 이름이면 '본명' 줄을 넣고 개요 첫 문장에서 본명을 밝힌다(정해진 본명이 없으면 그 문화권에 맞는 풀 네임을 새로 정한다). 제목이 본명이면 '본명' 줄은 원어 표기나 더 긴 풀 네임을 더할 때만 넣고(예: 'Jocelyn Vance', '하인츠 알프레트 키신저'), 제목과 같은 글자만 되풀이하는 줄은 쓰지 않는다. 설정상 본명이 감춰진 인물이면 본명 줄을 넣지 않는다. 인물이면 해당하는 경우 배우자, 자녀 같은 가족 항목을 넣는다. 전투나 전쟁이면 기간, 장소, 교전 세력, 지휘관(전사한 사람은 이름 뒤에 †), 전력, 피해, 결과를 넣고, 양측이 있는 항목은 value 안에서 "진영 A: … / 진영 B: …"로 나란히 쓴다.
-- 다른 항목과 얽힌 일: 그 일을 누가 정하는지(주인)는 아래 세 경우로만 가른다. 이 문서가 주인이 아닌 일은 다시 풀어 쓰지 않는다.
+- 다른 항목과 얽힌 일: ${HANDOFF_RULE} 그 밖의 일은 아래 세 경우로 가른다. 이 문서가 주인이 아닌 일은 다시 풀어 쓰지 않는다.
   1. 사건 항목이 있는 일: '참고로 넘길 사건' 목록의 사건, 그리고 이 문서에서 새로 [[사건]]으로 링크한 사건은 그 사건의 문서가 주인이다(문서가 있든 빨간 링크든). 이 항목이 그 안에서 한 일을 받은 내용 안에서 한두 문장으로 쓰고, 시점은 연도까지만 쓰며, 바로 뒤에 '자세한 내용은 [[사건]] 참고.'를 붙인다. 같은 사건의 참고 문구는 문서 전체에서 한 번만 쓰고(그 사건을 다룬 섹션에), 다른 섹션에서 그 사건을 다시 말할 때는 사건 이름에 링크만 건다. 참고 문구는 세부를 대신한다. 그 앞에 그 사건의 정확한 날짜, 지명, 부대 이름, 화기 제원, 수치, 다른 인물의 결정과 직위를 쓰지 않고, 장면은 이 항목의 눈에 보인 것으로만 짧게 묘사한다. (나쁜 예: '2003년 3월 20일 개시된 이라크 침공에서, 공화국수비대 제2메디나 사단이 14km에 걸쳐 구축한 3중 방어선을 매티스 준장의 승인을 받아 단독 돌파했다.' 좋은 예: '2003년 [[이라크 침공]] 때 방어선 정면을 홀로 밀고 나가 기갑부대가 지나갈 길을 열었다. 자세한 내용은 [[이라크 침공]] 참고.')
   2. 사건 항목이 없고 이 항목만 겪은 일: 이 문서가 주인이다. 세부를 이 문서가 정하고 참고 문구를 붙이지 않는다. 다른 문서가 먼저 언급했어도 연도와 결과만 지킨다.
   3. 사건 항목이 없고 다른 인물과 함께 겪은 일: 공통 사실(언제, 어디서, 상대가 무엇을 말하고 했는지)은 다른 문서에 이미 적힌 대로 받은 그대로 쓰고, 바꾸거나 새로 더하지 않는다. 이 항목 쪽의 행동, 반응, 그 뒤에 달라진 것만 이 문서가 정한다. 참고 문구를 붙이지 않는다.
@@ -742,10 +750,10 @@ function restateCheckBlock(w, key) {
   if (isStory(w)) return "";
   const isEv = (S.pages[key]?.type || w.entities[key]?.type) === "사건", n = isEv ? "두세 문장" : "한두 문장";
   const p = S.pages[key], list = refEventKeys(w, key, [...new Set([...related(w, key), ...(p.links || [])])], docForCheck(p));
-  return `## 다른 사건의 재서술 (앱이 정한 목록)
+  return relatedExcerptBlock(w, key, [...new Set([...related(w, key), ...(p.links || [])])]) + `## 다른 사건의 재서술 (앱이 정한 목록)
 아래 사건은 각 사건의 문서가 주인이다(문서가 아직 없어도 같다).
 ${list.length ? list.map(k => refEventLine(w, k)).join("\n") : "- (없음)"}
-${parentEventNote(w, key) ? parentEventNote(w, key) + "이 사건 자체의 경과를 쓴 문단은 재서술이 아니므로 지적하지 않는다.\n" : ""}먼저 적용 범위를 구분한다. 아래 예외를 먼저 적용한 뒤, 남은 대목에만 축약·삭제 기준을 적용한다.
+${parentEventNote(w, key) ? parentEventNote(w, key) + "이 사건 자체의 경과를 쓴 문단은 재서술이 아니므로 지적하지 않는다.\n" : ""}먼저 적용 범위를 구분한다. ${HANDOFF_RULE} 함께 제공된 관련 원문과 대조해 넘겨받은 설명을 쓴 대목이면 축약·삭제로 지적하지 않는다. 아래 예외를 먼저 적용한 뒤, 남은 대목에만 축약·삭제 기준을 적용한다.
 - 이 항목이 그 사건에 참여하지 않고 사건이 다른 항목의 일이나 배경으로만 나오면, 사건의 시각·수치·경과 같은 세부 없이 짧게 언급하고 사건 이름에 링크만 건 대목은 지적하지 않고 참고 문구도 요구하지 않는다. 사건의 경과를 길게 풀어 쓴 경우에는 이 예외를 적용하지 않는다.
 - 개요의 첫 문장(이 항목이 무엇인지 밝히는 정의)과 인물 관계 항목은 재서술로 줄이거나 지우라고 짚지 않는다(참고 중복만 짚는다).
 - 개요, 인물 관계, 현재처럼 다른 목적의 섹션이 그 사건을 ${n}으로 언급한 것은 재서술이 아니다. 그런 곳에 시각·수치·경과가 들어 있으면 지우지 말고 '재서술(줄임):'으로만 짚는다. 지울 문단은 그 사건을 다룬 섹션 안의 문단뿐이다.

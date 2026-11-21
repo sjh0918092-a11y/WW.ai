@@ -7,7 +7,7 @@ const c = { console, URL, URLSearchParams, AbortController, TextEncoder, TextDec
   localStorage: { getItem: k => local.get(k) || null, setItem: (k, v) => local.set(k, v), removeItem: k => local.delete(k) },
   document: { hidden: false, getElementById: () => null, querySelector: () => node, addEventListener() {} }, window: { addEventListener() {} }, navigator: {}, location: { hash: '', pathname: '/', search: '' }, history: {} };
 vm.createContext(c);
-vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,checkSourceBatches,checkPrompt,parseIssues,pagePrompt,ownerExcerptBlock,routeAutoConflicts,autoFixList});', c);
+vm.runInContext(source + '\nObject.assign(globalThis,{S,keyOf,newEntity,checkSourceBatches,checkPrompt,parseIssues,pagePrompt,readPrompt,ownerExcerptBlock,relatedExcerptBlock,routeAutoConflicts,autoFixList});', c);
 const K = t => c.keyOf(t);
 const page = (title, type, body, createdAt, extra = {}) => ({ key: K(title), title, type, summary: '', categories: [], infobox: [], sections: [{ heading: '개요', level: 1, body }], links: [...body.matchAll(/\[\[([^\]|]+)/g)].map(m => K(m[1])), createdAt, ...extra });
 function world(list, extra = {}) {
@@ -66,8 +66,35 @@ test('근거 구절을 못 찾아 수정 요청을 못 보내면 주인 문서�
 test('허브 작성 입력에 관련 항목 문서의 해당 문단이 들어간다', () => {
   const w = world([page('러시아', '국가', '러시아다.', 1), page('옥사나 체르넨코', '인물', '1992년 체르넨코는 [[우크라이나]] 해군으로 옮겼다.\n\n1994년 [[러시아]]로 귀환해 흑해함대에 복귀했다.', 2)]);
   const block = c.ownerExcerptBlock(w, K('러시아'), [K('옥사나 체르넨코')]);
-  assert.match(block, /1994년 러시아로 귀환/); assert.doesNotMatch(block, /1992년 체르넨코는/);
+  assert.match(block, /1994년 \[\[러시아\]\]로 귀환/); assert.match(block, /1992년 체르넨코는/);
   assert.match(c.pagePrompt(w, K('러시아')), /다른 항목과 얽힌 일:/);
+});
+test('새 문서 생성과 읽기 검사는 긴 원문의 참조와 앞뒤 문단을 함께 받으며 기존 문서를 바꾸지 않는다', () => {
+  const before = '방어선 앞에서 공세가 멈췄다.', after = '이후 본대가 통로로 진입했다.';
+  const ref = '자세한 내용은 [[협곡 돌파전|해당 전투]] 참고.';
+  const parent = page('남부 공세', '사건', `${before}\n\n${'상황이 이어졌다. '.repeat(100)}${ref}\n\n${after}`, 1);
+  const child = page('협곡 돌파전', '사건', '협곡에서 벌어진 전투다.', 2);
+  const w = world([parent, child]), snapshot = JSON.stringify(parent);
+  delete c.S.pages[child.key]; w.entities[child.key].page = false;
+  const generated = c.pagePrompt(w, child.key);
+  c.S.pages[child.key] = child; w.entities[child.key].page = true;
+  const read = c.readPrompt(w, child.key);
+  for (const prompt of [generated, read]) for (const text of [before, ref, after]) assert.ok(prompt.includes(text), text);
+  assert.ok(read.includes('넘겨받은 설명을 쓴 대목이면 축약·삭제로 지적하지 않는다'));
+  assert.equal(JSON.stringify(parent), snapshot);
+  assert.equal(parent.autoConflicts, undefined);
+});
+test('직접 관련 목록에 없는 역참조 원문도 읽고, 관계없는 문서는 포함하지 않는다', () => {
+  const target = page('협곡 돌파전', '사건', '전투다.', 1);
+  const w = world([target, page('남부 공세', '사건', '진입 경위는 [[협곡 돌파전]]에서 다룬다.', 2), page('별도 사건', '사건', '관련 없는 기록이다.', 3)]);
+  const text = c.relatedExcerptBlock(w, target.key, []);
+  assert.ok(text.includes('진입 경위는 [[협곡 돌파전]]에서 다룬다.'));
+  assert.ok(!text.includes('관련 없는 기록이다.'));
+});
+test('관련 대목을 넓혀도 이야기 모드의 미래 원문은 전달하지 않는다', () => {
+  const target = { ...owner(), syncedTo: 2 }, future = { ...hub(), syncedTo: 3 };
+  const w = world([target, future], { mode: 'story', story: { chapter: 3, chapters: [], cast: [] } });
+  assert.equal(c.relatedExcerptBlock(w, target.key, [future.key]), '');
 });
 let failed = 0;
 for (const [n, f] of tests) { try { f(); console.log('통과', n); } catch (e) { failed++; console.log('실패', n, '\n', e.message); } }
