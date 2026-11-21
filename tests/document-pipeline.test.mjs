@@ -213,6 +213,11 @@ try {
   e=await reset({rewrite:true});behavior='fix';fixEdits=edits;fixClaim='선장의 항해지가 푸른 바다로 설정되어 있다';
   await request(e,'',e.body);r=await run(e);assert.equal(r.job.status,'failed',JSON.stringify(r));
   assert.equal(r.result.pipeline.saved,false);assert.equal(r.result.pipeline.checked,false);assert.deepEqual(storedPage(B),e.pages[B]);
+  assert.equal(r.result.pipeline.error.code,'review_stalled');
+  const d=r.result.pipeline.reviewDiagnostics;
+  assert(d.stopReason);assert(d.rounds.at(-1).failures.length);
+  assert(calls.filter(c=>c.kind==='fix').length<=12);
+  assert(d.rounds[0].response.includes(edits[0].old));
  }
  fixEdits=null;fixClaim='푸른 바다를 항해한다.';
  pass('반복 적용 실패·잘못된 메모 번호는 완료로 저장하지 않고 원본을 유지한다');

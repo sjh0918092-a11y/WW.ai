@@ -450,7 +450,7 @@ function articleHtml(k) {
   const out = (p.links || []).filter(x => w.entities[x]);
   const newOut = out.filter(x => !S.pages[x]).length;
   const chk = p.check;
-  const reviewError = chk?.incomplete && !(S.gen?.key === k || S.checking === k) ? `<div class="banner warn">자동 검토를 완료하지 못했습니다. ${esc(chk.error || "남은 메모를 처리하는 중입니다.")} ${!S.gen && !S.checking ? `<button type="button" class="btn" data-check="${k}">자동 검토 재시도</button>` : ""}</div>` : "";
+  const reviewError = chk?.incomplete && !(S.gen?.key === k || S.checking === k) ? `<div class="banner warn">자동 검토를 완료하지 못했습니다. ${esc(chk.error || "남은 메모를 처리하는 중입니다.")} ${!S.gen && !S.checking ? `<button type="button" class="btn" data-check="${k}">자동 검토 재시도</button>` : ""}${reviewDiagnosisHtml(chk.reviewDiagnostics)}</div>` : "";
   const structurallyBlocked = (chk?.issues || []).length > 0 && (chk.issues || []).every(i => i.blocked);
   const hi = (chk?.issues || []).filter(i => i.severity === "high"), lo = (chk?.issues || []).filter(i => i.severity !== "high");   // 편집자 메모는 설정 충돌만 다룬다
   S.memo = { k, items: [...hi, ...lo] };

@@ -62,6 +62,23 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
     assert.equal(await page.evaluate(k => JSON.stringify(S.pages[k].sections), base), unchanged);
     pass("수정 모델이 오탐으로 판정하면 문장을 바꾸지 않고 메모만 닫는다");
 
+    const stopped = await page.evaluate(async ({ world, page0, base }) => {
+      S.world = world; S.pages = { [base]: structuredClone(page0) }; S.view = { name: "article", key: base };
+      const original = callJson;
+      callJson = async kind => kind === 'check' ? { issues: [{ claim: '기지는 두 기의 병기를 둔다.', evidence: '검사 근거', conflict: '검사 메모', severity: 'high' }] } : kind === 'read' ? { issues: [] } : { edits: [], note: '<script>진단</script>' };
+      try { await preCheck(world, base, S.pages[base], { ctl: new AbortController() }, () => {}); }
+      catch (e) { if (e.code !== 'review_stalled') throw e; }
+      finally { callJson = original; }
+      renderMain();
+      return S.pages[base].check.reviewDiagnostics.stopReason;
+    }, { world, page0, base });
+    assert.equal(stopped, 'no_progress');
+    assert(await page.locator('.review-diag').count());
+    await page.locator('.review-diag summary').click();
+    assert((await page.locator('.review-diag pre').textContent()).includes('<script>진단</script>'));
+    assert(await page.locator('[data-check]').count());
+    pass('반복 중단 후 재시도 버튼과 이스케이프된 자동 수정 진단을 표시한다');
+
     const auto = await page.evaluate(async ({ world, page0, base }) => {
       S.world = world; S.pages = { [base]: page0 }; S.view = { name: "article", key: base };
       const original = callJson, kinds = [];
@@ -99,11 +116,11 @@ let n = 0; const pass = s => console.log(`  ✓ ${++n}. ${s}`);
       renderMain();
     }, base);
     assert((await page.locator('#main').innerText()).includes('자동 검토를 완료하지 못했습니다'));
-    assert.equal(await page.locator('details.memo:not(.doc-cost)').count(), 0, '미완료 메모를 완료 문서의 메모로 노출하지 않는다');
+    assert.equal(await page.locator('details.memo:not(.doc-cost):not(.review-diag)').count(), 0, '미완료 메모를 완료 문서의 메모로 노출하지 않는다');
     await page.locator('.banner.warn [data-check]').click();
     await page.waitForFunction(k => S.pages[k].check.incomplete === false && !S.checking, base);
     assert(!(await page.locator('#main').innerText()).includes('자동 검토를 완료하지 못했습니다'));
-    assert.equal(await page.locator('details.memo:not(.doc-cost)').count(), 0);
+    assert.equal(await page.locator('details.memo:not(.doc-cost):not(.review-diag)').count(), 0);
     await page.evaluate(() => { callJson = window.beforeReviewRetry; });
     pass("자동 수정 오류는 재시도 가능한 미완료 상태로 보이고 재개 후 오탐 메모를 정리한다");
     assert.deepEqual(errors, []);

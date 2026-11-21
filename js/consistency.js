@@ -1033,6 +1033,8 @@ function applyAutoEdits(w, k, page, high, fr, skip = new Set()) {
     const old = text(e.old), nw = text(e.new), final = text(finalSource[e.field]);
     return old && old !== nw && f[e.field].includes(e.old) && !final.includes(old) && final.includes(nw);
   }).map(e => high[e.memo - 1]).filter(i => !verified.some(x => x.conflict === i.conflict)));
+  for (const memo of new Set(fixedEdits.map(e => e.memo))) if (!edited.has(high[memo - 1]))
+    res.failures.push(`${memo}번은 원문 교체를 적용했으나 완료 검증을 통과하지 못했다(기존 구절 잔존·교체문 변환·코드 지적 잔존 확인 필요).`);
   // 재서술로 줄이거나 지운 원문 구간 안에 있던 지적은, 그 문장이 고친 뒤 문서에서 사라졌으면 풀린 것이다
   const after = stripMarks(Object.values(finalSource).join("\n")).replace(/\s+/g, " ");
   for (const i of issues) {
@@ -1048,17 +1050,24 @@ function applyAutoEdits(w, k, page, high, fr, skip = new Set()) {
   return res;
 }
 
-/* 메모가 수정·해결·오탐으로 처리되거나 구조적 해결 불가로 판정될 때까지 반복한다. */
+const AUTO_REVIEW_LIMITS = { idle: 3, repeatedState: 3, rounds: 12 };
+/* 메모를 처리하되 진전 없는 반복·상태 순환·과도한 호출은 미완료로 중단한다. */
 async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 직후") {
   const res = { page, fixed: 0, keep: null, done: false, patched: false };
   const closed = [], fixed = [], blocked = []; let pending = [], feedback = "", idle = 0, round = 0;
+  const diagnostics = { version: 1, limits: { ...AUTO_REVIEW_LIMITS }, rounds: [] }, states = new Map();
+  const stateKey = () => JSON.stringify([memoSourceStamp(res.page), pending.map(memoKey).sort()]);
+  const stop = reason => {
+    diagnostics.stopReason = reason;
+    throw { code: "review_stalled", message: "자동 수정이 반복되어 추가 호출을 중단했습니다. 남은 메모는 미완료로 보존했습니다. 자동 수정 진단을 확인한 뒤 재시도할 수 있습니다.", safeMessage: "자동 수정이 반복되어 중단했습니다. AI 작업의 자동 수정 진단에서 응답과 적용 실패 이유를 확인해 주세요." };
+  };
   show ||= () => { if (S.view.name === "article" && S.view.key === k) renderMain(); else renderSide(); };
   const current = () => S.world === w && S.pages[k] === res.page;
   const publish = incomplete => {
     const p = res.page;
     p.check = { ...p.check, issues: uniqueMemos(blocked), pending: incomplete ? pending : [], incomplete,
       closedMemos: closed, reviewStamp: memoSourceStamp(p), numV: numStamp(w), fixed,
-      rounds: round };
+      rounds: round, reviewDiagnostics: diagnostics };
     if (res.fixed) p.autoFixed = { at: Date.now(), n: res.fixed };
     if (!incomplete) { delete p.check.error; delete p.check.errorCode; }
     res.keep = p.check.issues;
@@ -1072,6 +1081,7 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
     if (page.check?.incomplete) { fixed.push(...(page.check.fixed || [])); res.fixed = fixed.length; }
     page.check = { at: Date.now(), issues: [], pending, auto: true, numV: numStamp(w), ...(issues.meta || {}) };
     publish(true);
+    states.set(stateKey(), 1);
     while (pending.length) {
       if (g.ctl.signal.aborted) throw { code: "cancelled" };
       if (!current()) return res;
@@ -1114,6 +1124,19 @@ async function preCheck(w, k, page, g = S.gen, show = null, label = " · 작성 
       publish(true);
       const progress = done.size || impossible.size || before !== memoSourceStamp(res.page);
       idle = progress ? 0 : idle + 1;
+      const after = memoSourceStamp(res.page), state = stateKey(), visits = (states.get(state) || 0) + 1;
+      states.set(state, visits);
+      diagnostics.rounds.push({ round, before, after, idle, repeatedState: visits, patched: step.patched,
+        fixed: step.edited.length, dismissed: dismissed.size, resolved: resolved.size, blocked: impossible.size,
+        pending: pending.length, failures: step.failures,
+        unprocessed: batch.map((i, n) => !done.has(i) && !impossible.has(i) ? n + 1 : null).filter(Boolean),
+        memos: batch.map(i => ({ claim: String(i.claim || "").slice(0, 300), conflict: String(i.conflict || "").slice(0, 500) })),
+        response: JSON.stringify(fr).slice(0, 12000), responseTruncated: JSON.stringify(fr).length > 12000 });
+      if (pending.length) {
+        if (idle >= AUTO_REVIEW_LIMITS.idle) stop("no_progress");
+        if (idle === 0 && visits >= AUTO_REVIEW_LIMITS.repeatedState) stop("repeated_state");
+        if (round >= AUTO_REVIEW_LIMITS.rounds) stop("round_limit");
+      }
       feedback = pending.length ? `${step.failures.length ? step.failures.join("\n") + "\n" : ""}이전 응답 뒤에도 아래 메모가 남았다. 수정 누락, 원문 불일치, 적용 뒤 남은 문제를 다시 확인한다. 각 번호를 수정안·이미 해결·오탐·구조적 해결 불가 중 하나로 빠짐없이 처리한다.${idle ? " 직전 응답에서 적용 가능한 수정안이나 유효한 판정이 없었다. 원문에서 old를 다시 복사한다. 응답 누락과 적용 실패는 구조적 해결 불가가 아니다." : ""}` : "";
     }
     publish(false); res.done = true;

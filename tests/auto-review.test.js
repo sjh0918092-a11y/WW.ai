@@ -86,13 +86,46 @@ test('응답 오류는 미완료 초안으로 보존하고 재개하면 남은 �
   assert.equal(result.done, true); assert.equal(result.page.check.incomplete, false);
   assert.equal(result.page.check.pending.length, 0); assert.equal(result.page.check.error, undefined);
 });
-test('적용할 응답이 반복해서 없어도 재호출하며 통신 실패를 구조적 메모로 바꾸지 않는다', async () => {
+test('빈 응답은 세 번 뒤 중단하고 진단·미완료 메모를 보존하며 재개할 수 있다', async () => {
   const { c, k, run } = setup(); let calls = 0;
   c.runChecks = async () => [issue('2010년에 열렸다.')];
-  c.callJson = async () => { if (++calls === 4) throw { code: 'api_524' }; return { edits: [] }; };
-  await assert.rejects(run, e => e.code === 'api_524');
-  assert.equal(calls, 4); assert.equal(c.S.pages[k].check.incomplete, true);
-  assert.equal(c.S.pages[k].check.issues.length, 0); assert.equal(c.S.pages[k].check.pending.length, 1);
+  c.callJson = async () => { calls++; return { edits: [] }; };
+  await assert.rejects(run, e => e.code === 'review_stalled');
+  const check = c.S.pages[k].check;
+  assert.equal(calls, 3); assert.equal(check.incomplete, true);
+  assert.equal(check.issues.length, 0); assert.equal(check.pending.length, 1);
+  assert.equal(check.reviewDiagnostics.stopReason, 'no_progress');
+  assert.equal(check.reviewDiagnostics.rounds.length, 3);
+  assert.equal(check.reviewDiagnostics.rounds[2].response, '{"edits":[]}');
+  assert.deepEqual(Array.from(check.reviewDiagnostics.rounds[2].unprocessed), [1]);
+  c.runChecks = async () => [];
+  c.callJson = async () => ({ edits: [], resolved: [1] });
+  const result = await run();
+  assert.equal(result.done, true); assert.equal(result.page.check.pending.length, 0);
+  assert.equal(result.page.check.errorCode, undefined);
+});
+test('원문 불일치를 반복하면 실패 이유와 모델 수정안을 남기고 중단한다', async () => {
+  const { c, run } = setup();
+  c.runChecks = async () => [issue('2010년에 열렸다.')];
+  c.callJson = async () => ({ edits: [{ memo: 1, field: 'body', old: '없는 구절', new: '새 구절' }] });
+  await assert.rejects(run, e => e.code === 'review_stalled');
+  const d = c.S.pages[Object.keys(c.S.pages)[0]].check.reviewDiagnostics;
+  assert(d.rounds[2].failures.some(x => x.includes('old')));
+  assert(d.rounds[2].response.includes('없는 구절'));
+});
+for (const cycle of [true, false]) test(cycle ? '문서와 메모가 이전 상태를 반복하면 중단한다' : '문서만 계속 바뀌고 메모가 남으면 총 회수 제한으로 중단한다', async () => {
+  const { c, k, run } = setup(); let calls = 0;
+  c.runChecks = async () => [issue('2010년에 열렸다.')];
+  c.callJson = async () => ({ edits: [] });
+  c.applyAutoEdits = (w, key, page, batch) => {
+    page.sections[0].body = cycle ? (calls++ % 2 ? '상태 A' : '상태 B') : '상태 ' + calls++;
+    return { page, patched: true, edited: [], fresh: [], failures: [] };
+  };
+  await assert.rejects(run, e => e.code === 'review_stalled');
+  const d = c.S.pages[k].check.reviewDiagnostics;
+  assert.equal(d.stopReason, cycle ? 'repeated_state' : 'round_limit');
+  assert.equal(calls, cycle ? 5 : 12);
+  assert.equal(c.S.pages[k].check.pending.length, 1);
 });
 test('8개보다 많은 메모도 배치 사이에 빠뜨리지 않는다', async () => {
   const { c, run } = setup(); let calls = 0;
