@@ -35,6 +35,7 @@ const server = appServer();
         calls.push(kind);
         if (kind === 'storyBible') return { protagonist: { summary: '바뀌면 안 되는 새 정의', want: '배를 되찾는다', wound: '' }, storyPromise: { focus: '항구의 일상', central: { kind: 'goal', subject: '배' } }, spine: [{ n: 1, intent: '시작' }], secrets: [{ truth: '등대지기는 밀수꾼이다', cover: '성실한 등대지기', reveal: 3 }], chapter1: { title: '사라진 배', era: '1201년', summary: '한서윤의 배가 사라졌다.', incident: '배가 사라졌다', nextChoices: ['부두로 간다', '박도현을 찾는다', '기다린다'] }, place: '북쪽 부두', nearby: [{ title: '박도현', why: '같은 부두에서 일한다' }, { title: '이노인', why: '' }, { title: '없는사람', why: '' }] };
         if (kind === 'chapterBlock') { if (failBlock) throw { code: 'invalid_json' }; return { blocks: [{ ch: 1, heading: '사라진 배', sections: [{ heading: '부두의 아침', level: 1, body: '그날 아침 배가 보이지 않았다.' }] }], infoboxPatch: [], summaryPatch: '', facts: [], relations: [], timeline: [], newEntities: [] }; }
+        if (kind === 'storyCast') return { profile: { personality: '무뚝뚝하다', voice: '짧게 반말', examples: ['뭐야.', '비켜.'] }, character: { key: park, state: 'available', evidence: '부두에 있다' }, player: { key: seo, state: 'available', evidence: '부두에 있다' }, relationship: '동료', scene: '부두', opening: '어, 서윤이네. 무슨 일이야?', knowledge: { known: [] } };
         if (kind === 'chapterPlan') return { protagonist: { tendency: '사람을 먼저 지켰다.', change: '혼자 버티던 사람이 도움을 청하게 됐다.', voice: '짧게 반말한다.' }, people: [{ title: '박도현', with: '함께 배를 찾았다.' }], open: ['등대의 불빛'] };
         throw { code: 'invalid_json' };
       };
@@ -67,7 +68,11 @@ const server = appServer();
         out.planReader = plan.includes('원작 위키와 주인공의 지식') && plan.includes('"noticed"') && plan.includes('"nearby"');
         storyArcNoticed(w, 1, [{ who: '박도현', what: '처음 듣는 이름을 알고 있었다' }]);
         out.planNoticed = chapterPlanPrompt(w, 2, null).includes('처음 듣는 이름을 알고 있었다');
-        Object.assign(storyTalkSession(w, park, true), { knowledge: { known: [] }, scene: '' });
+        await prepareStoryTalk(park);
+        const ts = storyTalkSession(w, park);
+        out.opening = ts?.turns?.[0];
+        S.view = { name: 'storyTalk', key: park }; renderMain();
+        out.openingHtml = { self: document.querySelectorAll('.talk-chapter .talk-self').length, other: document.querySelector('.talk-chapter .talk-other .talk-bubble')?.textContent };
         out.talkNoticedRule = storyTalkPrompt(w, park, '등대지기는 밀수꾼이지?').includes('noticed');
 
         // 봉인: 장 표시와 장 출처를 이야기 번호가 붙은 일반 기록으로 바꾸고 이야기를 보관한다
@@ -110,6 +115,8 @@ const server = appServer();
     assert.strictEqual(r.planReader, true);
     assert.strictEqual(r.planNoticed, true);
     assert.strictEqual(r.talkNoticedRule, true);
+    assert.strictEqual(r.opening?.user, '', '상대가 먼저 건넨 말은 사용자 발언이 없는 차례'); assert.strictEqual(r.opening?.reply, '어, 서윤이네. 무슨 일이야?');
+    assert.deepStrictEqual(r.openingHtml, { self: 0, other: '어, 서윤이네. 무슨 일이야?' });
     assert.strictEqual(r.sealed, true);
     assert.strictEqual(r.arcSection, 1);
     assert.strictEqual(r.factSrc, 'a1ch1');
