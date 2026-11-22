@@ -30,10 +30,10 @@ const server = appServer();
       S.worlds.unshift(w); S.sample = {};
       const original = { callJson, generatePage };
       const calls = [];
-      let failBlock = false;
+      let failBlock = false, named = '', lastBible = '';
       callJson = async (kind, text) => {
         calls.push(kind);
-        if (kind === 'storyBible') return { protagonist: { summary: '바뀌면 안 되는 새 정의', want: '배를 되찾는다', wound: '' }, storyPromise: { focus: '항구의 일상', central: { kind: 'goal', subject: '배' } }, spine: [{ n: 1, intent: '시작' }], secrets: [{ truth: '등대지기는 밀수꾼이다', cover: '성실한 등대지기', reveal: 3 }], chapter1: { title: '사라진 배', era: '1201년', summary: '한서윤의 배가 사라졌다.', incident: '배가 사라졌다', nextChoices: ['부두로 간다', '박도현을 찾는다', '기다린다'] }, place: '북쪽 부두', nearby: [{ title: '박도현', why: '같은 부두에서 일한다' }, { title: '이노인', why: '' }, { title: '없는사람', why: '' }] };
+        if (kind === 'storyBible') { lastBible = text; } if (kind === 'storyBible') return { protagonist: { ...(named ? { name: named } : {}), summary: '바뀌면 안 되는 새 정의', want: '배를 되찾는다', wound: '' }, storyPromise: { focus: '항구의 일상', central: { kind: 'goal', subject: '배' } }, spine: [{ n: 1, intent: '시작' }], secrets: [{ truth: '등대지기는 밀수꾼이다', cover: '성실한 등대지기', reveal: 3 }], chapter1: { title: '사라진 배', era: '1201년', summary: '한서윤의 배가 사라졌다.', incident: '배가 사라졌다', nextChoices: ['부두로 간다', '박도현을 찾는다', '기다린다'] }, place: '북쪽 부두', nearby: [{ title: '박도현', why: '같은 부두에서 일한다' }, { title: '이노인', why: '' }, { title: '없는사람', why: '' }] };
         if (kind === 'chapterBlock') { if (failBlock) throw { code: 'invalid_json' }; return { blocks: [{ ch: 1, heading: '사라진 배', sections: [{ heading: '부두의 아침', level: 1, body: '그날 아침 배가 보이지 않았다.' }] }], infoboxPatch: [], summaryPatch: '', facts: [], relations: [], timeline: [], newEntities: [] }; }
         if (kind === 'storyCast') return { profile: { personality: '무뚝뚝하다', voice: '짧게 반말', examples: ['뭐야.', '비켜.'] }, character: { key: park, state: 'available', evidence: '부두에 있다' }, player: { key: seo, state: 'available', evidence: '부두에 있다' }, relationship: '동료', scene: '부두', opening: '어, 서윤이네. 무슨 일이야?', knowledge: { known: [] } };
         if (kind === 'chapterPlan') return { protagonist: { tendency: '사람을 먼저 지켰다.', change: '혼자 버티던 사람이 도움을 청하게 됐다.', voice: '짧게 반말한다.' }, people: [{ title: '박도현', with: '함께 배를 찾았다.' }], open: ['등대의 불빛'] };
@@ -94,6 +94,13 @@ const server = appServer();
         // 되돌리기: 두 번째 이야기를 시작하기 전 상태(1부 봉인 뒤)로 돌아간다
         await revertStory();
         out.reverted = !isStory(w) && w.storyLog?.length === 1 && !w.storySnap && !StorySnap.open.has(w.id);
+
+        // 새 인물의 이름을 비우면 이야기 뼈대가 정한 이름으로 시작한다
+        named = '윤가람'; S.storyEntry = null; openStoryEntry(); Object.assign(S.storyEntry, { mode: 'new', name: '', desc: '등대를 지키는 소녀' });
+        await startStoryEntry();
+        const npk = keyOf('윤가람');
+        out.autoNamed = isStory(w) && w.story.protagonistKey === npk && w.story.entry === 'new' && w.entities[npk]?.type === '인물' && w.story.protagonist.desc === '등대를 지키는 소녀';
+        out.namePrompt = lastBible.includes('protagonist.name') && lastBible.includes('"name":"주인공 이름"');
       } finally {
         callJson = original.callJson; generatePage = original.generatePage;
       }
@@ -125,6 +132,8 @@ const server = appServer();
     assert.strictEqual(r.afterSealView, 'storyEntry');
     assert.strictEqual(r.carried, true, '앞 주인공의 기록이 다음 이야기의 대화 프로필로');
     assert.strictEqual(r.reverted, true, '되돌리기는 이야기 시작 직전 상태로');
+    assert.strictEqual(r.autoNamed, true, '이름을 비우면 뼈대가 정한 이름으로 새 주인공을 만든다');
+    assert.strictEqual(r.namePrompt, true);
     assert.deepStrictEqual(errors, []);
     console.log('story-arc ok');
   } finally {
