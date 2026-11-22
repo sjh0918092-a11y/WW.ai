@@ -40,7 +40,7 @@ const server = appServer();
         if (kind === 'storyChat' && text.includes('이야기 서술자')) { lastScene = text; return { reply: '격납고 구석에 낡은 공구함이 있다—뚜껑이 열려 있다.', memory: '공구함을 찾았다', reach: ['박도현', '없는사람'] }; }
         if (kind === 'storyChat') lastChat = text;
         if (kind === 'storyChatReview') { lastReview = text; return { fix: { reply: '뭐?! 그걸 네가 어떻게 알아?' } }; }
-        if (kind === 'storyChat') return { mood: '크게 놀람', selfAdded: ['어릴 때 항구 마을에서 자랐다'], reply: '뭐? 그걸 네가 어떻게 알아?', memory: '한서윤이 등대지기 이야기를 꺼냈다', important: true, character: { key: park, state: 'available', evidence: '' }, player: { key: seo, state: 'available', evidence: '' }, relationship: '의심', bond: '각별함', scene: '부두', noticed: '들은 적 없는 이야기를 알고 있었다', knowledgeAdded: [{ fact: '한서윤이 등대지기가 밀수꾼이라고 말했다', via: 'told', source: 'user', evidence: '이번 발언' }] };
+        if (kind === 'storyChat') return { ended: !!globalThis.endTalk, mood: '크게 놀람', selfAdded: ['어릴 때 항구 마을에서 자랐다'], reply: '뭐? 그걸 네가 어떻게 알아?', memory: '한서윤이 등대지기 이야기를 꺼냈다', important: true, character: { key: park, state: 'available', evidence: '' }, player: { key: seo, state: 'available', evidence: '' }, relationship: '의심', bond: '각별함', scene: '부두', noticed: '들은 적 없는 이야기를 알고 있었다', knowledgeAdded: [{ fact: '한서윤이 등대지기가 밀수꾼이라고 말했다', via: 'told', source: 'user', evidence: '이번 발언' }] };
         if (kind === 'chapterPlan') return { protagonist: { tendency: '사람을 먼저 지켰다.', change: '혼자 버티던 사람이 도움을 청하게 됐다.', voice: '짧게 반말한다.' }, people: [{ title: '박도현', with: '함께 배를 찾았다.' }], open: ['등대의 불빛'] };
         throw { code: 'invalid_json' };
       };
@@ -145,6 +145,10 @@ const server = appServer();
           await storyTalkBegin(w, park);
           const t2 = storyTalkSession(w, park).turns;
           out.lock.back = { ev: t2[t2.length - 1].ev, prompt: lastChat.includes('다시 찾아왔다'), active: storyTalkActive(w) === park, plan: chapterPlanPrompt(w, 2, null).includes('(주인공이 대화를 끝내고 자리를 떴다)') };
+          globalThis.endTalk = true; storyTalkSession(w, park).draft = '저 가볼게요'; await sendStoryTalk(); globalThis.endTalk = false;
+          { const t3 = storyTalkSession(w, park).turns; renderMain();
+            out.lock.spoken = { ended: t3[t3.length - 1].ended, active: storyTalkActive(w), last: storyTalkLastEvent(w, park), shown: !!document.querySelector('.talk-end'), rule: lastChat.includes('대화의 끝:') && lastChat.includes('"ended":false') && !lastChat.includes('되묻는 말까지') };
+            await undoStoryTalk(); out.lock.spoken.undo = storyTalkActive(w) === park; }
           w.story.status = 'ended'; out.lock.afterEnding = storyTalkActive(w) === park; w.story.status = 'active';   // 결말 이후의 대화도 한 번에 한 사람
           w.story.chapter = 2; out.lock.chapterEnds = storyTalkActive(w) === ''; w.story.chapter = 1;
           delete w.story.talking; w.story.talkExtra = [];
@@ -211,7 +215,7 @@ const server = appServer();
     assert.deepStrictEqual(r.syncKeep, { synced: true, stamp: true, ready: true, noCast: true }, '장 반영(동기화) 뒤에도 대화 준비를 다시 하지 않는다');
     assert.deepStrictEqual(r.lock, { active: true, listed: true, redirect: true, chips: { old: true, scene: true, end: true },
       farewell: { added: 1, ev: 'farewell', user: '', prompt: true, active: '', ended: true, input: true, again: true, oldChip: false, undo: false }, elsewhere: true,
-      back: { ev: 'return', prompt: true, active: true, plan: true }, lazy: { noCast: true, start: '대화 시작', input: true }, afterEnding: true, chapterEnds: true }, '대화 중에는 다른 상대로 못 옮기고, 끝내면 작별 인사, 다시 찾아가면 새 첫마디');
+      back: { ev: 'return', prompt: true, active: true, plan: true }, lazy: { noCast: true, start: '대화 시작', input: true }, afterEnding: true, spoken: { ended: true, active: '', last: 'farewell', shown: true, rule: true, undo: true }, chapterEnds: true }, '대화 중에는 다른 상대로 못 옮기고, 끝내면 작별 인사, 다시 찾아가면 새 첫마디');
     assert.deepStrictEqual(r.fix, { reply: '뭐?! 그걸 네가 어떻게 알아?', mood: '크게 놀람', rule: true, review: true }, '검토는 고친 필드만 돌려주고 나머지는 초안을 쓴다. 기분은 저장된다'); assert.strictEqual(r.moodUndone, '', '되돌리면 기분도 되돌아간다');
     assert.deepStrictEqual(r.known, ['한서윤이 등대지기가 밀수꾼이라고 말했다'], '이번에 새로 안 것만 받아 기존 지식에 합친다'); assert.strictEqual(r.knownUndone, 0);
     assert.deepStrictEqual(r.sent, { turns: 2, rel: '의심', noticed: 2, undoBtn: true });
