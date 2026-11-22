@@ -72,7 +72,8 @@ function epilogueHtml() {
       ${wove.length ? `<ul>${wove.map(x => `<li>탐험 반영: ${linkHtml(w.entities[x.key].title)} — ${esc(x.how)}</li>`).join("")}</ul>` : ""}
       ${i >= 0 ? `<div class="row" style="margin-top:8px"><button type="button" class="btn" data-epsec="${i}">주인공 문서의 ${c.n}장 섹션</button></div>` : ""}</section>`; }).join("")}
     <div class="row"><button type="button" class="btn" data-k="${pk}">주인공 문서로</button></div>
-    ${st.status === "ended" ? `<p class="note" style="margin-top:10px">이야기는 끝났지만 세계관은 계속 탐험할 수 있습니다. 새 문서는 결말 직후 시점으로 쓰입니다.</p>` : ""}</div>`;
+    ${st.status === "ended" ? `<p class="note" style="margin-top:10px">이야기는 끝났지만 세계관은 계속 탐험할 수 있습니다. 새 문서는 결말 직후 시점으로 쓰입니다.</p>
+    <div class="row" style="margin-top:8px"><button type="button" class="btn pri" data-act="story-seal" ${S.gen || S.storyGen || S.syncing || S.storySeal ? "disabled" : ""}>${S.storySeal ? esc(S.storySeal.phase) : "이야기 마무리하고 다음으로"}</button><span class="note">이번 이야기를 기록하고 위키로 돌아갑니다. 그 뒤 같은 세계에서 다음 이야기를 시작할 수 있습니다.</span></div>` : ""}</div>`;
 }
 
 /* 세계 전체 점검: 버튼을 눌렀을 때만 돈다. [연결하기]를 누르기 전에는 아무것도 바꾸지 않는다.
