@@ -90,7 +90,7 @@ const server = appServer();
     await page.waitForFunction(()=>!S.storyTalkJob && storyTalkReady(S.world,'unwritten'));
     assert(!(await page.locator('#storyTalkInput').isDisabled()),'문서 작성 후 상태 판단을 마치면 대화 가능');
     assert(await page.evaluate(()=>talkCalls.find(c=>c.kind==='storyCast').prompt.includes('문서에서 정한 신중한 기록관')));
-    assert(await page.evaluate(()=>talkCalls.find(c=>c.kind==='storyCast').prompt.includes('문서에 없는 핵심 성격·과거·관계를 임의로 확정하지 않는다')));
+    assert(await page.evaluate(()=>talkCalls.find(c=>c.kind==='storyCast').prompt.includes('문서에 없는 핵심 성격·관계를 임의로 확정하지 않는다')));
     const beforeHeroMissing=await page.evaluate(()=>talkCalls.length);
     await page.evaluate(async()=>{globalThis.savedHeroPage=S.pages.hero;delete S.pages.hero;renderMain();await prepareStoryTalk('unwritten');await sendStoryTalk();});
     assert.equal(await page.locator('.talk-document [data-k="hero"]').count(),1);

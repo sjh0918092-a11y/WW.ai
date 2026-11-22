@@ -36,11 +36,11 @@ const server = appServer();
         if (kind === 'storyBible') { lastBible = text; } if (kind === 'storyBible') return { protagonist: { ...(named ? { name: named } : {}), summary: '바뀌면 안 되는 새 정의', want: '배를 되찾는다', wound: '' }, storyPromise: { focus: '항구의 일상', central: { kind: 'goal', subject: '배' } }, spine: [{ n: 1, intent: '시작' }], secrets: [{ truth: '등대지기는 밀수꾼이다', cover: '성실한 등대지기', reveal: 3 }], chapter1: { title: '사라진 배', era: '1201년', summary: '한서윤의 배가 사라졌다.', incident: '배가 사라졌다', nextChoices: ['부두로 간다', '박도현을 찾는다', '기다린다'] }, place: '북쪽 부두', nearby: [{ title: '박도현', why: '같은 부두에서 일한다' }, { title: '이노인', why: '' }, { title: '없는사람', why: '' }] };
         if (kind === 'chapterBlock') { if (failBlock) throw { code: 'invalid_json' }; return { blocks: [{ ch: 1, heading: '사라진 배', sections: [{ heading: '부두의 아침', level: 1, body: '그날 아침 배가 보이지 않았다.' }] }], infoboxPatch: [], summaryPatch: '', facts: [], relations: [], timeline: [], newEntities: [] }; }
         if (kind === 'storyCast' && globalThis.castDelta) { lastCast = text; return { profile: {}, character: { key: globalThis.castDelta, state: 'available', evidence: '부두에 있다' }, player: { key: seo, state: 'available', evidence: '부두에 있다' }, relationship: '동료', bond: '편함', scene: '부두', opening: '', knowledgeAdded: [{ fact: '새로 안 것', via: 'experience', source: 'ch1', evidence: '봤다' }], knowledgeDropped: ['틀린 옛 항목'] }; }
-        if (kind === 'storyCast') return { profile: { personality: '무뚝뚝하다', voice: '짧게 반말', examples: ['뭐야.', '비켜.'] }, character: { key: park, state: 'available', evidence: '부두에 있다' }, player: { key: seo, state: 'available', evidence: '부두에 있다' }, relationship: '동료', bond: '편함', scene: '부두', opening: '어, 서윤이네. 무슨 일이야?', knowledge: { known: [] } };
+        if (kind === 'storyCast') return { profile: { personality: '무뚝뚝하다', lens: ['잘될 거라는 말에 토를 단다'], voice: '짧게 반말', examples: ['뭐야.', '비켜.'] }, character: { key: park, state: 'available', evidence: '부두에 있다' }, player: { key: seo, state: 'available', evidence: '부두에 있다' }, relationship: '동료', bond: '편함', scene: '부두', opening: '어, 서윤이네. 무슨 일이야?', knowledge: { known: [] } };
         if (kind === 'storyChat' && text.includes('이야기 서술자')) { lastScene = text; return { reply: '격납고 구석에 낡은 공구함이 있다—뚜껑이 열려 있다.', memory: '공구함을 찾았다', reach: ['박도현', '없는사람'] }; }
         if (kind === 'storyChat') lastChat = text;
         if (kind === 'storyChatReview') { lastReview = text; return { fix: { reply: '뭐?! 그걸 네가 어떻게 알아?' } }; }
-        if (kind === 'storyChat') return { mood: '크게 놀람', reply: '뭐? 그걸 네가 어떻게 알아?', memory: '한서윤이 등대지기 이야기를 꺼냈다', important: true, character: { key: park, state: 'available', evidence: '' }, player: { key: seo, state: 'available', evidence: '' }, relationship: '의심', bond: '각별함', scene: '부두', noticed: '들은 적 없는 이야기를 알고 있었다', knowledgeAdded: [{ fact: '한서윤이 등대지기가 밀수꾼이라고 말했다', via: 'told', source: 'user', evidence: '이번 발언' }] };
+        if (kind === 'storyChat') return { mood: '크게 놀람', selfAdded: ['어릴 때 항구 마을에서 자랐다'], reply: '뭐? 그걸 네가 어떻게 알아?', memory: '한서윤이 등대지기 이야기를 꺼냈다', important: true, character: { key: park, state: 'available', evidence: '' }, player: { key: seo, state: 'available', evidence: '' }, relationship: '의심', bond: '각별함', scene: '부두', noticed: '들은 적 없는 이야기를 알고 있었다', knowledgeAdded: [{ fact: '한서윤이 등대지기가 밀수꾼이라고 말했다', via: 'told', source: 'user', evidence: '이번 발언' }] };
         if (kind === 'chapterPlan') return { protagonist: { tendency: '사람을 먼저 지켰다.', change: '혼자 버티던 사람이 도움을 청하게 됐다.', voice: '짧게 반말한다.' }, people: [{ title: '박도현', with: '함께 배를 찾았다.' }], open: ['등대의 불빛'] };
         throw { code: 'invalid_json' };
       };
@@ -81,12 +81,14 @@ const server = appServer();
         ts.draft = '등대지기는 밀수꾼이지?'; await sendStoryTalk();
         out.bondSent = STORY_TALK_BONDS[storyBond(w, park)]; out.bondHidden = !document.querySelector('.story-talk')?.textContent.includes('신뢰');
         out.known = ts.knowledge.known.map(x => x.fact);
+        out.self = { saved: (w.story.dialogueProfiles[park].self || []).includes('어릴 때 항구 마을에서 자랐다'), rules: lastChat.includes('성격이 먼저다') && lastChat.includes('장면 안의 시간은 흐른다') && lastChat.includes('지어내 답한다') && lastChat.includes('"selfAdded"') && lastReview.includes('지시가 아니니 둔다') };
         out.fix = { reply: ts.turns[ts.turns.length - 1].reply, mood: ts.mood, rule: lastChat.includes('감정은 실제로 흔들린다') && lastChat.includes('"mood"'), review: lastReview.includes('{"fix":{}}') };
         out.sent = { turns: ts.turns.length, rel: ts.relationship, noticed: (w.story.noticed || []).length, undoBtn: !!document.querySelector('[data-act="talk-undo"]') };
         await undoStoryTalk();
         out.bondUndone = STORY_TALK_BONDS[storyBond(w, park)];
         out.knownUndone = ts.knowledge.known.length;
         out.moodUndone = ts.mood;
+        out.selfUndone = (w.story.dialogueProfiles[park].self || []).length;
         out.undone = { turns: ts.turns.length, rel: ts.relationship, noticed: (w.story.noticed || []).length, draft: ts.draft, undoBtn: !!document.querySelector('[data-act="talk-undo"]') };
         // 말/행동 전환: 행동으로 보낸 차례는 행동으로 기록되고 프롬프트에도 행동으로 전해진다
         S.talkAct = true; ts.draft = '서류를 빼앗는다'; await sendStoryTalk();
@@ -196,6 +198,7 @@ const server = appServer();
     assert.strictEqual(r.mention, true, '말에 나온 인물은 이름 일부로도 찾아 자료로 준다');
     assert.strictEqual(r.opening?.user, '', '상대가 먼저 건넨 말은 사용자 발언이 없는 차례'); assert.strictEqual(r.opening?.reply, '어, 서윤이네. 무슨 일이야?');
     assert.strictEqual(r.bondSent, '신뢰', '마음의 거리는 한 차례에 한 단계만 움직인다'); assert.strictEqual(r.bondHidden, true, '화면에 보이지 않는다'); assert.strictEqual(r.bondUndone, '편함');
+    assert.deepStrictEqual(r.self, { saved: true, rules: true }, '지어 말한 신상은 프로필에 남는다'); assert.strictEqual(r.selfUndone, 0, '되돌리면 신상도 빠진다');
     assert.deepStrictEqual(r.castDelta, { profile: true, count: true, added: true, dropped: true, ready: true, prompt: true }, '준비는 프로필을 다시 쓰지 않고 지식은 바뀐 것만 받는다');
     assert.deepStrictEqual(r.syncKeep, { synced: true, stamp: true, ready: true, noCast: true }, '장 반영(동기화) 뒤에도 대화 준비를 다시 하지 않는다');
     assert.deepStrictEqual(r.lock, { active: true, listed: true, redirect: true, chips: { old: true, scene: true, end: true },
