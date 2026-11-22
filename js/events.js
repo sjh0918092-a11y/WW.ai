@@ -163,7 +163,7 @@ document.addEventListener("click", ev => {
     case "story-snap-discard": discardStorySnap(); break;
     case "talk-prepare": { const w = S.world, k = S.view.key; prepareStoryTalk(k).then(() => storyTalkBegin(w, k)); break; }
     case "talk-end": endStoryTalk(); break;
-    case "talk-begin": storyTalkBegin(S.world, S.view.key); break;
+    case "talk-start": { const w = S.world, k = S.view.key; prepareStoryTalk(k).then(() => storyTalkBegin(w, k)); break; }
     case "talk-send": sendStoryTalk(); break;
     case "talk-stop": S.storyTalkJob?.ctl.abort(); break;
     case "talk-save": saveStoryTalk(); break;

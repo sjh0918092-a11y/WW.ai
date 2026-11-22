@@ -136,12 +136,16 @@ const server = appServer();
           const before = storyTalkSession(w, park).turns.length;
           await endStoryTalk();
           const tt = storyTalkSession(w, park).turns;
-          out.lock.farewell = { added: tt.length - before, ev: tt[tt.length - 1].ev, user: tt[tt.length - 1].user, prompt: lastChat.includes('자리를 뜨려 한다'), active: storyTalkActive(w), ended: !!document.querySelector('.talk-end'), input: document.querySelector('#storyTalkInput')?.disabled, again: !!document.querySelector('[data-act="talk-begin"]'), oldChip: document.querySelector(`[data-talk-key="${old}"]`)?.disabled, undo: storyTalkCanUndo(w, park) };
+          out.lock.farewell = { added: tt.length - before, ev: tt[tt.length - 1].ev, user: tt[tt.length - 1].user, prompt: lastChat.includes('자리를 뜨려 한다'), active: storyTalkActive(w), ended: !!document.querySelector('.talk-end'), input: document.querySelector('#storyTalkInput')?.disabled, again: document.querySelector('[data-act="talk-start"]')?.textContent === '다시 말 걸기', oldChip: document.querySelector(`[data-talk-key="${old}"]`)?.disabled, undo: storyTalkCanUndo(w, park) };
+          { const casts = calls.filter(c => c === 'storyCast').length; openStoryTalk(old); renderMain();
+            out.lock.lazy = { noCast: calls.filter(c => c === 'storyCast').length === casts && !S.storyTalkJob, start: document.querySelector('[data-act="talk-start"]')?.textContent, input: document.querySelector('#storyTalkInput')?.disabled };
+            openStoryTalk(park); }
           Object.assign(storyTalkSession(w, old, true), { knowledge: { known: [] } }); const op = storyTalkPrompt(w, old, '무슨 일 있었어?');
           out.lock.elsewhere = op.includes('이번 장에 주인공이 이 인물과 떨어져 겪은 일') && op.includes(w.entities[park].title) && op.includes('주인공이 다른 인물과 나눈 말의 내용은 모른다') && !storyTalkPrompt(w, park, '응').includes('"with":"' + w.entities[park].title);
           await storyTalkBegin(w, park);
           const t2 = storyTalkSession(w, park).turns;
           out.lock.back = { ev: t2[t2.length - 1].ev, prompt: lastChat.includes('다시 찾아왔다'), active: storyTalkActive(w) === park, plan: chapterPlanPrompt(w, 2, null).includes('(주인공이 대화를 끝내고 자리를 떴다)') };
+          w.story.status = 'ended'; out.lock.afterEnding = storyTalkActive(w) === park; w.story.status = 'active';   // 결말 이후의 대화도 한 번에 한 사람
           w.story.chapter = 2; out.lock.chapterEnds = storyTalkActive(w) === ''; w.story.chapter = 1;
           delete w.story.talking; w.story.talkExtra = [];
         }
@@ -207,7 +211,7 @@ const server = appServer();
     assert.deepStrictEqual(r.syncKeep, { synced: true, stamp: true, ready: true, noCast: true }, '장 반영(동기화) 뒤에도 대화 준비를 다시 하지 않는다');
     assert.deepStrictEqual(r.lock, { active: true, listed: true, redirect: true, chips: { old: true, scene: true, end: true },
       farewell: { added: 1, ev: 'farewell', user: '', prompt: true, active: '', ended: true, input: true, again: true, oldChip: false, undo: false }, elsewhere: true,
-      back: { ev: 'return', prompt: true, active: true, plan: true }, chapterEnds: true }, '대화 중에는 다른 상대로 못 옮기고, 끝내면 작별 인사, 다시 찾아가면 새 첫마디');
+      back: { ev: 'return', prompt: true, active: true, plan: true }, lazy: { noCast: true, start: '대화 시작', input: true }, afterEnding: true, chapterEnds: true }, '대화 중에는 다른 상대로 못 옮기고, 끝내면 작별 인사, 다시 찾아가면 새 첫마디');
     assert.deepStrictEqual(r.fix, { reply: '뭐?! 그걸 네가 어떻게 알아?', mood: '크게 놀람', rule: true, review: true }, '검토는 고친 필드만 돌려주고 나머지는 초안을 쓴다. 기분은 저장된다'); assert.strictEqual(r.moodUndone, '', '되돌리면 기분도 되돌아간다');
     assert.deepStrictEqual(r.known, ['한서윤이 등대지기가 밀수꾼이라고 말했다'], '이번에 새로 안 것만 받아 기존 지식에 합친다'); assert.strictEqual(r.knownUndone, 0);
     assert.deepStrictEqual(r.sent, { turns: 2, rel: '의심', noticed: 2, undoBtn: true });
