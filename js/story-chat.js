@@ -107,6 +107,8 @@ async function storyTalkBegin(w, key) {
   const s = storyTalkSession(w, key);
   if (!storyTalkReady(w, key) || s?.state !== "available" || storyTalkPlayerState(w) !== "available") return;
   w.story.talking = { key, ch: w.story.chapter };
+  const pw = storyWhere(w, w.story.protagonistKey), cw = storyWhere(w, key);
+  if (cw?.place && !storySamePlace(pw, cw)) storySetWhere(w, w.story.protagonistKey, cw);   // 다른 곳에 있는 상대에게 말을 걸면 그곳으로 찾아간 것이다
   refreshStoryTalk(w, key);   // 입력란은 바로 연다
   try { await Store.saveWorld(w); } catch (e) { toast("대화 시작을 저장하지 못했습니다. " + errMsg(e)); }
   if (storyTalkLastEvent(w, key) === "farewell") await sendStoryTalk("return");
@@ -147,7 +149,7 @@ function storyTalkFindHtml(w, busy) {
 const STORY_TALK_UNDO_KEEP = 5;
 function storyTalkUndoPoint(w, s) {
   const key = Object.keys(curCh(w).dialogues || {}).find(k => curCh(w).dialogues[k] === s);
-  return JSON.parse(JSON.stringify({ relationship: s.relationship || "", scene: s.scene || "", knowledge: s.knowledge || null, state: s.state || "available", assessment: s.assessment || null, player: curCh(w).dialoguePlayerAssessment || null, talking: w.story.talking || null, bond: key ? w.story.bonds?.[key] || null : null, mood: s.mood || "", self: key ? (w.story.dialogueProfiles?.[key]?.self || []).length : 0 }));
+  return JSON.parse(JSON.stringify({ where: curCh(w).where || null, relationship: s.relationship || "", scene: s.scene || "", knowledge: s.knowledge || null, state: s.state || "available", assessment: s.assessment || null, player: curCh(w).dialoguePlayerAssessment || null, talking: w.story.talking || null, bond: key ? w.story.bonds?.[key] || null : null, mood: s.mood || "", self: key ? (w.story.dialogueProfiles?.[key]?.self || []).length : 0 }));
 }
 function storyTalkTrimUndo(s) {
   const turns = s.turns || []; for (let i = 0; i < turns.length - STORY_TALK_UNDO_KEEP; i++) delete turns[i].undo;
@@ -166,7 +168,8 @@ async function undoStoryTalk() {
     if (r.added && w.story.talkExtra) w.story.talkExtra = w.story.talkExtra.filter(k => k !== r.key);
   }
   if (u.player) curCh(w).dialoguePlayerAssessment = u.player; else delete curCh(w).dialoguePlayerAssessment;
-  if (t.ended && u.talking) w.story.talking = u.talking;   // 말로 끝낸 차례를 되돌리면 대화도 다시 열린다
+  if (t.ended && u.talking) w.story.talking = u.talking;
+  if ("where" in u) { if (u.where) curCh(w).where = u.where; else delete curCh(w).where; }   // 옮긴 위치도 되돌린다   // 말로 끝낸 차례를 되돌리면 대화도 다시 열린다
   if (Number.isInteger(u.self) && w.story.dialogueProfiles?.[key]?.self) w.story.dialogueProfiles[key].self.length = Math.min(u.self, w.story.dialogueProfiles[key].self.length);   // 이번 차례에 밝힌 신상도 되돌린다
   if ("bond" in u) { if (u.bond) (w.story.bonds ||= {})[key] = u.bond; else if (w.story.bonds) delete w.story.bonds[key]; }
   if (t.noticed && w.story.noticed) w.story.noticed = w.story.noticed.filter(x => !(x.who === t.noticed.who && x.what === t.noticed.what && x.ch === t.noticed.ch));
@@ -249,7 +252,16 @@ function storyTalkContext(w, key, opt = {}) {
     assessedStates: { character: storyTalkReady(w, key) ? storyTalkSession(w, key).assessment : null,
       player: curCh(w).dialoguePlayerAssessment?.version === STORY_TALK_ASSESSMENT ? curCh(w).dialoguePlayerAssessment : null },
     editorialTruths: secretsOf(w).map(s => ({ truth: s.truth, cover: s.cover, revealedInStory: s.revealed })),
+    positions: { player: storyWhereText(storyWhere(w, pk)), character: storyWhereText(storyWhere(w, key)) },
     ...storyTalkElsewhere(w, key) };
+}
+/* 위치(주인공·이 인물). 대화나 행동으로 옮겼으면 where에 새 위치를 받아 앱이 고친다 */
+const storyTalkPlaceLine = (w, key) => `위치: 주인공 ${storyWhereText(storyWhere(w, w.story.protagonistKey)) || "(정해지지 않음)"}${key && !isSceneKey(key) ? `, ${w.entities[key]?.title} ${storyWhereText(storyWhere(w, key)) || "(정해지지 않음)"}` : ""}\n`;
+const storyTalkWhereRule = () => `where: 이번 응답으로 주인공이나 이 인물이 다른 곳으로 옮겼으면(같이 자리를 옮김, 이 인물이 자리를 뜸) 그 사람의 새 위치를 ${STORY_PLACE_JSON} 형식으로 쓰고, 그대로면 null로 둔다. ${STORY_PLACE_RULE}`;   // story-arc.js가 뒤에 읽히니 쓸 때 만든다
+function storyTalkApplyWhere(w, key, out) {
+  const x = out?.where; if (!x || typeof x !== "object") return;
+  if (x.player && typeof x.player === "object") storySetWhere(w, w.story.protagonistKey, x.player);
+  if (key && !isSceneKey(key) && x.character && typeof x.character === "object") storySetWhere(w, key, x.character);
 }
 const STORY_TALK_ELSEWHERE_RULE = "elsewhereThisChapter는 이번 장에서 주인공이 이 인물과 떨어져 겪은 일이다(다른 인물과의 대화, 혼자 한 행동, 차례대로). 지금 장면은 그 마지막 상태에서 이어진다. 주인공이 있는 곳, 흐른 시간, 바뀐 상황(고친 기계, 옮긴 자리, 벌어진 일)을 그대로 이어받고, latestScene이 있으면 이 인물의 '현재 직접 접하는 상황'보다 그것이 나중이니 그쪽을 따른다. 이 인물은 그중 자기가 직접 보거나 들을 수 있었던 결과(같은 곳에서 벌어진 변화, 멀리까지 들린 소리, 모두가 알게 된 일)와 주인공이 지금 말해 주는 것만 안다. 주인공이 다른 인물과 나눈 말의 내용은 모른다.";
 function storyTalkElsewhereBlock(w, key) {
@@ -280,6 +292,12 @@ function storyTalkAddSelf(w, key, list) {
   for (const x of list) { const t = typeof x === "string" ? storyTalkClean(x).trim().slice(0, 160) : ""; if (t && !seen.has(t) && self.length < 40) { self.push(t); seen.add(t); } }
   if (!self.length) delete p.self;
 }
+/* 다른 곳에 있는 상대와 대화를 시작하면 주인공이 그곳으로 찾아간다. 갈 수 없으면 준비가 unable로 판정한다 */
+function storyTalkVisitLine(w, key) {
+  const pw = storyWhere(w, w.story.protagonistKey), cw = storyWhere(w, key);
+  if (!cw?.place || storySamePlace(pw, cw)) return pw && storySamePlace(pw, cw) ? `주인공과 이 인물은 같은 곳(${storyWhereText(cw)})에 있다.` : "";
+  return `이번 대화는 주인공이 ${storyWhereText(pw) || "지금 있는 곳"}에서 이 인물이 있는 ${storyWhereText(cw)}(으)로 찾아가서 시작한다. 갈 수 없는 상황(길이 막힘, 잠김, 주인공이 지금 자리를 뜰 수 없음, 너무 멂)이면 character.state를 unable로 하고 evidence에 그 이유를 쓴다. 갈 수 있으면 scene과 opening은 주인공이 찾아온 상황에서 출발한다.`;
+}
 const storyTalkProfileDone = (w, key) => { const p = w.story.dialogueProfiles?.[key]; return !!p?.voice && Array.isArray(p.lens) && p.lens.length > 0; };
 function storyTalkCastPrompt(w, key) {
   return `## 스토리 대화 준비
@@ -298,7 +316,8 @@ function storyTalkCastPrompt(w, key) {
 ## 첫마디
 bond는 지금까지의 관계와 대화로 본, 주인공에 대한 이 인물의 마음의 거리다(${STORY_TALK_BONDS.join(", ")}). ${storyBond(w, key) != null ? `이미 정해진 거리는 「${STORY_TALK_BONDS[storyBond(w, key)]}」이다. 그대로 쓴다.` : "처음 정한다."}
 opening은 주인공이 이번 장에서 처음 이 인물에게 말을 걸러 왔을 때 이 인물이 먼저 건네는 한마디다. 주인공에게 할 일을 시키거나 재촉하지 않는다. 주인공을 알아보고 이 인물다운 관심을 보인다. 줄표(—, –)는 쓰지 않는다. 1~2문장, 필요하면 짧은 행동 묘사를 붙인다. 지금 장면·관계·상태·말투에 맞춘다(예: 반가운 인사, 용건을 묻는 말, 바쁘다며 짧게 받는 말, 경계하는 말). 앞선 대화가 있으면 그 이어짐을 살린다. 이 인물이 대화할 수 없는 상태면 빈 문자열이다. 인물이 모르는 사실과 아직 드러나지 않은 진실은 쓰지 않는다. 이야기의 큰 사건을 이 한마디로 진행시키지 않는다.
-profile의 성격·말투·예시, relationship, scene에도 인물이 모르는 세부 정보를 섞지 않는다. ${STORY_TALK_ELSEWHERE_RULE} scene과 opening은 이 이어받은 상황에서 출발한다. knowledgeAdded에는 모르는 사실 목록을 넣지 않는다. 근거가 없는 항목은 제외하되 별도 확인 메모는 만들지 않는다.
+profile의 성격·말투·예시, relationship, scene에도 인물이 모르는 세부 정보를 섞지 않는다. ${STORY_TALK_ELSEWHERE_RULE} scene과 opening은 이 이어받은 상황에서 출발한다.
+${storyTalkVisitLine(w, key)} knowledgeAdded에는 모르는 사실 목록을 넣지 않는다. 근거가 없는 항목은 제외하되 별도 확인 메모는 만들지 않는다.
 
 ${JSON.stringify(storyTalkContext(w, key, { slim: true }))}
 출력은 아래 순서 그대로 쓴다(앞부분이 먼저 화면에 쓰인다).
@@ -328,12 +347,13 @@ mood와 reply를 가장 먼저 출력한다. memory는 이번 발언으로 생�
 문서에 없는 자기 과거와 신상(자란 곳, 가족과의 소소한 일, 취향, 예전에 했던 일, 사소한 일화)을 물으면 없다고 하지 말고, 문서·세계·성격과 모순되지 않게 이 인물답게 지어내 답한다. 실제 사람처럼 자기 이야기를 한다. 학창 시절 첫사랑, 지나간 연애, 연락이 끊긴 옛 친구처럼 지금은 끝난 개인사도 일화로 말할 수 있다. 그 상대는 이름 없이 말하거나 이름만 가볍게 대고, 지금의 이야기에 끌어들이지 않는다. 다만 다른 인물이나 문서에 영향을 주는 큰 사실(주인공이나 문서가 있는 인물과 얽힌 과거, 지금도 이어지는 관계, 범죄, 가족의 죽음, 숨겨진 과거, 세계의 비밀과 이어진 일)은 지어내지 않는다. 상대가 주인공이거나 문서가 있는 인물인 연애·과거는 문서에 그런 관계가 있을 때만 말한다. 그런 질문에는 성격대로 말을 돌리거나, 털어놓기 싫어하거나, 그런 일은 없었다고 한다. profile.self는 이 인물이 앞서 밝힌 자기 신상이니 그대로 지킨다. 이번에 새로 지어 말한 신상은 selfAdded에 한 줄씩 적는다(없으면 빈 배열).
 너에게 전달되는 knowledge.known은 이 인물이 실제로 알게 된 정보만 담는다. 세상과 다른 사람에 관한 그 밖의 정확한 세부 사항을 새로 지어내거나 다른 인물이 아는 일을 아는 척하지 않는다. 추론은 알고 있는 정보만으로 하며 단정하지 않는다. 사용자가 이번에 명시적으로 전한 내용은 전언으로 이해한다. 질문에 든 표현을 이미 알고 있던 사실처럼 재사용하지 않는다.
 ${storyTalkMentions(w, key, text)}현재 직접 접하는 상황: ${JSON.stringify(s.scene || "")}
-${storyTalkElsewhereBlock(w, key)}인물: ${JSON.stringify({ name: e.title, profile: w.story.dialogueProfiles?.[key], player: { name: w.entities[pk].title, state: storyTalkPlayerState(w) }, relationship: s.relationship, ...(s.mood ? { previousMood: s.mood } : {}), ...(storyBond(w, key) != null ? { distance: STORY_TALK_BONDS[storyBond(w, key)] } : {}), knowledge: { known: s.knowledge.known.map(({ fact, via }) => ({ fact, via })) } })}
+${storyTalkElsewhereBlock(w, key)}${storyTalkPlaceLine(w, key)}${storyTalkWhereRule()}
+인물: ${JSON.stringify({ name: e.title, profile: w.story.dialogueProfiles?.[key], player: { name: w.entities[pk].title, state: storyTalkPlayerState(w) }, relationship: s.relationship, ...(s.mood ? { previousMood: s.mood } : {}), ...(storyBond(w, key) != null ? { distance: STORY_TALK_BONDS[storyBond(w, key)] } : {}), knowledge: { known: s.knowledge.known.map(({ fact, via }) => ({ fact, via })) } })}
 이전 승인된 대화의 기억: ${JSON.stringify(approved.map(t => t.memory))}
 최근 승인된 대화: ${JSON.stringify(approved.slice(-6).map(t => ({ user: t.user, reply: t.reply })))}
 ${ev === "farewell" ? `이번 차례는 ${w.entities[pk].title}이(가) 이 대화를 끝내고 자리를 뜨려 한다. 사용자 발언은 없다. 너는 이 인물로서 작별의 말을 한다. 지금까지 나눈 대화와 지금 기분을 살려 이 인물답게 보낸다(아쉬움, 당부, 퉁명스러운 인사, 다음 약속 확인 등). 새 화제를 꺼내 붙잡지 않는다.` : ev === "return" ? `이번 차례는 ${w.entities[pk].title}이(가) 이 인물과 대화를 끝내고 헤어졌다가 다시 찾아왔다. 사용자 발언은 없다. 너는 이 인물로서 먼저 말을 건넨다. 방금 헤어진 대화의 여운과 다시 온 것에 대한 이 인물다운 반응(반가움, 의아함, 귀찮음 등)을 살린다.` : act ? `이번 차례는 말이 아니라 ${w.entities[pk].title}의 행동이다: ${JSON.stringify(text)}
 행동은 시도다. 너는 그 행동에 이 인물로서 반응한다(말과 짧은 행동 묘사). 결과는 설정·상황·이 인물의 반응에 따라 정하며 무조건 성공하지 않는다. 장 전체를 이 행동 하나로 끝내지는 않지만, 이 시도 자체의 결과는 낸다.` : `이번 사용자 발언: ${JSON.stringify(text)}`}
-${w.story.entry ? `사용자가 맡은 ${w.entities[pk].title}은(는) 이 세계의 위키를 읽은 독자일 수 있다. 이번 발언이 ${w.entities[pk].title}이(가) 알 수 없을 법한 사실(그 인물의 문서·관계·지금까지 겪은 일로 설명되지 않는 지식)에 기대면, 너는 그 출처를 의아해하거나 경계한다. 그런 일이 있었으면 noticed에 무엇이 이상했는지 한 문장, 없으면 빈 문자열.\n` : ""}JSON 하나: {"mood":"지금 기분과 세기","reply":"인물의 응답","ended":false,"memory":"이번 대화의 결과","important":false,${storyTalkStatusOutput(w, key)},"relationship":"대화 후 관계","bond":"${STORY_TALK_BONDS.join("/")} 중 하나","selfAdded":["이번에 처음 밝힌 자기 신상 한 줄"],${w.story.entry ? '"noticed":"",' : ""}${STORY_TALK_KNOWLEDGE_DELTA}}`;
+${w.story.entry ? `사용자가 맡은 ${w.entities[pk].title}은(는) 이 세계의 위키를 읽은 독자일 수 있다. 이번 발언이 ${w.entities[pk].title}이(가) 알 수 없을 법한 사실(그 인물의 문서·관계·지금까지 겪은 일로 설명되지 않는 지식)에 기대면, 너는 그 출처를 의아해하거나 경계한다. 그런 일이 있었으면 noticed에 무엇이 이상했는지 한 문장, 없으면 빈 문자열.\n` : ""}JSON 하나: {"mood":"지금 기분과 세기","reply":"인물의 응답","ended":false,"where":{"player":null,"character":null},"memory":"이번 대화의 결과","important":false,${storyTalkStatusOutput(w, key)},"relationship":"대화 후 관계","bond":"${STORY_TALK_BONDS.join("/")} 중 하나","selfAdded":["이번에 처음 밝힌 자기 신상 한 줄"],${w.story.entry ? '"noticed":"",' : ""}${STORY_TALK_KNOWLEDGE_DELTA}}`;
 }
 function storyDialogueBlock(w) {
   const rows = w.story.chapters.flatMap(c => Object.entries(c.dialogues || {}).flatMap(([k, s]) => (s.turns || []).map((t, i) => ({ source: `dialogue:${c.n}:${k}:${i}`, chapter: c.n, character: isSceneKey(k) ? "상황(서술자)" : w.entities[k]?.title, ...(t.act || isSceneKey(k) ? { kind: "주인공의 행동" } : {}), user: storyTalkUserLine(t), reply: t.reply, memory: t.memory, at: Number(t.at) || 0 }))))
@@ -374,6 +394,18 @@ function openStoryTalk(key) {
   if (key && !isSceneKey(key) && storyTalkActive(w) === key) prepareStoryTalk(key);   // 대화 중인 상대만 바로 준비를 맞춘다. 새 상대는 '대화 시작'을 눌러야 준비한다
 }
 function storyTalkBusy() { return !!S.storyTalkJob; }
+/* 주인공과 다른 장소에 있는 상대의 장소 이름(같은 곳이거나 모르면 빈 문자열) */
+function storyTalkAwayPlace(w, key) {
+  if (!key || isSceneKey(key) || storyTalkActive(w) === key) return "";
+  const pw = storyWhere(w, w.story.protagonistKey), cw = storyWhere(w, key);
+  return cw?.place && !storySamePlace(pw, cw) ? cw.place : "";
+}
+function storyTalkWhereHtml(w) {
+  const v = storyWhere(w, w.story.protagonistKey), c = curCh(w);
+  if (!v) return c.place ? ` · ${esc(c.place)}` : "";
+  const k = v.place ? keyOf(v.place) : "";
+  return ` · ${v.place && w.entities[k] ? `<button type="button" class="talk-doc" data-k="${esc(k)}">${esc(v.place)}</button>` : esc(v.place || "")}${v.detail ? ` ${esc(v.detail)}` : ""}`;
+}
 function refreshStoryTalk(w, key) {
   if (!(S.world === w && S.view.name === "storyTalk" && S.view.key === key)) return;
   const ta = document.getElementById("storyTalkInput"), focused = ta && document.activeElement === ta, pos = focused ? ta.selectionStart : 0;
@@ -481,6 +513,7 @@ reply에 지식·설정·생사 상태 문제가 없고, 주인공에게 할 일
     out.reply = storyTalkClean(out.reply);
     storySetBond(w, key, out.bond, n);
     storyTalkAddSelf(w, key, out.selfAdded);
+    storyTalkApplyWhere(w, key, out);
     s.turns.push({ user: text, ...(act ? { act: true } : {}), ...(ev ? { ev } : {}), reply: out.reply, memory: out.memory, state: out.character.state, knowledgeVersion: STORY_TALK_KNOWLEDGE, at: Date.now(), undo });
     storyTalkTrimUndo(s);
     if (!ev && out.ended === true) { s.turns[s.turns.length - 1].ended = true; delete w.story.talking; }   // 말로 작별했으면 버튼 없이 대화를 닫는다
@@ -529,7 +562,8 @@ ${JSON.stringify(text)}
 - memory는 이 행동으로 생긴 결과 한두 문장이다.
 - reach는 이 행동의 결과로 주인공이 찾아내거나 함께 있게 되어 이제 말을 걸 수 있는 인물이다(이미 존재하는 인물 제목 그대로). 없으면 빈 배열.
 
-JSON 하나: {"reply":"서술","memory":"결과","reach":["인물 제목"]}`;
+${storyTalkPlaceLine(w, "")}${storyTalkWhereRule().replace("주인공이나 이 인물이", "주인공이").replace("(같이 자리를 옮김, 이 인물이 자리를 뜸)", "")}
+JSON 하나: {"reply":"서술","memory":"결과","reach":["인물 제목"],"where":{"player":null}}`;
 }
 async function sendSceneTalk() {
   const w = S.world, key = STORY_SCENE_KEY; if (!storyOn(w) || storyTalkBusy() || storyTalkActive(w)) return;
@@ -548,6 +582,7 @@ async function sendSceneTalk() {
     if (!out?.reply?.trim()) throw { code: "invalid_json" };
     const undo = storyTalkUndoPoint(w, s);
     s.turns.push({ user: text, act: true, reply: storyTalkClean(out.reply), memory: stripMarks(String(out.memory || "")).slice(0, 300) || text, knowledgeVersion: STORY_TALK_KNOWLEDGE, at: Date.now(), undo });
+    storyTalkApplyWhere(w, "", out);
     const reached = storySceneReach(w, out.reach, out.memory || out.reply);
     if (reached.length) s.turns[s.turns.length - 1].reach = reached;
     storyTalkTrimUndo(s); s.draft = "";
@@ -627,8 +662,8 @@ function storyTalkHtml() {
       </div>${t.ev === "farewell" || t.ended ? '<p class="talk-end">대화를 마쳤습니다</p>' : ""}${undoable && i === turns.length - 1 ? '<div class="talk-undo"><button type="button" class="btn" data-act="talk-undo" title="이 차례를 지우고 보낸 말을 입력란에 되돌립니다">↶ 되돌리기</button></div>' : ""}</div>`).join("")}</section>` : "";
   }).join("");
   return `<section class="story-talk" aria-label="등장인물과 대화" data-talk-current="${esc(key || "")}">
-    <header class="talk-header"><div class="talk-heading"><button type="button" class="talk-back btn" data-act="story-back" aria-label="문서로 돌아가기">←</button>${scene ? storyTalkFace(w, key, "lg") : ""}${key && w.entities[key] ? `<button type="button" class="talk-face" data-k="${esc(key)}" aria-label="${esc(title)} 문서로 가기" title="문서로 가기">${avatarHtml(w, key, "lg")}</button>` : ""}<div class="talk-title"><h1>${esc(title)}</h1><span>${w.story.chapter}장${curCh(w).place ? ` · ${esc(curCh(w).place)}` : ""}${key && w.entities[key] ? ` · <button type="button" class="talk-doc" data-k="${esc(key)}">문서 보기</button>` : ""}</span></div>${storyOn(w) ? '<button type="button" class="btn talk-next" data-act="story-next">다음 장</button>' : ""}</div>
-    <nav class="talk-contacts" aria-label="대화 상대">${storyOn(w) ? `<button type="button" data-talk-key="${STORY_SCENE_KEY}" aria-pressed="${scene}" ${busy || active ? "disabled" : ""} title="상대 없이 하는 행동: 살피기, 조사, 이동">${storyTalkFace(w, STORY_SCENE_KEY, "sm")}상황</button>` : ""}${storyTalkers(w).map(k => `<button type="button" data-talk-key="${esc(k)}" aria-pressed="${k === key}" ${busy || (active && active !== k) ? "disabled" : ""}${storyTalkNearby(w)?.get(k) ? ` title="${esc(storyTalkNearby(w).get(k))}"` : ""}>${avatarHtml(w, k, "sm")}${esc(w.entities[k].title)}${!S.pages[k] ? "<small>미작성</small>" : storyTalkReady(w, k) && storyTalkSession(w, k).state !== "available" ? `<small>${esc(STORY_TALK_STATES[storyTalkSession(w, k).state])}</small>` : ""}</button>`).join("")}${storyTalkNearby(w) ? `<button type="button" class="talk-find-chip" data-act="talk-find-open" aria-expanded="${!!S.talkFindOpen}" ${busy || active ? "disabled" : ""}>＋ 찾기</button>` : ""}</nav>${active ? "" : storyTalkFindHtml(w, busy)}
+    <header class="talk-header"><div class="talk-heading"><button type="button" class="talk-back btn" data-act="story-back" aria-label="문서로 돌아가기">←</button>${scene ? storyTalkFace(w, key, "lg") : ""}${key && w.entities[key] ? `<button type="button" class="talk-face" data-k="${esc(key)}" aria-label="${esc(title)} 문서로 가기" title="문서로 가기">${avatarHtml(w, key, "lg")}</button>` : ""}<div class="talk-title"><h1>${esc(title)}</h1><span>${w.story.chapter}장${storyTalkWhereHtml(w)}${key && w.entities[key] ? ` · <button type="button" class="talk-doc" data-k="${esc(key)}">문서 보기</button>` : ""}</span></div>${storyOn(w) ? '<button type="button" class="btn talk-next" data-act="story-next">다음 장</button>' : ""}</div>
+    <nav class="talk-contacts" aria-label="대화 상대">${storyOn(w) ? `<button type="button" data-talk-key="${STORY_SCENE_KEY}" aria-pressed="${scene}" ${busy || active ? "disabled" : ""} title="상대 없이 하는 행동: 살피기, 조사, 이동">${storyTalkFace(w, STORY_SCENE_KEY, "sm")}상황</button>` : ""}${storyTalkers(w).map(k => `<button type="button" data-talk-key="${esc(k)}" aria-pressed="${k === key}" ${busy || (active && active !== k) ? "disabled" : ""}${storyTalkNearby(w)?.get(k) ? ` title="${esc(storyTalkNearby(w).get(k))}"` : ""}>${avatarHtml(w, k, "sm")}${esc(w.entities[k].title)}${storyTalkAwayPlace(w, k) && !(active && active !== k) ? `<small>${esc(storyTalkAwayPlace(w, k))}</small>` : ""}${!S.pages[k] ? "<small>미작성</small>" : storyTalkReady(w, k) && storyTalkSession(w, k).state !== "available" ? `<small>${esc(STORY_TALK_STATES[storyTalkSession(w, k).state])}</small>` : ""}</button>`).join("")}${storyTalkNearby(w) ? `<button type="button" class="talk-find-chip" data-act="talk-find-open" aria-expanded="${!!S.talkFindOpen}" ${busy || active ? "disabled" : ""}>＋ 찾기</button>` : ""}</nav>${active ? "" : storyTalkFindHtml(w, busy)}
     </header>
     <div class="talk-messages" id="storyTalkMessages" role="log" aria-label="대화 기록" tabindex="0">${history || (own && job.phase !== "prepare" ? "" : `<div class="talk-empty"><span aria-hidden="true">◇</span><p>${key ? (missingPage ? "" : (scene ? "주변을 살피거나 직접 행동해 보세요." : idle ? `대화 시작을 누르면 ${esc(title)}에게 다가갑니다.` : `${esc(title)}에게 말을 건네 보세요.`)) : "아직 등장한 대화 상대가 없습니다."}</p></div>`)}
     ${early ? `<div class="talk-message talk-other">${storyTalkFace(w, key, "md")}<span class="talk-speaker">${esc(title)}</span><div class="talk-bubble" id="storyTalkOpening">${esc(job.opening)}</div></div>` : ""}
@@ -637,5 +672,5 @@ function storyTalkHtml() {
     ${missingPage ? `<div class="talk-document"><p>${missingPage === key ? "인물" : "주인공"} 문서를 작성하면 대화할 수 있습니다.</p><button type="button" class="btn" data-k="${esc(missingPage)}">${missingPage === key ? "인물" : "주인공"} 문서 작성</button></div>` : ""}
     ${!missingPage && s?.err ? `<p class="talk-error" role="alert">${esc(s.err)}</p>` : ""}
     ${key ? `<label class="sr-only" for="storyTalkInput">${esc(title)}에게 할 말</label><div class="talk-input-row">${scene ? "" : `<button type="button" class="talk-mode" data-act="talk-mode" aria-pressed="${act}" title="말하기와 행동을 바꿉니다" ${busy ? "disabled" : ""}>${act ? "행동" : "말"}</button>`}<textarea id="storyTalkInput" rows="1" maxlength="2000" placeholder="${missingPage ? "문서를 먼저 작성해 주세요" : early ? "답을 써 두면 준비가 끝난 뒤 보낼 수 있습니다" : idle && !(ready && blocked) ? (parted ? "대화를 마쳤습니다" : "대화 시작을 누르면 말을 걸 수 있습니다") : blocked ? (scene ? "지금은 행동할 수 없습니다" : "지금은 대화할 수 없습니다") : act ? (scene ? "행동 입력 (예: 격납고 구석을 살핀다)" : "행동 입력 (예: 서류를 빼앗는다)") : "메시지 입력"}" ${early || (allowed && !busy) ? "" : "disabled"}>${esc(s?.draft || "")}</textarea><button type="button" class="talk-send" data-act="talk-send" aria-label="메시지 보내기" ${!allowed || busy || !s?.draft?.trim() || s?.unsaved ? "disabled" : ""}><span aria-hidden="true">↑</span></button></div>
-    <div class="talk-actions">${startable ? `<button type="button" class="btn pri" data-act="talk-start">${s?.err && !ready ? "다시 시도" : parted ? "다시 말 걸기" : "대화 시작"}</button>` : ""}${!idle && !scene && !missingPage && !ready && !busy ? '<button type="button" class="btn" data-act="talk-prepare">다시 시도</button>' : ""}${active === key && !busy ? '<button type="button" class="btn" data-act="talk-end" title="상대가 작별 인사를 하고 대화가 끝납니다. 끝낸 뒤에 다른 인물과 대화할 수 있습니다">대화 끝내기</button>' : ""}${own ? '<button type="button" class="btn" data-act="talk-stop">중단</button>' : ""}${s?.unsaved ? '<button type="button" class="btn" data-act="talk-save">저장 다시 시도</button>' : ""}</div>` : ""}</footer></section>`;
+    <div class="talk-actions">${startable ? `<button type="button" class="btn pri" data-act="talk-start">${s?.err && !ready ? "다시 시도" : storyTalkAwayPlace(w, key) ? `「${esc(storyTalkAwayPlace(w, key))}」로 가서 대화` : parted ? "다시 말 걸기" : "대화 시작"}</button>` : ""}${!idle && !scene && !missingPage && !ready && !busy ? '<button type="button" class="btn" data-act="talk-prepare">다시 시도</button>' : ""}${active === key && !busy ? '<button type="button" class="btn" data-act="talk-end" title="상대가 작별 인사를 하고 대화가 끝납니다. 끝낸 뒤에 다른 인물과 대화할 수 있습니다">대화 끝내기</button>' : ""}${own ? '<button type="button" class="btn" data-act="talk-stop">중단</button>' : ""}${s?.unsaved ? '<button type="button" class="btn" data-act="talk-save">저장 다시 시도</button>' : ""}</div>` : ""}</footer></section>`;
 }

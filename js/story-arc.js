@@ -79,12 +79,34 @@ ${o.summary ? `- 원래 한 줄 정의: ${o.summary}\n` : ""}- 독자가 맡은 
 ${storyLogBlock(w)}`;
 }
 /* 장 계획 출력의 장면 정보: 장이 끝날 때 주인공의 위치와 만날 수 있는 인물 */
+/* ---------- 위치: 장소 문서 제목(place)과 그 안의 자리(detail) ----------
+   장마다 c.where[인물 키]에 둔다. 문서가 없는 새 장소는 항목만 등록하고(문서는 사용자가 열 때 쓴다), 인물을 장소로 쓰지 않는다 */
+const STORY_PLACE_RULE = "장소(place)는 다시 찾아갈 만한 곳(방, 건물, 구역, 지역)의 문서 제목이다. 이미 있는 항목이면 제목을 글자 그대로 쓰고, 없으면 새 제목과 한 줄 설명(summary)을 쓴다. 잠깐 지나는 지점이나 그 안의 자리(예: 장치 앞, 복도 끝)는 detail에 쓴다.";
+const STORY_PLACE_JSON = '{"place":"장소 문서 제목","detail":"그 안의 자리","summary":"새 장소일 때만 한 줄 설명"}';
+function storyPlaceNorm(w, x) {
+  if (!x || typeof x !== "object") return null;
+  const title = canonTitle(w, norm(asText(x.place || x.title || "")).slice(0, 60)), detail = stripMarks(asText(x.detail || "")).slice(0, 80);
+  if (!title) return detail ? { place: "", detail } : null;
+  const k = keyOf(title), e = w.entities[k];
+  if (e && e.type === "인물") return null;
+  if (!e) { w.entities[k] = newEntity(title, "지명", stripMarks(asText(x.summary || "")).slice(0, 200)); w.entities[k].origin = w.story?.protagonistKey || ""; }
+  return { place: w.entities[k].title, detail };
+}
+function storySetWhere(w, key, x, ch = curCh(w)) {
+  const v = storyPlaceNorm(w, x); if (!v || !ch || !w.entities[key]) return null;
+  (ch.where ||= {})[key] = v; return v;
+}
+const storyWhere = (w, key, ch = curCh(w)) => ch?.where?.[key] || null;
+const storyWhereText = v => v ? [v.place && `「${v.place}」`, v.detail].filter(Boolean).join(" · ") : "";
+const storySamePlace = (a, b) => !!(a?.place && b?.place && a.place === b.place);
 function storyArcScene(w, ch, out) {
   if (!ch || !out) return;
-  const pk = w.story.protagonistKey, place = norm(asText(out.place || "")).slice(0, 80);
-  if (place) ch.place = place;
+  const pk = w.story.protagonistKey;
+  if (out.place && typeof out.place === "object") { const v = storySetWhere(w, pk, out.place, ch); if (v) ch.place = storyWhereText(v).slice(0, 80); }
+  else { const place = norm(asText(out.place || "")).slice(0, 80); if (place) ch.place = place; }   // 예전 형식(글)
   if (Array.isArray(out.nearby)) {
     const seen = new Set();
+    for (const x of out.nearby) { const k = x?.title ? kOf(w, String(x.title)) : ""; if (w.entities[k]?.type === "인물" && x.place && typeof x.place === "object") storySetWhere(w, k, x.place, ch); }
     ch.nearby = out.nearby.map(x => { const k = x?.title ? kOf(w, String(x.title)) : ""; return w.entities[k] && k !== pk && w.entities[k].type === "인물" && !storyDeadAt(w, k) && !seen.has(k) && seen.add(k) ? { key: k, why: stripMarks(asText(x.why || "")).slice(0, 120) } : null; }).filter(Boolean).slice(0, 12);
   }
 }
@@ -127,12 +149,12 @@ ${entityIndex(w, o.possess ? [pk] : [])}
 - ${WORLD_CLOCK_RULE}
 - secrets: 위키 어디에도 적혀 있지 않은, 이야기가 나중에 밝힐 진실 0~3개. ${WORLD_CLUE_RULE} cover는 지금 위키에 알려진 서술이다. 기존 문서와 모순되지 않으면서 기존 서술을 다르게 읽게 만드는 진실이어야 한다. 장르 이름만 보고 거대 음모를 만들지 않는다. 필요 없으면 빈 배열.
 - chapter1: era는 현재 기준 시점(${w.era})이거나 그 직후다. title은 작중 사건명(장 번호를 넣지 않는다), summary는 1장 첫 장면의 상황 2~4문장(발단 사건이 주인공 앞에 닥친 순간까지만, 주인공의 결정과 결과는 쓰지 않는다), incident는 발단 사건 한 문장, nextChoices는 주인공의 다음 행동 후보 3개.
-- place는 1장이 끝날 때 주인공이 있는 곳이다. nearby는 2장까지 주인공이 직접 만나거나 이 세계의 연락 수단으로 닿을 수 있는 기존 인물 3~10명이다(위 목록의 제목 그대로). 멀리 있거나 만날 길이 없는 인물은 넣지 않는다. why는 한 줄 이유.
+- place는 1장 첫 장면에서 주인공이 있는 곳이다. nearby는 1장에 주인공이 직접 만나거나 이 세계의 연락 수단으로 닿을 수 있는 기존 인물 3~10명이다(위 목록의 제목 그대로). 멀리 있거나 만날 길이 없는 인물은 넣지 않는다. why는 한 줄 이유, place는 그 인물이 있는 곳이다. ${STORY_PLACE_RULE}
 - 확정 사실, 사용자 확정 설정, 핵심 규칙, 연표와 모순되지 않는다.
 
 ## 출력
 JSON 객체 하나만 출력:
-{"protagonist":{${!o.possess && !o.name ? '"name":"주인공 이름",' : ""}"summary":"한 문장 정의","want":"바라는 것","wound":""},"storyPromise":{"focus":"약속한 이야기 경험","central":{"kind":"ongoing","subject":"이어갈 중심 내용"}},"spine":[{"n":1,"intent":"이 장의 의도 한두 문장"}],${WORLD_CLOCK_JSON},"secrets":[{"truth":"감춰진 진실","cover":"알려진 겉모습","reveal":3,"clues":["어디서 무엇을 보거나 들을 수 있는지"]}],"chapter1":{"title":"작중 사건명","era":"${w.era}","summary":"공개 줄거리","incident":"발단 사건 한 문장","nextChoices":["행동 후보","행동 후보","행동 후보"]},"place":"주인공이 있는 곳","nearby":[{"title":"인물 제목","why":"닿을 수 있는 이유"}]}`;
+{"protagonist":{${!o.possess && !o.name ? '"name":"주인공 이름",' : ""}"summary":"한 문장 정의","want":"바라는 것","wound":""},"storyPromise":{"focus":"약속한 이야기 경험","central":{"kind":"ongoing","subject":"이어갈 중심 내용"}},"spine":[{"n":1,"intent":"이 장의 의도 한두 문장"}],${WORLD_CLOCK_JSON},"secrets":[{"truth":"감춰진 진실","cover":"알려진 겉모습","reveal":3,"clues":["어디서 무엇을 보거나 들을 수 있는지"]}],"chapter1":{"title":"작중 사건명","era":"${w.era}","summary":"공개 줄거리","incident":"발단 사건 한 문장","nextChoices":["행동 후보","행동 후보","행동 후보"]},"place":{"place":"장소 문서 제목","detail":"그 안의 자리","summary":"새 장소일 때만 한 줄 설명"},"nearby":[{"title":"인물 제목","why":"닿을 수 있는 이유","place":{"place":"이 인물이 있는 장소 문서 제목","detail":"그 안의 자리"}}]}`;
 }
 /* 앞 이야기의 대화 프로필과 주인공 기록을 새 이야기의 대화 상대 프로필로 넘긴다 */
 function storyArcCarryProfiles(w) {

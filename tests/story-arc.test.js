@@ -120,6 +120,12 @@ const server = appServer();
           { const j1 = {}, j2 = {}, head = '{"character":{"key":"x","state":"available","evidence":"e"},"player":{"key":"y","state":"available","evidence":"e"},"relationship":"r","bond":"편함","opening":"어, 왔어? 잠깐';
             storyTalkCastPartial(w, park, j1, head); storyTalkCastPartial(w, park, j2, head.replace('"state":"available","evidence":"e"},"player"', '"state":"dead","evidence":"e"},"player"'));
             out.early = { shown: j1.opening, dead: j2.opening || '', order: lastCast.lastIndexOf('"opening":') < lastCast.lastIndexOf('"profile":') }; }
+          { const c = curCh(w), saved = JSON.stringify(c.where || null), pk = w.story.protagonistKey;
+            storyArcScene(w, c, { place: { place: '북쪽 부두', detail: '3번 선착장' }, nearby: [{ title: w.entities[park].title, why: '같은 항구', place: { place: '등대', detail: '꼭대기', summary: '항구 끝 등대' } }, { title: '등대', why: '', place: { place: w.entities[park].title } }] });
+            const lk = keyOf('등대');
+            out.where = { stub: w.entities[lk]?.type === '지명' && w.entities[lk]?.page === false, pk: storyWhereText(storyWhere(w, pk)), park: storyWhereText(storyWhere(w, park)), line: storyTalkPlaceLine(w, park).includes('「등대」 · 꼭대기'), rule: storyTalkWhereRule().includes('"place":"장소 문서 제목"'), visit: storyTalkVisitLine(w, park).includes('찾아가서 시작한다'), noPersonPlace: !storySetWhere(w, park, { place: w.entities[pk].title }) };
+            storyTalkApplyWhere(w, park, { where: { player: { place: '등대', detail: '계단' }, character: null } }); out.where.moved = storyWhereText(storyWhere(w, pk));
+            c.where = JSON.parse(saved) || undefined; if (!c.where) delete c.where; }
           out.castDelta = { profile: JSON.stringify(w.story.dialogueProfiles[park]) === keepProfile, count: facts.length === kept, added: facts.includes('새로 안 것'), dropped: !facts.includes('틀린 옛 항목'), ready: storyTalkReady(w, park), prompt: lastCast.includes('{} 또는 고친 전체 프로필') && lastCast.includes('"knowledgeDropped"') };
         }
         // 장의 변화를 인물 문서에 반영(동기화)해도 대화를 다시 준비하지 않는다
@@ -145,7 +151,10 @@ const server = appServer();
             openStoryTalk(park); }
           Object.assign(storyTalkSession(w, old, true), { knowledge: { known: [] } }); const op = storyTalkPrompt(w, old, '무슨 일 있었어?');
           out.lock.elsewhere = op.includes('이번 장에 주인공이 이 인물과 떨어져 겪은 일') && op.includes(w.entities[park].title) && op.includes('주인공이 다른 인물과 나눈 말의 내용은 모른다') && !storyTalkPrompt(w, park, '응').includes('"with":"' + w.entities[park].title);
+          { const c = curCh(w); c.where = { [w.story.protagonistKey]: { place: '북쪽 부두', detail: '' }, [park]: { place: '등대', detail: '꼭대기' } }; renderMain();
+            out.lock.goLabel = document.querySelector('[data-act="talk-start"]')?.textContent; out.lock.chipPlace = document.querySelector(`[data-talk-key="${park}"] small`)?.textContent; }
           await storyTalkBegin(w, park);
+          out.lock.went = storyWhereText(storyWhere(w, w.story.protagonistKey)); delete curCh(w).where;
           const t2 = storyTalkSession(w, park).turns;
           out.lock.back = { ev: t2[t2.length - 1].ev, prompt: lastChat.includes('다시 찾아왔다'), active: storyTalkActive(w) === park, plan: chapterPlanPrompt(w, 2, null).includes('(주인공이 대화를 끝내고 자리를 떴다)') };
           globalThis.endTalk = true; storyTalkSession(w, park).draft = '저 가볼게요'; await sendStoryTalk(); globalThis.endTalk = false;
@@ -215,11 +224,12 @@ const server = appServer();
     assert.deepStrictEqual(r.self, { saved: true, rules: true }, '지어 말한 신상은 프로필에 남는다'); assert.strictEqual(r.selfUndone, 0, '되돌리면 신상도 빠진다');
     assert.deepStrictEqual(r.clock, { rule: true, at: 0, stages: 4, clues: 3 }, '이야기를 시작할 때 세계의 시계와 단서를 정한다');
     assert.deepStrictEqual(r.early, { shown: '어, 왔어? 잠깐', dead: '', order: true }, '준비 중 첫마디는 둘 다 대화할 수 있을 때만 먼저 보인다');
+    assert.deepStrictEqual(r.where, { stub: true, pk: '「북쪽 부두」 · 3번 선착장', park: '「등대」 · 꼭대기', line: true, rule: true, visit: true, noPersonPlace: true, moved: '「등대」 · 계단' }, '위치는 장소 항목에 묶이고 새 장소는 문서 없이 항목만 생긴다');
     assert.deepStrictEqual(r.castDelta, { profile: true, count: true, added: true, dropped: true, ready: true, prompt: true }, '준비는 프로필을 다시 쓰지 않고 지식은 바뀐 것만 받는다');
     assert.deepStrictEqual(r.syncKeep, { synced: true, stamp: true, ready: true, noCast: true }, '장 반영(동기화) 뒤에도 대화 준비를 다시 하지 않는다');
     assert.deepStrictEqual(r.lock, { active: true, listed: true, redirect: true, chips: { old: true, scene: true, end: true },
       farewell: { added: 1, ev: 'farewell', user: '', prompt: true, active: '', ended: true, input: true, again: true, oldChip: false, undo: false }, elsewhere: true,
-      back: { ev: 'return', prompt: true, active: true, plan: true }, lazy: { noCast: true, start: '대화 시작', input: true }, afterEnding: true, spoken: { ended: true, active: '', last: 'farewell', shown: true, rule: true, undo: true }, chapterEnds: true }, '대화 중에는 다른 상대로 못 옮기고, 끝내면 작별 인사, 다시 찾아가면 새 첫마디');
+      back: { ev: 'return', prompt: true, active: true, plan: true }, lazy: { noCast: true, start: '대화 시작', input: true }, afterEnding: true, spoken: { ended: true, active: '', last: 'farewell', shown: true, rule: true, undo: true }, goLabel: '「등대」로 가서 대화', chipPlace: '등대', went: '「등대」 · 꼭대기', chapterEnds: true }, '대화 중에는 다른 상대로 못 옮기고, 끝내면 작별 인사, 다시 찾아가면 새 첫마디');
     assert.deepStrictEqual(r.fix, { reply: '뭐?! 그걸 네가 어떻게 알아?', mood: '크게 놀람', rule: true, review: true }, '검토는 고친 필드만 돌려주고 나머지는 초안을 쓴다. 기분은 저장된다'); assert.strictEqual(r.moodUndone, '', '되돌리면 기분도 되돌아간다');
     assert.deepStrictEqual(r.known, ['한서윤이 등대지기가 밀수꾼이라고 말했다'], '이번에 새로 안 것만 받아 기존 지식에 합친다'); assert.strictEqual(r.knownUndone, 0);
     assert.deepStrictEqual(r.sent, { turns: 2, rel: '의심', noticed: 2, undoBtn: true });
