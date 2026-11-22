@@ -472,3 +472,12 @@ details.ent li{margin-bottom:3px}
 [data-entry-pick][aria-pressed="true"],[data-entry-mode][aria-pressed="true"]{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
 [data-entry-pick][aria-pressed="true"] small{color:inherit}
 [data-entry-pick]:disabled{opacity:.45;cursor:not-allowed}
+/* 대화 프사 */
+.avatar{display:inline-grid;place-items:center;flex:none;border-radius:50%;object-fit:cover;object-position:50% 20%;background:var(--tint);color:var(--muted);font-weight:600;overflow:hidden}
+.avatar.lg{width:40px;height:40px;font-size:16px}
+.avatar.sm{width:22px;height:22px;font-size:11px;margin-left:-6px}
+.avatar.xs{width:20px;height:20px;font-size:10px;margin-right:6px;vertical-align:middle}
+.talk-face{border:0;background:none;padding:0;cursor:pointer;border-radius:50%;flex:none}
+.talk-face:focus-visible{outline:2px solid var(--link);outline-offset:2px}
+.talk-speaker{display:inline-flex;align-items:center}
+.talk-doc{border:0;background:none;padding:0;font:inherit;color:var(--link);cursor:pointer;text-decoration:underline;text-underline-offset:2px}

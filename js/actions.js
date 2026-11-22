@@ -472,6 +472,7 @@ async function generatePage(k, rewrite, direction, novel = false, novelAngle = n
     delete page.angleUsed; delete page.sceneUsed;
     if (oldPage?.shortStories) page.shortStories = oldPage.shortStories;
     if (oldPage?.portrait) page.portrait = oldPage.portrait;   // 사용자가 올린 이미지는 AI 다시 쓰기와 별개로 유지
+    if (oldPage?.avatar) page.avatar = oldPage.avatar;   // 대화 프사도 같은 이미지에서 잘랐으므로 유지
     if (oldPage?.looks) { page.looks = oldPage.looks; if (oldPage.looksEditedAt) page.looksEditedAt = oldPage.looksEditedAt; }   // 외모는 다시 쓴 본문과 어긋나는 항목만 확정 사실 정리가 고친다
     if (page.type === "인물" && !page.motifs && cleanMotifs(oldPage?.motifs)) page.motifs = cleanMotifs(oldPage.motifs);   // 소재를 빼먹은 다시 쓰기는 이전 기록을 둔다
     if (isStory(w)) {   // 새로 쓰는 문서는 장 섹션 없이 현재 장 시점으로 처음부터 쓴다

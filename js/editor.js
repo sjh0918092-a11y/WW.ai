@@ -226,7 +226,7 @@ async function commitEdit(ed, out, r, conflicts, ch) {
     ed.saving = false; edStatus("저장하지 못했습니다. " + esc(errMsg(err))); return;
   }
   if (ed.section) {
-    for (const field of ["title", "type", "summary", "categories", "notices", "infobox", "style", "portrait", "shortStories"]) { if (old[field] !== undefined) page[field] = old[field]; else delete page[field]; }
+    for (const field of ["title", "type", "summary", "categories", "notices", "infobox", "style", "portrait", "avatar", "shortStories"]) { if (old[field] !== undefined) page[field] = old[field]; else delete page[field]; }
     page.sections = out.sections;
     for (const [id, nb] of Object.entries(w.navboxes || {})) if (nb.src === k) delete w.navboxes[id];
     Object.assign(w.navboxes, ownNavboxes);

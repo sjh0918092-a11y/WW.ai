@@ -191,6 +191,7 @@ async function prepareStoryTalk(key) {
   const w = S.world;
   if (!isStory(w) || !storyTalkers(w).includes(key) || storyTalkBusy()) return;
   if (storyTalkMissingPage(w, key)) { refreshStoryTalk(w, key); return; }
+  if (typeof ensureAvatar === "function") ensureAvatar(w, key);   // 이미지가 있는 인물은 준비하면서 대화 프사도 맞춘다(뒤에서 돌고 대화를 기다리게 하지 않는다)
   const s = storyTalkSession(w, key, true);
   const stamp = storyTalkStamp(w, key);
   if (storyTalkReady(w, key) && (s.stamp === stamp || (!s.cacheVersion && s.stamp === storyTalkLegacyStamp(w, key)))) {
@@ -299,12 +300,12 @@ function storyTalkHtml() {
     const turns = c.dialogues?.[key]?.turns || [];
     return turns.length ? `<section class="talk-chapter"><h2>${c.n}장</h2>${turns.map(t => `<div class="talk-turn">
       ${t.user ? `<div class="talk-message talk-self"><span class="sr-only">${esc(w.entities[w.story.protagonistKey]?.title)}</span><div class="talk-bubble">${esc(t.user)}</div></div>` : ""}
-      <div class="talk-message talk-other"><span class="talk-speaker">${esc(title)}</span><div class="talk-bubble">${esc(t.reply)}</div>
+      <div class="talk-message talk-other"><span class="talk-speaker">${avatarHtml(w, key, "xs")}${esc(title)}</span><div class="talk-bubble">${esc(t.reply)}</div>
       </div></div>`).join("")}</section>` : "";
   }).join("");
   return `<section class="story-talk" aria-label="등장인물과 대화" data-talk-current="${esc(key || "")}">
-    <header class="talk-header"><div class="talk-heading"><button type="button" class="talk-back btn" data-act="story-back" aria-label="문서로 돌아가기">←</button><div class="talk-title"><h1>${esc(title)}</h1><span>${w.story.chapter}장 · ${esc(w.entities[w.story.protagonistKey]?.title)}으로 대화</span></div>${storyOn(w) ? '<button type="button" class="btn talk-next" data-act="story-next">다음 장</button>' : ""}</div>
-    <nav class="talk-contacts" aria-label="대화 상대">${storyTalkers(w).map(k => `<button type="button" data-talk-key="${esc(k)}" aria-pressed="${k === key}" ${busy ? "disabled" : ""}${storyTalkNearby(w)?.get(k) ? ` title="${esc(storyTalkNearby(w).get(k))}"` : ""}>${esc(w.entities[k].title)}${!S.pages[k] ? "<small>미작성</small>" : storyTalkReady(w, k) && storyTalkSession(w, k).state !== "available" ? `<small>${esc(STORY_TALK_STATES[storyTalkSession(w, k).state])}</small>` : ""}</button>`).join("")}</nav>${storyTalkFindHtml(w, busy)}
+    <header class="talk-header"><div class="talk-heading"><button type="button" class="talk-back btn" data-act="story-back" aria-label="문서로 돌아가기">←</button>${key && w.entities[key] ? `<button type="button" class="talk-face" data-k="${esc(key)}" aria-label="${esc(title)} 문서로 가기" title="문서로 가기">${avatarHtml(w, key, "lg")}</button>` : ""}<div class="talk-title"><h1>${esc(title)}</h1><span>${w.story.chapter}장 · ${esc(w.entities[w.story.protagonistKey]?.title)}으로 대화${key && w.entities[key] ? ` · <button type="button" class="talk-doc" data-k="${esc(key)}">문서 보기</button>` : ""}</span></div>${storyOn(w) ? '<button type="button" class="btn talk-next" data-act="story-next">다음 장</button>' : ""}</div>
+    <nav class="talk-contacts" aria-label="대화 상대">${storyTalkers(w).map(k => `<button type="button" data-talk-key="${esc(k)}" aria-pressed="${k === key}" ${busy ? "disabled" : ""}${storyTalkNearby(w)?.get(k) ? ` title="${esc(storyTalkNearby(w).get(k))}"` : ""}>${avatarHtml(w, k, "sm")}${esc(w.entities[k].title)}${!S.pages[k] ? "<small>미작성</small>" : storyTalkReady(w, k) && storyTalkSession(w, k).state !== "available" ? `<small>${esc(STORY_TALK_STATES[storyTalkSession(w, k).state])}</small>` : ""}</button>`).join("")}</nav>${storyTalkFindHtml(w, busy)}
     </header>
     <div class="talk-messages" id="storyTalkMessages" role="log" aria-label="대화 기록" tabindex="0">${history || (own && job.phase !== "prepare" ? "" : `<div class="talk-empty"><span aria-hidden="true">◇</span><p>${key ? (missingPage ? "" : `${esc(title)}에게 말을 건네 보세요.`) : "아직 등장한 대화 상대가 없습니다."}</p></div>`)}
     ${own && job.phase !== "prepare" ? `<div class="talk-message talk-self"><span class="sr-only">나</span><div class="talk-bubble">${esc(job.user || "")}</div></div><div class="talk-message talk-other"><span class="talk-speaker">${esc(title)}</span><div class="talk-bubble" id="storyTalkLive" role="status" aria-label="답변을 기다리는 중">…</div></div>` : ""}</div>

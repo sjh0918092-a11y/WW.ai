@@ -38,7 +38,7 @@ async function setPortrait(k, file) {
     const next = { ...p };
     if (src) next.portrait = src; else delete next.portrait;
     await Store.savePage(w.id, next);
-    if (S.world === w && S.pages[k] === p) S.pages[k] = next;
+    if (S.world === w && S.pages[k] === p) { S.pages[k] = next; if (isStory(w) || !src) ensureAvatar(w, k); }   // 이야기 중이면 대화 프사도 새 이미지로 바꾼다(아니면 대화를 열 때 바꾼다)
     toast(src ? "프로필 이미지를 저장했습니다." : "프로필 이미지를 삭제했습니다.");
   } catch (err) { toast("이미지를 저장하지 못했습니다. " + (err.message || errMsg(err))); }
   finally {
@@ -230,7 +230,7 @@ async function applyDocImage() {
     const next = { ...latest, portrait: v.preview };
     await Store.savePage(w.id, next);
     if (v.jobId) AIRecovery.handled(v.jobId);
-    if (S.world === w && S.pages[v.key] === p) S.pages[v.key] = next;
+    if (S.world === w && S.pages[v.key] === p) { S.pages[v.key] = next; if (isStory(w)) ensureAvatar(w, v.key); }
     S.imageGen = null; renderMain(); toast("생성한 이미지를 적용했습니다.");
   } catch (e) { v.error = "이미지를 적용하지 못했습니다. " + (e.message || errMsg(e)); renderMain(); }
 }
@@ -273,4 +273,78 @@ function imageGenHtml(w, k) {
     ${v.error ? `<div class="banner warn" role="alert">${esc(v.error)}</div>` : ""}
     ${v.preview ? `${imageZoomHtml(v.preview, p.title + " 생성 이미지 미리보기", true)}<div class="row"><button type="button" class="btn pri" data-act="image-apply">이 이미지 적용</button><button type="button" class="btn" data-act="image-discard">미리보기 버리기</button></div>` : ""}
     <div class="row" style="margin-top:10px"><button type="button" class="btn pri" data-act="image-generate" ${disabled || !imageReady(o.model) ? "disabled" : ""}>${v.busy ? "이미지 생성 중…" : v.preview ? "다시 1장 생성" : "1장 생성"}</button><button type="button" class="btn" data-act="image-close">${v.busy ? "생성 중단" : "닫기"}</button></div></section>`;
+}
+
+/* ---------- 대화 프사: Gemini가 얼굴 위치를 찾고 앱이 정사각형으로 자른다 ----------
+   page.avatar = { src, of, by }. of는 자른 원본 이미지의 지문이라, 이미지가 바뀌거나(다른 기기·복구 포함) 지워지면 다시 만든다.
+   얼굴을 찾지 못하거나 Gemini에 닿지 못하면 위쪽 가운데로 자르고(by: "center"), 같은 이미지로는 다시 부르지 않는다 */
+const AVATAR_SIZE = 128;
+const portraitPrint = src => { let h = 2166136261; for (let i = 0; i < src.length; i += 97) { h ^= src.charCodeAt(i); h = Math.imul(h, 16777619); } return src.length + ":" + (h >>> 0).toString(36); };
+const avatarFresh = p => { const src = portraitSrc(p); return !!src && p.avatar?.of === portraitPrint(src) && /^data:image\/(?:webp|png|jpeg);base64,/.test(p.avatar.src || ""); };
+const avatarJobs = new Map();
+function loadImageSrc(src) { return new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = () => rej(new Error("이미지를 읽지 못했습니다.")); img.src = src; }); }
+/* 얼굴 찾기는 사용자가 쓰는 모델 중 Gemini가 있을 때만 부른다(다른 제공자만 쓰면 Gemini로 요청을 보내지 않는다) */
+const avatarModel = () => { const ids = [GS.quick, GS.main, GS.check, ...Object.values(GS.taskModels || {}).map(v => v?.model)].filter(x => /^gemini-/.test(x || "")); return ids.find(x => /lite/.test(x)) || ids[0] || ""; };
+async function detectFace(w, k, img) {
+  const model = avatarModel(); if (!model) return null;
+  const s = Math.min(1, 512 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(img.naturalWidth * s)); c.height = Math.max(1, Math.round(img.naturalHeight * s));
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  const data = c.toDataURL("image/jpeg", .85).split(",")[1];
+  const body = { contents: [{ role: "user", parts: [{ inlineData: { mimeType: "image/jpeg", data } }, { text: '이 이미지에서 주된 인물(그림 속 캐릭터 포함)의 얼굴 위치를 찾는다. 머리카락을 뺀 얼굴 영역이다. 여러 명이면 가장 크게 보이는 얼굴 하나다. JSON 하나만 출력: {"box_2d":[ymin,xmin,ymax,xmax]} (각 값은 0~1000 정수). 얼굴이 보이지 않으면 {"box_2d":null}.' }] }],
+    generationConfig: { responseMimeType: "application/json", temperature: 0 } };
+  const costCall = typeof DocumentCost !== "undefined" ? DocumentCost.begin(w.id, k, "avatar") : null, t0 = performance.now(), title = S.pages[k]?.title || "";
+  if (costCall) { costCall.row.title = title; DocumentCost.update(costCall, model); }
+  try {
+    const res = await gFetch(`/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", ...gAuth() }, body: JSON.stringify(body) });
+    if (!res.ok) throw await gError(res, model);
+    const j = await res.json();
+    if (costCall) DocumentCost.update(costCall, model, j.usageMetadata, "done");
+    const text = (j.candidates?.[0]?.content?.parts || []).map(x => x.thought ? "" : x.text || "").join("").replace(/^\s*```(?:json)?|```\s*$/g, "").trim();
+    const box = JSON.parse(text)?.box_2d;
+    pushLog({ at: Date.now(), kind: "avatar", title, model, in: data.length, total: Math.round(performance.now() - t0), out: text.length, ok: true });
+    return Array.isArray(box) && box.length === 4 && box.every(v => Number.isFinite(+v)) && +box[2] > +box[0] && +box[3] > +box[1] ? box.map(v => Math.min(1000, Math.max(0, +v))) : null;
+  } catch (e) {
+    if (costCall) DocumentCost.update(costCall, model, null, "failed");
+    pushLog({ at: Date.now(), kind: "avatar", title, model, in: data.length, total: Math.round(performance.now() - t0), out: 0, ok: false, err: e.code || e.name || "avatar", msg: e.message });
+    throw e;
+  }
+}
+/* 얼굴 상자를 가운데에 두고 여백을 붙인 정사각형으로 자른다. 상자가 없으면 위쪽 가운데 */
+function cropAvatar(img, box) {
+  const W = img.naturalWidth, H = img.naturalHeight;
+  let side, cx, cy;
+  if (box) { const [y0, x0, y1, x1] = box.map(v => v / 1000); side = Math.max((x1 - x0) * W, (y1 - y0) * H) * 1.8; cx = (x0 + x1) / 2 * W; cy = (y0 + y1) / 2 * H; }
+  else { side = Math.min(W, H); cx = W / 2; cy = H > W ? side / 2 + (H - side) * .08 : H / 2; }
+  side = Math.max(8, Math.min(side, W, H));
+  const sx = Math.min(W - side, Math.max(0, cx - side / 2)), sy = Math.min(H - side, Math.max(0, cy - side / 2));
+  const c = document.createElement("canvas"); c.width = c.height = AVATAR_SIZE;
+  c.getContext("2d").drawImage(img, sx, sy, side, side, 0, 0, AVATAR_SIZE, AVATAR_SIZE);
+  return c.toDataURL("image/webp", .85);
+}
+/* 이미지가 있으면 프사를 맞추고, 이미지가 지워졌으면 프사도 지운다. 같은 문서에 겹쳐 돌지 않는다.
+   문서 객체를 바꿔 끼우지 않고 그 자리에서 고친다(다른 작업이 같은 객체를 보고 있어도 "문서가 바뀌었다"로 끊기지 않게) */
+function ensureAvatar(w, k) {
+  const id = w?.id + ":" + k, p = S.pages[k];
+  if (!w || !p || avatarJobs.has(id) || S.world !== w) return avatarJobs.get(id);
+  const src = portraitSrc(p);
+  if (!src) { if (p.avatar) { delete p.avatar; Store.savePage(w.id, p).catch(() => {}); } return; }
+  if (avatarFresh(p)) return;
+  const job = (async () => {
+    const img = await loadImageSrc(src); let box = null;
+    try { box = await detectFace(w, k, img); } catch {}
+    const cur = S.pages[k]; if (S.world !== w || !cur || portraitSrc(cur) !== src) return;   // 그 사이 이미지가 바뀌었으면 버린다
+    cur.avatar = { src: cropAvatar(img, box), of: portraitPrint(src), by: box ? "gemini" : "center" };
+    await Store.savePage(w.id, cur);
+    if (S.view.name === "storyTalk") renderMain();
+  })().catch(() => {}).finally(() => avatarJobs.delete(id));
+  avatarJobs.set(id, job); return job;
+}
+/* 대화 화면의 프사. 새 프사가 준비되기 전에는 원본을 위쪽 가운데로 보여 주고, 이미지가 없으면 첫 글자 */
+function avatarHtml(w, k, cls = "") {
+  const p = S.pages[k], e = w.entities[k];
+  if (p && avatarFresh(p)) return `<img class="avatar ${cls}" src="${esc(p.avatar.src)}" alt="" decoding="async">`;
+  const src = portraitSrc(p);
+  if (src) { ensureAvatar(w, k); return `<img class="avatar fallback ${cls}" src="${esc(src)}" alt="" decoding="async">`; }
+  return `<span class="avatar initial ${cls}" aria-hidden="true">${esc(Array.from(e?.title || "?")[0])}</span>`;
 }
