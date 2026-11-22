@@ -117,6 +117,15 @@ const server = appServer();
           const facts = storyTalkSession(w, park).knowledge.known.map(x => x.fact);
           out.castDelta = { profile: JSON.stringify(w.story.dialogueProfiles[park]) === keepProfile, count: facts.length === kept, added: facts.includes('새로 안 것'), dropped: !facts.includes('틀린 옛 항목'), ready: storyTalkReady(w, park), prompt: lastCast.includes('{} 또는 고친 전체 프로필') && lastCast.includes('"knowledgeDropped"') };
         }
+        // 장의 변화를 인물 문서에 반영(동기화)해도 대화를 다시 준비하지 않는다
+        { const ts3 = storyTalkSession(w, park), pg = S.pages[park];
+          pg.sections = (pg.sections || []).filter(x => !x.ch); pg.syncedTo = 0; delete pg.baseAsOf; const cc = curCh(w); cc.affected = [...(cc.affected || []).filter(a => a.key !== park), { key: park, change: '배가 사라진 것을 알았다' }]; await Store.savePage(w.id, pg);
+          ts3.stamp = storyTalkStamp(w, park);
+          const casts = calls.filter(c => c === 'storyCast').length;
+          await runSync(park);
+          out.syncKeep = { synced: (S.pages[park].sections || []).some(x => x.ch === w.story.chapter), stamp: ts3.stamp === storyTalkStamp(w, park), ready: storyTalkReady(w, park) };
+          await prepareStoryTalk(park); out.syncKeep.noCast = calls.filter(c => c === 'storyCast').length === casts;
+        }
         // 한 번에 한 사람: 대화 중에는 다른 인물·상황으로 옮기지 않고, 끝내면 상대가 작별 인사를 한다
         { w.story.talkExtra = [old];
           out.lock = { active: storyTalkActive(w) === park, listed: storyTalkers(w).includes(old) };
@@ -188,6 +197,7 @@ const server = appServer();
     assert.strictEqual(r.opening?.user, '', '상대가 먼저 건넨 말은 사용자 발언이 없는 차례'); assert.strictEqual(r.opening?.reply, '어, 서윤이네. 무슨 일이야?');
     assert.strictEqual(r.bondSent, '신뢰', '마음의 거리는 한 차례에 한 단계만 움직인다'); assert.strictEqual(r.bondHidden, true, '화면에 보이지 않는다'); assert.strictEqual(r.bondUndone, '편함');
     assert.deepStrictEqual(r.castDelta, { profile: true, count: true, added: true, dropped: true, ready: true, prompt: true }, '준비는 프로필을 다시 쓰지 않고 지식은 바뀐 것만 받는다');
+    assert.deepStrictEqual(r.syncKeep, { synced: true, stamp: true, ready: true, noCast: true }, '장 반영(동기화) 뒤에도 대화 준비를 다시 하지 않는다');
     assert.deepStrictEqual(r.lock, { active: true, listed: true, redirect: true, chips: { old: true, scene: true, end: true },
       farewell: { added: 1, ev: 'farewell', user: '', prompt: true, active: '', ended: true, input: true, again: true, oldChip: false, undo: false },
       back: { ev: 'return', prompt: true, active: true, plan: true }, chapterEnds: true }, '대화 중에는 다른 상대로 못 옮기고, 끝내면 작별 인사, 다시 찾아가면 새 첫마디');

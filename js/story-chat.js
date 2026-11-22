@@ -210,6 +210,21 @@ function storyTalkStamp(w, key) {
     text(curCh(w).summary), (curCh(w).affected || []).map(a => [a.key, text(a.change)]),
     person(key), person(w.story.protagonistKey)]);
 }
+/* 장의 변화를 문서에 반영한 것은 이미 준비에 들어간 장 줄거리(summary·affected)를 문서로 옮긴 것이라 대화를 다시 준비할 까닭이 아니다.
+   반영 전 문서로 맞춰 둔 준비는 반영 후 문서 기준으로 이어 쓴다. 반영과 함께 다른 것까지 바뀌었으면 맞지 않으니 평소처럼 다시 준비한다 */
+function storyTalkCarryStamp(w, k, before) {
+  if (!isStory(w) || !w.story?.chapters?.length || !before) return false;
+  const pk = w.story.protagonistKey, keys = [...new Set([k, pk])], dialogues = curCh(w)?.dialogues || {};
+  const after = { page: S.pages[k], entities: Object.fromEntries(keys.map(x => [x, w.entities[x]])) };
+  const swap = v => { S.pages[k] = v.page; for (const x of keys) if (v.entities[x]) w.entities[x] = v.entities[x]; };
+  let moved = false;
+  for (const [key, s] of Object.entries(dialogues)) {
+    if (isSceneKey(key) || !s?.ready || !w.entities[key] || (key !== k && pk !== k)) continue;
+    swap(before); let old; try { old = storyTalkStamp(w, key); } finally { swap(after); }
+    if (s.stamp === old) { s.stamp = storyTalkStamp(w, key); moved = true; }
+  }
+  return moved;
+}
 function storyTalkLegacyStamp(w, key) {
   const text = JSON.stringify([STORY_TALK_ASSESSMENT, w.era, w.story.chapter, key, w.story.protagonistKey, w.userCanon, w.rules, w.guide, curCh(w).summary, ...[key, w.story.protagonistKey].map(k => ({ summary: w.entities[k]?.summary, facts: w.entities[k]?.facts, page: S.pages[k] && { summary: S.pages[k].summary, infobox: S.pages[k].infobox, sections: S.pages[k].sections } }))]);
   let hash = 2166136261; for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);

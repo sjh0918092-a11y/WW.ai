@@ -181,6 +181,7 @@ function drainSync() {
 async function runSync(k) {
   const w = S.world, p = S.pages[k], chs = missingChs(w, k); if (!p || !chs.length) return;
   S.syncing = k; S.syncErr = null;
+  const talkBefore = isStory(w) ? { page: p, entities: Object.fromEntries([...new Set([k, w.story.protagonistKey])].filter(x => w.entities[x]).map(x => [x, JSON.parse(JSON.stringify(w.entities[x]))])) } : null;   // 반영 전 상태: 대화 준비를 이어 쓰는 데 쓴다
   if (S.view.name === "article" && S.view.key === k) renderMain(); renderSide();
   let np = null;
   try {
@@ -198,6 +199,7 @@ async function runSync(k) {
     if (S.view.name === "article" && S.view.key === k) renderMain(); renderSide();
     drainSync(); return;
   }
+  if (typeof storyTalkCarryStamp === "function" && S.world === w && S.pages[k] === np) storyTalkCarryStamp(w, k, talkBefore);
   S.syncing = null; S.syncPhase = null;
   try { await Store.savePage(w.id, np); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
   if (S.view.name === "article" && S.view.key === k) renderMain();
