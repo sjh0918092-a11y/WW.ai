@@ -165,6 +165,7 @@ document.addEventListener("click", ev => {
     case "talk-send": sendStoryTalk(); break;
     case "talk-stop": S.storyTalkJob?.ctl.abort(); break;
     case "talk-save": saveStoryTalk(); break;
+    case "talk-undo": undoStoryTalk(); break;
     case "story-next": openAdvance(); break;
     case "story-go": { const ta = $("#advCustom"); if (ta && S.adv) S.adv.custom = ta.value; advanceChapter(false); break; }
     case "story-skip": advanceChapter(true); break;

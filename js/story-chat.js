@@ -61,6 +61,29 @@ function storyTalkFindHtml(w, busy) {
   const others = Object.keys(w.entities).filter(k => k !== w.story.protagonistKey && w.entities[k].type === "인물" && !shown.has(k)).slice(0, 300);
   return `<div class="talk-find">${place ? `<span class="note">현재 위치: ${esc(place)}</span>` : ""}${others.length ? `<input id="talkFind" list="talkFindList" class="txt" placeholder="목록에 없는 인물 찾기" aria-label="목록에 없는 인물 찾기" ${busy ? "disabled" : ""}><datalist id="talkFindList">${others.map(k => `<option value="${esc(w.entities[k].title)}"></option>`).join("")}</datalist>` : ""}</div>`;
 }
+/* ---------- 대화 되돌리기: 이번 장의 마지막 차례를 지우고 그 차례 전 상태로 돌린다 ----------
+   차례마다 바뀌기 전의 관계·장면·지식·생사 판정을 남겨 둔다(최근 몇 차례만, 저장 크기를 키우지 않게) */
+const STORY_TALK_UNDO_KEEP = 5;
+function storyTalkUndoPoint(w, s) {
+  return JSON.parse(JSON.stringify({ relationship: s.relationship || "", scene: s.scene || "", knowledge: s.knowledge || null, state: s.state || "available", assessment: s.assessment || null, player: curCh(w).dialoguePlayerAssessment || null }));
+}
+function storyTalkTrimUndo(s) {
+  const turns = s.turns || []; for (let i = 0; i < turns.length - STORY_TALK_UNDO_KEEP; i++) delete turns[i].undo;
+}
+function storyTalkCanUndo(w, key) {
+  const s = storyTalkSession(w, key), t = s?.turns?.[s.turns.length - 1];
+  return !!(storyOn(w) && t && t.user && t.undo && !storyTalkBusy() && !s.unsaved);
+}
+async function undoStoryTalk() {
+  const w = S.world, key = S.view.key; if (!isStory(w) || !storyTalkCanUndo(w, key)) return;
+  const s = storyTalkSession(w, key), t = s.turns.pop(), u = t.undo;
+  Object.assign(s, { relationship: u.relationship, scene: u.scene, knowledge: u.knowledge, state: u.state, assessment: u.assessment, draft: t.user, err: "" });
+  if (u.player) curCh(w).dialoguePlayerAssessment = u.player; else delete curCh(w).dialoguePlayerAssessment;
+  if (t.noticed && w.story.noticed) w.story.noticed = w.story.noticed.filter(x => !(x.who === t.noticed.who && x.what === t.noticed.what && x.ch === t.noticed.ch));
+  try { await Store.saveWorld(w); } catch (e) { s.err = "되돌린 대화를 저장하지 못했습니다. " + errMsg(e); s.unsaved = true; }
+  refreshStoryTalk(w, key);
+  const ta = document.getElementById("storyTalkInput"); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+}
 function storyTalkKey(w, key) {
   const keys = storyTalkers(w), preferred = w.aliases?.[key] || key || w.story.lastDialogueKey;
   return keys.includes(preferred) ? preferred : keys.includes(w.story.lastDialogueKey) ? w.story.lastDialogueKey : keys[0];
@@ -261,9 +284,14 @@ reply에 지식·설정·생사 상태 문제가 없으면 초안의 reply를 �
 출력 형식은 초안과 같다. reply에는 수정이 끝난 캐릭터의 응답만 쓴다. 검토 과정이나 수정 이유를 설명하는 교정 메모는 출력하지 않는다.`, { signal: job.ctl.signal, modelTier: "check" }, { title: w.entities[key].title, ch: n });
     if (job.ctl.signal.aborted || S.world !== w || w.story.chapter !== n || storyTalkMissingPage(w, key) || s.stamp !== storyTalkStamp(w, key)) throw { code: "cancelled" };
     if (!out?.reply?.trim() || !out?.memory?.trim() || !storyTalkKnowledgeValid(out.knowledge) || !storyTalkAssessment(w, key, out)) throw { code: "invalid_json" };
+    const undo = storyTalkUndoPoint(w, s);   // 되돌리기: 이 차례가 바꾸기 전의 관계·장면·지식·상태
     applyStoryTalkAssessment(w, key, s, out);
-    s.turns.push({ user: text, reply: out.reply, memory: out.memory, state: out.character.state, knowledgeVersion: STORY_TALK_KNOWLEDGE, at: Date.now() });
-    if (typeof storyArcNoticed === "function" && typeof out.noticed === "string" && out.noticed.trim()) storyArcNoticed(w, n, [{ who: w.entities[key].title, what: out.noticed }]);   // 주인공이 알 수 없는 지식을 꺼낸 것을 상대가 알아챘다
+    s.turns.push({ user: text, reply: out.reply, memory: out.memory, state: out.character.state, knowledgeVersion: STORY_TALK_KNOWLEDGE, at: Date.now(), undo });
+    storyTalkTrimUndo(s);
+    if (typeof storyArcNoticed === "function" && typeof out.noticed === "string" && out.noticed.trim()) {   // 주인공이 알 수 없는 지식을 꺼낸 것을 상대가 알아챘다
+      const before = w.story.noticed?.length || 0; storyArcNoticed(w, n, [{ who: w.entities[key].title, what: out.noticed }]);
+      if ((w.story.noticed?.length || 0) > before) s.turns[s.turns.length - 1].noticed = w.story.noticed[w.story.noticed.length - 1];
+    }
     Object.assign(s, { draft: "", relationship: typeof out.relationship === "string" ? out.relationship : "", scene: typeof out.scene === "string" ? out.scene : "", knowledge: out.knowledge, knowledgeVersion: STORY_TALK_KNOWLEDGE });
     committed = true;
     firstTimer();
@@ -301,10 +329,11 @@ function storyTalkHtml() {
   const status = blocked ? (playerState !== "available" ? `주인공 · ${STORY_TALK_STATES[playerState]}` : STORY_TALK_STATES[s.state]) : "";
   const history = w.story.chapters.map(c => {
     const turns = c.dialogues?.[key]?.turns || [];
-    return turns.length ? `<section class="talk-chapter"><h2>${c.n}장</h2>${turns.map(t => `<div class="talk-turn">
+    const undoable = c === curCh(w) && storyTalkCanUndo(w, key);
+    return turns.length ? `<section class="talk-chapter"><h2>${c.n}장</h2>${turns.map((t, i) => `<div class="talk-turn">
       ${t.user ? `<div class="talk-message talk-self"><span class="sr-only">${esc(w.entities[w.story.protagonistKey]?.title)}</span><div class="talk-bubble">${esc(t.user)}</div></div>` : ""}
       <div class="talk-message talk-other"><span class="talk-speaker">${avatarHtml(w, key, "xs")}${esc(title)}</span><div class="talk-bubble">${esc(t.reply)}</div>
-      </div></div>`).join("")}</section>` : "";
+      </div>${undoable && i === turns.length - 1 ? '<div class="talk-undo"><button type="button" class="btn" data-act="talk-undo" title="이 차례를 지우고 보낸 말을 입력란에 되돌립니다">↶ 되돌리기</button></div>' : ""}</div>`).join("")}</section>` : "";
   }).join("");
   return `<section class="story-talk" aria-label="등장인물과 대화" data-talk-current="${esc(key || "")}">
     <header class="talk-header"><div class="talk-heading"><button type="button" class="talk-back btn" data-act="story-back" aria-label="문서로 돌아가기">←</button>${key && w.entities[key] ? `<button type="button" class="talk-face" data-k="${esc(key)}" aria-label="${esc(title)} 문서로 가기" title="문서로 가기">${avatarHtml(w, key, "lg")}</button>` : ""}<div class="talk-title"><h1>${esc(title)}</h1><span>${w.story.chapter}장 · ${esc(w.entities[w.story.protagonistKey]?.title)}으로 대화${key && w.entities[key] ? ` · <button type="button" class="talk-doc" data-k="${esc(key)}">문서 보기</button>` : ""}</span></div>${storyOn(w) ? '<button type="button" class="btn talk-next" data-act="story-next">다음 장</button>' : ""}</div>
