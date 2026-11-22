@@ -107,7 +107,7 @@ const server = appServer();
     });
     assert(!boundary.leak);
     assert(boundary.rules.includes('직접 경험, 실제 전달'));
-    assert(boundary.rules.includes('공개되었다는 묘사 없이 공개 정보라고 가정하지 않는다'));
+    assert(boundary.rules.includes('공개되었다는 묘사 없이 비밀스러운 일을 공개 정보라고 가정하지 않는다'));assert(boundary.rules.includes('당연히 알 만한 것은 넣는다'));assert(boundary.rules.includes('비밀, 사적인 사정, 숨겨진 진실은 이 이유로 넣지 않는다'));
     const evidenceBoundary=await page.evaluate(()=>{
       const session=storyTalkSession(S.world,'friend'), old=session.knowledge;
       session.knowledge={known:[{fact:'행사가 열렸다.',via:'public',source:'chapter:1',evidence:privateFact}]};

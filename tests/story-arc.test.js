@@ -103,6 +103,9 @@ const server = appServer();
         out.planAgency = plan2.includes('플레이어가 하지 않은 주인공의 결정') && plan2.includes('상황(서술자)') && plan2.includes('주인공의 행동');
         S.view = { name: 'storyTalk', key: park }; renderMain();
         out.openingHtml = { self: document.querySelectorAll('.talk-chapter .talk-self').length, other: document.querySelector('.talk-chapter .talk-other .talk-bubble')?.textContent };
+        { const bk = keyOf('브룬힐데 에이르'); w.entities[bk] = newEntity('브룬힐데 에이르', '인물', '함장'); w.entities[bk].type = '인물';
+          const mp = storyTalkPrompt(w, park, '저 브룬힐데 님 좋아해요'), none = storyTalkPrompt(w, park, '오늘 날씨 좋네');
+          out.mention = mp.includes('이번 말에 나온 이 세계의 대상') && mp.includes('브룬힐데 에이르') && !none.includes('이번 말에 나온 이 세계의 대상'); delete w.entities[bk]; }
         out.talkNoticedRule = storyTalkPrompt(w, park, '등대지기는 밀수꾼이지?').includes('noticed');
 
         // 봉인: 장 표시와 장 출처를 이야기 번호가 붙은 일반 기록으로 바꾸고 이야기를 보관한다
@@ -152,6 +155,7 @@ const server = appServer();
     assert.strictEqual(r.planReader, true);
     assert.strictEqual(r.planNoticed, true);
     assert.strictEqual(r.talkNoticedRule, true);
+    assert.strictEqual(r.mention, true, '말에 나온 인물은 이름 일부로도 찾아 자료로 준다');
     assert.strictEqual(r.opening?.user, '', '상대가 먼저 건넨 말은 사용자 발언이 없는 차례'); assert.strictEqual(r.opening?.reply, '어, 서윤이네. 무슨 일이야?');
     assert.strictEqual(r.bondSent, '신뢰', '마음의 거리는 한 차례에 한 단계만 움직인다'); assert.strictEqual(r.bondHidden, true, '화면에 보이지 않는다'); assert.strictEqual(r.bondUndone, '편함');
     assert.deepStrictEqual(r.sent, { turns: 2, rel: '의심', noticed: 2, undoBtn: true });
