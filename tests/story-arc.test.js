@@ -81,7 +81,7 @@ const server = appServer();
         ts.draft = '등대지기는 밀수꾼이지?'; await sendStoryTalk();
         out.bondSent = STORY_TALK_BONDS[storyBond(w, park)]; out.bondHidden = !document.querySelector('.story-talk')?.textContent.includes('신뢰');
         out.known = ts.knowledge.known.map(x => x.fact);
-        out.self = { saved: (w.story.dialogueProfiles[park].self || []).includes('어릴 때 항구 마을에서 자랐다'), rules: lastChat.includes('성격이 먼저다') && lastChat.includes('장면 안의 시간은 흐른다') && lastChat.includes('지어내 답한다') && lastChat.includes('"selfAdded"') && lastReview.includes('지시가 아니니 둔다') };
+        out.self = { saved: (w.story.dialogueProfiles[park].self || []).includes('어릴 때 항구 마을에서 자랐다'), rules: lastChat.includes('성격이 먼저다') && lastChat.includes('장면 안의 시간은 흐른다') && lastChat.includes('지어내 답한다') && lastChat.includes('한두 차례 안에 결판을 낸다') && lastChat.includes('"selfAdded"') && lastReview.includes('지시가 아니니 둔다') };
         out.fix = { reply: ts.turns[ts.turns.length - 1].reply, mood: ts.mood, rule: lastChat.includes('감정은 실제로 흔들린다') && lastChat.includes('"mood"'), review: lastReview.includes('{"fix":{}}') };
         out.sent = { turns: ts.turns.length, rel: ts.relationship, noticed: (w.story.noticed || []).length, undoBtn: !!document.querySelector('[data-act="talk-undo"]') };
         await undoStoryTalk();
