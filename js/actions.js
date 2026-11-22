@@ -118,7 +118,7 @@ function setupStory(w, b, user = {}, pk = w.mainKey, opt = {}) {
   const c1 = b.chapter1, era = norm(c1.era || b.era || w.era).slice(0, 40) || w.era;
   const e = w.entities[pk]; e.type = "인물"; if (!opt.keepSummary || !e.summary) e.summary = stripMarks(pr.summary || "").slice(0, 200) || e.summary || "";
   w.mode = "story"; w.era = era;
-  w.story = { protagonistKey: pk, chapter: 1, total, status: "active", spine, endedAt: null, epilogue: "",
+  w.story = { protagonistKey: pk, chapter: 1, total, status: "active", spine, clocks: normClocks(b.clocks), endedAt: null, epilogue: "",
     protagonist: { summary: e.summary, want: stripMarks(pr.want || "").slice(0, 200), wound: stripMarks(pr.wound || "").slice(0, 200) },
     chapters: [{ n: 1, open: true, title: chTitle(c1.title || "발단").slice(0, 60), era, summary: stripMarks(c1.summary).slice(0, 800), incident: stripMarks(c1.incident || "").slice(0, 240),
       startedAt: Date.now(), explore: emptyExplore(), choice: null, wove: [], affected: [], auto: [],
@@ -129,7 +129,7 @@ function setupStory(w, b, user = {}, pk = w.mainKey, opt = {}) {
   const N = w.story.total;
   w.story.secrets = (Array.isArray(b.secrets) ? b.secrets : []).filter(x => x && x.truth).slice(0, 5).map((x, i) => ({ id: "s" + (i + 1),
     truth: stripMarks(asText(x.truth)).slice(0, 300), cover: stripMarks(asText(x.cover || "")).slice(0, 300) || "알려진 것이 없다",
-    reveal: Math.min(N, Math.max(2, parseInt(x.reveal, 10) || N)), revealed: false }));
+    reveal: Math.min(N, Math.max(2, parseInt(x.reveal, 10) || N)), revealed: false, ...(normClues(x.clues).length ? { clues: normClues(x.clues) } : {}) }));
   w.story.continuity = storyMemory(w);
   if (storyText(b.storyPromise?.focus, 1200)) w.story.continuity.focus = storyText(b.storyPromise.focus, 1200);
   const central = b.storyPromise?.central, oldQuestion = storyText(b.storyPromise?.centralQuestion, 400);

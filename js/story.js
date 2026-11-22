@@ -61,6 +61,7 @@ function applyChapter(w, n, out, choice) {
     if (!quote) { secret.pendingDisclosure = { chapter: n }; warn(`비밀 ${secret.id}의 공개 근거 확인이 필요합니다. 본문은 보존하고 공개 확정은 보류했습니다.`); continue; }
     secret.revealed = true; secret.revealedAt = at; secret.evidence = quote; delete secret.pendingDisclosure;
   }
+  storyApplyClocks(w, finish ? at : n, out);
   for (const r of (Array.isArray(out.spineRevise) ? out.spineRevise : [])) {
     const s = st.spine[(+r?.n || 0) - 1]; if (!s || s.n < n || !r.intent) continue;
     if (!s.revised) s.orig = s.intent;
@@ -89,6 +90,17 @@ function applyChapter(w, n, out, choice) {
   st.chapters[st.chapters.length - 1].fresh = Object.keys(w.entities).filter(k => !before.has(k) && k !== pk);   // 이번 장에 새로 등장한 항목
   if (typeof storyArcScene === "function") { storyArcScene(w, st.chapters[st.chapters.length - 1], out); storyArcNoticed(w, n, out.noticed); }   // 장이 끝날 때의 위치·만날 수 있는 인물, 주변이 알아챈 것
   return np;
+}
+/* 세계의 시계: 예전 이야기는 이번 장에서 만들고(clocks), 있으면 한 칸씩 돌린다(clockMoves). 한 번에 한 칸만 움직이게 구조만 다듬는다 */
+function storyApplyClocks(w, n, out) {
+  const st = w.story;
+  if (!st.clocks?.length && Array.isArray(out.clocks)) { st.clocks = normClocks(out.clocks); return; }
+  for (const m of (Array.isArray(out.clockMoves) ? out.clockMoves : [])) {
+    const c = (st.clocks || []).find(x => x.id === m?.id), to = parseInt(m?.to, 10);
+    if (!c || !Number.isInteger(to) || to === c.at) continue;
+    const next = Math.min(c.stages.length, Math.max(0, c.at + Math.sign(to - c.at)));
+    (c.log ||= []).push({ n, from: c.at, to: next, why: stripMarks(asText(m.why || "")).slice(0, 200) }); c.at = next;
+  }
 }
 async function advanceChapter(skip) {
   const w = S.world; if (!storyOn(w)) return;

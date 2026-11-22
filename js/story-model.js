@@ -256,6 +256,22 @@ function storyMemoryBlock(w, sources = true) {
 /* 장 전환 응답의 본문: 지난 장 기록(record)과 새 장 첫 장면(protagonistBlock). 인용 근거는 둘 다에서 찾는다 */
 const storyOutBody = out => [...(out?.record?.sections || []), ...(out?.protagonistBlock?.sections || [])].map(s => storyQuote(s?.body)).join("\n");
 /* 열린 장: 장이 시작될 때는 첫 장면(상황이 주인공 앞에 닥친 순간)까지만 쓰고, 플레이어가 대화로 치른 뒤 장이 끝날 때 기록으로 다시 쓴다 */
+/* 세계의 시계 블록(내부 전용). 시계가 없는 예전 이야기는 뼈대를 보여 주고 이번 장에서 시계를 만들게 한다 */
+function storyClocksBlock(w, nextN, finish) {
+  const st = w.story, N = totalOf(w);
+  const spine = `## 장 구성\n${st.spine.map(s => `- ${s.n}장 ${s.beat}${st.clocks?.length ? "" : `: ${s.intent}${s.revised ? " (앞선 장의 탐험 때문에 수정됨)" : ""}`}`).join("\n")}\n`;
+  if (!st.clocks?.length) return `## 잠정 이야기 뼈대 (독자에게 공개하지 않는다. 확정 사건과 선택보다 우선하지 않는다)\n${spine.replace("## 장 구성\n", "")}${finish ? "" : `
+## 세계의 시계 만들기 (내부 전용)
+이 이야기에는 아직 세계의 시계가 없다. 위 뼈대의 남은 의도, 숨겨진 진실, 지금까지의 일을 바탕으로 이번 응답의 clocks에 만든다. ${WORLD_CLOCK_RULE} 지금까지 이미 벌어진 단계 수를 at에 쓴다.
+`}`;
+  return `${spine}
+## 세계의 시계 (내부 전용, 독자에게 공개하지 않는다)
+${st.clocks.map(c => `- [id: ${c.id}] ${c.name}: ${c.aim}\n${c.stages.map((x, i) => `  ${i + 1}) ${i < c.at ? "[이미 벌어짐] " : i === c.at ? "[다음] " : ""}${x}`).join("\n")}`).join("\n")}
+${finish ? "" : `- 장이 넘어가는 동안 각 시계는 한 칸 나아가거나 멈춘다(clockMoves의 to는 새로 벌어진 단계까지의 수). 주인공이 그 흐름을 막거나 늦췄으면 멈추거나 한 칸 물러설 수 있고, 손 놓았거나 모르는 채 지나갔으면 나아간다. ${nextN}장은 ${st.spine[nextN - 1]?.beat || ""} 구간이니 그에 맞는 속도로 돌린다. 위기·절정 구간에 이르면 시계들이 끝 단계에 가까워진다. 마지막 장(${N}장)의 첫 장면은 시계들이 맞물려 결말로 이어질 상황을 연다.
+- 새로 벌어진 단계는 첫 장면에서 주인공에게 닿거나 그 소식이 들려온다. 언제 어떻게 닿을지는 아래 '열린 장' 규칙대로 플레이어가 가던 쪽을 통해 정한다. 단계를 그대로 옮기지 말고 이 장면의 구체적인 일로 쓴다.
+- 시계는 숨겨진 진실을 드러내지 않는다. 진실은 플레이어가 단서로 짚었을 때만 드러난다. 미공개 진실마다 정해진 단서(clues) 중 아직 나오지 않은 것을 이번 첫 장면, nearby 인물, 장소에 놓을 수 있다. 정해진 단서가 없으면 진실과 이어지는 사실의 조각을 여러 곳에 흘린다. 단서는 조각이지 해설이 아니다.
+`}`;
+}
 function openChapterRules(w, nextN, finish) {
   const st = w.story, N = totalOf(w), prev = st.chapters[nextN - 2], pk = st.protagonistKey, pt = w.entities[pk].title;
   const marked = (S.pages[pk]?.sections || []).some(x => x.ch === nextN - 1);
@@ -268,7 +284,7 @@ ${rec}- 이번 응답은 새 장을 열지 않고 이야기를 끝낸다. title�
 ${rec}- ${nextN}장은 열린 장이다. 이 장의 사건은 플레이어가 대화와 행동으로 치르고, 장이 끝날 때 기록으로 쓴다. 지금은 첫 장면만 쓴다.
 - protagonistBlock은 ${nextN}장의 첫 장면이다. ${pt}이(가) ${prev?.open ? "방금 기록한 장이 끝날 때" : "앞 장이 끝날 때"} 있던 자리와 하던 일에서 시작한다. 세계와 다른 인물이 움직여 상황이 ${pt} 앞에 닥친 순간에서 멈춘다. ${pt}의 결정과 행동(어디로 감, 무엇을 하기로 함, 누구를 믿음)은 쓰지 않고, 놀람 같은 짧은 반응까지만 쓴다. 결과·해결·절정은 쓰지 않는다. heading은 이 장에 닥친 상황의 이름, sections는 하위 섹션 1~2개, 모두 합쳐 400~1,000자.
 - 사건은 하던 일과 끊긴 채 들이닥치지 않는다. 플레이어가 지난 장에 공들인 줄기(관계, 조사, 일, 약속)가 있으면 사건이 그 줄기를 통해 닿게 한다(예: 연인과 함께 있던 자리 근처에서 일이 터진다, 사건의 관계자가 연인을 먼저 찾는다).
-- 첫 장면이나 주변 묘사에 다음 단계(${st.spine[nextN]?.intent || "결말"})의 기미를 작게 깐다(소문, 낌새, 지나가는 소리). 그 기미가 무엇을 뜻하는지 해설하지 않고, 미공개 진실을 드러내지 않는다.
+- 첫 장면이나 주변 묘사에 ${st.clocks?.length ? "시계의 다음 단계" : `다음 단계(${st.spine[nextN]?.intent || "결말"})`}의 기미를 작게 깐다(소문, 낌새, 지나가는 소리). 그 기미가 무엇을 뜻하는지 해설하지 않고, 미공개 진실을 드러내지 않는다.
 - title은 이 장에 닥친 상황의 이름, summary는 첫 장면의 상황 2~4문장이다. 앞으로 어떻게 될지는 쓰지 않는다.
 - affected·facts·timeline·relations·continuity는 ${prev?.open ? `${nextN - 1}장 기록과 ` : ""}${nextN}장 첫 장면에서 실제로 일어난 일로 쓴다. 첫 장면 이후에 일어날 일을 확정하지 않는다. 본문 인용은 ${prev?.open ? "record와 " : ""}protagonistBlock 본문 어디서든 한다.
 `;
@@ -357,13 +373,12 @@ ${toneBlock(w)}${w.guide ? `## 작가 지침 (사용자 지정)\n${w.guide}\n\n`
 - 결핍이나 상처: ${pr.wound || "(정해지지 않음)"}
 ${pr.desc ? `- 사용자가 정한 특징 (최우선 제약): ${pr.desc}\n` : ""}${st.cast?.length ? `\n## 사용자가 정한 등장인물 (최우선 제약. 특징과 주인공과의 관계를 지키고, 이야기에 꾸준히 등장시킨다)\n${castText(st.cast.map(c => ({ ...c, name: w.entities[c.key]?.title || c.name })))}\n` : ""}
 ${secretsOf(w).length ? `## 숨겨진 진실 (독자에게 공개하지 않는다)
-${secretsOf(w).map(x => `- [id: ${x.id}] ${x.revealed ? "[이미 드러남] " : x.pendingDisclosure ? "[공개 여부 확인 필요] " : ""}${x.truth} / 드러나기 전 알려진 것: ${x.cover} / 공개 검토 계획 ${x.reveal}장`).join("\n")}
+${secretsOf(w).map(x => `- [id: ${x.id}] ${x.revealed ? "[이미 드러남] " : x.pendingDisclosure ? "[공개 여부 확인 필요] " : ""}${x.truth} / 드러나기 전 알려진 것: ${x.cover} / 공개 검토 계획 ${x.reveal}장${!x.revealed && x.clues?.length ? ` / 단서: ${x.clues.join(" | ")}` : ""}`).join("\n")}
 - reveal 장 번호는 공개를 검토할 잠정 시점이며 강제 공개 기한이 아니다. 이번 장의 증거와 선택으로 실제 알게 된 경우만 위에 표시된 정확한 id를 사용해 revealNow에 {id, evidence}를 넣는다. 이전 장 본문에 이미 공개된 대목을 정리하는 경우 source에 해당 chapter:n 또는 page:키를 함께 쓴다. evidence는 protagonistBlock 본문에서 실제로 드러나는 대목을 12자 이상 그대로 인용한다. 번호가 됐다는 이유만으로 밝혀졌다고 취급하지 않는다.
 - 아직 드러나지 않은 답은 summary, protagonistBlock, affected, facts에 사실로 쓰지 않는다. 독자의 선택으로 조사 경로를 놓쳤다면 미공개로 남을 수 있으며 그 결과를 인정한다.
 - 아직 공개되지 않은 진실은 집필 계획이다. 이미 확정된 단서나 사실을 지키면서 사용자 선택과 사건 때문에 바꿔야 한다면 secretRevise에 id, truth, cover, reason, source, quote를 적는다. source/quote는 아래 출처 자료 또는 current의 원문이다. 이미 공개된 진실이나 앞에서 확정한 사실은 바꾸지 않는다.
 
-` : ""}## 잠정 이야기 뼈대 (독자에게 공개하지 않는다. 확정 사건과 선택보다 우선하지 않는다)
-${st.spine.map(s => `- ${s.n}단계 ${s.beat}: ${s.intent}${s.revised ? " (앞선 장의 탐험 때문에 수정됨)" : ""}`).join("\n")}
+` : ""}${storyClocksBlock(w, nextN, finish)}
 
 ## 지금까지의 장
 ${st.chapters.map(c => `- ${c.n}장 「${c.title}」 (${c.era}): ${c.summary}${c.wove?.length ? `\n  이 장에 엮인 탐험: ${c.wove.map(x => w.entities[x.key]?.title).filter(Boolean).join(", ")}` : ""}`).join("\n")}
@@ -388,7 +403,7 @@ ${choice ? `주인공의 다음 행동으로 독자가 고른 것: ${choice.cust
 ${openChapterRules(w, nextN, finish)}
 ## 규칙
 ${STORY_RESPONSIBILITY_RULES}
-${finish ? "" : `- 이번 장은 전체 ${N}장 중 ${nextN}장이다. ${st.spine[nextN - 1]?.beat || ""} 구간의 잠정 의도는 참고만 한다: ${st.spine[nextN - 1]?.intent || ""}. 이미 벌어진 사건과 독자의 행동에 맞지 않으면 이 장부터 인과에 맞게 진행하고 spineRevise로 이번 단계와 아직 진행하지 않은 뒤 계획도 수정한다.${last ? "" : ` 목표의 일부를 성취하거나 관계가 바뀌어도 된다. 남은 ${N - nextN}개 장은 그 변화와 선택의 여파를 다룰 수 있으므로 억지로 전개를 미루지 않는다.`}`}
+${finish ? "" : `- 이번 장은 전체 ${N}장 중 ${nextN}장이다. ${st.clocks?.length ? `${st.spine[nextN - 1]?.beat || ""} 구간이다. 이 장에 무슨 일이 닥칠지는 위 세계의 시계와 플레이어가 가던 쪽에서 나온다.` : `${st.spine[nextN - 1]?.beat || ""} 구간의 잠정 의도는 참고만 한다: ${st.spine[nextN - 1]?.intent || ""}.`} 이미 벌어진 사건과 독자의 행동에 맞지 않으면 이 장부터 인과에 맞게 진행하고 spineRevise로 이번 단계와 아직 진행하지 않은 뒤 계획도 수정한다.${last ? "" : ` 목표의 일부를 성취하거나 관계가 바뀌어도 된다. 남은 ${N - nextN}개 장은 그 변화와 선택의 여파를 다룰 수 있으므로 억지로 전개를 미루지 않는다.`}`}
 - 탐험 반영은 선택 사항이다. 현재 사건과 실제 인과가 있는 항목만 사용하고 wove에 적는다. 관련 없는 탐험을 끼워 넣거나 읽었다는 이유만으로 핵심 배후·만능 단서로 승격하지 않는다. 없어도 되는 경우 wove는 빈 배열이다. '직접 고침'은 확정 설정으로 지키되 장면 등장을 강제하지 않는다.
 - 기록 유형 kind는 goal, relationship, promise, conflict, consequence, ongoing, mystery 중 하나를, 중요도 importance는 major 또는 minor 중 하나를 쓴다.
 - 상태 값은 unchanged, active, changed, fulfilled, failed, abandoned, continuing 중 하나만 쓴다. 슬래시로 나열한 값을 그대로 출력하지 않는다.
@@ -398,7 +413,7 @@ ${finish ? "" : `- 이번 장은 전체 ${N}장 중 ${nextN}장이다. ${st.spin
 - 독자의 선택이 있으면 continuity.choiceConsequences에 실제로 얻고 놓친 정보·관계·시간·위험·기회·사건 결과 중 바뀐 것을 적고 본문 evidence로 뒷받침한다. 선택을 강제로 성공시키거나 없던 선택을 지어내지 않는다. 선택이 없으면 빈 배열이다. 지난 선택 기록은 이후 장에서도 유지한다.
 - 주인공의 결정과 행동은 플레이어가 실제로 한 것에서만 나온다. 위 '등장인물과 실제로 나눈 대화'에 있는 주인공의 말과 행동(kind "주인공의 행동", 상황 채널 포함)${choice ? "과 독자가 고른 행동" : ""}이 그것이다. 이번 장은 먼저 그 말과 행동이 무엇을 낳았는지 정리하고, 그 결과에서 이어 간다. 결과는 의도대로 되지 않아도 된다.
 - 플레이어가 하지 않은 주인공의 결정과 행동(어디로 가기로 함, 누구를 만나기로 함, 낮잠을 잠 등)을 새로 지어내지 않는다. 세계와 다른 인물은 움직인다: 사건이 일어나고, 누군가 찾아오고, 약속한 일이 진행된다. 주인공은 그 상황에 놓이고 놀라거나 짧게 반응할 수 있지만, 중요한 결정은 다음 장에서 플레이어가 내리도록 열어 둔다.${choice ? "" : " 플레이어가 이번 장에 아무 말과 행동도 하지 않았으면 주인공은 큰 결정 없이 흐름 속에 머문다."}
-- 탐험·선택·이미 확정된 사건 때문에 뒤의 뼈대 단계를 바꿔야 하면 spineRevise로 바꾼다. ${N}단계는 항상 결말로 남겨 둔다. 바꿀 필요가 없으면 빈 배열.
+- ${st.clocks?.length ? "spineRevise는 빈 배열로 둔다(시계가 뼈대를 대신한다)." : `탐험·선택·이미 확정된 사건 때문에 뒤의 뼈대 단계를 바꿔야 하면 spineRevise로 바꾼다. ${N}단계는 항상 결말로 남겨 둔다. 바꿀 필요가 없으면 빈 배열.`}
 - ${finish ? `이야기를 끝낸다. 결말은 ${N}장 기록에서 플레이어가 실제로 한 일로 낸다. 장르와 원안이 실제로 맺기로 한 중심 내용과 주인공의 선택에 대응한다. 모든 관계·목표·생활 문제를 정리할 의무는 없다. 계속되는 관계·일상·노력은 unchanged 또는 continuing으로 자연스럽게 남길 수 있다. 실제로 답을 약속한 의문은 그 약속에 맞게 다루되 모든 설정을 그런 의문으로 바꾸지 않는다. 처리하지 않은 것을 모두 끝냈다고 서술하지 않는다. 기존에 없는 상처의 치유나 사직·희생을 의무로 만들지 않는다. ending.epilogue에 결말 이후를 3~5문장으로 쓴다. nextChoices는 빈 배열.` : `${last ? `이번 장이 마지막 장이다. 첫 장면은 결말로 이어질 마지막 상황을 연다. 결말은 플레이어가 이 장을 치른 뒤 쓴다. ` : ""}nextChoices에는 ${nextN}장이 끝날 때 주인공이 할 수 있는 다음 행동 후보 3개를 한 문장씩 쓴다. 각 후보는 객체가 아니라 문자열 하나다. 서로 방향이 달라야 한다. ending은 null.`}
 - 주인공이 죽을 수도 있다. 주인공이 죽으면 이후 장은 그 죽음의 여파와 유산을 중심으로 진행하고, 주인공 문서의 장 섹션은 사후 사건으로 쓴다.
 - title과 heading에는 "${nextN}장", "제${nextN}장" 같은 장 번호를 넣지 않는다. 장 번호는 앱이 따로 붙인다.
@@ -420,7 +435,7 @@ ${entityIndex(w, [pk])}
 ## 출력
 ${ENTITY_DEFINITION_RULE}
 JSON 객체 하나만 출력:
-{${prevOpen ? `"record":{"heading":"${nextN - 1}장의 작중 사건명","summary":"${nextN - 1}장에 실제로 일어난 일 3~5문장","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}]${finish ? ',"infoboxPatch":[],"summaryPatch":""' : ""}},` : ""}${finish ? "" : `"title":"이 장에 닥친 상황의 이름","era":"이 장의 작중 시점","summary":"첫 장면의 상황 2~4문장",`}"timeline":[{"year":"연도","month":3,"day":14,"event":"..."}],${finish ? "" : `"protagonistBlock":{"heading":"이 장에 닥친 상황의 이름","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}],"infoboxPatch":[{"label":"상태","value":"..."}],"summaryPatch":""},`}"affected":[{"title":"항목 제목","change":"이번 장에서 이 항목에 일어난 일 한 문장","kind":"update 또는 new"}],"newEntities":[{"title":"...","type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의"}],"wove":[{"title":"탐험 항목 제목","how":"이 항목이 이번 장 사건에서 맡은 역할 한 문장"}],"facts":[{"about":"항목 제목","fact":"..."}],${REL_JSON},"spineRevise":[{"n":4,"intent":"..."}],"revealNow":[],"secretRevise":[],${STORY_CONTINUITY_OUTPUT},"dialogueConsequences":[{"character":"대화 상대 이름","detail":"이번 장 본문에 나타난 구체적인 대화의 결과. 없으면 빈 배열"}],${finish ? "" : `"place":"주인공이 있는 곳","nearby":[{"title":"인물 제목","why":"닿을 수 있는 이유"}],`}${st.entry ? '"noticed":[{"who":"인물 제목","what":"..."}],' : ""}"nextChoices":${finish ? "[]" : '["...","...","..."]'},"ending":${finish ? '{"epilogue":"결말 이후 3~5문장"}' : "null"}}`;
+{${prevOpen ? `"record":{"heading":"${nextN - 1}장의 작중 사건명","summary":"${nextN - 1}장에 실제로 일어난 일 3~5문장","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}]${finish ? ',"infoboxPatch":[],"summaryPatch":""' : ""}},` : ""}${finish ? "" : `"title":"이 장에 닥친 상황의 이름","era":"이 장의 작중 시점","summary":"첫 장면의 상황 2~4문장",`}"timeline":[{"year":"연도","month":3,"day":14,"event":"..."}],${finish ? "" : `"protagonistBlock":{"heading":"이 장에 닥친 상황의 이름","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}],"infoboxPatch":[{"label":"상태","value":"..."}],"summaryPatch":""},`}"affected":[{"title":"항목 제목","change":"이번 장에서 이 항목에 일어난 일 한 문장","kind":"update 또는 new"}],"newEntities":[{"title":"...","type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의"}],"wove":[{"title":"탐험 항목 제목","how":"이 항목이 이번 장 사건에서 맡은 역할 한 문장"}],"facts":[{"about":"항목 제목","fact":"..."}],${REL_JSON},"spineRevise":[{"n":4,"intent":"..."}],"revealNow":[],"secretRevise":[],${STORY_CONTINUITY_OUTPUT},"dialogueConsequences":[{"character":"대화 상대 이름","detail":"이번 장 본문에 나타난 구체적인 대화의 결과. 없으면 빈 배열"}],${finish ? "" : `"place":"주인공이 있는 곳","nearby":[{"title":"인물 제목","why":"닿을 수 있는 이유"}],`}${st.entry ? '"noticed":[{"who":"인물 제목","what":"..."}],' : ""}"nextChoices":${finish ? "[]" : '["...","...","..."]'},"ending":${finish ? '{"epilogue":"결말 이후 3~5문장"}' : "null"}${finish ? "" : st.clocks?.length ? ',"clockMoves":[{"id":"c1","to":2,"why":"왜 나아갔거나 멈췄거나 물러섰는지 한 문장"}]' : `,${WORLD_CLOCK_JSON.replace('"stages"', '"at":1,"stages"')}`}}`;
 }
 function chapterBlockPrompt(w, key, chs) {
   const p = S.pages[key], e = w.entities[key];

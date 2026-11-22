@@ -124,14 +124,15 @@ ${entityIndex(w, o.possess ? [pk] : [])}
 - protagonist: summary는 주인공의 한 문장 정의${o.possess ? "(지금 정의를 그대로 둔다)" : ""}, want는 이 이야기에서 바라는 것, wound는 결핍이나 상처(필요 없으면 빈 문자열).
 - storyPromise: focus는 이 이야기가 약속하는 경험, central은 이어 갈 중심 내용(kind는 goal, relationship, promise, conflict, consequence, ongoing, mystery 중 하나).
 - spine: ${N}장 각각의 잠정 의도(${beatsFor(N).map((b, i) => `${i + 1}장 ${b}`).join(", ")}). 확정된 사건과 독자의 선택에 따라 나중에 바뀔 수 있다.
-- secrets: 위키 어디에도 적혀 있지 않은, 이야기가 나중에 밝힐 진실 0~3개. cover는 지금 위키에 알려진 서술이다. 기존 문서와 모순되지 않으면서 기존 서술을 다르게 읽게 만드는 진실이어야 한다. 장르 이름만 보고 거대 음모를 만들지 않는다. 필요 없으면 빈 배열.
+- ${WORLD_CLOCK_RULE}
+- secrets: 위키 어디에도 적혀 있지 않은, 이야기가 나중에 밝힐 진실 0~3개. ${WORLD_CLUE_RULE} cover는 지금 위키에 알려진 서술이다. 기존 문서와 모순되지 않으면서 기존 서술을 다르게 읽게 만드는 진실이어야 한다. 장르 이름만 보고 거대 음모를 만들지 않는다. 필요 없으면 빈 배열.
 - chapter1: era는 현재 기준 시점(${w.era})이거나 그 직후다. title은 작중 사건명(장 번호를 넣지 않는다), summary는 1장 첫 장면의 상황 2~4문장(발단 사건이 주인공 앞에 닥친 순간까지만, 주인공의 결정과 결과는 쓰지 않는다), incident는 발단 사건 한 문장, nextChoices는 주인공의 다음 행동 후보 3개.
 - place는 1장이 끝날 때 주인공이 있는 곳이다. nearby는 2장까지 주인공이 직접 만나거나 이 세계의 연락 수단으로 닿을 수 있는 기존 인물 3~10명이다(위 목록의 제목 그대로). 멀리 있거나 만날 길이 없는 인물은 넣지 않는다. why는 한 줄 이유.
 - 확정 사실, 사용자 확정 설정, 핵심 규칙, 연표와 모순되지 않는다.
 
 ## 출력
 JSON 객체 하나만 출력:
-{"protagonist":{${!o.possess && !o.name ? '"name":"주인공 이름",' : ""}"summary":"한 문장 정의","want":"바라는 것","wound":""},"storyPromise":{"focus":"약속한 이야기 경험","central":{"kind":"ongoing","subject":"이어갈 중심 내용"}},"spine":[{"n":1,"intent":"이 장의 의도 한두 문장"}],"secrets":[{"truth":"감춰진 진실","cover":"알려진 겉모습","reveal":3}],"chapter1":{"title":"작중 사건명","era":"${w.era}","summary":"공개 줄거리","incident":"발단 사건 한 문장","nextChoices":["행동 후보","행동 후보","행동 후보"]},"place":"주인공이 있는 곳","nearby":[{"title":"인물 제목","why":"닿을 수 있는 이유"}]}`;
+{"protagonist":{${!o.possess && !o.name ? '"name":"주인공 이름",' : ""}"summary":"한 문장 정의","want":"바라는 것","wound":""},"storyPromise":{"focus":"약속한 이야기 경험","central":{"kind":"ongoing","subject":"이어갈 중심 내용"}},"spine":[{"n":1,"intent":"이 장의 의도 한두 문장"}],${WORLD_CLOCK_JSON},"secrets":[{"truth":"감춰진 진실","cover":"알려진 겉모습","reveal":3,"clues":["어디서 무엇을 보거나 들을 수 있는지"]}],"chapter1":{"title":"작중 사건명","era":"${w.era}","summary":"공개 줄거리","incident":"발단 사건 한 문장","nextChoices":["행동 후보","행동 후보","행동 후보"]},"place":"주인공이 있는 곳","nearby":[{"title":"인물 제목","why":"닿을 수 있는 이유"}]}`;
 }
 /* 앞 이야기의 대화 프로필과 주인공 기록을 새 이야기의 대화 상대 프로필로 넘긴다 */
 function storyArcCarryProfiles(w) {
@@ -283,7 +284,7 @@ async function sealStory() {
     }
     sealSources(w, arc);
     (w.storyLog ||= []).push({ arc, protagonistKey: st.protagonistKey, protagonistTitle: w.entities[st.protagonistKey]?.title, entry: st.entry || "created", total: st.total, endedAt: st.endedAt, sealedAt: Date.now(),
-      chapters: st.chapters, spine: st.spine, secrets: st.secrets || [], continuity: st.continuity, epilogue: st.epilogue, noticed: st.noticed || [], cast: st.cast || [], dialogueProfiles: st.dialogueProfiles || {}, bonds: st.bonds || {}, protagonist: st.protagonist, record });
+      chapters: st.chapters, spine: st.spine, clocks: st.clocks || [], secrets: st.secrets || [], continuity: st.continuity, epilogue: st.epilogue, noticed: st.noticed || [], cast: st.cast || [], dialogueProfiles: st.dialogueProfiles || {}, bonds: st.bonds || {}, protagonist: st.protagonist, record });
     delete w.story; delete w.mode;
     await Store.saveWorld(w);
     S.storySeal = null;

@@ -129,6 +129,19 @@ async function detectTone(w, label) {
   return normTone(t, label);
 }
 function castText(cast) { return cast.map(c => `- ${c.name}${c.desc ? ` — 특징: ${c.desc}` : ""}${c.rel ? ` — 주인공과의 관계: ${c.rel}` : ""}`).join("\n"); }
+/* 세계의 시계: 주인공이 손 놓고 있어도 저절로 굴러가는 것. 장마다 일어날 사건을 미리 정하는 대신 이것을 돌리고,
+   그 결과가 언제 어떻게 주인공에게 닿을지는 장을 열 때 플레이어가 가던 쪽을 보고 정한다 */
+const WORLD_CLOCK_RULE = `세계의 시계(clocks)는 주인공이 손 놓고 있어도 저절로 굴러가는 것 1~3개다. 각 시계는 그것을 돌리는 것(name: 세력, 사람, 사정), 그것이 노리거나 흘러가는 곳(aim), 내버려 두면 차례로 벌어질 일(stages: 4~6단계, 앞쪽은 작고 뒤로 갈수록 커진다)을 갖는다. 장르에 맞게 고른다. 미스터리라면 범인의 은폐(증거 치우기, 알리바이 맞추기, 누명 씌우기, 입막음)와 주변의 압박(엉뚱한 체포, 떠나려는 용의자, 흐려지는 증언). 세력 다툼이나 모험이라면 상대 세력의 계획이 번지는 단계. 멜로나 일상이라면 기한(떠남, 계약 만료, 졸업)과 바깥 사정(집안, 일, 소문, 다가오는 다른 사람), 상대의 삶이 바뀌는 것. 시계는 숨겨진 진실을 바꾸지 않고 결말을 정하지 않는다. 단계의 크기는 이 세계의 분위기 설정과 피하고 싶은 것을 따른다(일상물에 사고나 수사를 끼우지 않는다).`;
+const WORLD_CLUE_RULE = `clues는 이 진실에 이르는 단서 3개 이상이다. 서로 다른 곳(사람, 장소, 물건, 기록)에 두어, 플레이어가 어느 쪽으로 파고들어도 하나는 걸리게 한다. 각 단서는 어디서 무엇을 보거나 들을 수 있는지 한 문장이다.`;
+const WORLD_CLOCK_JSON = `"clocks":[{"name":"이 시계를 돌리는 것","aim":"노리거나 흘러가는 곳","stages":["내버려 두면 벌어질 일 1","2","3","4"]}]`;
+/* 시계 정규화: 모델 출력은 구조만 다듬는다 */
+function normClocks(list, prev = []) {
+  return (Array.isArray(list) ? list : []).filter(x => x && Array.isArray(x.stages) && x.stages.some(y => String(y || "").trim())).slice(0, 3).map((x, i) => {
+    const stages = x.stages.map(y => stripMarks(asText(y)).slice(0, 200)).filter(Boolean).slice(0, 6);
+    return { id: "c" + (i + 1 + prev.length), name: stripMarks(asText(x.name || "")).slice(0, 80) || "세계의 흐름", aim: stripMarks(asText(x.aim || "")).slice(0, 200), stages, at: Math.min(stages.length, Math.max(0, parseInt(x.at, 10) || 0)), log: [] };
+  });
+}
+const normClues = x => (Array.isArray(x) ? x : []).map(y => stripMarks(asText(y)).slice(0, 200)).filter(Boolean).slice(0, 6);
 function biblePrompt(seed, first, guide, story, user = {}, prefs = null) {
   return `너는 가상 세계관 위키의 편집장이다. 사용자가 준 원안을 바탕으로 이 세계관 위키의 '설정 노트' 초안을 만든다.
 
@@ -176,11 +189,12 @@ ${user.desc ? `- 사용자가 정한 주인공의 특징(그대로 지키고, �
 - storyPromise: 원안과 지침이 약속한 이야기의 경험(focus), 처음부터 이어갈 중심 내용(central: {kind, subject}). 목표·관계·약속·갈등·행동의 여파·진행 중인 일을 장르에 맞게 고르고 질문형을 강요하지 않는다. 실제 의문일 때만 mystery로 분류한다. 예정된 답이나 결말은 정하지 않는다.
 - spine: ${user.total || STORY_DEF}장 각각의 의도. 발단·전개·위기·절정·결말 다섯 구간을 장에 나눠 배치했다(${beatsFor(user.total || STORY_DEF).map((b, i) => `${i + 1}장 ${b}`).join(", ")}). 사건 규모나 배후를 단계마다 키울 필요는 없다. 기존 의문을 풀거나 관계와 선택의 대가를 다루는 장도 가능하다. want와 기존 설정을 지키되 wound를 매 장 건드릴 의무는 없다. 각 의도는 잠정 계획이며 이후 확정 사건과 선택에 맞춰 바꿀 수 있다. 결말 단계는 방향만 정하고 구체적인 결과를 확정하지 않는다. 독자의 탐험이 결말을 바꿀 여지를 남기기 위해서다. 이 뼈대는 독자에게 공개하지 않는다.
 - chapter1: 1장(발단)의 작중 사건명(title, "1장"이나 "제1장" 같은 장 번호는 넣지 않는다), 1장의 작중 시점(era), 1장 첫 장면의 상황 2~4문장(summary: 발단 사건이 주인공 앞에 닥친 순간까지만 쓰고 주인공의 결정과 결과는 쓰지 않는다. 1장은 플레이어가 대화로 치른 뒤 기록된다), 주인공의 일상을 깨는 발단 사건 한 문장(incident), 1장이 끝날 때 주인공이 할 수 있는 다음 행동 후보 3개(nextChoices, 서로 방향이 다르게).
-- secrets: 원안에 실제로 필요할 때만 감춰 둔 답을 0~3개 정한다. 필요 없으면 빈 배열이다. 장르 이름만 보고 거대 음모·숨은 혈통·상층 배후를 만들지 않는다. 처음부터 모든 의심이 하나의 만능 배후로 수렴하도록 정하지 않는다. 각각 무엇이 사실인지(truth), 그 진실이 드러나기 전까지 세상에 알려진 겉모습(cover), 드러나는 장(reveal, 2~${user.total || STORY_DEF})을 정한다. 줄거리가 기억 상실, 정체 숨김, 누명, 음모, 숨은 배후처럼 무언가를 알아 가는 이야기라면 기존 단서로 뒷받침할 수 있는 잠정 답을 넣을 수 있다. 주변 인물의 과거나 세계의 배경처럼 이야기의 반전이 아닌 것은 넣지 않는다. reveal은 공개 검토 시점이며 증거와 선택에 따라 달라질 수 있다. 1장 줄거리(chapter1)와 모든 공개 문장은 cover만으로 쓴다.
+- clocks: ${WORLD_CLOCK_RULE}
+- secrets: 원안에 실제로 필요할 때만 감춰 둔 답을 0~3개 정한다. 필요 없으면 빈 배열이다. 장르 이름만 보고 거대 음모·숨은 혈통·상층 배후를 만들지 않는다. 처음부터 모든 의심이 하나의 만능 배후로 수렴하도록 정하지 않는다. 각각 무엇이 사실인지(truth), 그 진실이 드러나기 전까지 세상에 알려진 겉모습(cover), 드러나는 장(reveal, 2~${user.total || STORY_DEF})을 정한다. ${WORLD_CLUE_RULE} 줄거리가 기억 상실, 정체 숨김, 누명, 음모, 숨은 배후처럼 무언가를 알아 가는 이야기라면 기존 단서로 뒷받침할 수 있는 잠정 답을 넣을 수 있다. 주변 인물의 과거나 세계의 배경처럼 이야기의 반전이 아닌 것은 넣지 않는다. reveal은 공개 검토 시점이며 증거와 선택에 따라 달라질 수 있다. 1장 줄거리(chapter1)와 모든 공개 문장은 cover만으로 쓴다.
 - era(세계관 기준 시점)는 chapter1.era와 같게 한다. 연표는 1장 시점까지만 만든다.
 
 JSON 객체 하나만 출력:
-{"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"calendars":["서기 말고 이 세계가 쓰는 기년법·연호 이름"],"undatedCalendars":["calendars 중 달과 날이 없는 기년법(없으면 빈 배열)"],"timeline":[{"year":"1947","month":3,"day":14,"event":"..."}],"mainTitle":"주인공 이름","tone":{"label":"...","guide":["..."]},"storyPromise":{"focus":"원안이 약속한 이야기 경험","central":{"kind":"goal/relationship/promise/conflict/consequence/ongoing/mystery","subject":"장르에 맞게 이어갈 중심 내용"}},"protagonist":{"summary":"한 문장 정의","want":"주인공이 바라는 것","wound":"주인공의 결핍이나 상처"},"spine":[${beatsFor(user.total || STORY_DEF).map((b, i) => `{"n":${i + 1},"beat":"${b}","intent":"${i === (user.total || STORY_DEF) - 1 ? "결말의 방향만" : "..."}"}`).join(",")}],"secrets":[{"truth":"감춰진 진실","cover":"드러나기 전 알려진 겉모습","reveal":3}],"chapter1":{"title":"작중 사건명","era":"1장 작중 시점","summary":"공개 줄거리 3~5문장","incident":"발단 사건 한 문장","nextChoices":["...","...","..."]}}` : `
+{"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"calendars":["서기 말고 이 세계가 쓰는 기년법·연호 이름"],"undatedCalendars":["calendars 중 달과 날이 없는 기년법(없으면 빈 배열)"],"timeline":[{"year":"1947","month":3,"day":14,"event":"..."}],"mainTitle":"주인공 이름","tone":{"label":"...","guide":["..."]},"storyPromise":{"focus":"원안이 약속한 이야기 경험","central":{"kind":"goal/relationship/promise/conflict/consequence/ongoing/mystery","subject":"장르에 맞게 이어갈 중심 내용"}},"protagonist":{"summary":"한 문장 정의","want":"주인공이 바라는 것","wound":"주인공의 결핍이나 상처"},"spine":[${beatsFor(user.total || STORY_DEF).map((b, i) => `{"n":${i + 1},"beat":"${b}","intent":"${i === (user.total || STORY_DEF) - 1 ? "결말의 방향만" : "..."}"}`).join(",")}],${WORLD_CLOCK_JSON},"secrets":[{"truth":"감춰진 진실","cover":"드러나기 전 알려진 겉모습","reveal":3,"clues":["어디서 무엇을 보거나 들을 수 있는지"]}],"chapter1":{"title":"작중 사건명","era":"1장 작중 시점","summary":"1장 첫 장면의 상황 2~4문장","incident":"발단 사건 한 문장","nextChoices":["...","...","..."]}}` : `
 JSON 객체 하나만 출력:
 {"title":"세계관 이름(2~20자)","tagline":"한 줄 소개","era":"작중 기준 시점","historical":"불리언","rules":["..."],"calendars":["서기 말고 이 세계가 쓰는 기년법·연호 이름"],"undatedCalendars":["calendars 중 달과 날이 없는 기년법(없으면 빈 배열)"],"timeline":[{"year":"1947","month":3,"day":14,"event":"..."}],"mainTitle":"...","stage":{"units":[{"name":"고유명사","kind":"TYPES 중 하나","desc":"한 줄 성격","rel":"다른 단위와의 관계 한 줄"}],"now":"작중 기준 시점에 진행 중인 일 한두 문장","parties":[{"name":"당사자 고유명사","kind":"TYPES 중 하나","want":"지금 진행 중인 일에서 원하는 것 한 줄"}]},"tone":{"label":"...","guide":["..."]}}`}`;
 }
@@ -190,7 +204,7 @@ function bibleParts(story) {
     schema: { title: "세계관 이름", tagline: "한 줄 소개", era: "작중 기준 시점", historical: false, mainTitle: "첫 문서 제목", rules: ["핵심 규칙 한 문장"], tone: { label: "분위기", guide: ["지침 한 문장"] }, calendars: [], undatedCalendars: [] } };
   const timeline = { id: "timeline", label: "연표", keys: ["timeline"], schema: { timeline: [{ year: "연도", month: 1, day: 1, event: "사건 한두 문장" }] } };
   if (!story) return [overview, { id: "stage", label: "주요 무대와 현재 상황", keys: ["stage"], schema: { stage: { units: [{ name: "고유명사", kind: "항목 유형", desc: "한 줄 성격", rel: "관계 한 줄" }], now: "진행 중인 일 한두 문장", parties: [{ name: "당사자", kind: "항목 유형", want: "목표 한 줄" }] } } }, timeline];
-  return [overview, { id: "storyPlan", label: "주인공과 이야기 뼈대", keys: ["protagonist", "storyPromise", "spine", "secrets"], schema: { protagonist: { summary: "한 문장 정의", want: "바라는 것", wound: "필요 없으면 빈 문자열" }, storyPromise: { focus: "약속한 이야기 경험", central: { kind: "goal/relationship/promise/conflict/consequence/ongoing/mystery", subject: "이어갈 중심 내용" } }, spine: [{ n: 1, beat: "장 구간", intent: "이 장의 의도 한두 문장" }], secrets: [{ truth: "감춰진 진실", cover: "알려진 겉모습", reveal: 3 }] } },
+  return [overview, { id: "storyPlan", label: "주인공과 이야기 뼈대", keys: ["protagonist", "storyPromise", "spine", "clocks", "secrets"], schema: { protagonist: { summary: "한 문장 정의", want: "바라는 것", wound: "필요 없으면 빈 문자열" }, storyPromise: { focus: "약속한 이야기 경험", central: { kind: "goal/relationship/promise/conflict/consequence/ongoing/mystery", subject: "이어갈 중심 내용" } }, spine: [{ n: 1, beat: "장 구간", intent: "이 장의 의도 한두 문장" }], clocks: [{ name: "이 시계를 돌리는 것", aim: "노리거나 흘러가는 곳", stages: ["내버려 두면 벌어질 일"] }], secrets: [{ truth: "감춰진 진실", cover: "알려진 겉모습", reveal: 3, clues: ["어디서 무엇을 보거나 들을 수 있는지"] }] } },
     { id: "chapter1", label: "1장과 다음 행동", keys: ["chapter1"], schema: { chapter1: { title: "작중 사건명", era: "개요와 같은 시점", summary: "공개 줄거리 3~5문장", incident: "발단 사건 한 문장", nextChoices: ["행동 후보", "행동 후보", "행동 후보"] } } }, timeline];
 }
 function biblePartPrompt(seed, first, guide, story, user, part, accepted, prefs = null) {

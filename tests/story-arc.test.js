@@ -33,7 +33,7 @@ const server = appServer();
       let failBlock = false, named = '', lastBible = '', lastScene = '', lastChat = '', lastReview = '', lastCast = '';
       callJson = async (kind, text) => {
         calls.push(kind);
-        if (kind === 'storyBible') { lastBible = text; } if (kind === 'storyBible') return { protagonist: { ...(named ? { name: named } : {}), summary: '바뀌면 안 되는 새 정의', want: '배를 되찾는다', wound: '' }, storyPromise: { focus: '항구의 일상', central: { kind: 'goal', subject: '배' } }, spine: [{ n: 1, intent: '시작' }], secrets: [{ truth: '등대지기는 밀수꾼이다', cover: '성실한 등대지기', reveal: 3 }], chapter1: { title: '사라진 배', era: '1201년', summary: '한서윤의 배가 사라졌다.', incident: '배가 사라졌다', nextChoices: ['부두로 간다', '박도현을 찾는다', '기다린다'] }, place: '북쪽 부두', nearby: [{ title: '박도현', why: '같은 부두에서 일한다' }, { title: '이노인', why: '' }, { title: '없는사람', why: '' }] };
+        if (kind === 'storyBible') { lastBible = text; } if (kind === 'storyBible') return { protagonist: { ...(named ? { name: named } : {}), summary: '바뀌면 안 되는 새 정의', want: '배를 되찾는다', wound: '' }, storyPromise: { focus: '항구의 일상', central: { kind: 'goal', subject: '배' } }, spine: [{ n: 1, intent: '시작' }], clocks: [{ name: '밀수 조직', aim: '항구를 손에 넣는다', stages: ['부두 창고를 산다', '경비를 매수한다', '배를 빼돌린다', '항구를 장악한다'] }], secrets: [{ truth: '등대지기는 밀수꾼이다', cover: '성실한 등대지기', reveal: 3, clues: ['등대 창고의 젖은 밧줄', '선원이 본 밤배', '장부의 빈 날짜'] }], chapter1: { title: '사라진 배', era: '1201년', summary: '한서윤의 배가 사라졌다.', incident: '배가 사라졌다', nextChoices: ['부두로 간다', '박도현을 찾는다', '기다린다'] }, place: '북쪽 부두', nearby: [{ title: '박도현', why: '같은 부두에서 일한다' }, { title: '이노인', why: '' }, { title: '없는사람', why: '' }] };
         if (kind === 'chapterBlock') { if (failBlock) throw { code: 'invalid_json' }; return { blocks: [{ ch: 1, heading: '사라진 배', sections: [{ heading: '부두의 아침', level: 1, body: '그날 아침 배가 보이지 않았다.' }] }], infoboxPatch: [], summaryPatch: '', facts: [], relations: [], timeline: [], newEntities: [] }; }
         if (kind === 'storyCast' && globalThis.castDelta) { lastCast = text; return { profile: {}, character: { key: globalThis.castDelta, state: 'available', evidence: '부두에 있다' }, player: { key: seo, state: 'available', evidence: '부두에 있다' }, relationship: '동료', bond: '편함', scene: '부두', opening: '', knowledgeAdded: [{ fact: '새로 안 것', via: 'experience', source: 'ch1', evidence: '봤다' }], knowledgeDropped: ['틀린 옛 항목'] }; }
         if (kind === 'storyCast') return { profile: { personality: '무뚝뚝하다', lens: ['잘될 거라는 말에 토를 단다'], voice: '짧게 반말', examples: ['뭐야.', '비켜.'] }, character: { key: park, state: 'available', evidence: '부두에 있다' }, player: { key: seo, state: 'available', evidence: '부두에 있다' }, relationship: '동료', bond: '편함', scene: '부두', opening: '어, 서윤이네. 무슨 일이야?', knowledge: { known: [] } };
@@ -174,6 +174,7 @@ const server = appServer();
         const npk = keyOf('윤가람');
         out.autoNamed = isStory(w) && w.story.protagonistKey === npk && w.story.entry === 'new' && w.entities[npk]?.type === '인물' && w.story.protagonist.desc === '등대를 지키는 소녀';
         out.namePrompt = lastBible.includes('protagonist.name') && lastBible.includes('"name":"주인공 이름"');
+        out.clock = { rule: lastBible.includes('세계의 시계(clocks)') && lastBible.includes('"clocks":[') && lastBible.includes('"clues":['), at: S.world.story.clocks?.[0]?.at, stages: S.world.story.clocks?.[0]?.stages?.length, clues: S.world.story.secrets?.[0]?.clues?.length };
       } finally {
         callJson = original.callJson; generatePage = original.generatePage;
       }
@@ -199,6 +200,7 @@ const server = appServer();
     assert.strictEqual(r.opening?.user, '', '상대가 먼저 건넨 말은 사용자 발언이 없는 차례'); assert.strictEqual(r.opening?.reply, '어, 서윤이네. 무슨 일이야?');
     assert.strictEqual(r.bondSent, '신뢰', '마음의 거리는 한 차례에 한 단계만 움직인다'); assert.strictEqual(r.bondHidden, true, '화면에 보이지 않는다'); assert.strictEqual(r.bondUndone, '편함');
     assert.deepStrictEqual(r.self, { saved: true, rules: true }, '지어 말한 신상은 프로필에 남는다'); assert.strictEqual(r.selfUndone, 0, '되돌리면 신상도 빠진다');
+    assert.deepStrictEqual(r.clock, { rule: true, at: 0, stages: 4, clues: 3 }, '이야기를 시작할 때 세계의 시계와 단서를 정한다');
     assert.deepStrictEqual(r.castDelta, { profile: true, count: true, added: true, dropped: true, ready: true, prompt: true }, '준비는 프로필을 다시 쓰지 않고 지식은 바뀐 것만 받는다');
     assert.deepStrictEqual(r.syncKeep, { synced: true, stamp: true, ready: true, noCast: true }, '장 반영(동기화) 뒤에도 대화 준비를 다시 하지 않는다');
     assert.deepStrictEqual(r.lock, { active: true, listed: true, redirect: true, chips: { old: true, scene: true, end: true },
