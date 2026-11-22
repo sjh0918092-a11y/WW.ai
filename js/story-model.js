@@ -107,7 +107,7 @@ function storyBlock(w, key, forPage) {
   if (forPage && key === pk) {
     const pr = st.protagonist || {};
     extra = `\n\n이 문서는 이야기의 주인공 문서다.${pr.desc ? ` 사용자가 정한 주인공의 특징(반드시 지킨다): ${pr.desc}.` : ""}${st.cast?.length ? ` 사용자가 정한 등장인물(${st.cast.map(c => w.entities[c.key]?.title || c.name).join(", ")})은 정해진 관계대로 본문과 인물 관계 섹션에 링크해 다룬다.` : ""}${pr.want ? ` 주인공이 바라는 것: ${pr.want}.` : ""}${pr.wound ? ` 주인공의 결핍이나 상처: ${pr.wound}.` : ""} 기본 프로필(출신, 가족, 능력, 동기)을 쓰되, 아래 '아직 드러나지 않은 진실'에 걸린 부분은 이 시점에 알려진 것만 쓴다. `
-      + (n === 1 && !ended ? `마지막 큰 섹션은 1장 발단 사건 「${st.chapters[0].incident || st.chapters[0].title}」을 다룬다. 이 사건은 아직 끝나지 않았다.` : `생애 섹션의 끝부분에서 1장부터 ${n}장까지의 사건을 차례로 다룬다.`);
+      + (n === 1 && !ended ? `마지막 큰 섹션은 1장 발단 사건 「${st.chapters[0].incident || st.chapters[0].title}」의 첫 장면이다. 주인공이 지내던 일상에서 시작해 사건이 주인공 앞에 닥친 순간에서 멈춘다. 주인공의 결정과 행동, 사건의 결과는 쓰지 않는다(플레이어가 대화로 치른 뒤 기록한다).` : `생애 섹션의 끝부분에서 1장부터 ${n}장까지의 사건을 차례로 다룬다.`);
   }
   const N = totalOf(w);
   return `## 이야기 진행 상황 (${ended ? `완결 · ${N}장` : `현재 ${n}장 / ${N}장`}, 작중 시점 ${w.era})
@@ -253,12 +253,32 @@ function storyMemoryBlock(w, sources = true) {
   }) : [];
   return `## 이야기의 책임 기록 (계획보다 우선하는 누적 기록)\n${JSON.stringify(context)}\n${legacy ? "기존 세계관에는 누적 진행 기록이 아직 없다. 아래 자료와 기존 주인공 본문에서 이어지는 목표·관계·약속·갈등·행동의 여파·진행 중인 일만 continuity.introduced에 출처 원문과 함께 복원한다. 실제 의문이나 단서일 때만 mystery로 분류한다. 모든 설정을 복선이나 해결해야 할 문제로 만들지 않는다.\n" : "기록을 최근에 열지 않았다는 이유로 빼지 않는다. 성취·좌절·포기와 과거 선택의 영향도 유지한다. legacy 유형은 원문과 이력을 보존한 이전 기록이다. 질문형으로 적혀 있어도 답을 강제하지 말고, 필요한 경우 updates.kind와 subject로 실제 내용에 맞게 분류·표현을 정리한다.\n"}${sources ? `## 기존 기록의 출처 자료 (일부 문서는 발췌이며, 언급되지 않았다는 것이 부재의 증거는 아니다)\n${JSON.stringify(excerpts)}\n` : ""}`;
 }
+/* 장 전환 응답의 본문: 지난 장 기록(record)과 새 장 첫 장면(protagonistBlock). 인용 근거는 둘 다에서 찾는다 */
+const storyOutBody = out => [...(out?.record?.sections || []), ...(out?.protagonistBlock?.sections || [])].map(s => storyQuote(s?.body)).join("\n");
+/* 열린 장: 장이 시작될 때는 첫 장면(상황이 주인공 앞에 닥친 순간)까지만 쓰고, 플레이어가 대화로 치른 뒤 장이 끝날 때 기록으로 다시 쓴다 */
+function openChapterRules(w, nextN, finish) {
+  const st = w.story, N = totalOf(w), prev = st.chapters[nextN - 2], pk = st.protagonistKey, pt = w.entities[pk].title;
+  const marked = (S.pages[pk]?.sections || []).some(x => x.ch === nextN - 1);
+  const rec = prev?.open ? `- record는 방금 끝난 ${nextN - 1}장 「${prev.title}」의 기록이다. ${marked ? `주인공 문서의 ${nextN - 1}장 섹션(지금은 첫 장면만 있다)을 이 기록으로 바꾼다. 첫 장면에서 출발해` : `주인공 문서 본문 끝에 있는 첫 장면 뒤에 덧붙는다. 첫 장면을 되풀이하지 말고 그 뒤부터`} ${pt}이(가) 위 '등장인물과 실제로 나눈 대화'에서 실제로 한 말과 행동, 그것이 낳은 결과, 다른 인물과 세계의 반응, 장이 끝날 때의 모습을 차례로 쓴다. ${pt}의 결정과 행동은 플레이어가 한 것만 쓴다. 대화가 없었으면 ${pt}은(는) 큰 결정 없이 첫 장면의 흐름 속에 있었던 것으로 쓴다. 대화 내용을 대본처럼 옮기지 말고 위키 문체로 정리한다. heading은 ${nextN - 1}장의 작중 사건명, sections는 하위 섹션 1~3개, 모두 합쳐 800~2,000자. record.summary는 ${nextN - 1}장에 실제로 일어난 일 3~5문장이다.
+` : "";
+  if (finish) return `## 이야기 마무리
+${rec}- 이번 응답은 새 장을 열지 않고 이야기를 끝낸다. title·era·summary·protagonistBlock은 쓰지 않는다. affected·facts·timeline·relations·continuity는 ${nextN - 1}장 기록에서 실제로 일어난 일로 쓴다.
+`;
+  return `## 열린 장: 첫 장면만 쓰고, 끝난 장은 기록한다
+${rec}- ${nextN}장은 열린 장이다. 이 장의 사건은 플레이어가 대화와 행동으로 치르고, 장이 끝날 때 기록으로 쓴다. 지금은 첫 장면만 쓴다.
+- protagonistBlock은 ${nextN}장의 첫 장면이다. ${pt}이(가) ${prev?.open ? "방금 기록한 장이 끝날 때" : "앞 장이 끝날 때"} 있던 자리와 하던 일에서 시작한다. 세계와 다른 인물이 움직여 상황이 ${pt} 앞에 닥친 순간에서 멈춘다. ${pt}의 결정과 행동(어디로 감, 무엇을 하기로 함, 누구를 믿음)은 쓰지 않고, 놀람 같은 짧은 반응까지만 쓴다. 결과·해결·절정은 쓰지 않는다. heading은 이 장에 닥친 상황의 이름, sections는 하위 섹션 1~2개, 모두 합쳐 400~1,000자.
+- 사건은 하던 일과 끊긴 채 들이닥치지 않는다. 플레이어가 지난 장에 공들인 줄기(관계, 조사, 일, 약속)가 있으면 사건이 그 줄기를 통해 닿게 한다(예: 연인과 함께 있던 자리 근처에서 일이 터진다, 사건의 관계자가 연인을 먼저 찾는다).
+- 첫 장면이나 주변 묘사에 다음 단계(${st.spine[nextN]?.intent || "결말"})의 기미를 작게 깐다(소문, 낌새, 지나가는 소리). 그 기미가 무엇을 뜻하는지 해설하지 않고, 미공개 진실을 드러내지 않는다.
+- title은 이 장에 닥친 상황의 이름, summary는 첫 장면의 상황 2~4문장이다. 앞으로 어떻게 될지는 쓰지 않는다.
+- affected·facts·timeline·relations·continuity는 ${prev?.open ? `${nextN - 1}장 기록과 ` : ""}${nextN}장 첫 장면에서 실제로 일어난 일로 쓴다. 첫 장면 이후에 일어날 일을 확정하지 않는다. 본문 인용은 ${prev?.open ? "record와 " : ""}protagonistBlock 본문 어디서든 한다.
+`;
+}
 function prepareStoryMemory(w, n, out, choice, tolerant = false) {
   const memory = storyMemory(w), data = out.continuity || {}, warnings = [], accepted = [], fail = message => { throw new Error("이야기 진행 기록을 확인하지 못했습니다. " + message); };
   const recover = (fn, label) => { try { return fn(); } catch (e) { if (!tolerant) throw e; warnings.push(label + ": " + (e.message || "형식 확인 필요")); return null; } };
   const rows = key => { if (Array.isArray(data[key])) return data[key]; if (!tolerant) fail("이어지는 내용과 선택의 영향 기록이 필요합니다."); warnings.push(({ updates: "기존 이야기", introduced: "새 이야기", choiceConsequences: "선택 결과" }[key]) + " 기록 누락: 이전 기록을 유지했습니다."); return []; };
   const updates = rows("updates"), introduced = rows("introduced"), choices = rows("choiceConsequences");
-  const body = (out.protagonistBlock?.sections || []).map(s => storyQuote(s.body)).join("\n"), sourceRows = storySources(w);
+  const body = storyOutBody(out), sourceRows = storySources(w);
   const sources = new Map(sourceRows.map(x => [x.source, { ...x, text: storyQuote(x.text) }]));
   sources.set("current", { source: "current", title: out.title, text: body, chapter: n });
   const evidence = value => { const q = storyMatchedQuote(body, value); if (!q) fail("변화·결과·선택의 영향을 뒷받침하는 이번 장 본문 인용이 없습니다."); return q; };
@@ -324,8 +344,8 @@ function chapterPlanPrompt(w, nextN, choice) {
   const st = w.story, pk = st.protagonistKey, pp = S.pages[pk], pr = st.protagonist || {}, cur = curCh(w);
   const top = exploreScores(w, cur).slice(0, 8);
   const ex = top.map((x, i) => `### ${i + 1}. 「${w.entities[x.k].title}」 · 점수 ${x.s} · ${x.kinds.join(", ")}\n${entityBrief(w, x.k, null)}${firstPara(S.pages[x.k]) ? "\n개요: " + firstPara(S.pages[x.k]) : ""}`).join("\n\n");
-  const N = totalOf(w), last = nextN >= N;
-  return `너는 가상 세계관 위키 「${w.title}」의 이야기 편집장이다. 이 위키는 주인공 「${w.entities[pk].title}」을(를) 중심으로 ${N}장짜리 이야기가 진행된다. 지금 ${nextN - 1}장이 끝났고, 다음 장(${nextN}장)의 계획을 세운다. 이 계획은 위키의 문서들에 반영된다.
+  const N = totalOf(w), finish = nextN > N, last = nextN === N, prevOpen = !!st.chapters[nextN - 2]?.open;
+  return `너는 가상 세계관 위키 「${w.title}」의 이야기 편집장이다. 이 위키는 주인공 「${w.entities[pk].title}」을(를) 중심으로 ${N}장짜리 이야기가 진행된다. 지금 ${nextN - 1}장이 끝났고, ${finish ? "이야기를 마무리한다" : `다음 장(${nextN}장)을 연다`}. 이 내용은 위키의 문서들에 반영된다.
 
 ## 장 계획 작성
 
@@ -365,9 +385,10 @@ ${ex || "(없음)"}
 ## 독자의 선택
 ${choice ? `주인공의 다음 행동으로 독자가 고른 것: ${choice.custom || choice.picked}` : "(독자가 선택하지 않았다)"}
 
+${openChapterRules(w, nextN, finish)}
 ## 규칙
 ${STORY_RESPONSIBILITY_RULES}
-- 이번 장은 전체 ${N}장 중 ${nextN}장이다. ${st.spine[nextN - 1]?.beat || ""} 구간의 잠정 의도는 참고만 한다: ${st.spine[nextN - 1]?.intent || ""}. 이미 벌어진 사건과 독자의 행동에 맞지 않으면 이 장부터 인과에 맞게 진행하고 spineRevise로 이번 단계와 아직 진행하지 않은 뒤 계획도 수정한다.${last ? "" : ` 목표의 일부를 성취하거나 관계가 바뀌어도 된다. 남은 ${N - nextN}개 장은 그 변화와 선택의 여파를 다룰 수 있으므로 억지로 전개를 미루지 않는다.`}
+${finish ? "" : `- 이번 장은 전체 ${N}장 중 ${nextN}장이다. ${st.spine[nextN - 1]?.beat || ""} 구간의 잠정 의도는 참고만 한다: ${st.spine[nextN - 1]?.intent || ""}. 이미 벌어진 사건과 독자의 행동에 맞지 않으면 이 장부터 인과에 맞게 진행하고 spineRevise로 이번 단계와 아직 진행하지 않은 뒤 계획도 수정한다.${last ? "" : ` 목표의 일부를 성취하거나 관계가 바뀌어도 된다. 남은 ${N - nextN}개 장은 그 변화와 선택의 여파를 다룰 수 있으므로 억지로 전개를 미루지 않는다.`}`}
 - 탐험 반영은 선택 사항이다. 현재 사건과 실제 인과가 있는 항목만 사용하고 wove에 적는다. 관련 없는 탐험을 끼워 넣거나 읽었다는 이유만으로 핵심 배후·만능 단서로 승격하지 않는다. 없어도 되는 경우 wove는 빈 배열이다. '직접 고침'은 확정 설정으로 지키되 장면 등장을 강제하지 않는다.
 - 기록 유형 kind는 goal, relationship, promise, conflict, consequence, ongoing, mystery 중 하나를, 중요도 importance는 major 또는 minor 중 하나를 쓴다.
 - 상태 값은 unchanged, active, changed, fulfilled, failed, abandoned, continuing 중 하나만 쓴다. 슬래시로 나열한 값을 그대로 출력하지 않는다.
@@ -378,13 +399,13 @@ ${STORY_RESPONSIBILITY_RULES}
 - 주인공의 결정과 행동은 플레이어가 실제로 한 것에서만 나온다. 위 '등장인물과 실제로 나눈 대화'에 있는 주인공의 말과 행동(kind "주인공의 행동", 상황 채널 포함)${choice ? "과 독자가 고른 행동" : ""}이 그것이다. 이번 장은 먼저 그 말과 행동이 무엇을 낳았는지 정리하고, 그 결과에서 이어 간다. 결과는 의도대로 되지 않아도 된다.
 - 플레이어가 하지 않은 주인공의 결정과 행동(어디로 가기로 함, 누구를 만나기로 함, 낮잠을 잠 등)을 새로 지어내지 않는다. 세계와 다른 인물은 움직인다: 사건이 일어나고, 누군가 찾아오고, 약속한 일이 진행된다. 주인공은 그 상황에 놓이고 놀라거나 짧게 반응할 수 있지만, 중요한 결정은 다음 장에서 플레이어가 내리도록 열어 둔다.${choice ? "" : " 플레이어가 이번 장에 아무 말과 행동도 하지 않았으면 주인공은 큰 결정 없이 흐름 속에 머문다."}
 - 탐험·선택·이미 확정된 사건 때문에 뒤의 뼈대 단계를 바꿔야 하면 spineRevise로 바꾼다. ${N}단계는 항상 결말로 남겨 둔다. 바꿀 필요가 없으면 빈 배열.
-- ${last ? `이번 장이 마지막 장이다. 결말을 낸다. 장르와 원안이 실제로 맺기로 한 중심 내용과 주인공의 선택에 대응한다. 모든 관계·목표·생활 문제를 정리할 의무는 없다. 계속되는 관계·일상·노력은 unchanged 또는 continuing으로 자연스럽게 남길 수 있다. 실제로 답을 약속한 의문은 그 약속에 맞게 다루되 모든 설정을 그런 의문으로 바꾸지 않는다. 처리하지 않은 것을 모두 끝냈다고 서술하지 않는다. 기존에 없는 상처의 치유나 사직·희생을 의무로 만들지 않는다. ending.epilogue에 결말 이후를 3~5문장으로 쓴다. nextChoices는 빈 배열.` : `nextChoices에는 ${nextN}장이 끝날 때 주인공이 할 수 있는 다음 행동 후보 3개를 한 문장씩 쓴다. 각 후보는 객체가 아니라 문자열 하나다. 서로 방향이 달라야 한다. ending은 null.`}
+- ${finish ? `이야기를 끝낸다. 결말은 ${N}장 기록에서 플레이어가 실제로 한 일로 낸다. 장르와 원안이 실제로 맺기로 한 중심 내용과 주인공의 선택에 대응한다. 모든 관계·목표·생활 문제를 정리할 의무는 없다. 계속되는 관계·일상·노력은 unchanged 또는 continuing으로 자연스럽게 남길 수 있다. 실제로 답을 약속한 의문은 그 약속에 맞게 다루되 모든 설정을 그런 의문으로 바꾸지 않는다. 처리하지 않은 것을 모두 끝냈다고 서술하지 않는다. 기존에 없는 상처의 치유나 사직·희생을 의무로 만들지 않는다. ending.epilogue에 결말 이후를 3~5문장으로 쓴다. nextChoices는 빈 배열.` : `${last ? `이번 장이 마지막 장이다. 첫 장면은 결말로 이어질 마지막 상황을 연다. 결말은 플레이어가 이 장을 치른 뒤 쓴다. ` : ""}nextChoices에는 ${nextN}장이 끝날 때 주인공이 할 수 있는 다음 행동 후보 3개를 한 문장씩 쓴다. 각 후보는 객체가 아니라 문자열 하나다. 서로 방향이 달라야 한다. ending은 null.`}
 - 주인공이 죽을 수도 있다. 주인공이 죽으면 이후 장은 그 죽음의 여파와 유산을 중심으로 진행하고, 주인공 문서의 장 섹션은 사후 사건으로 쓴다.
 - title과 heading에는 "${nextN}장", "제${nextN}장" 같은 장 번호를 넣지 않는다. 장 번호는 앱이 따로 붙인다.
 - era는 이 장의 작중 시점이다. 이전 장(${cur.era})보다 같거나 뒤여야 한다.
-- place는 이 장이 끝날 때 주인공이 있는 곳이다. nearby는 다음 장까지 주인공이 직접 만나거나 이 세계의 연락 수단으로 닿을 수 있는 인물 3~10명이다(이미 존재하는 인물 제목 그대로, 또는 이번 장의 새 인물). 멀리 있거나 만날 길이 없는 인물은 넣지 않는다. why는 한 줄 이유.${st.entry ? "\n- noticed: 이번 장에서 주변 인물이 주인공의 알 수 없는 지식이나 원래와 다른 모습을 실제로 이상하게 여겼다면 who(인물 제목)와 what(무엇을 이상하게 여겼는지 한 문장)으로 적는다. 없으면 빈 배열." : ""}
+- place는 첫 장면에서 주인공이 있는 곳이다. nearby는 이번 장에 주인공이 직접 만나거나 이 세계의 연락 수단으로 닿을 수 있는 인물 3~10명이다(이미 존재하는 인물 제목 그대로, 또는 이번 장의 새 인물). 멀리 있거나 만날 길이 없는 인물은 넣지 않는다. why는 한 줄 이유.${st.entry ? "\n- noticed: 이번 장에서 주변 인물이 주인공의 알 수 없는 지식이나 원래와 다른 모습을 실제로 이상하게 여겼다면 who(인물 제목)와 what(무엇을 이상하게 여겼는지 한 문장)으로 적는다. 없으면 빈 배열." : ""}
 - 확정 사실, 사용자 확정 설정, 핵심 규칙, 연표와 모순되지 않는다. "[사용자 확정]"이 붙은 내용과 사용자가 직접 수정한 주인공 문서의 내용을 최우선 제약으로 삼는다.
-- protagonistBlock은 주인공 문서 맨 뒤에 덧붙는 '${nextN}장' 섹션이다. heading은 작중 사건명(장 번호를 넣지 않는다), sections는 하위 섹션 2~4개, 모두 합쳐 1,200~2,500자. 주인공 문서에 이미 있는 내용은 반복하지 않는다. 이 장의 절정 장면을 정면으로 쓴다. 상태나 소속이 바뀌었으면 infoboxPatch로, 한 줄 정의가 바뀌어야 하면 summaryPatch로 고친다(바꿀 것이 없으면 빈 배열과 빈 문자열).
+- ${finish ? `주인공의 상태나 소속이 바뀌었으면 record.infoboxPatch로, 한 줄 정의가 바뀌어야 하면 record.summaryPatch로 고친다.` : `protagonistBlock은 주인공 문서 맨 뒤에 덧붙는 '${nextN}장' 섹션이다. heading에 장 번호를 넣지 않는다. 분량과 범위는 위 '열린 장'을 따른다. 주인공 문서에 이미 있는 내용은 반복하지 않는다. 상태나 소속이 바뀌었으면 infoboxPatch로, 한 줄 정의가 바뀌어야 하면 summaryPatch로 고친다(바꿀 것이 없으면 빈 배열과 빈 문자열).`}
 ${newItemRule(w, nextN)}
 - 새 항목 이름: newEntities와 affected(kind "new")의 title도 본문 링크와 같은 규칙을 따른다. 새 인물의 title은 본명 풀 네임이고, 코드명이나 칭호는 summary와 그 인물 문서의 인포박스에 쓴다.
 - affected는 이번 장에서 무언가가 바뀐 기존 항목 2~5개와 위의 새 항목들(있다면)이다. 기존 항목은 아래 목록의 제목을 글자 그대로 쓴다(kind "update"). 엮은 탐험 항목도 바뀌었다면 affected에 넣는다. change는 이번 장에서 그 항목에 일어난 일 한 문장이다.
@@ -399,7 +420,7 @@ ${entityIndex(w, [pk])}
 ## 출력
 ${ENTITY_DEFINITION_RULE}
 JSON 객체 하나만 출력:
-{"title":"이 장의 작중 사건명","era":"이 장의 작중 시점","summary":"공개 줄거리 3~5문장","timeline":[{"year":"연도","month":3,"day":14,"event":"..."}],"protagonistBlock":{"heading":"작중 사건명","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}],"infoboxPatch":[{"label":"상태","value":"..."}],"summaryPatch":""},"affected":[{"title":"항목 제목","change":"이번 장에서 이 항목에 일어난 일 한 문장","kind":"update 또는 new"}],"newEntities":[{"title":"...","type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의"}],"wove":[{"title":"탐험 항목 제목","how":"이 항목이 이번 장 사건에서 맡은 역할 한 문장"}],"facts":[{"about":"항목 제목","fact":"..."}],${REL_JSON},"spineRevise":[{"n":4,"intent":"..."}],"revealNow":[],"secretRevise":[],${STORY_CONTINUITY_OUTPUT},"dialogueConsequences":[{"character":"대화 상대 이름","detail":"이번 장 본문에 나타난 구체적인 대화의 결과. 없으면 빈 배열"}],"place":"주인공이 있는 곳","nearby":[{"title":"인물 제목","why":"닿을 수 있는 이유"}],${st.entry ? '"noticed":[{"who":"인물 제목","what":"..."}],' : ""}"nextChoices":["...","...","..."],"ending":${last ? '{"epilogue":"결말 이후 3~5문장"}' : "null"}}`;
+{${prevOpen ? `"record":{"heading":"${nextN - 1}장의 작중 사건명","summary":"${nextN - 1}장에 실제로 일어난 일 3~5문장","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}]${finish ? ',"infoboxPatch":[],"summaryPatch":""' : ""}},` : ""}${finish ? "" : `"title":"이 장에 닥친 상황의 이름","era":"이 장의 작중 시점","summary":"첫 장면의 상황 2~4문장",`}"timeline":[{"year":"연도","month":3,"day":14,"event":"..."}],${finish ? "" : `"protagonistBlock":{"heading":"이 장에 닥친 상황의 이름","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}],"infoboxPatch":[{"label":"상태","value":"..."}],"summaryPatch":""},`}"affected":[{"title":"항목 제목","change":"이번 장에서 이 항목에 일어난 일 한 문장","kind":"update 또는 new"}],"newEntities":[{"title":"...","type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의"}],"wove":[{"title":"탐험 항목 제목","how":"이 항목이 이번 장 사건에서 맡은 역할 한 문장"}],"facts":[{"about":"항목 제목","fact":"..."}],${REL_JSON},"spineRevise":[{"n":4,"intent":"..."}],"revealNow":[],"secretRevise":[],${STORY_CONTINUITY_OUTPUT},"dialogueConsequences":[{"character":"대화 상대 이름","detail":"이번 장 본문에 나타난 구체적인 대화의 결과. 없으면 빈 배열"}],${finish ? "" : `"place":"주인공이 있는 곳","nearby":[{"title":"인물 제목","why":"닿을 수 있는 이유"}],`}${st.entry ? '"noticed":[{"who":"인물 제목","what":"..."}],' : ""}"nextChoices":${finish ? "[]" : '["...","...","..."]'},"ending":${finish ? '{"epilogue":"결말 이후 3~5문장"}' : "null"}}`;
 }
 function chapterBlockPrompt(w, key, chs) {
   const p = S.pages[key], e = w.entities[key];
@@ -426,7 +447,7 @@ ${rel}
 - 장마다 블록 하나를 쓴다. heading은 그 장에서 이 항목이 겪은 일을 가리키는 작중 사건명이다. "2장", "제2장" 같은 장 번호는 넣지 않는다(앱이 따로 붙인다). sections는 1~3개.
 - 블록 하나의 분량은 기존 본문의 15~30%다. 이미 본문에 있는 내용은 반복하지 않는다.
 - 위 '이 항목에 일어난 일'과 줄거리에 맞춘다. 그 장 이후의 일은 쓰지 않는다.
-- 상태, 소속, 직위가 바뀌었으면 infoboxPatch로 고치고, 한 줄 정의가 바뀌어야 하면 summaryPatch에 새 정의를 쓴다. 바꿀 것이 없으면 빈 배열과 빈 문자열.
+${key === w.story.protagonistKey && chs.some(n => w.story.chapters[n - 1]?.open && n === w.story.chapter && !w.story.chapters[n - 1]?.recorded) ? `- 이 문서는 주인공 문서이고 ${w.story.chapter}장은 열린 장이다. 이 장의 블록은 첫 장면만 쓴다: 주인공이 있던 자리와 하던 일에서 시작해, 사건이 주인공 앞에 닥친 순간에서 멈춘다. 주인공의 결정과 행동, 사건의 결과는 쓰지 않는다(플레이어가 대화로 치른 뒤 기록한다). 분량은 400~1,000자.\n` : ""}- 상태, 소속, 직위가 바뀌었으면 infoboxPatch로 고치고, 한 줄 정의가 바뀌어야 하면 summaryPatch에 새 정의를 쓴다. 바꿀 것이 없으면 빈 배열과 빈 문자열.
 ${chs.every(n => lateBeat(w, n)) ? "- 이야기가 절정이나 결말에 와 있으니 새 인물을 만들지 않는다. 이미 있는 인물과 항목으로 쓴다.\n" : "- 새 인물은 만들지 않는다. 필요하면 장소나 물건 하나까지 새로 만들어 링크하고 newEntities에 넣는다.\n"}- facts에는 이 장 섹션이 확정한 사실 2~6개, timeline에는 새로 확정한 사건(있을 때만), newEntities에는 새로 링크한 항목을 넣는다.
 ${storyStyleRules()}
 

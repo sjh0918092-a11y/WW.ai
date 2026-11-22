@@ -155,7 +155,7 @@ let step = 0; const ok = m => console.log(`  ✓ ${++step}. ${m}`);
     { const ck = calls.filter(c => c.kind === "check").pop();
       assert.strictEqual(ck.model, "gemini-3.8-flash", "설정 검사는 (검사 모델을 비워 두면) 기본 모델로");
       assert.strictEqual(ck.think, "medium", "설정 검사의 생각 깊이 기본값은 medium");
-      assert(ck.prompt.includes("글자 그대로 evidence에 옮길 수 있다") && ck.prompt.includes('"evidence"'), "근거 인용을 요구한다");
+      assert(ck.prompt.includes('"evidence":"근거가 된 확정 설정이나 문서 안의 다른 서술(글자 그대로)"'), "근거 인용을 요구한다");
       assert.strictEqual(calls.filter(c => c.kind === "tone").every(c => c.model === "gemini-3.5-flash-lite"), true); }
     await page.click('#side [data-act="gset"]');
     await page.evaluate(() => { S.gmodels = [{id:"gemini-test-pro",label:"테스트 모델"}]; renderMain(); }); await page.selectOption("#gCheck", "gemini-test-pro"); await page.locator("#gAdvanced").evaluate(e => e.open = true); await page.selectOption("#gCheckT", "high"); await page.click('[data-act="gset-save"]');

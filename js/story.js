@@ -7,12 +7,15 @@ function openAdvance() {
   S.view = { name: "advance" }; renderAll(); window.scrollTo({ top: 0 });
 }
 /* 장 계획을 world와 주인공 문서에 적용한다. 동기식으로 한 번에 끝내고, 새 주인공 문서를 돌려준다 */
+/* n이 전체 장 수보다 크면 새 장을 열지 않고 이야기를 마무리한다(마지막 열린 장의 기록과 결말).
+   앞 장이 열린 장이면 주인공 문서의 그 장 섹션(첫 장면)을 record(실제로 일어난 일)로 바꾼다 */
 function applyChapter(w, n, out, choice) {
-  const st = w.story, pk = st.protagonistKey, src = chSrc(n), pb = out.protagonistBlock;
-  const progress = prepareStoryMemory(w, n, out, choice, true);
+  const st = w.story, pk = st.protagonistKey, finish = n > totalOf(w), at = finish ? n - 1 : n, src = chSrc(at), pb = out.protagonistBlock || {};
+  const prev = st.chapters[n - 2], rec = prev?.open && Array.isArray(out.record?.sections) ? out.record : null;
+  const progress = prepareStoryMemory(w, at, out, choice, true);
   const before = new Set(Object.keys(w.entities));
   const prevEra = curCh(w).era || w.era;
-  let era = norm(out.era || "").slice(0, 40) || prevEra;
+  let era = finish ? prevEra : norm(out.era || "").slice(0, 40) || prevEra;
   const A = yearNum(era), B = yearNum(prevEra);
   if (!isNaN(A) && !isNaN(B) && A < B) { console.warn(`[스토리] ${n}장 시점(${era})이 이전 장(${prevEra})보다 앞서 이전 장 시점을 씁니다.`); era = prevEra; }
   const hints = {}; for (const x of (Array.isArray(out.newEntities) ? out.newEntities : [])) if (x && x.title) { x.title = canonTitle(w, x.title); hints[keyOf(x.title)] = x; }
@@ -35,9 +38,9 @@ function applyChapter(w, n, out, choice) {
   for (const x of (Array.isArray(out.wove) ? out.wove : [])) { const k = x && x.title ? kOf(w, x.title) : ""; if (!w.entities[k] || !x.how || wove.some(y => y.key === k)) continue; wove.push({ key: k, how: stripMarks(x.how).slice(0, 240) }); }
   for (const f of (Array.isArray(out.facts) ? out.facts : [])) { if (!f || !f.fact || !f.about) continue; const fk = kOf(w, f.about); if (w.entities[fk]) addFact(w.entities[fk], String(f.fact), src); }
   for (const r of (Array.isArray(out.relations) ? out.relations : []).slice(0, 12)) addRelation(w, src, r);
-  for (const t of (Array.isArray(out.timeline) ? out.timeline : []).slice(0, 4)) addTimeline(w, t, src, n);
+  for (const t of (Array.isArray(out.timeline) ? out.timeline : []).slice(0, 4)) addTimeline(w, t, src, at);
   afterTimeline(w);
-  const narrativeBody = storyQuote(pb.sections.map(s => s.body).join("\n")), sources = new Map(storySources(w).map(row => [row.source, storyQuote(row.text)])); sources.set("current", narrativeBody);
+  const narrativeBody = storyOutBody(out), sources = new Map(storySources(w).map(row => [row.source, storyQuote(row.text)])); sources.set("current", narrativeBody);
   const warn = text => progress.record.warnings.push(text);
   const secretFor = value => {
     const id = typeof value === "string" ? value : value?.id || value?.secretId;
@@ -46,7 +49,7 @@ function applyChapter(w, n, out, choice) {
   for (const r of (Array.isArray(out.secretRevise) ? out.secretRevise : [])) {
     const secret = secretFor(r), quote = storyMatchedQuote(sources.get(r?.source) || "", r?.quote);
     if (!secret || secret.revealed || !storyText(r?.truth, 300) || !storyText(r?.cover, 300) || !storyText(r?.reason) || !quote) { warn("미공개 진실의 계획 수정 근거가 확인되지 않아 이전 계획을 유지했습니다."); continue; }
-    (secret.revisions ||= []).push({ chapter: n, truth: secret.truth, cover: secret.cover, reason: storyText(r.reason), source: r.source, quote });
+    (secret.revisions ||= []).push({ chapter: at, truth: secret.truth, cover: secret.cover, reason: storyText(r.reason), source: r.source, quote });
     secret.truth = storyText(r.truth, 300); secret.cover = storyText(r.cover, 300);
   }
   for (const r of (Array.isArray(out.revealNow) ? out.revealNow : [])) {
@@ -56,20 +59,32 @@ function applyChapter(w, n, out, choice) {
     const source = typeof r === "object" && r.source ? sources.get(r.source) : narrativeBody;
     const quote = storyMatchedQuote(source || "", typeof r === "object" ? r.evidence || r.quote : r) || storyMatchedQuote(narrativeBody, secret.truth);
     if (!quote) { secret.pendingDisclosure = { chapter: n }; warn(`비밀 ${secret.id}의 공개 근거 확인이 필요합니다. 본문은 보존하고 공개 확정은 보류했습니다.`); continue; }
-    secret.revealed = true; secret.revealedAt = n; secret.evidence = quote; delete secret.pendingDisclosure;
+    secret.revealed = true; secret.revealedAt = at; secret.evidence = quote; delete secret.pendingDisclosure;
   }
   for (const r of (Array.isArray(out.spineRevise) ? out.spineRevise : [])) {
     const s = st.spine[(+r?.n || 0) - 1]; if (!s || s.n < n || !r.intent) continue;
     if (!s.revised) s.orig = s.intent;
     s.intent = stripMarks(r.intent).slice(0, 300); s.revised = true;
   }
-  st.chapters.push({ n, title: chTitle(out.title).slice(0, 60), era, summary: stripMarks(out.summary).slice(0, 800), startedAt: Date.now(), explore: emptyExplore(), choice,
-    wove, affected, auto, dialogueConsequences: (Array.isArray(out.dialogueConsequences) ? out.dialogueConsequences : []).filter(x => x && typeof x.character === "string" && typeof x.detail === "string"), continuity: progress.record, nextChoices: n >= totalOf(w) ? [] : (Array.isArray(out.nextChoices) ? out.nextChoices : []).map(x => stripMarks(asText(x)).slice(0, 200)).filter(Boolean).slice(0, 3) });
+  if (rec) { prev.summary = stripMarks(rec.summary || "").slice(0, 800) || prev.summary; prev.recorded = true; }   // 열린 장의 줄거리를 실제로 일어난 일로 바꾼다
+  const dialogueConsequences = (Array.isArray(out.dialogueConsequences) ? out.dialogueConsequences : []).filter(x => x && typeof x.character === "string" && typeof x.detail === "string");
+  if (finish) {
+    Object.assign(prev, { continuity: progress.record, ...(wove.length ? { wove: [...(prev.wove || []), ...wove] } : {}), affected: [...(prev.affected || []), ...affected], auto: [...(prev.auto || []), ...auto], ...(dialogueConsequences.length ? { dialogueConsequences } : {}), nextChoices: [] });
+    st.continuity = progress.memory;
+    st.status = "ended"; st.endedAt = Date.now(); st.epilogue = stripMarks(out.ending?.epilogue || "").slice(0, 1200) || prev.summary;
+    const base = { ...S.pages[pk], sections: (S.pages[pk].sections || []).filter(x => !rec || x.ch !== at) };
+    const np = rebuildPage(w, pk, base, rec ? blockToSections(at, rec.heading || prev.title, rec.sections) : [], { infoboxPatch: rec?.infoboxPatch, summaryPatch: rec?.summaryPatch });
+    np.syncedTo = at; np.storyNotice = false; np.check = null;
+    return np;
+  }
+  st.chapters.push({ n, title: chTitle(out.title).slice(0, 60), era, summary: stripMarks(out.summary).slice(0, 800), startedAt: Date.now(), explore: emptyExplore(), choice, open: true,
+    wove, affected, auto, dialogueConsequences, continuity: progress.record, nextChoices: (Array.isArray(out.nextChoices) ? out.nextChoices : []).map(x => stripMarks(asText(x)).slice(0, 200)).filter(Boolean).slice(0, 3) });
   st.continuity = progress.memory;
   st.chapter = n; w.era = era;
-  if (n >= totalOf(w)) { st.status = "ended"; st.endedAt = Date.now(); st.epilogue = stripMarks(out.ending?.epilogue || "").slice(0, 1200) || stripMarks(out.summary).slice(0, 800); }
-  const secs = blockToSections(n, pb.heading || out.title, pb.sections);
-  const np = rebuildPage(w, pk, S.pages[pk], secs, { infoboxPatch: pb.infoboxPatch, summaryPatch: pb.summaryPatch });
+  // 마지막 장도 열린 장이다. 결말은 플레이어가 그 장을 치른 뒤 마무리에서 쓴다
+  const secs = [...(rec ? blockToSections(n - 1, rec.heading || prev.title, rec.sections) : []), ...blockToSections(n, pb.heading || out.title, pb.sections)];
+  const base = rec ? { ...S.pages[pk], sections: (S.pages[pk].sections || []).filter(x => x.ch !== n - 1) } : S.pages[pk];
+  const np = rebuildPage(w, pk, base, secs, { infoboxPatch: pb.infoboxPatch, summaryPatch: pb.summaryPatch });
   np.syncedTo = n; np.storyNotice = st.status !== "ended"; np.check = null;
   st.chapters[st.chapters.length - 1].fresh = Object.keys(w.entities).filter(k => !before.has(k) && k !== pk);   // 이번 장에 새로 등장한 항목
   if (typeof storyArcScene === "function") { storyArcScene(w, st.chapters[st.chapters.length - 1], out); storyArcNoticed(w, n, out.noticed); }   // 장이 끝날 때의 위치·만날 수 있는 인물, 주변이 알아챈 것
@@ -96,8 +111,8 @@ async function advanceChapter(skip) {
   try {
     const out = await callJson("chapterPlan", chapterPlanPrompt(w, n, choice), { signal: ctl.signal, modelTier: "default", ...PAGE_MODEL,
       onRetry: r => { if (S.storyGen) { S.storyGen.retry = r; updateStoryLive(); } }, onText: ({ text }) => { if (S.storyGen) { S.storyGen.raw = text; updateStoryLive(); } } }, { title: w.entities[pk].title, ch: n });
-    const pb = out?.protagonistBlock;
-    if (!out || !out.title || !out.summary || !pb || !Array.isArray(pb.sections) || !pb.sections.some(s => s && String(s.body || "").trim())) throw { code: "invalid_json" };
+    const pb = out?.protagonistBlock, finish = n > totalOf(w), hasBody = b => !!b && Array.isArray(b.sections) && b.sections.some(s => s && String(s.body || "").trim());
+    if (!out || (cur.open && !hasBody(out.record)) || (finish ? !String(out.ending?.epilogue || "").trim() : (!out.title || !out.summary || !hasBody(pb)))) throw { code: "invalid_json" };   // 열린 장은 기록이, 마무리는 결말이 있어야 한다
     if (ctl.signal.aborted || S.world !== w) throw { code: "cancelled" };
     S.storyGen.phase = "protagonist";
     np = applyChapter(w, n, out, choice);
@@ -114,9 +129,10 @@ async function advanceChapter(skip) {
   S.storyGen = null; S.adv = null;
   try { await Store.savePage(w.id, np); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
   {   // 마지막 장도 다른 장처럼 주인공 문서의 새 장 섹션부터 보여 주고, 에필로그는 안내 카드의 버튼으로 연다
-    S.storyCard = { wid: w.id, n };
+    const shown = Math.min(n, w.story.chapter);   // 마무리면 방금 기록한 마지막 장
+    S.storyCard = { wid: w.id, n: shown };
     S.view = { name: "article", key: pk }; S.recent = [pk, ...S.recent.filter(x => x !== pk)].slice(0, 8); renderAll();
-    const i = np.sections.findIndex(s => s.ch === n); const el = i >= 0 && document.getElementById("s-" + i);
+    const i = np.sections.findIndex(s => s.ch === shown); const el = i >= 0 && document.getElementById("s-" + i);
     window.scrollTo({ top: 0 }); if (el) setTimeout(() => el.scrollIntoView({ block: "start", behavior: "smooth" }), 400);
   }
   drainSync();

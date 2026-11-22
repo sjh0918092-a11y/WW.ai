@@ -120,7 +120,7 @@ function setupStory(w, b, user = {}, pk = w.mainKey, opt = {}) {
   w.mode = "story"; w.era = era;
   w.story = { protagonistKey: pk, chapter: 1, total, status: "active", spine, endedAt: null, epilogue: "",
     protagonist: { summary: e.summary, want: stripMarks(pr.want || "").slice(0, 200), wound: stripMarks(pr.wound || "").slice(0, 200) },
-    chapters: [{ n: 1, title: chTitle(c1.title || "발단").slice(0, 60), era, summary: stripMarks(c1.summary).slice(0, 800), incident: stripMarks(c1.incident || "").slice(0, 240),
+    chapters: [{ n: 1, open: true, title: chTitle(c1.title || "발단").slice(0, 60), era, summary: stripMarks(c1.summary).slice(0, 800), incident: stripMarks(c1.incident || "").slice(0, 240),
       startedAt: Date.now(), explore: emptyExplore(), choice: null, wove: [], affected: [], auto: [],
       nextChoices: (Array.isArray(c1.nextChoices) ? c1.nextChoices : []).map(x => stripMarks(asText(x)).slice(0, 200)).filter(Boolean).slice(0, 3) }] };
   // 사용자가 정한 주인공 특징과 등장인물은 '사용자 확정' 설정으로 남긴다
