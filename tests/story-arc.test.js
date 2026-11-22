@@ -101,7 +101,7 @@ const server = appServer();
         await undoStoryTalk(); out.reach.undone = storyTalkSession(w, park).state;
         storyTalkSession(w, '@scene').draft = '격납고 구석을 살핀다'; await sendStoryTalk();
         out.reach.again = storyTalkSession(w, park).state;
-        out.reach.context = !!storyTalkContext(w, park).protagonistActions?.length;
+        out.reach.context = !!storyTalkContext(w, park).elsewhereThisChapter?.some(x => x.with.startsWith('상황'));
         const sc = storyTalkSession(w, '@scene');
         out.sceneCh = { turns: sc.turns.length, act: sc.turns[0]?.act, reply: sc.turns[0]?.reply, secrets: lastScene.includes('등대지기는 밀수꾼이다') && lastScene.includes('쓰지 않는다'), chip: !!document.querySelector('[data-talk-key="@scene"][aria-pressed="true"]') };
         out.deeds = storyChapterDeeds(w);
@@ -137,6 +137,8 @@ const server = appServer();
           await endStoryTalk();
           const tt = storyTalkSession(w, park).turns;
           out.lock.farewell = { added: tt.length - before, ev: tt[tt.length - 1].ev, user: tt[tt.length - 1].user, prompt: lastChat.includes('자리를 뜨려 한다'), active: storyTalkActive(w), ended: !!document.querySelector('.talk-end'), input: document.querySelector('#storyTalkInput')?.disabled, again: !!document.querySelector('[data-act="talk-begin"]'), oldChip: document.querySelector(`[data-talk-key="${old}"]`)?.disabled, undo: storyTalkCanUndo(w, park) };
+          Object.assign(storyTalkSession(w, old, true), { knowledge: { known: [] } }); const op = storyTalkPrompt(w, old, '무슨 일 있었어?');
+          out.lock.elsewhere = op.includes('이번 장에 주인공이 이 인물과 떨어져 겪은 일') && op.includes(w.entities[park].title) && op.includes('주인공이 다른 인물과 나눈 말의 내용은 모른다') && !storyTalkPrompt(w, park, '응').includes('"with":"' + w.entities[park].title);
           await storyTalkBegin(w, park);
           const t2 = storyTalkSession(w, park).turns;
           out.lock.back = { ev: t2[t2.length - 1].ev, prompt: lastChat.includes('다시 찾아왔다'), active: storyTalkActive(w) === park, plan: chapterPlanPrompt(w, 2, null).includes('(주인공이 대화를 끝내고 자리를 떴다)') };
@@ -204,7 +206,7 @@ const server = appServer();
     assert.deepStrictEqual(r.castDelta, { profile: true, count: true, added: true, dropped: true, ready: true, prompt: true }, '준비는 프로필을 다시 쓰지 않고 지식은 바뀐 것만 받는다');
     assert.deepStrictEqual(r.syncKeep, { synced: true, stamp: true, ready: true, noCast: true }, '장 반영(동기화) 뒤에도 대화 준비를 다시 하지 않는다');
     assert.deepStrictEqual(r.lock, { active: true, listed: true, redirect: true, chips: { old: true, scene: true, end: true },
-      farewell: { added: 1, ev: 'farewell', user: '', prompt: true, active: '', ended: true, input: true, again: true, oldChip: false, undo: false },
+      farewell: { added: 1, ev: 'farewell', user: '', prompt: true, active: '', ended: true, input: true, again: true, oldChip: false, undo: false }, elsewhere: true,
       back: { ev: 'return', prompt: true, active: true, plan: true }, chapterEnds: true }, '대화 중에는 다른 상대로 못 옮기고, 끝내면 작별 인사, 다시 찾아가면 새 첫마디');
     assert.deepStrictEqual(r.fix, { reply: '뭐?! 그걸 네가 어떻게 알아?', mood: '크게 놀람', rule: true, review: true }, '검토는 고친 필드만 돌려주고 나머지는 초안을 쓴다. 기분은 저장된다'); assert.strictEqual(r.moodUndone, '', '되돌리면 기분도 되돌아간다');
     assert.deepStrictEqual(r.known, ['한서윤이 등대지기가 밀수꾼이라고 말했다'], '이번에 새로 안 것만 받아 기존 지식에 합친다'); assert.strictEqual(r.knownUndone, 0);
