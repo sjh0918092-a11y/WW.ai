@@ -36,7 +36,7 @@ const server = appServer();
         if (kind === 'storyBible') { lastBible = text; } if (kind === 'storyBible') return { protagonist: { ...(named ? { name: named } : {}), summary: '바뀌면 안 되는 새 정의', want: '배를 되찾는다', wound: '' }, storyPromise: { focus: '항구의 일상', central: { kind: 'goal', subject: '배' } }, spine: [{ n: 1, intent: '시작' }], secrets: [{ truth: '등대지기는 밀수꾼이다', cover: '성실한 등대지기', reveal: 3 }], chapter1: { title: '사라진 배', era: '1201년', summary: '한서윤의 배가 사라졌다.', incident: '배가 사라졌다', nextChoices: ['부두로 간다', '박도현을 찾는다', '기다린다'] }, place: '북쪽 부두', nearby: [{ title: '박도현', why: '같은 부두에서 일한다' }, { title: '이노인', why: '' }, { title: '없는사람', why: '' }] };
         if (kind === 'chapterBlock') { if (failBlock) throw { code: 'invalid_json' }; return { blocks: [{ ch: 1, heading: '사라진 배', sections: [{ heading: '부두의 아침', level: 1, body: '그날 아침 배가 보이지 않았다.' }] }], infoboxPatch: [], summaryPatch: '', facts: [], relations: [], timeline: [], newEntities: [] }; }
         if (kind === 'storyCast') return { profile: { personality: '무뚝뚝하다', voice: '짧게 반말', examples: ['뭐야.', '비켜.'] }, character: { key: park, state: 'available', evidence: '부두에 있다' }, player: { key: seo, state: 'available', evidence: '부두에 있다' }, relationship: '동료', bond: '편함', scene: '부두', opening: '어, 서윤이네. 무슨 일이야?', knowledge: { known: [] } };
-        if (kind === 'storyChat' && text.includes('이야기 서술자')) { lastScene = text; return { reply: '격납고 구석에 낡은 공구함이 있다—뚜껑이 열려 있다.', memory: '공구함을 찾았다' }; }
+        if (kind === 'storyChat' && text.includes('이야기 서술자')) { lastScene = text; return { reply: '격납고 구석에 낡은 공구함이 있다—뚜껑이 열려 있다.', memory: '공구함을 찾았다', reach: ['박도현', '없는사람'] }; }
         if (kind === 'storyChat') lastChat = text;
         if (kind === 'storyChat' || kind === 'storyChatReview') return { reply: '뭐? 그걸 네가 어떻게 알아?', memory: '한서윤이 등대지기 이야기를 꺼냈다', important: true, character: { key: park, state: 'available', evidence: '' }, player: { key: seo, state: 'available', evidence: '' }, relationship: '의심', bond: '각별함', scene: '부두', noticed: '들은 적 없는 이야기를 알고 있었다', knowledge: { known: [] } };
         if (kind === 'chapterPlan') return { protagonist: { tendency: '사람을 먼저 지켰다.', change: '혼자 버티던 사람이 도움을 청하게 됐다.', voice: '짧게 반말한다.' }, people: [{ title: '박도현', with: '함께 배를 찾았다.' }], open: ['등대의 불빛'] };
@@ -87,7 +87,13 @@ const server = appServer();
         out.actTurn = !!ts.turns[ts.turns.length - 1].act && lastChat.includes('행동이다') && !!document.querySelector('.talk-act');
         await undoStoryTalk(); out.actUndo = S.talkAct === true && ts.draft === '서류를 빼앗는다'; S.talkAct = false; ts.draft = '';
         // 상황 채널: 상대 없이 한 행동을 서술자가 받는다
+        storyTalkSession(w, park).state = 'absent';
         openStoryTalk('@scene'); storyTalkSession(w, '@scene', true).draft = '격납고 구석을 살핀다'; await sendStoryTalk();
+        out.reach = { after: storyTalkSession(w, park).state };
+        await undoStoryTalk(); out.reach.undone = storyTalkSession(w, park).state;
+        storyTalkSession(w, '@scene').draft = '격납고 구석을 살핀다'; await sendStoryTalk();
+        out.reach.again = storyTalkSession(w, park).state;
+        out.reach.context = !!storyTalkContext(w, park).protagonistActions?.length;
         const sc = storyTalkSession(w, '@scene');
         out.sceneCh = { turns: sc.turns.length, act: sc.turns[0]?.act, reply: sc.turns[0]?.reply, secrets: lastScene.includes('등대지기는 밀수꾼이다') && lastScene.includes('쓰지 않는다'), chip: !!document.querySelector('[data-talk-key="@scene"][aria-pressed="true"]') };
         out.deeds = storyChapterDeeds(w);
@@ -153,6 +159,7 @@ const server = appServer();
     assert.strictEqual(r.actTurn, true, '행동으로 보낸 차례'); assert.strictEqual(r.actUndo, true, '되돌리면 행동 모드와 입력이 돌아온다');
     assert.deepStrictEqual(r.sceneCh, { turns: 1, act: true, reply: '격납고 구석에 낡은 공구함이 있다, 뚜껑이 열려 있다.', secrets: true, chip: true });
     assert.deepStrictEqual({ talks: r.deeds.talks, acts: r.deeds.acts, scene: r.deeds.scene }, { talks: 0, acts: 0, scene: 1 });
+    assert.deepStrictEqual(r.reach, { after: 'available', undone: 'absent', again: 'available', context: true }, '상황에서 찾아낸 인물은 연락 불가가 풀린다');
     assert.deepStrictEqual(r.advance, { did: true, radios: 0 }, '이번 장에 말이나 행동을 했으면 선택지를 보이지 않는다');
     assert.strictEqual(r.planAgency, true);
     assert.deepStrictEqual(r.openingHtml, { self: 0, other: '어, 서윤이네. 무슨 일이야?' });
