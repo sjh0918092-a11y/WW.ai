@@ -161,7 +161,9 @@ document.addEventListener("click", ev => {
     case "story-revert-cancel": S.confirmRevert = false; renderMain(); break;
     case "story-revert-go": revertStory(); break;
     case "story-snap-discard": discardStorySnap(); break;
-    case "talk-prepare": prepareStoryTalk(S.view.key); break;
+    case "talk-prepare": { const w = S.world, k = S.view.key; prepareStoryTalk(k).then(() => storyTalkBegin(w, k)); break; }
+    case "talk-end": endStoryTalk(); break;
+    case "talk-begin": storyTalkBegin(S.world, S.view.key); break;
     case "talk-send": sendStoryTalk(); break;
     case "talk-stop": S.storyTalkJob?.ctl.abort(); break;
     case "talk-save": saveStoryTalk(); break;
