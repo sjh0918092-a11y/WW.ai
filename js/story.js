@@ -206,7 +206,7 @@ function drainSync() {
     if (S.pages[k] && missingChs(w, k).length && !(S.edit && S.edit.key === k)) { runSync(k); return; }
   }
 }
-async function runSync(k) {
+async function runSync(k, opt = {}) {
   const w = S.world, p = S.pages[k], chs = missingChs(w, k); if (!p || !chs.length) return;
   S.syncing = k; S.syncErr = null;
   const talkBefore = isStory(w) ? { page: p, entities: Object.fromEntries([...new Set([k, w.story.protagonistKey])].filter(x => w.entities[x]).map(x => [x, JSON.parse(JSON.stringify(w.entities[x]))])) } : null;   // 반영 전 상태: 대화 준비를 이어 쓰는 데 쓴다
@@ -231,7 +231,7 @@ async function runSync(k) {
   S.syncing = null; S.syncPhase = null;
   try { await Store.savePage(w.id, np); await Store.saveWorld(w); } catch (err) { toast("저장하지 못했습니다. " + errMsg(err)); }
   if (S.view.name === "article" && S.view.key === k) renderMain();
-  else toast(`「${np.title}」에 ${chs.join(", ")}장의 변화를 반영했습니다.`, { label: "열기", fn: () => openEntity(k) });
+  else if (!opt.quiet) toast(`「${np.title}」에 ${chs.join(", ")}장의 변화를 반영했습니다.`, { label: "열기", fn: () => openEntity(k) });
   renderSide();
   drainSync();
 }

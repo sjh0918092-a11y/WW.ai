@@ -284,11 +284,27 @@ ${lines.length ? lines.map(t => `- ${t}`).join("\n") : "(없음)"}
 JSON 객체 하나만 출력:
 {"protagonist":{"tendency":"...","change":"...","voice":"..."},"people":[{"title":"인물 제목","with":"..."}],"open":["..."]}`;
 }
+/* 마무리 전 밀린 반영: 영향을 받았지만 아직 그 장을 반영하지 않은 문서를 하나씩 반영한다. 하나라도 남으면 마무리를 멈춘다(다시 누르면 남은 것부터) */
+async function storySealCatchUp(w) {
+  const pending = Object.keys(S.pages).filter(k => missingChs(w, k).length);
+  for (let i = 0; i < pending.length; i++) {
+    if (S.world !== w) throw { code: "cancelled" };
+    S.storySeal.phase = `밀린 문서 반영 중 (${i + 1}/${pending.length})`; renderMain();
+    for (let t = 0; S.syncing && t < 600; t++) await new Promise(r => setTimeout(r, 200));   // 이미 돌던 반영이 끝나길 기다린다
+    if (!missingChs(w, pending[i]).length) continue;
+    if (S.syncErr?.key === pending[i]) S.syncErr = null;
+    await runSync(pending[i], { quiet: true });
+  }
+  const left = Object.keys(S.pages).filter(k => missingChs(w, k).length);
+  if (left.length) throw { code: "sync_left", message: `문서 ${left.length}개(${left.slice(0, 3).map(k => S.pages[k]?.title || k).join(", ")}${left.length > 3 ? " 등" : ""})에 장의 변화를 반영하지 못했습니다. 다시 누르면 남은 문서부터 이어서 반영합니다.` };
+}
 async function sealStory() {
   const w = S.world, st = w?.story; if (!isStory(w) || st.status !== "ended" || S.storySeal) return;
   if (S.gen || S.storyGen || S.syncing || S.storyTalkJob) { toast("작성 중인 일이 끝난 뒤 마무리할 수 있습니다."); return; }
   S.storySeal = { phase: "이번 이야기를 기록하는 중" }; renderMain();
   try {
+    await storySealCatchUp(w);   // 열어 보지 않아 밀린 문서부터 반영한다. 정리하면 스토리 모드가 꺼져 더는 반영할 수 없다
+    S.storySeal.phase = "이번 이야기를 기록하는 중"; renderMain();
     const r = await callJson("chapterPlan", storyRecordPrompt(w), { modelTier: "default" }, { title: w.entities[st.protagonistKey].title, ch: "기록" });
     if (S.world !== w) throw { code: "cancelled" };
     const pr = r?.protagonist && typeof r.protagonist === "object" ? r.protagonist : {};
@@ -314,7 +330,7 @@ async function sealStory() {
     toast(`${arc}부 이야기를 기록하고 마무리했습니다. 이 세계에서 다음 이야기를 시작하거나 위키를 계속 키울 수 있습니다.`);
   } catch (err) {
     S.storySeal = null;
-    toast(err?.code === "cancelled" ? "마무리를 중단했습니다." : "이야기를 마무리하지 못했습니다. 이전 상태 그대로입니다. " + errMsg(err));
+    toast(err?.code === "cancelled" ? "마무리를 중단했습니다." : err?.code === "sync_left" ? "이야기를 아직 마무리하지 않았습니다. " + err.message : "이야기를 마무리하지 못했습니다. 이전 상태 그대로입니다. " + errMsg(err));
     renderMain();
   }
 }

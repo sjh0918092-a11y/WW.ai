@@ -174,7 +174,13 @@ const server = appServer();
         addFact(w.entities[park], '박도현은 배를 찾는 데 나섰다', 'ch1');
         w.timeline.push({ year: '1201년', event: '배가 사라졌다', src: 'ch1', ch: 1 });
         st.status = 'ended'; st.endedAt = Date.now();
+        // 마무리 전 밀린 반영: 열어 보지 않은 문서도 정리 전에 반영한다. 실패하면 마무리를 멈춘다
+        { const pg = S.pages[park]; pg.sections = (pg.sections || []).filter(x => !x.ch); pg.syncedTo = 0; delete pg.baseAsOf;
+          const c1 = st.chapters[0]; c1.affected = [...(c1.affected || []).filter(a => a.key !== park), { key: park, change: '배가 사라진 것을 알았다' }];
+          failBlock = true; await sealStory(); failBlock = false;
+          out.sealStop = isStory(w) && missingChs(w, park).length === 1; }
         await sealStory();
+        out.sealSync = S.pages[park].sections.some(s => s.arc === 1 && s.arcCh === 1);
         out.sealed = !isStory(w) && !w.mode && w.storyLog?.length === 1 && w.storyLog[0].record.protagonist.tendency === '사람을 먼저 지켰다.';
         out.arcSection = S.pages[seo].sections.filter(s => s.arc === 1 && s.arcCh === 1 && !s.ch).length;
         out.factSrc = w.entities[park].facts.find(f => f.t.includes('배를 찾는'))?.src;
@@ -225,6 +231,7 @@ const server = appServer();
     assert.deepStrictEqual(r.clock, { rule: true, at: 0, stages: 4, clues: 3 }, '이야기를 시작할 때 세계의 시계와 단서를 정한다');
     assert.deepStrictEqual(r.early, { shown: '어, 왔어? 잠깐', dead: '', order: true }, '준비 중 첫마디는 둘 다 대화할 수 있을 때만 먼저 보인다');
     assert.deepStrictEqual(r.where, { stub: true, pk: '「북쪽 부두」 · 3번 선착장', park: '「등대」 · 꼭대기', line: true, rule: true, visit: true, noPersonPlace: true, moved: '「등대」 · 계단' }, '위치는 장소 항목에 묶이고 새 장소는 문서 없이 항목만 생긴다');
+    assert.strictEqual(r.sealStop, true, '밀린 반영이 실패하면 마무리하지 않는다'); assert.strictEqual(r.sealSync, true, '마무리 전에 밀린 문서를 반영한다');
     assert.deepStrictEqual(r.castDelta, { profile: true, count: true, added: true, dropped: true, ready: true, prompt: true }, '준비는 프로필을 다시 쓰지 않고 지식은 바뀐 것만 받는다');
     assert.deepStrictEqual(r.syncKeep, { synced: true, stamp: true, ready: true, noCast: true }, '장 반영(동기화) 뒤에도 대화 준비를 다시 하지 않는다');
     assert.deepStrictEqual(r.lock, { active: true, listed: true, redirect: true, chips: { old: true, scene: true, end: true },
