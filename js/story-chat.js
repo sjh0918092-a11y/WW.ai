@@ -412,7 +412,7 @@ async function prepareStoryTalk(key) {
   const job = { ctl: new AbortController(), phase: "prepare", key, wid: w.id };
   S.storyTalkJob = job; s.err = ""; refreshStoryTalk(w, key);
   try {
-    const out = await callJson("storyCast", storyTalkCastPrompt(w, key), { signal: job.ctl.signal, modelTier: "check", onText: ({ text: raw }) => storyTalkCastPartial(w, key, job, raw) }, { title: w.entities[key].title, ch: w.story.chapter });
+    const out = await callJson("storyCast", storyTalkCastPrompt(w, key), { signal: job.ctl.signal, modelTier: "quick", onText: ({ text: raw }) => storyTalkCastPartial(w, key, job, raw) }, { title: w.entities[key].title, ch: w.story.chapter });
     if (job.ctl.signal.aborted || S.world !== w || stamp !== storyTalkStamp(w, key)) throw { code: "cancelled" };
     const prev = w.story.dialogueProfiles?.[key], profile = out?.profile?.voice ? { ...out.profile, ...(prev?.self?.length ? { self: prev.self } : {}) } : prev, knowledge = storyTalkCastKnowledge(storyTalkKnowledgeBase(w, key), out);
     if (!profile?.voice || !storyTalkAssessment(w, key, out) || !knowledge) throw { code: "invalid_json" };

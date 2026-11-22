@@ -160,7 +160,7 @@ function updateTaskThinkingOptions() {
   const settings={...GS,main:$("#gMain")?.value||GS.main,quick:$("#gQuick")?.value||GS.quick,check:$("#gCheck")?.value||""};
   document.querySelectorAll("[data-task-model]").forEach(el=>{
     const kind=el.dataset.taskModel, think=$("#gTaskThink-"+kind), value=think.value;
-    const tier=["tone","relMigrate","timelineDate"].includes(kind)?"quick":["check","read","analyze","factSync","ageRule","cats","worldCheck","timelineCheck"].includes(kind)?"check":"main";
+    const tier=["tone","relMigrate","timelineDate","storyCast"].includes(kind)?"quick":["check","read","analyze","factSync","ageRule","cats","worldCheck","timelineCheck","storyChatReview"].includes(kind)?"check":"main";   // 실제 호출의 기본 배정과 같게 보여 준다
     think.innerHTML=taskThinkOptions(el.value||taskSelection(kind,tier,{...settings,taskModels:{}}).model,value);
   });
 }
@@ -186,7 +186,7 @@ function gsetHtml() {
   const tasks=normalizeTaskModels(GS.taskModels), inputs=writingOptions();
   const taskRows=AI_TASKS.map(([kind,label])=>{
     const task=tasks[kind]||{model:"",think:"inherit"};
-    const tier=["tone","relMigrate","timelineDate"].includes(kind)?"quick":["check","read","analyze","factSync","ageRule","cats","worldCheck","timelineCheck"].includes(kind)?"check":"main";
+    const tier=["tone","relMigrate","timelineDate","storyCast"].includes(kind)?"quick":["check","read","analyze","factSync","ageRule","cats","worldCheck","timelineCheck","storyChatReview"].includes(kind)?"check":"main";   // 실제 호출의 기본 배정과 같게 보여 준다
     const model=taskSelection(kind,tier).model;
     return `<div class="ai-task"><h3 class="lb">${esc(label)}</h3><div class="two"><div><label class="note" for="gTask-${kind}">모델</label><select id="gTask-${kind}" data-task-model="${kind}">${modelOptions(task.model,false,true).replace("기본 모델과 같게","공통 배정 따름")}</select></div><div><label class="note" for="gTaskThink-${kind}">생각 수준</label><select id="gTaskThink-${kind}" data-task-think="${kind}">${taskThinkOptions(model,task.think)}</select></div></div></div>`;
   }).join("");
