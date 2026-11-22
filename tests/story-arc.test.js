@@ -117,6 +117,9 @@ const server = appServer();
           const kept = ts2.knowledge.known.length; ts2.stamp = 'old'; globalThis.castDelta = park;
           await prepareStoryTalk(park); globalThis.castDelta = '';
           const facts = storyTalkSession(w, park).knowledge.known.map(x => x.fact);
+          { const j1 = {}, j2 = {}, head = '{"character":{"key":"x","state":"available","evidence":"e"},"player":{"key":"y","state":"available","evidence":"e"},"relationship":"r","bond":"편함","opening":"어, 왔어? 잠깐';
+            storyTalkCastPartial(w, park, j1, head); storyTalkCastPartial(w, park, j2, head.replace('"state":"available","evidence":"e"},"player"', '"state":"dead","evidence":"e"},"player"'));
+            out.early = { shown: j1.opening, dead: j2.opening || '', order: lastCast.lastIndexOf('"opening":') < lastCast.lastIndexOf('"profile":') }; }
           out.castDelta = { profile: JSON.stringify(w.story.dialogueProfiles[park]) === keepProfile, count: facts.length === kept, added: facts.includes('새로 안 것'), dropped: !facts.includes('틀린 옛 항목'), ready: storyTalkReady(w, park), prompt: lastCast.includes('{} 또는 고친 전체 프로필') && lastCast.includes('"knowledgeDropped"') };
         }
         // 장의 변화를 인물 문서에 반영(동기화)해도 대화를 다시 준비하지 않는다
@@ -211,6 +214,7 @@ const server = appServer();
     assert.strictEqual(r.bondSent, '신뢰', '마음의 거리는 한 차례에 한 단계만 움직인다'); assert.strictEqual(r.bondHidden, true, '화면에 보이지 않는다'); assert.strictEqual(r.bondUndone, '편함');
     assert.deepStrictEqual(r.self, { saved: true, rules: true }, '지어 말한 신상은 프로필에 남는다'); assert.strictEqual(r.selfUndone, 0, '되돌리면 신상도 빠진다');
     assert.deepStrictEqual(r.clock, { rule: true, at: 0, stages: 4, clues: 3 }, '이야기를 시작할 때 세계의 시계와 단서를 정한다');
+    assert.deepStrictEqual(r.early, { shown: '어, 왔어? 잠깐', dead: '', order: true }, '준비 중 첫마디는 둘 다 대화할 수 있을 때만 먼저 보인다');
     assert.deepStrictEqual(r.castDelta, { profile: true, count: true, added: true, dropped: true, ready: true, prompt: true }, '준비는 프로필을 다시 쓰지 않고 지식은 바뀐 것만 받는다');
     assert.deepStrictEqual(r.syncKeep, { synced: true, stamp: true, ready: true, noCast: true }, '장 반영(동기화) 뒤에도 대화 준비를 다시 하지 않는다');
     assert.deepStrictEqual(r.lock, { active: true, listed: true, redirect: true, chips: { old: true, scene: true, end: true },
