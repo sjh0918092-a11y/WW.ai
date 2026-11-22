@@ -166,6 +166,8 @@ document.addEventListener("click", ev => {
     case "talk-stop": S.storyTalkJob?.ctl.abort(); break;
     case "talk-save": saveStoryTalk(); break;
     case "talk-undo": undoStoryTalk(); break;
+    case "talk-find-open": S.talkFindOpen = !S.talkFindOpen; renderMain(); if (S.talkFindOpen) $("#talkFind")?.focus(); break;
+    case "talk-find-close": S.talkFindOpen = false; renderMain(); break;
     case "story-next": openAdvance(); break;
     case "story-go": { const ta = $("#advCustom"); if (ta && S.adv) S.adv.custom = ta.value; advanceChapter(false); break; }
     case "story-skip": advanceChapter(true); break;
@@ -375,7 +377,7 @@ $("#searchForm").addEventListener("submit", ev => {
 });
 document.addEventListener("change", ev => {
   if (ev.target.id === "entryTotal" && S.storyEntry) S.storyEntry.total = +ev.target.value;
-  if (ev.target.id === "talkFind" && ev.target.value.trim()) { const v = ev.target.value; ev.target.value = ""; storyTalkFind(v); }
+  if (ev.target.id === "talkFind" && ev.target.value.trim()) { const v = ev.target.value; ev.target.value = ""; S.talkFindOpen = false; storyTalkFind(v); }
   if (["gMain", "gQuick", "gCheck", "gImage"].includes(ev.target.id)) { updateThinkingOptions(); updateTaskThinkingOptions(); updateModelIds(); }
   if(ev.target.dataset?.taskModel)updateTaskThinkingOptions();
   if(ev.target.dataset?.promptFlag){const row=ev.target.closest(".ai-input"),count=row?.querySelector("[data-prompt-count]");if(count)count.disabled=!ev.target.checked;}

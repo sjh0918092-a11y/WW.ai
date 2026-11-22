@@ -474,8 +474,9 @@ details.ent li{margin-bottom:3px}
 [data-entry-pick]:disabled{opacity:.45;cursor:not-allowed}
 /* 대화 프사 */
 .avatar{display:inline-grid;place-items:center;flex:none;border-radius:50%;object-fit:cover;object-position:50% 20%;background:var(--tint);color:var(--muted);font-weight:600;overflow:hidden}
-.avatar.lg{width:40px;height:40px;font-size:16px}
-.avatar.sm{width:22px;height:22px;font-size:11px;margin-left:-6px}
+.avatar.lg{width:44px;height:44px;font-size:17px}
+.avatar.md{width:38px;height:38px;font-size:15px}
+.avatar.sm{width:28px;height:28px;font-size:12px;margin-left:-6px}
 .avatar.xs{width:20px;height:20px;font-size:10px;margin-right:6px;vertical-align:middle}
 .talk-face{border:0;background:none;padding:0;cursor:pointer;border-radius:50%;flex:none}
 .talk-face:focus-visible{outline:2px solid var(--link);outline-offset:2px}
@@ -483,3 +484,24 @@ details.ent li{margin-bottom:3px}
 .talk-doc{border:0;background:none;padding:0;font:inherit;color:var(--link);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
 .talk-undo{display:flex;justify-content:flex-end;margin:0 0 4px}
 .talk-undo .btn{font-size:12px;padding:2px 10px}
+/* 대화 화면 촘촘하게: 머리말을 줄이고, 상대 프사를 말풍선 왼쪽에 둔다 */
+.talk-title>span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.talk-contacts{padding:10px 0 4px}
+.talk-contacts button{padding:4px 12px 4px 10px}
+.talk-find-chip{color:var(--muted)}
+.talk-find{padding:4px 0 6px;flex-wrap:nowrap}
+.talk-find .txt{flex:1;max-width:none}
+.talk-chapter h2{margin:4px 0 14px}
+.talk-message{margin:0 0 12px}
+.talk-message.talk-other{display:grid;grid-template-columns:38px minmax(0,1fr);column-gap:8px;align-items:start;max-width:92%}
+.talk-other>.avatar{grid-row:1/span 2}
+.talk-other>.talk-speaker{grid-column:2;margin:1px 0 4px 3px}
+.talk-other>.talk-bubble{grid-column:2;justify-self:start}
+.talk-other>.talk-bubble+*{grid-column:2}
+@media(max-width:700px){
+  .talk-header{padding:6px 12px 4px}
+  .talk-contacts{padding:8px 0 4px}
+  .talk-messages{padding:12px 12px}
+  .talk-composer{padding:8px 10px max(8px,env(safe-area-inset-bottom,0px))}
+  .talk-message.talk-other{max-width:94%}
+}
