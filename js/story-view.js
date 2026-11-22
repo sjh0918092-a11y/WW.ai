@@ -188,6 +188,7 @@ function canonHtml() {
     <label class="lb" for="wHist" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="wHist" ${w.historical ? "checked" : ""}>실제 역사에서 갈라진 대체역사 <span class="note">실존 인물을 재해석해 등장시킵니다</span></label>
     <label class="lb">원안</label><div class="seedbox">${esc(w.seed)}</div>
     <div class="row" style="margin-top:8px"><button type="button" class="btn" data-act="regen-open" ${S.gen || S.storyGen || S.syncing ? "disabled" : ""}>이 원안으로 다시 만들기</button><span class="note">연표, 핵심 규칙, 분위기${isStory(w) ? ", 이야기" : ""}를 처음부터 새로 만듭니다. 처음 입력값을 고쳐서 만들 수도 있습니다.</span></div>
+    ${typeof storyArcPanelHtml === "function" ? storyArcPanelHtml(w) : ""}
     ${isStory(w) ? `<h2>이야기</h2>
     <p class="note">주인공 ${linkHtml(w.entities[w.story.protagonistKey].title)} · ${w.story.status === "ended" ? "완결" : `현재 ${w.story.chapter}장 / ${totalOf(w)}장`}.</p>
     <div style="overflow-x:auto"><table class="tl">${w.story.chapters.map(c => `<tr><td>${c.n}장</td><td><b>${esc(c.title)}</b> <span class="src">· ${esc(c.era)}</span><br>${c.n < w.story.chapter || w.story.status === "ended" ? esc(c.summary) : `<span class="note">진행 중인 장입니다. 줄거리는 다음 장으로 넘어가면 공개됩니다.</span>`}</td></tr>`).join("")}</table></div>

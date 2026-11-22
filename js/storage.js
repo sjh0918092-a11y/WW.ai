@@ -75,7 +75,7 @@ const Store = {
   putPageRaw(wid, copy) {
     const p = copy;
     return this.run(async () => {
-      if (this.mode === "idb") return IDB.put("p:" + wid + ":" + p.key, copy);
+      if (this.mode === "idb") { if (typeof StorySnap !== "undefined") await StorySnap.keep(wid, p.key); return IDB.put("p:" + wid + ":" + p.key, copy); }   // 이야기 중이면 처음 바뀌는 문서의 원래 상태를 남긴다
       if (this.mode === "local") { const all = LS.get("wwiki:v1:p:" + wid) || {}; all[p.key] = copy; if (!LS.set("wwiki:v1:p:" + wid, all)) throw { code: "local_full" }; return; }
       (this.mem.pages[wid] ||= {})[p.key] = copy;
     });
@@ -141,7 +141,7 @@ const Store = {
   deletePage(wid, key, silent) {
     if (!silent) Sync.mark("dp", wid, key);
     return this.run(async () => {
-      if (this.mode === "idb") return IDB.del("p:" + wid + ":" + key);
+      if (this.mode === "idb") { if (typeof StorySnap !== "undefined") await StorySnap.keep(wid, key); return IDB.del("p:" + wid + ":" + key); }
       if (this.mode === "local") { const all = LS.get("wwiki:v1:p:" + wid) || {}; delete all[key]; LS.set("wwiki:v1:p:" + wid, all); return; }
       if (this.mem.pages[wid]) delete this.mem.pages[wid][key];
     });
@@ -149,7 +149,7 @@ const Store = {
   deleteWorld(wid, silent) {
     if (!silent) Sync.mark("dw", wid);
     return this.run(async () => {
-      if (this.mode === "idb") { await IDB.delPrefix("p:" + wid + ":"); return IDB.del("w:" + wid); }
+      if (this.mode === "idb") { await IDB.delPrefix("p:" + wid + ":"); await IDB.delPrefix("snap:" + wid + ":"); return IDB.del("w:" + wid); }
       if (this.mode === "local") { const all = LS.get("wwiki:v1:worlds") || {}; delete all[wid]; LS.set("wwiki:v1:worlds", all); LS.del("wwiki:v1:p:" + wid); return; }
       delete this.mem.worlds[wid]; delete this.mem.pages[wid];
     });

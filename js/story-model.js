@@ -348,6 +348,7 @@ ${st.spine.map(s => `- ${s.n}단계 ${s.beat}: ${s.intent}${s.revised ? " (앞�
 ## 지금까지의 장
 ${st.chapters.map(c => `- ${c.n}장 「${c.title}」 (${c.era}): ${c.summary}${c.wove?.length ? `\n  이 장에 엮인 탐험: ${c.wove.map(x => w.entities[x.key]?.title).filter(Boolean).join(", ")}` : ""}`).join("\n")}
 
+${typeof storyArcBlock === "function" ? storyArcBlock(w) : ""}
 ${typeof storyDialogueBlock === "function" ? storyDialogueBlock(w) : ""}
 ## 주인공 문서의 현재 내용
 ${pp ? docText(pp, w) : "(아직 작성되지 않음)"}
@@ -380,6 +381,7 @@ ${STORY_RESPONSIBILITY_RULES}
 - 주인공이 죽을 수도 있다. 주인공이 죽으면 이후 장은 그 죽음의 여파와 유산을 중심으로 진행하고, 주인공 문서의 장 섹션은 사후 사건으로 쓴다.
 - title과 heading에는 "${nextN}장", "제${nextN}장" 같은 장 번호를 넣지 않는다. 장 번호는 앱이 따로 붙인다.
 - era는 이 장의 작중 시점이다. 이전 장(${cur.era})보다 같거나 뒤여야 한다.
+- place는 이 장이 끝날 때 주인공이 있는 곳이다. nearby는 다음 장까지 주인공이 직접 만나거나 이 세계의 연락 수단으로 닿을 수 있는 인물 3~10명이다(이미 존재하는 인물 제목 그대로, 또는 이번 장의 새 인물). 멀리 있거나 만날 길이 없는 인물은 넣지 않는다. why는 한 줄 이유.${st.entry ? "\n- noticed: 이번 장에서 주변 인물이 주인공의 알 수 없는 지식이나 원래와 다른 모습을 실제로 이상하게 여겼다면 who(인물 제목)와 what(무엇을 이상하게 여겼는지 한 문장)으로 적는다. 없으면 빈 배열." : ""}
 - 확정 사실, 사용자 확정 설정, 핵심 규칙, 연표와 모순되지 않는다. "[사용자 확정]"이 붙은 내용과 사용자가 직접 수정한 주인공 문서의 내용을 최우선 제약으로 삼는다.
 - protagonistBlock은 주인공 문서 맨 뒤에 덧붙는 '${nextN}장' 섹션이다. heading은 작중 사건명(장 번호를 넣지 않는다), sections는 하위 섹션 2~4개, 모두 합쳐 1,200~2,500자. 주인공 문서에 이미 있는 내용은 반복하지 않는다. 이 장의 절정 장면을 정면으로 쓴다. 상태나 소속이 바뀌었으면 infoboxPatch로, 한 줄 정의가 바뀌어야 하면 summaryPatch로 고친다(바꿀 것이 없으면 빈 배열과 빈 문자열).
 ${newItemRule(w, nextN)}
@@ -396,7 +398,7 @@ ${entityIndex(w, [pk])}
 ## 출력
 ${ENTITY_DEFINITION_RULE}
 JSON 객체 하나만 출력:
-{"title":"이 장의 작중 사건명","era":"이 장의 작중 시점","summary":"공개 줄거리 3~5문장","timeline":[{"year":"연도","month":3,"day":14,"event":"..."}],"protagonistBlock":{"heading":"작중 사건명","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}],"infoboxPatch":[{"label":"상태","value":"..."}],"summaryPatch":""},"affected":[{"title":"항목 제목","change":"이번 장에서 이 항목에 일어난 일 한 문장","kind":"update 또는 new"}],"newEntities":[{"title":"...","type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의"}],"wove":[{"title":"탐험 항목 제목","how":"이 항목이 이번 장 사건에서 맡은 역할 한 문장"}],"facts":[{"about":"항목 제목","fact":"..."}],${REL_JSON},"spineRevise":[{"n":4,"intent":"..."}],"revealNow":[],"secretRevise":[],${STORY_CONTINUITY_OUTPUT},"dialogueConsequences":[{"character":"대화 상대 이름","detail":"이번 장 본문에 나타난 구체적인 대화의 결과. 없으면 빈 배열"}],"nextChoices":["...","...","..."],"ending":${last ? '{"epilogue":"결말 이후 3~5문장"}' : "null"}}`;
+{"title":"이 장의 작중 사건명","era":"이 장의 작중 시점","summary":"공개 줄거리 3~5문장","timeline":[{"year":"연도","month":3,"day":14,"event":"..."}],"protagonistBlock":{"heading":"작중 사건명","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}],"infoboxPatch":[{"label":"상태","value":"..."}],"summaryPatch":""},"affected":[{"title":"항목 제목","change":"이번 장에서 이 항목에 일어난 일 한 문장","kind":"update 또는 new"}],"newEntities":[{"title":"...","type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의"}],"wove":[{"title":"탐험 항목 제목","how":"이 항목이 이번 장 사건에서 맡은 역할 한 문장"}],"facts":[{"about":"항목 제목","fact":"..."}],${REL_JSON},"spineRevise":[{"n":4,"intent":"..."}],"revealNow":[],"secretRevise":[],${STORY_CONTINUITY_OUTPUT},"dialogueConsequences":[{"character":"대화 상대 이름","detail":"이번 장 본문에 나타난 구체적인 대화의 결과. 없으면 빈 배열"}],"place":"주인공이 있는 곳","nearby":[{"title":"인물 제목","why":"닿을 수 있는 이유"}],${st.entry ? '"noticed":[{"who":"인물 제목","what":"..."}],' : ""}"nextChoices":["...","...","..."],"ending":${last ? '{"epilogue":"결말 이후 3~5문장"}' : "null"}}`;
 }
 function chapterBlockPrompt(w, key, chs) {
   const p = S.pages[key], e = w.entities[key];

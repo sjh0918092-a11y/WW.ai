@@ -308,6 +308,7 @@ function renderMain(force) {
   else if (S.view.name === "storyTalk") m.innerHTML = storyTalkHtml();
   else if (S.view.name === "advance") m.innerHTML = advanceHtml();
   else if (S.view.name === "epilogue") m.innerHTML = epilogueHtml();
+  else if (S.view.name === "storyEntry") m.innerHTML = storyEntryHtml();
   else { refreshOnOpen(S.view.key); m.innerHTML = articleHtml(S.view.key); }
   if(typeof DocumentCost!=="undefined")DocumentCost.render();
   document.querySelectorAll("textarea.die-v").forEach(fitDie);
@@ -425,7 +426,7 @@ function articleHtml(k) {
   let n1 = 0, n2 = 0;
   const nums = p.sections.map(s => { if ((s.level || 1) === 2 && n1) { n2++; return `${n1}.${n2}.`; } n1++; n2 = 0; return `${n1}.`; });
   const story = isStory(w), pk = story ? w.story.protagonistKey : null, card = story && k === pk && !held && S.storyCard?.wid === w.id ? S.storyCard : null;
-  const chb = (s, sub) => s.ch && !sub ? `<span class="chb">${s.ch}장</span>` : "";
+  const chb = (s, sub) => sub ? "" : s.ch ? `<span class="chb">${s.ch}장</span>` : s.arc ? `<span class="chb">${s.arc}부 ${s.arcCh}장</span>` : "";   // 끝난 이야기의 장은 '몇 부 몇 장'으로 보인다
   const secs = p.sections.map((s, i) => { const sub = nums[i].split(".").length > 2; return `<${sub ? "h3" : "h2"} id="s-${i}" class="${sub ? "sh" : ""}${!sub && card && s.ch === card.n ? " chnew" : ""}"><span class="n">${nums[i]}</span>${chb(s, sub)}${esc(s.heading)}<button type="button" class="section-edit" data-section-edit="${i}" data-section-key="${k}" aria-label="${esc(s.heading)} 문단 편집" ${held || portraitBusy(k) ? "disabled" : ""}>[편집]</button></${sub ? "h3" : "h2"}><div class="secb" data-bi="${i}">${blocks(s.body, fns)}</div>`; }).join("");
   const toc = p.sections.length > 2 ? `<nav class="toc" aria-label="목차"><b>목차</b><ul>${p.sections.map((s, i) => `<li class="${nums[i].split(".").length > 2 ? "sub" : ""}"><span class="n">${nums[i]}</span> <button type="button" data-sec="${i}">${chb(s, nums[i].split(".").length > 2)}${esc(s.heading)}</button></li>`).join("")}</ul></nav>` : "";
   const stNotice = story && storyOn(w) && p.storyNotice ? `<div class="notice"><div>이 문서는 진행 중인 사건을 다룹니다. (현재 ${w.story.chapter}장)</div></div>` : "";

@@ -465,3 +465,10 @@ details.ent li{margin-bottom:3px}
 @media (max-width:520px){.pref-br{flex-basis:100%;height:0}.pref-ax:not(.pref-avoid) .pref-end:first-of-type{margin-left:0}}
 .pref-lv[aria-pressed="true"],.pref-auto[aria-pressed="true"],.pref-avoid .stab[aria-pressed="true"]{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
 .prefs #avoidIn{margin:2px 0 6px}
+/* 대화: 현재 위치와 목록에 없는 인물 찾기 */
+.talk-find{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:0 0 8px}
+.talk-find .txt{max-width:260px;margin:0}
+.entry-people .stab small{color:var(--muted);font-weight:400}
+[data-entry-pick][aria-pressed="true"],[data-entry-mode][aria-pressed="true"]{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+[data-entry-pick][aria-pressed="true"] small{color:inherit}
+[data-entry-pick]:disabled{opacity:.45;cursor:not-allowed}

@@ -109,15 +109,16 @@ async function createWorld() {
 }
 
 /* 스토리 모드 세계관 준비: 주인공(=첫 문서), 숨겨진 뼈대, 1장 */
-function setupStory(w, b, user = {}) {
+/* pk: 주인공 항목(기본은 첫 문서). opt.keepSummary: 이미 있는 인물로 시작하면 그 정의를 그대로 둔다 */
+function setupStory(w, b, user = {}, pk = w.mainKey, opt = {}) {
   const pr = b.protagonist && typeof b.protagonist === "object" ? b.protagonist : {};
   const sp = Array.isArray(b.spine) ? b.spine : [];
   const total = Math.min(STORY_MAX, Math.max(STORY_MIN, +user.total || STORY_DEF));
   const spine = beatsFor(total).map((beat, i) => { const x = sp.find(y => +y?.n === i + 1) || sp[i] || {}; return { n: i + 1, beat, intent: stripMarks(x.intent || "").slice(0, 300) || `${beat}: 앞선 사건과 주인공의 선택에 따른 전개`, revised: false }; });
   const c1 = b.chapter1, era = norm(c1.era || b.era || w.era).slice(0, 40) || w.era;
-  const e = w.entities[w.mainKey]; e.type = "인물"; e.summary = stripMarks(pr.summary || "").slice(0, 200);
+  const e = w.entities[pk]; e.type = "인물"; if (!opt.keepSummary || !e.summary) e.summary = stripMarks(pr.summary || "").slice(0, 200) || e.summary || "";
   w.mode = "story"; w.era = era;
-  w.story = { protagonistKey: w.mainKey, chapter: 1, total, status: "active", spine, endedAt: null, epilogue: "",
+  w.story = { protagonistKey: pk, chapter: 1, total, status: "active", spine, endedAt: null, epilogue: "",
     protagonist: { summary: e.summary, want: stripMarks(pr.want || "").slice(0, 200), wound: stripMarks(pr.wound || "").slice(0, 200) },
     chapters: [{ n: 1, title: chTitle(c1.title || "발단").slice(0, 60), era, summary: stripMarks(c1.summary).slice(0, 800), incident: stripMarks(c1.incident || "").slice(0, 240),
       startedAt: Date.now(), explore: emptyExplore(), choice: null, wove: [], affected: [], auto: [],
@@ -136,9 +137,9 @@ function setupStory(w, b, user = {}) {
   else if (oldQuestion) { w.story.continuity.threads[0].subject = oldQuestion; w.story.continuity.threads[0].kind = "legacy"; }
   w.story.cast = [];
   for (const c of user.cast || []) {
-    const k = keyOf(c.name); if (k === w.mainKey) continue;
+    const k = keyOf(c.name); if (k === pk) continue;
     if (!w.entities[k]) w.entities[k] = newEntity(c.name, "인물", c.desc.slice(0, 200));
-    const o = w.entities[k]; o.type = "인물"; o.origin = w.mainKey;
+    const o = w.entities[k]; o.type = "인물"; o.origin = pk;
     if (!o.persona && !o.page) o.persona = rollPersona();
     if (c.desc) addFact(o, c.desc, "user");
     if (c.rel) { addFact(o, `「${e.title}」과(와)의 관계: ${c.rel}`, "user"); addRelation(w, "user", { a: e.title, b: c.name, rel: c.rel.slice(0, 60), story: c.rel.length > 60 ? c.rel : "" }); }
@@ -328,6 +329,7 @@ async function openWorld(wid, goKey, restoring = false) {
   S.world = w; S.pages = {}; S.recent = []; S.confirmDel = null; S.nf = new Set(); S.edit = null; S.confirmDelPage = null; S.confirmMerge = null; S.syncQ = []; S.genQ = []; S.syncErr = null; S.storyCard = null; S.adv = null;
   S.view = { name: "loading" }; renderAll();
   try { S.pages = await Store.listPages(w.id); } catch (e) { toast(errMsg(e)); }
+  try { await StorySnap.sync(w); } catch {}   // 이 기기에 이야기 시작 전 기록이 있는지
   const merged = await autoMerge(w);
   const renamedTitles = await autoRealNameTitles(w).catch(() => []);   // 이미 있는 인물 문서도 칭호·코드명 제목이면 본명으로 옮긴다(옛 제목은 별칭)
   await cleanChapterTitles(w);

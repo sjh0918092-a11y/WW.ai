@@ -146,11 +146,21 @@ document.addEventListener("click", ev => {
   if (d.mode) { S.mode = d.mode === "story" ? "story" : "basic"; if (S.seedTab === "dice" && S.dice) S.seed = diceSeed(S.dice); renderMain(); return; }   // 주사위 원안은 모드에 맞게 다시 쓴다
   if (d.chn) { S.storyN = Math.min(STORY_MAX, Math.max(STORY_MIN, +d.chn)); renderMain(); return; }
   if (d.talkKey) { openStoryTalk(d.talkKey); return; }
+  if (d.entryPick && S.storyEntry && !S.storyEntry.busy) { S.storyEntry.pick = d.entryPick; S.storyEntry.err = ""; renderMain(); return; }
+  if (d.entryMode && S.storyEntry && !S.storyEntry.busy) { S.storyEntry.mode = d.entryMode; S.storyEntry.err = ""; renderMain(); return; }
   if (d.castDel !== undefined) { S.cast.splice(Number(d.castDel), 1); renderMain(); return; }
   if (d.epsec) { const w = S.world; if (!w) return; const pk = w.story.protagonistKey, i = d.epsec; S.view = { name: "article", key: pk }; renderAll(); const el = document.getElementById("s-" + i); if (el) el.scrollIntoView({ block: "start" }); return; }
   switch (d.act) {
     case "home": if (S.view.name === "home") return; S.view = { name: "home" }; if (!S.gen && !S.storyGen && !S.syncing) S.world = null; renderAll(); window.scrollTo({ top: 0 }); break;
     case "story-talk": openStoryTalk(); break;
+    case "story-entry-open": openStoryEntry(); break;
+    case "story-entry-start": startStoryEntry(); break;
+    case "story-entry-cancel": S.storyEntry = null; S.view = { name: "canon" }; renderAll(); break;
+    case "story-seal": sealStory(); break;
+    case "story-revert": S.confirmRevert = true; renderMain(); break;
+    case "story-revert-cancel": S.confirmRevert = false; renderMain(); break;
+    case "story-revert-go": revertStory(); break;
+    case "story-snap-discard": discardStorySnap(); break;
     case "talk-prepare": prepareStoryTalk(S.view.key); break;
     case "talk-send": sendStoryTalk(); break;
     case "talk-stop": S.storyTalkJob?.ctl.abort(); break;
@@ -342,6 +352,8 @@ document.addEventListener("input", ev => {
   if (ev.target.dataset?.cast !== undefined && ev.target.dataset.cf) { const c = S.cast[Number(ev.target.dataset.cast)]; if (c) c[ev.target.dataset.cf] = ev.target.value; }
   if (ev.target.id === "cpDir" && S.compose) S.compose.dir = ev.target.value;
   if (ev.target.id === "guideIn") S.guideIn = ev.target.value;
+  if (S.storyEntry && ["entryName", "entryDesc", "entryWish"].includes(ev.target.id)) S.storyEntry[{ entryName: "name", entryDesc: "desc", entryWish: "wish" }[ev.target.id]] = ev.target.value;
+  if (ev.target.id === "entryQ" && S.storyEntry) { S.storyEntry.q = ev.target.value; const pos = ev.target.selectionStart; renderMain(); const el = $("#entryQ"); if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch {} } }
   if (ev.target.id === "avoidIn") S.prefs = { ...normPrefs(S.prefs), avoidText: ev.target.value };   // 입력 중에는 자르지 않고, 만들 때 정리한다
   if (ev.target.name === "advPick" && S.adv) { S.adv.pick = Number(ev.target.value); renderMain(); if (S.adv.pick === -2) $("#advCustom")?.focus(); }
   if (ev.target.id === "advCustom" && S.adv) { S.adv.custom = ev.target.value; const b = $('[data-act="story-go"]'); if (b) b.disabled = !S.sample || !norm(ev.target.value); }
@@ -361,6 +373,8 @@ $("#searchForm").addEventListener("submit", ev => {
   if (hit) { $("#q").value = ""; $("#sugg").hidden = true; openEntity(hit[0]); } else goSearch(q);
 });
 document.addEventListener("change", ev => {
+  if (ev.target.id === "entryTotal" && S.storyEntry) S.storyEntry.total = +ev.target.value;
+  if (ev.target.id === "talkFind" && ev.target.value.trim()) { const v = ev.target.value; ev.target.value = ""; storyTalkFind(v); }
   if (["gMain", "gQuick", "gCheck", "gImage"].includes(ev.target.id)) { updateThinkingOptions(); updateTaskThinkingOptions(); updateModelIds(); }
   if(ev.target.dataset?.taskModel)updateTaskThinkingOptions();
   if(ev.target.dataset?.promptFlag){const row=ev.target.closest(".ai-input"),count=row?.querySelector("[data-prompt-count]");if(count)count.disabled=!ev.target.checked;}

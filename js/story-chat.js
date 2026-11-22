@@ -38,8 +38,28 @@ function storyTalkers(w) {
   for (const c of w.story.chapters) for (const [key, session] of Object.entries(c.dialogues || {})) {
     for (const t of session.turns || []) latest.set(key, Math.max(latest.get(key) || 0, Number(t.at) || 0));
   }
+  const near = storyTalkNearby(w), extra = new Set(w.story.talkExtra || []);   // 장 계획이 정한 만날 수 있는 인물이 있으면 그 인물과 이미 대화한 인물, 직접 찾은 인물만 보인다
   return Object.keys(w.entities).filter(k => k !== w.story.protagonistKey && (w.entities[k].type === "인물" || w.story.cast?.some(c => c.key === k)))
+    .filter(k => !near || near.has(k) || latest.has(k) || extra.has(k) || w.story.cast?.some(c => c.key === k))
     .sort((a, b) => (latest.get(b) || 0) - (latest.get(a) || 0) || Number(latest.has(b)) - Number(latest.has(a)));
+}
+/* 현재 장의 만날 수 있는 인물(장 계획 출력). 기록이 없는 이전 장·이전 세계는 null이라 모든 인물이 보인다 */
+function storyTalkNearby(w) {
+  const c = curCh(w); return Array.isArray(c?.nearby) ? new Map(c.nearby.filter(x => w.entities[x.key]).map(x => [x.key, x.why || ""])) : null;
+}
+/* 목록에 없는 인물을 이름으로 찾아 대화를 시도한다. 실제로 닿는지는 대화 준비 단계가 판단한다 */
+async function storyTalkFind(title) {
+  const w = S.world; if (!isStory(w)) return;
+  const k = kOf(w, title); if (!w.entities[k] || w.entities[k].type !== "인물" || k === w.story.protagonistKey) { toast("그 이름의 인물을 찾지 못했습니다."); return; }
+  if (!(w.story.talkExtra ||= []).includes(k)) { w.story.talkExtra.push(k); try { await Store.saveWorld(w); } catch {} }
+  openStoryTalk(k);
+}
+/* 장이 끝날 때의 위치와, 목록에 없는 인물 찾기 */
+function storyTalkFindHtml(w, busy) {
+  const near = storyTalkNearby(w); if (!near) return "";
+  const shown = new Set(storyTalkers(w)), place = curCh(w).place;
+  const others = Object.keys(w.entities).filter(k => k !== w.story.protagonistKey && w.entities[k].type === "인물" && !shown.has(k)).slice(0, 300);
+  return `<div class="talk-find">${place ? `<span class="note">현재 위치: ${esc(place)}</span>` : ""}${others.length ? `<input id="talkFind" list="talkFindList" class="txt" placeholder="목록에 없는 인물 찾기" aria-label="목록에 없는 인물 찾기" ${busy ? "disabled" : ""}><datalist id="talkFindList">${others.map(k => `<option value="${esc(w.entities[k].title)}"></option>`).join("")}</datalist>` : ""}</div>`;
 }
 function storyTalkKey(w, key) {
   const keys = storyTalkers(w), preferred = w.aliases?.[key] || key || w.story.lastDialogueKey;
@@ -86,7 +106,8 @@ function storyTalkContext(w, key) {
     character: page(key), player: page(pk), cast: w.story.cast?.find(c => c.key === key),
     chapters: w.story.chapters.map(c => ({ n: c.n, summary: c.summary, affected: c.affected })),
     approvedKnowledge: storyTalkKnowledgeValid(storyTalkSession(w, key)?.knowledge) ? storyTalkSession(w, key).knowledge : null,
-    priorKnowledge: w.story.chapters.flatMap(c => { const session = c.dialogues?.[key]; return session?.knowledgeVersion === STORY_TALK_KNOWLEDGE && storyTalkKnowledgeValid(session.knowledge) ? [{ chapter: c.n, knowledge: session.knowledge }] : []; }),
+    priorKnowledge: [...(w.storyLog || []).flatMap(l => (l.chapters || []).flatMap(c => { const session = c.dialogues?.[key]; return session?.knowledgeVersion === STORY_TALK_KNOWLEDGE && storyTalkKnowledgeValid(session.knowledge) ? [{ chapter: `${l.arc}부 ${c.n}장`, knowledge: session.knowledge }] : []; })),   // 앞서 끝난 이야기에서 이 인물이 알게 된 것
+      ...w.story.chapters.flatMap(c => { const session = c.dialogues?.[key]; return session?.knowledgeVersion === STORY_TALK_KNOWLEDGE && storyTalkKnowledgeValid(session.knowledge) ? [{ chapter: c.n, knowledge: session.knowledge }] : []; })],
     profile: w.story.dialogueProfiles?.[key], previous: w.story.chapters.flatMap(c => (c.dialogues?.[key]?.turns || []).map((t, i) => ({ source: `dialogue:${c.n}:${key}:${i}`, chapter: c.n, user: t.user, reply: t.reply, memory: t.memory, knowledgeVersion: t.knowledgeVersion }))),
     assessedStates: { character: storyTalkReady(w, key) ? storyTalkSession(w, key).assessment : null,
       player: curCh(w).dialoguePlayerAssessment?.version === STORY_TALK_ASSESSMENT ? curCh(w).dialoguePlayerAssessment : null },
@@ -124,7 +145,7 @@ reply를 가장 먼저 출력한다. memory는 이번 발언으로 생긴 약속
 이전 승인된 대화의 기억: ${JSON.stringify(approved.map(t => t.memory))}
 최근 승인된 대화: ${JSON.stringify(approved.slice(-6).map(t => ({ user: t.user, reply: t.reply })))}
 이번 사용자 발언: ${JSON.stringify(text)}
-JSON 하나: {"reply":"인물의 응답","memory":"이번 대화의 결과","important":false,${storyTalkStatusOutput(w, key)},"relationship":"대화 후 관계",${STORY_TALK_KNOWLEDGE_OUTPUT}}`;
+${w.story.entry ? `사용자가 맡은 ${w.entities[pk].title}은(는) 이 세계의 위키를 읽은 독자일 수 있다. 이번 발언이 ${w.entities[pk].title}이(가) 알 수 없을 법한 사실(그 인물의 문서·관계·지금까지 겪은 일로 설명되지 않는 지식)에 기대면, 너는 그 출처를 의아해하거나 경계한다. 그런 일이 있었으면 noticed에 무엇이 이상했는지 한 문장, 없으면 빈 문자열.\n` : ""}JSON 하나: {"reply":"인물의 응답","memory":"이번 대화의 결과","important":false,${storyTalkStatusOutput(w, key)},"relationship":"대화 후 관계",${w.story.entry ? '"noticed":"",' : ""}${STORY_TALK_KNOWLEDGE_OUTPUT}}`;
 }
 function storyDialogueBlock(w) {
   const rows = w.story.chapters.flatMap(c => Object.entries(c.dialogues || {}).flatMap(([k, s]) => (s.turns || []).map((t, i) => ({ source: `dialogue:${c.n}:${k}:${i}`, chapter: c.n, character: w.entities[k]?.title, user: t.user, reply: t.reply, memory: t.memory }))));
@@ -233,6 +254,7 @@ ${prompt}
     if (!out?.reply?.trim() || !out?.memory?.trim() || !storyTalkKnowledgeValid(out.knowledge) || !storyTalkAssessment(w, key, out)) throw { code: "invalid_json" };
     applyStoryTalkAssessment(w, key, s, out);
     s.turns.push({ user: text, reply: out.reply, memory: out.memory, state: out.character.state, knowledgeVersion: STORY_TALK_KNOWLEDGE, at: Date.now() });
+    if (typeof storyArcNoticed === "function" && typeof out.noticed === "string" && out.noticed.trim()) storyArcNoticed(w, n, [{ who: w.entities[key].title, what: out.noticed }]);   // 주인공이 알 수 없는 지식을 꺼낸 것을 상대가 알아챘다
     Object.assign(s, { draft: "", relationship: typeof out.relationship === "string" ? out.relationship : "", scene: typeof out.scene === "string" ? out.scene : "", knowledge: out.knowledge, knowledgeVersion: STORY_TALK_KNOWLEDGE });
     committed = true;
     firstTimer();
@@ -277,7 +299,7 @@ function storyTalkHtml() {
   }).join("");
   return `<section class="story-talk" aria-label="등장인물과 대화" data-talk-current="${esc(key || "")}">
     <header class="talk-header"><div class="talk-heading"><button type="button" class="talk-back btn" data-act="story-back" aria-label="문서로 돌아가기">←</button><div class="talk-title"><h1>${esc(title)}</h1><span>${w.story.chapter}장 · ${esc(w.entities[w.story.protagonistKey]?.title)}으로 대화</span></div>${storyOn(w) ? '<button type="button" class="btn talk-next" data-act="story-next">다음 장</button>' : ""}</div>
-    <nav class="talk-contacts" aria-label="대화 상대">${storyTalkers(w).map(k => `<button type="button" data-talk-key="${esc(k)}" aria-pressed="${k === key}" ${busy ? "disabled" : ""}>${esc(w.entities[k].title)}${!S.pages[k] ? "<small>미작성</small>" : storyTalkReady(w, k) && storyTalkSession(w, k).state !== "available" ? `<small>${esc(STORY_TALK_STATES[storyTalkSession(w, k).state])}</small>` : ""}</button>`).join("")}</nav>
+    <nav class="talk-contacts" aria-label="대화 상대">${storyTalkers(w).map(k => `<button type="button" data-talk-key="${esc(k)}" aria-pressed="${k === key}" ${busy ? "disabled" : ""}${storyTalkNearby(w)?.get(k) ? ` title="${esc(storyTalkNearby(w).get(k))}"` : ""}>${esc(w.entities[k].title)}${!S.pages[k] ? "<small>미작성</small>" : storyTalkReady(w, k) && storyTalkSession(w, k).state !== "available" ? `<small>${esc(STORY_TALK_STATES[storyTalkSession(w, k).state])}</small>` : ""}</button>`).join("")}</nav>${storyTalkFindHtml(w, busy)}
     </header>
     <div class="talk-messages" id="storyTalkMessages" role="log" aria-label="대화 기록" tabindex="0">${history || (own && job.phase !== "prepare" ? "" : `<div class="talk-empty"><span aria-hidden="true">◇</span><p>${key ? (missingPage ? "" : `${esc(title)}에게 말을 건네 보세요.`) : "아직 등장한 대화 상대가 없습니다."}</p></div>`)}
     ${own && job.phase !== "prepare" ? `<div class="talk-message talk-self"><span class="sr-only">나</span><div class="talk-bubble">${esc(job.user || "")}</div></div><div class="talk-message talk-other"><span class="talk-speaker">${esc(title)}</span><div class="talk-bubble" id="storyTalkLive" role="status" aria-label="답변을 기다리는 중">…</div></div>` : ""}</div>

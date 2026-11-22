@@ -72,6 +72,7 @@ function applyChapter(w, n, out, choice) {
   const np = rebuildPage(w, pk, S.pages[pk], secs, { infoboxPatch: pb.infoboxPatch, summaryPatch: pb.summaryPatch });
   np.syncedTo = n; np.storyNotice = st.status !== "ended"; np.check = null;
   st.chapters[st.chapters.length - 1].fresh = Object.keys(w.entities).filter(k => !before.has(k) && k !== pk);   // 이번 장에 새로 등장한 항목
+  if (typeof storyArcScene === "function") { storyArcScene(w, st.chapters[st.chapters.length - 1], out); storyArcNoticed(w, n, out.noticed); }   // 장이 끝날 때의 위치·만날 수 있는 인물, 주변이 알아챈 것
   return np;
 }
 async function advanceChapter(skip) {
