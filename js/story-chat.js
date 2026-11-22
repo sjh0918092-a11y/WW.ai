@@ -28,6 +28,16 @@ const STORY_TALK_KNOWLEDGE = 1;
 function storyTalkKnowledgeValid(value) {
   return !!value && Array.isArray(value.known) && value.known.every(x => x && typeof x.fact === "string" && typeof x.source === "string" && typeof x.evidence === "string" && ["experience", "told", "public"].includes(x.via));
 }
+/* 차례마다 지식 목록 전체를 다시 쓰면 대화가 쌓일수록 출력이 길어져 느려진다. 차례에서는 이번에 새로 알게 된 것만 받고 앱이 합친다 */
+const STORY_TALK_KNOWLEDGE_DELTA = `"scene":"이 인물이 현재 직접 접할 수 있는 상황만 요약","knowledgeAdded":[{"fact":"이번 대화로 새로 알게 된 것만. 없으면 빈 배열","via":"experience/told/public 중 하나","source":"이번 사용자 발언은 user","evidence":"알게 된 경로를 뒷받침하는 실제 내용"}]`;
+function storyTalkMergeKnowledge(s, out) {
+  if (Array.isArray(out?.knowledgeAdded)) {
+    const known = [...(s.knowledge?.known || [])], seen = new Set(known.map(x => x.fact));
+    for (const x of out.knowledgeAdded) if (storyTalkKnowledgeValid({ known: [x] }) && !seen.has(x.fact)) { known.push(x); seen.add(x.fact); }
+    return { known };
+  }
+  return storyTalkKnowledgeValid(out?.knowledge) ? out.knowledge : null;   // 예전 형식(전체 목록)
+}
 const STORY_TALK_KNOWLEDGE_OUTPUT = `"scene":"이 인물이 현재 직접 접할 수 있는 상황만 요약","knowledge":{"known":[{"fact":"인물이 알고 있는 내용. 전언은 누가 무엇을 말했다는 형태","via":"experience/told/public 중 하나","source":"실제 자료의 source 또는 이번 사용자 발언은 user","evidence":"인물이 알게 된 경로를 뒷받침하는 실제 내용"}]}`;
 function storyTalkMissingPage(w, key) {
   if (isSceneKey(key)) return S.pages[w.story.protagonistKey] ? "" : w.story.protagonistKey;
@@ -216,7 +226,7 @@ ${storyTalkMentions(w, key, text)}현재 직접 접하는 상황: ${JSON.stringi
 최근 승인된 대화: ${JSON.stringify(approved.slice(-6).map(t => ({ user: t.user, reply: t.reply })))}
 ${act ? `이번 차례는 말이 아니라 ${w.entities[pk].title}의 행동이다: ${JSON.stringify(text)}
 행동은 시도다. 너는 그 행동에 이 인물로서 반응한다(말과 짧은 행동 묘사). 결과는 설정·상황·이 인물의 반응에 따라 정하며 무조건 성공하지 않는다. 장의 큰 사건을 이 행동 하나로 끝내지 않는다.` : `이번 사용자 발언: ${JSON.stringify(text)}`}
-${w.story.entry ? `사용자가 맡은 ${w.entities[pk].title}은(는) 이 세계의 위키를 읽은 독자일 수 있다. 이번 발언이 ${w.entities[pk].title}이(가) 알 수 없을 법한 사실(그 인물의 문서·관계·지금까지 겪은 일로 설명되지 않는 지식)에 기대면, 너는 그 출처를 의아해하거나 경계한다. 그런 일이 있었으면 noticed에 무엇이 이상했는지 한 문장, 없으면 빈 문자열.\n` : ""}JSON 하나: {"reply":"인물의 응답","memory":"이번 대화의 결과","important":false,${storyTalkStatusOutput(w, key)},"relationship":"대화 후 관계","bond":"${STORY_TALK_BONDS.join("/")} 중 하나",${w.story.entry ? '"noticed":"",' : ""}${STORY_TALK_KNOWLEDGE_OUTPUT}}`;
+${w.story.entry ? `사용자가 맡은 ${w.entities[pk].title}은(는) 이 세계의 위키를 읽은 독자일 수 있다. 이번 발언이 ${w.entities[pk].title}이(가) 알 수 없을 법한 사실(그 인물의 문서·관계·지금까지 겪은 일로 설명되지 않는 지식)에 기대면, 너는 그 출처를 의아해하거나 경계한다. 그런 일이 있었으면 noticed에 무엇이 이상했는지 한 문장, 없으면 빈 문자열.\n` : ""}JSON 하나: {"reply":"인물의 응답","memory":"이번 대화의 결과","important":false,${storyTalkStatusOutput(w, key)},"relationship":"대화 후 관계","bond":"${STORY_TALK_BONDS.join("/")} 중 하나",${w.story.entry ? '"noticed":"",' : ""}${STORY_TALK_KNOWLEDGE_DELTA}}`;
 }
 function storyDialogueBlock(w) {
   const rows = w.story.chapters.flatMap(c => Object.entries(c.dialogues || {}).flatMap(([k, s]) => (s.turns || []).map((t, i) => ({ source: `dialogue:${c.n}:${k}:${i}`, chapter: c.n, character: isSceneKey(k) ? "상황(서술자)" : w.entities[k]?.title, ...(t.act || isSceneKey(k) ? { kind: "주인공의 행동" } : {}), user: t.user, reply: t.reply, memory: t.memory }))));
@@ -321,7 +331,7 @@ async function sendStoryTalk() {
     job.phase = "review"; refreshStoryTalk(w, key);
     out = await callJson("storyChatReview", `## 스토리 대화 지식·설정 검토
 중요한 변화가 없는 응답도 지식 범위를 확인한다. 문서와 줄거리의 사실을 인물의 지식으로 혼동하지 않았는지 실제 습득 경로를 기준으로 판단한다. 단순 소속·관계·현장에 있었다는 이유만으로 모든 세부 정보를 공유받았다고 가정하지 않는다. revealedInStory 표시도 개인 지식의 근거가 아니다. 이번 발언에 없는 질문을 답하면서 모르는 구체적 사실을 흘리거나 유도하지 않도록 한다.
-이번 사용자 발언이 명시적으로 전한 내용은 전달받은 주장으로 추가할 수 있지만 질문·가정은 확정된 습득이 아니다. knowledge.known은 기존 승인 항목을 유지하고 이번에 실제로 습득한 항목만 근거와 함께 추가한다. 초안의 reply·memory·scene·relationship·knowledge에 근거 없는 지식이 있으면 함께 고친다. 이전의 승인되지 않은 응답·memory를 지식의 근거로 순환 인용하지 않는다. 모르는 내용을 답변에서 굳이 나열하거나 암시하지 않는다.
+이번 사용자 발언이 명시적으로 전한 내용은 전달받은 주장으로 추가할 수 있지만 질문·가정은 확정된 습득이 아니다. knowledgeAdded에는 이번에 실제로 습득한 항목만 근거와 함께 쓴다(기존 항목은 다시 쓰지 않는다). 초안의 reply·memory·scene·relationship·knowledgeAdded에 근거 없는 지식이 있으면 함께 고친다. 이전의 승인되지 않은 응답·memory를 지식의 근거로 순환 인용하지 않는다. 모르는 내용을 답변에서 굳이 나열하거나 암시하지 않는다.
 설정·말투·지식 범위·현재 생사와 의식 상태에 맞춰 아래 대화를 검토하고 어긋난 내용은 직접 고친 최종 JSON을 반환한다. 근거가 부족하다는 이유만으로 확인 필요 메모를 만들지 않는다. 약속·관계·정보 변화와 memory도 일치시킨다. 설정상 불가능한 행동은 성공시키지 않는다. 미공개 진실은 reply와 memory에 노출하지 않는다.
 ${prompt}
 검토 자료: ${JSON.stringify(storyTalkContext(w, key))}
@@ -330,7 +340,8 @@ ${prompt}
 reply에 지식·설정·생사 상태 문제가 없고, 주인공에게 할 일을 지시·재촉하는 문장이나 맥락 없는 직업·전문 용어 나열이 없으면 초안의 reply를 글자 그대로 둔다. 그런 문장이 있으면 그 부분만 이 인물다운 다른 말로 바꾼다. 고칠 때 해명이나 단서("~라는 말은 아니야", "내가 아는 건 ~뿐")를 덧붙이지 않고, 입말의 리듬을 정돈된 설명문으로 바꾸지 않는다. 문제가 있으면 그 부분만 고치고 말투·감정·농담·문장 리듬은 살린다. 무난하게 다듬거나 앞선 용건을 되풀이하는 문장으로 바꾸지 않는다. 한국어가 아닌 문자(고유명사 제외)가 섞였으면 한국어로 고치고, 줄표(—, –)는 쉼표나 마침표로 바꾼다.
 출력 형식은 초안과 같다. reply에는 수정이 끝난 캐릭터의 응답만 쓴다. 검토 과정이나 수정 이유를 설명하는 교정 메모는 출력하지 않는다.`, { signal: job.ctl.signal, modelTier: "check" }, { title: w.entities[key].title, ch: n });
     if (job.ctl.signal.aborted || S.world !== w || w.story.chapter !== n || storyTalkMissingPage(w, key) || s.stamp !== storyTalkStamp(w, key)) throw { code: "cancelled" };
-    if (!out?.reply?.trim() || !out?.memory?.trim() || !storyTalkKnowledgeValid(out.knowledge) || !storyTalkAssessment(w, key, out)) throw { code: "invalid_json" };
+    const knowledge = storyTalkMergeKnowledge(s, out);
+    if (!out?.reply?.trim() || !out?.memory?.trim() || !knowledge || !storyTalkAssessment(w, key, out)) throw { code: "invalid_json" };
     const undo = storyTalkUndoPoint(w, s);   // 되돌리기: 이 차례가 바꾸기 전의 관계·장면·지식·상태
     applyStoryTalkAssessment(w, key, s, out);
     out.reply = storyTalkClean(out.reply);
@@ -341,7 +352,7 @@ reply에 지식·설정·생사 상태 문제가 없고, 주인공에게 할 일
       const before = w.story.noticed?.length || 0; storyArcNoticed(w, n, [{ who: w.entities[key].title, what: out.noticed }]);
       if ((w.story.noticed?.length || 0) > before) s.turns[s.turns.length - 1].noticed = w.story.noticed[w.story.noticed.length - 1];
     }
-    Object.assign(s, { draft: "", relationship: typeof out.relationship === "string" ? out.relationship : "", scene: typeof out.scene === "string" ? out.scene : "", knowledge: out.knowledge, knowledgeVersion: STORY_TALK_KNOWLEDGE });
+    Object.assign(s, { draft: "", relationship: typeof out.relationship === "string" ? out.relationship : "", scene: typeof out.scene === "string" ? out.scene : "", knowledge, knowledgeVersion: STORY_TALK_KNOWLEDGE });
     committed = true;
     firstTimer();
     await Store.saveWorld(w);

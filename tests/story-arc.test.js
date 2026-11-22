@@ -38,7 +38,7 @@ const server = appServer();
         if (kind === 'storyCast') return { profile: { personality: '무뚝뚝하다', voice: '짧게 반말', examples: ['뭐야.', '비켜.'] }, character: { key: park, state: 'available', evidence: '부두에 있다' }, player: { key: seo, state: 'available', evidence: '부두에 있다' }, relationship: '동료', bond: '편함', scene: '부두', opening: '어, 서윤이네. 무슨 일이야?', knowledge: { known: [] } };
         if (kind === 'storyChat' && text.includes('이야기 서술자')) { lastScene = text; return { reply: '격납고 구석에 낡은 공구함이 있다—뚜껑이 열려 있다.', memory: '공구함을 찾았다', reach: ['박도현', '없는사람'] }; }
         if (kind === 'storyChat') lastChat = text;
-        if (kind === 'storyChat' || kind === 'storyChatReview') return { reply: '뭐? 그걸 네가 어떻게 알아?', memory: '한서윤이 등대지기 이야기를 꺼냈다', important: true, character: { key: park, state: 'available', evidence: '' }, player: { key: seo, state: 'available', evidence: '' }, relationship: '의심', bond: '각별함', scene: '부두', noticed: '들은 적 없는 이야기를 알고 있었다', knowledge: { known: [] } };
+        if (kind === 'storyChat' || kind === 'storyChatReview') return { reply: '뭐? 그걸 네가 어떻게 알아?', memory: '한서윤이 등대지기 이야기를 꺼냈다', important: true, character: { key: park, state: 'available', evidence: '' }, player: { key: seo, state: 'available', evidence: '' }, relationship: '의심', bond: '각별함', scene: '부두', noticed: '들은 적 없는 이야기를 알고 있었다', knowledgeAdded: [{ fact: '한서윤이 등대지기가 밀수꾼이라고 말했다', via: 'told', source: 'user', evidence: '이번 발언' }] };
         if (kind === 'chapterPlan') return { protagonist: { tendency: '사람을 먼저 지켰다.', change: '혼자 버티던 사람이 도움을 청하게 됐다.', voice: '짧게 반말한다.' }, people: [{ title: '박도현', with: '함께 배를 찾았다.' }], open: ['등대의 불빛'] };
         throw { code: 'invalid_json' };
       };
@@ -78,9 +78,11 @@ const server = appServer();
         // 대화 되돌리기: 보낸 차례를 지우고 관계·주변이 알아챈 것을 되돌리며 보낸 말을 입력란에 돌려놓는다
         ts.draft = '등대지기는 밀수꾼이지?'; await sendStoryTalk();
         out.bondSent = STORY_TALK_BONDS[storyBond(w, park)]; out.bondHidden = !document.querySelector('.story-talk')?.textContent.includes('신뢰');
+        out.known = ts.knowledge.known.map(x => x.fact);
         out.sent = { turns: ts.turns.length, rel: ts.relationship, noticed: (w.story.noticed || []).length, undoBtn: !!document.querySelector('[data-act="talk-undo"]') };
         await undoStoryTalk();
         out.bondUndone = STORY_TALK_BONDS[storyBond(w, park)];
+        out.knownUndone = ts.knowledge.known.length;
         out.undone = { turns: ts.turns.length, rel: ts.relationship, noticed: (w.story.noticed || []).length, draft: ts.draft, undoBtn: !!document.querySelector('[data-act="talk-undo"]') };
         // 말/행동 전환: 행동으로 보낸 차례는 행동으로 기록되고 프롬프트에도 행동으로 전해진다
         S.talkAct = true; ts.draft = '서류를 빼앗는다'; await sendStoryTalk();
@@ -158,6 +160,7 @@ const server = appServer();
     assert.strictEqual(r.mention, true, '말에 나온 인물은 이름 일부로도 찾아 자료로 준다');
     assert.strictEqual(r.opening?.user, '', '상대가 먼저 건넨 말은 사용자 발언이 없는 차례'); assert.strictEqual(r.opening?.reply, '어, 서윤이네. 무슨 일이야?');
     assert.strictEqual(r.bondSent, '신뢰', '마음의 거리는 한 차례에 한 단계만 움직인다'); assert.strictEqual(r.bondHidden, true, '화면에 보이지 않는다'); assert.strictEqual(r.bondUndone, '편함');
+    assert.deepStrictEqual(r.known, ['한서윤이 등대지기가 밀수꾼이라고 말했다'], '이번에 새로 안 것만 받아 기존 지식에 합친다'); assert.strictEqual(r.knownUndone, 0);
     assert.deepStrictEqual(r.sent, { turns: 2, rel: '의심', noticed: 2, undoBtn: true });
     assert.deepStrictEqual(r.undone, { turns: 1, rel: '동료', noticed: 1, draft: '등대지기는 밀수꾼이지?', undoBtn: false }, '첫마디는 되돌리지 않는다');
     assert.strictEqual(r.actTurn, true, '행동으로 보낸 차례'); assert.strictEqual(r.actUndo, true, '되돌리면 행동 모드와 입력이 돌아온다');
