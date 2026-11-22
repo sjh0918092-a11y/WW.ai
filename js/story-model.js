@@ -236,7 +236,7 @@ function storySources(w) {
     const parts = [p.summary, ...(p.infobox || []).map(x => `${x.label}: ${stripMarks(x.value)}`), ...(p.sections || []).filter(s => !s.ch || s.ch <= w.story.chapter).map(s => `${s.heading}\n${stripMarks(s.body)}`), ...(w.entities[key].facts || []).filter(x => !x.sup).map(x => x.t)];
     rows.push({ source: "page:" + key, title: p.title, chapter: null, text: parts.filter(Boolean).join("\n\n") });
   }
-  for (const c of w.story.chapters) for (const [key, s] of Object.entries(c.dialogues || {})) (s.turns || []).forEach((t, i) => rows.push({ source: `dialogue:${c.n}:${key}:${i}`, title: `${w.entities[key]?.title || key}와의 대화`, chapter: c.n, text: `${t.user}\n${t.reply}\n${t.memory}` }));
+  for (const c of w.story.chapters) for (const [key, s] of Object.entries(c.dialogues || {})) (s.turns || []).forEach((t, i) => rows.push({ source: `dialogue:${c.n}:${key}:${i}`, title: key === "@scene" ? "주인공의 행동(상황)" : `${w.entities[key]?.title || key}와의 대화`, chapter: c.n, text: `${t.user}\n${t.reply}\n${t.memory}` }));
   return rows;
 }
 function storyMemoryBlock(w, sources = true) {
@@ -375,7 +375,8 @@ ${STORY_RESPONSIBILITY_RULES}
 - continuity.introduced에는 이후 흐름에 중요한 목표·관계·약속·갈등·행동의 여파·진행 중인 일만 출처 source/quote와 함께 기록한다. 실제로 답을 요구하는 의문·단서만 mystery다. 질문형 문장을 만들 의무는 없다. 필요 없으면 빈 배열이다. 소품·성격·배경을 모두 복선으로 만들지 않는다.
 - revealNow와 secretRevise는 이번 장에 실제 공개나 계획 수정이 없으면 빈 배열로 둔다. 임의의 id나 예시 값을 채우지 않는다.
 - 독자의 선택이 있으면 continuity.choiceConsequences에 실제로 얻고 놓친 정보·관계·시간·위험·기회·사건 결과 중 바뀐 것을 적고 본문 evidence로 뒷받침한다. 선택을 강제로 성공시키거나 없던 선택을 지어내지 않는다. 선택이 없으면 빈 배열이다. 지난 선택 기록은 이후 장에서도 유지한다.
-- ${choice ? "주인공의 이번 장 행동은 독자의 선택에서 출발한다. 결과는 선택대로 되지 않아도 된다." : "독자의 선택이 없으니 주인공의 행동은 지금까지의 흐름에서 자연스럽게 정한다."}
+- 주인공의 결정과 행동은 플레이어가 실제로 한 것에서만 나온다. 위 '등장인물과 실제로 나눈 대화'에 있는 주인공의 말과 행동(kind "주인공의 행동", 상황 채널 포함)${choice ? "과 독자가 고른 행동" : ""}이 그것이다. 이번 장은 먼저 그 말과 행동이 무엇을 낳았는지 정리하고, 그 결과에서 이어 간다. 결과는 의도대로 되지 않아도 된다.
+- 플레이어가 하지 않은 주인공의 결정과 행동(어디로 가기로 함, 누구를 만나기로 함, 낮잠을 잠 등)을 새로 지어내지 않는다. 세계와 다른 인물은 움직인다: 사건이 일어나고, 누군가 찾아오고, 약속한 일이 진행된다. 주인공은 그 상황에 놓이고 놀라거나 짧게 반응할 수 있지만, 중요한 결정은 다음 장에서 플레이어가 내리도록 열어 둔다.${choice ? "" : " 플레이어가 이번 장에 아무 말과 행동도 하지 않았으면 주인공은 큰 결정 없이 흐름 속에 머문다."}
 - 탐험·선택·이미 확정된 사건 때문에 뒤의 뼈대 단계를 바꿔야 하면 spineRevise로 바꾼다. ${N}단계는 항상 결말로 남겨 둔다. 바꿀 필요가 없으면 빈 배열.
 - ${last ? `이번 장이 마지막 장이다. 결말을 낸다. 장르와 원안이 실제로 맺기로 한 중심 내용과 주인공의 선택에 대응한다. 모든 관계·목표·생활 문제를 정리할 의무는 없다. 계속되는 관계·일상·노력은 unchanged 또는 continuing으로 자연스럽게 남길 수 있다. 실제로 답을 약속한 의문은 그 약속에 맞게 다루되 모든 설정을 그런 의문으로 바꾸지 않는다. 처리하지 않은 것을 모두 끝냈다고 서술하지 않는다. 기존에 없는 상처의 치유나 사직·희생을 의무로 만들지 않는다. ending.epilogue에 결말 이후를 3~5문장으로 쓴다. nextChoices는 빈 배열.` : `nextChoices에는 ${nextN}장이 끝날 때 주인공이 할 수 있는 다음 행동 후보 3개를 한 문장씩 쓴다. 각 후보는 객체가 아니라 문자열 하나다. 서로 방향이 달라야 한다. ending은 null.`}
 - 주인공이 죽을 수도 있다. 주인공이 죽으면 이후 장은 그 죽음의 여파와 유산을 중심으로 진행하고, 주인공 문서의 장 섹션은 사후 사건으로 쓴다.

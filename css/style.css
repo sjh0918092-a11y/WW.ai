@@ -505,3 +505,8 @@ details.ent li{margin-bottom:3px}
   .talk-composer{padding:8px 10px max(8px,env(safe-area-inset-bottom,0px))}
   .talk-message.talk-other{max-width:94%}
 }
+/* 말/행동 전환과 행동 말풍선, 상황 채널 */
+.talk-mode{flex:none;height:44px;min-width:52px;border:1px solid var(--line);border-radius:22px;background:var(--paper);color:var(--muted);font-size:13px;font-weight:600;cursor:pointer}
+.talk-mode[aria-pressed=true]{border-color:#275BD4;color:#275BD4}
+.talk-act .talk-bubble{background:transparent;color:var(--ink);border:1px dashed #275BD4;font-style:italic}
+.avatar.scene{background:var(--tint);color:var(--link)}

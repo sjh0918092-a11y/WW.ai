@@ -40,6 +40,14 @@ function advanceHtml() {
   if (st.status === "ended") return head + `<p class="note">이야기가 끝났습니다.</p><div class="row"><button type="button" class="btn pri" data-act="epilogue">에필로그 보기</button></div></div>`;
   const ex = exploreScores(w, c);
   const choices = (c.nextChoices || []).filter(x => typeof x === "string" && x.trim() && !isBroken(x));
+  const did = typeof storyChapterDeeds === "function" ? storyChapterDeeds(w, c) : { total: 0 };   // 이번 장에 말이나 행동을 했으면 선택지 대신 그것으로 넘긴다
+  if (did.total) return head + `<p class="note">${c.n}장 「${esc(c.title)}」 · 작중 ${esc(c.era)}</p>
+    <h2 class="nf-h">이번 장에 한 일</h2>
+    <ul class="adv-list">${did.people ? `<li><span>인물 ${did.people}명과 대화</span><span class="src">말 ${did.talks}번${did.acts ? ` · 행동 ${did.acts}번` : ""}</span></li>` : ""}${did.scene ? `<li><span>상황에서 직접 행동</span><span class="src">${did.scene}번</span></li>` : ""}</ul>
+    <p class="note">다음 장은 이번 장에 한 말과 행동이 낳은 결과에서 이어집니다. 주인공이 하지 않은 결정은 지어내지 않습니다.</p>
+    ${a.err ? `<div class="banner warn">${esc(a.err)}</div>` : ""}
+    <div class="row"><button type="button" class="btn pri" data-act="story-skip" ${!S.sample ? "disabled" : ""}>${n >= totalOf(w) ? "마지막 장으로" : `${n}장으로`} 넘어가기</button><button type="button" class="btn" data-act="story-back">돌아가기</button></div>
+    <p class="note" style="margin-top:10px">${n >= totalOf(w) ? "마지막 장에서 결말이 납니다." : `주인공 문서에 ${n}장 섹션이 덧붙고, 이번 장에서 영향을 받은 문서는 열 때 ${n}장의 변화가 반영됩니다.`}${S.sample ? "" : " " + esc(ERR.no_sample)}</p></div>`;
   return head + `<p class="note">${c.n}장 「${esc(c.title)}」 · 작중 ${esc(c.era)}</p>
     <h2 class="nf-h">이번 장에 탐험한 곳</h2>
     ${ex.length ? `<ul class="adv-list">${ex.slice(0, 12).map(x => `<li><span>${linkHtml(w.entities[x.k].title)}</span><span class="src">${esc(x.kinds.join(" · "))}</span></li>`).join("")}</ul>${ex.length > 8 ? `<p class="note">최근 탐험 중 8곳까지 참고합니다. 실제 인과가 있을 때만 줄거리에 쓰이며, 앞서 기록한 목표·관계·약속·여파는 탐험 여부와 관계없이 이어집니다.</p>` : `<p class="note">직접 고친 사실은 지킵니다. 탐험한 항목을 장면에 억지로 등장시키지는 않습니다.</p>`}` : ""}

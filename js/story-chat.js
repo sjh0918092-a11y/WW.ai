@@ -1,7 +1,20 @@
 "use strict";
 /* 대화의 내용·말투·생사 판단은 모델에 맡기고, 코드는 저장·상태 전환만 담당한다. */
 const STORY_TALK_STATES = { available: "대화 가능", dead: "사망", unconscious: "의식 없음", absent: "연락 불가", unable: "대화 불가" };
-const STORY_TALK_ASSESSMENT = 3;   // 3: 잠은 의식 없음이 아니다(이전 판정은 다시 한다)
+const STORY_TALK_ASSESSMENT = 3;
+/* 상황 채널: 상대 없이 하는 행동(살피기, 조사, 이동, 혼자 하는 일)을 서술자가 받는다. 인물 항목이 아니다 */
+const STORY_SCENE_KEY = "@scene";
+const isSceneKey = k => k === STORY_SCENE_KEY;
+/* 이번 장에 플레이어가 실제로 한 말과 행동(상대가 먼저 건넨 첫마디는 빼고) */
+function storyChapterDeeds(w, c = curCh(w)) {
+  const out = { talks: 0, acts: 0, scene: 0, people: 0 };
+  for (const [k, s] of Object.entries(c?.dialogues || {})) {
+    const mine = (s.turns || []).filter(t => t.user);
+    if (!mine.length) continue;
+    if (isSceneKey(k)) out.scene += mine.length; else { out.people++; for (const t of mine) t.act ? out.acts++ : out.talks++; }
+  }
+  out.total = out.talks + out.acts + out.scene; return out;
+}   // 3: 잠은 의식 없음이 아니다(이전 판정은 다시 한다)
 /* 주인공에 대한 마음의 거리(화면에 보이지 않는다). 말투의 거리감에만 쓰고, 관심을 보일지는 정하지 않는다.
    판단은 모델이 하고, 앱은 한 차례에 한 단계까지만 움직이게 한다 */
 const STORY_TALK_BONDS = ["경계", "서먹함", "편함", "신뢰", "각별함"];
@@ -17,10 +30,12 @@ function storyTalkKnowledgeValid(value) {
 }
 const STORY_TALK_KNOWLEDGE_OUTPUT = `"scene":"이 인물이 현재 직접 접할 수 있는 상황만 요약","knowledge":{"known":[{"fact":"인물이 알고 있는 내용. 전언은 누가 무엇을 말했다는 형태","via":"experience/told/public 중 하나","source":"실제 자료의 source 또는 이번 사용자 발언은 user","evidence":"인물이 알게 된 경로를 뒷받침하는 실제 내용"}]}`;
 function storyTalkMissingPage(w, key) {
+  if (isSceneKey(key)) return S.pages[w.story.protagonistKey] ? "" : w.story.protagonistKey;
   if (!S.pages[key]) return key;
   return S.pages[w.story.protagonistKey] ? "" : w.story.protagonistKey;
 }
 function storyTalkReady(w, key) {
+  if (isSceneKey(key)) return true;   // 상황 채널은 대화 준비가 없다
   const s = storyTalkSession(w, key);
   return !!(!storyTalkMissingPage(w, key) && s?.ready && s.knowledgeVersion === STORY_TALK_KNOWLEDGE && storyTalkKnowledgeValid(s.knowledge) && s.assessmentVersion === STORY_TALK_ASSESSMENT && s.characterKey === key && s.playerKey === w.story.protagonistKey);
 }
@@ -89,6 +104,7 @@ async function undoStoryTalk() {
   const w = S.world, key = S.view.key; if (!isStory(w) || !storyTalkCanUndo(w, key)) return;
   const s = storyTalkSession(w, key), t = s.turns.pop(), u = t.undo;
   Object.assign(s, { relationship: u.relationship, scene: u.scene, knowledge: u.knowledge, state: u.state, assessment: u.assessment, draft: t.user, err: "" });
+  S.talkAct = !!t.act;
   if (u.player) curCh(w).dialoguePlayerAssessment = u.player; else delete curCh(w).dialoguePlayerAssessment;
   if ("bond" in u) { if (u.bond) (w.story.bonds ||= {})[key] = u.bond; else if (w.story.bonds) delete w.story.bonds[key]; }
   if (t.noticed && w.story.noticed) w.story.noticed = w.story.noticed.filter(x => !(x.who === t.noticed.who && x.what === t.noticed.what && x.ch === t.noticed.ch));
@@ -99,6 +115,7 @@ async function undoStoryTalk() {
 /* 대사의 줄표는 지시로 막고, 남은 것은 쉼표로 바꾼다(문장 내용은 건드리지 않는 표기 정리) */
 const storyTalkClean = t => String(t || "").trim().replace(/([^\d\s])\s*[—–]+\s*(?=[^\d\s])/g, "$1, ").replace(/\s*[—–]+\s*$/g, "...");
 function storyTalkKey(w, key) {
+  if (isSceneKey(key)) return key;
   const keys = storyTalkers(w), preferred = w.aliases?.[key] || key || w.story.lastDialogueKey;
   return keys.includes(preferred) ? preferred : keys.includes(w.story.lastDialogueKey) ? w.story.lastDialogueKey : keys[0];
 }
@@ -172,7 +189,7 @@ profile의 성격·말투·예시, relationship, scene에도 인물이 모르는
 ${JSON.stringify(storyTalkContext(w, key))}
 JSON 하나: {"profile":{"personality":"고정 성격과 동기","voice":"말투 규칙","examples":["평상시 대사","갈등 대사"]},${storyTalkStatusOutput(w, key)},"relationship":"현재 관계","bond":"${STORY_TALK_BONDS.join("/")} 중 하나","opening":"이 인물이 먼저 건네는 한마디",${STORY_TALK_KNOWLEDGE_OUTPUT}}`;
 }
-function storyTalkPrompt(w, key, text) {
+function storyTalkPrompt(w, key, text, act = false) {
   const s = storyTalkSession(w, key), e = w.entities[key], pk = w.story.protagonistKey;
   const approved = w.story.chapters.flatMap(c => (c.dialogues?.[key]?.turns || []).filter(t => t.knowledgeVersion === STORY_TALK_KNOWLEDGE).map(t => ({ user: t.user, reply: t.reply, memory: t.memory })));
   return `## 스토리 자유 대화
@@ -188,11 +205,12 @@ reply를 가장 먼저 출력한다. memory는 이번 발언으로 생긴 약속
 인물: ${JSON.stringify({ name: e.title, profile: w.story.dialogueProfiles?.[key], player: { name: w.entities[pk].title, state: storyTalkPlayerState(w) }, relationship: s.relationship, ...(storyBond(w, key) != null ? { distance: STORY_TALK_BONDS[storyBond(w, key)] } : {}), knowledge: { known: s.knowledge.known.map(({ fact, via }) => ({ fact, via })) } })}
 이전 승인된 대화의 기억: ${JSON.stringify(approved.map(t => t.memory))}
 최근 승인된 대화: ${JSON.stringify(approved.slice(-6).map(t => ({ user: t.user, reply: t.reply })))}
-이번 사용자 발언: ${JSON.stringify(text)}
+${act ? `이번 차례는 말이 아니라 ${w.entities[pk].title}의 행동이다: ${JSON.stringify(text)}
+행동은 시도다. 너는 그 행동에 이 인물로서 반응한다(말과 짧은 행동 묘사). 결과는 설정·상황·이 인물의 반응에 따라 정하며 무조건 성공하지 않는다. 장의 큰 사건을 이 행동 하나로 끝내지 않는다.` : `이번 사용자 발언: ${JSON.stringify(text)}`}
 ${w.story.entry ? `사용자가 맡은 ${w.entities[pk].title}은(는) 이 세계의 위키를 읽은 독자일 수 있다. 이번 발언이 ${w.entities[pk].title}이(가) 알 수 없을 법한 사실(그 인물의 문서·관계·지금까지 겪은 일로 설명되지 않는 지식)에 기대면, 너는 그 출처를 의아해하거나 경계한다. 그런 일이 있었으면 noticed에 무엇이 이상했는지 한 문장, 없으면 빈 문자열.\n` : ""}JSON 하나: {"reply":"인물의 응답","memory":"이번 대화의 결과","important":false,${storyTalkStatusOutput(w, key)},"relationship":"대화 후 관계","bond":"${STORY_TALK_BONDS.join("/")} 중 하나",${w.story.entry ? '"noticed":"",' : ""}${STORY_TALK_KNOWLEDGE_OUTPUT}}`;
 }
 function storyDialogueBlock(w) {
-  const rows = w.story.chapters.flatMap(c => Object.entries(c.dialogues || {}).flatMap(([k, s]) => (s.turns || []).map((t, i) => ({ source: `dialogue:${c.n}:${k}:${i}`, chapter: c.n, character: w.entities[k]?.title, user: t.user, reply: t.reply, memory: t.memory }))));
+  const rows = w.story.chapters.flatMap(c => Object.entries(c.dialogues || {}).flatMap(([k, s]) => (s.turns || []).map((t, i) => ({ source: `dialogue:${c.n}:${k}:${i}`, chapter: c.n, character: isSceneKey(k) ? "상황(서술자)" : w.entities[k]?.title, ...(t.act || isSceneKey(k) ? { kind: "주인공의 행동" } : {}), user: t.user, reply: t.reply, memory: t.memory }))));
   const bonds = Object.entries(w.story.bonds || {}).filter(([k, b]) => w.entities[k] && STORY_TALK_BONDS[b?.level]).map(([k, b]) => `- ${w.entities[k].title}: ${STORY_TALK_BONDS[b.level]}`);
   return (bonds.length ? `## 인물들이 주인공에게 느끼는 마음의 거리 (${STORY_TALK_BONDS.join(" < ")})\n${bonds.join("\n")}\n이 거리는 장면의 말투와 행동의 결에 반영하고, 근거 없이 갑자기 뒤집지 않는다.\n\n` : "") + (rows.length ? `## 등장인물과 실제로 나눈 대화
 ${JSON.stringify(rows)}
@@ -224,7 +242,7 @@ function openStoryTalk(key) {
     if (storyTalkReady(w, key)) Store.saveWorld(w).catch(e => toast("대화 상대를 저장하지 못했습니다. " + errMsg(e)));
   }
   S.view = { name: "storyTalk", key }; renderAll();
-  if (key) prepareStoryTalk(key);
+  if (key && !isSceneKey(key)) prepareStoryTalk(key);
 }
 function storyTalkBusy() { return !!S.storyTalkJob; }
 function refreshStoryTalk(w, key) {
@@ -267,6 +285,7 @@ async function prepareStoryTalk(key) {
   finally { if (S.storyTalkJob === job) S.storyTalkJob = null; refreshStoryTalk(w, key); }
 }
 async function sendStoryTalk() {
+  if (isSceneKey(S.view.key)) return sendSceneTalk();
   const w = S.world, key = S.view.key;
   if (!isStory(w) || !storyTalkers(w).includes(key) || storyTalkBusy()) return;
   if (storyTalkMissingPage(w, key)) { refreshStoryTalk(w, key); return; }
@@ -283,7 +302,7 @@ async function sendStoryTalk() {
   const firstTimer = gActiveTimeout(() => { job.timedOut = true; job.ctl.abort(); }, 15000);
   const totalTimer = gActiveTimeout(() => { job.timedOut = true; job.ctl.abort(); }, 60000);
   try {
-    const prompt = storyTalkPrompt(w, key, text);
+    const act = !!S.talkAct, prompt = storyTalkPrompt(w, key, text, act);
     let out = await callJson("storyChat", prompt, { signal: job.ctl.signal, modelTier: "default", liveStream: true,
       onText: ({ text: raw }) => { if (storyTalkPartial(raw)) firstTimer(); }
     }, { title: w.entities[key].title, ch: n });
@@ -307,7 +326,7 @@ reply에 지식·설정·생사 상태 문제가 없으면 초안의 reply를 �
     applyStoryTalkAssessment(w, key, s, out);
     out.reply = storyTalkClean(out.reply);
     storySetBond(w, key, out.bond, n);
-    s.turns.push({ user: text, reply: out.reply, memory: out.memory, state: out.character.state, knowledgeVersion: STORY_TALK_KNOWLEDGE, at: Date.now(), undo });
+    s.turns.push({ user: text, ...(act ? { act: true } : {}), reply: out.reply, memory: out.memory, state: out.character.state, knowledgeVersion: STORY_TALK_KNOWLEDGE, at: Date.now(), undo });
     storyTalkTrimUndo(s);
     if (typeof storyArcNoticed === "function" && typeof out.noticed === "string" && out.noticed.trim()) {   // 주인공이 알 수 없는 지식을 꺼낸 것을 상대가 알아챘다
       const before = w.story.noticed?.length || 0; storyArcNoticed(w, n, [{ who: w.entities[key].title, what: out.noticed }]);
@@ -322,6 +341,65 @@ reply에 지식·설정·생사 상태 문제가 없으면 초안의 reply를 �
     s.unsaved = committed;
   } finally { firstTimer(); totalTimer(); if (S.storyTalkJob === job) S.storyTalkJob = null; refreshStoryTalk(w, key); }
 }
+/* ---------- 상황 채널: 상대 없는 행동을 서술자가 받는다 ---------- */
+function storyScenePrompt(w, text) {
+  const st = w.story, pk = st.protagonistKey, c = curCh(w), s = storyTalkSession(w, STORY_SCENE_KEY), near = storyTalkNearby(w);
+  const recent = (s?.turns || []).slice(-6).map(t => ({ 행동: t.user, 결과: t.reply }));
+  return `너는 가상 세계관 위키 「${w.title}」의 이야기 서술자다. 지금은 ${c.n}장이고, 주인공 「${w.entities[pk].title}」이(가) 장면 안에서 직접 행동한다. 그 행동의 결과와 주인공이 보고 듣는 것을 짧게 서술한다.
+
+${canonBlock(w)}
+
+${toneBlock(w)}## 지금 장
+${c.n}장 「${c.title}」 (${c.era}): ${c.summary}${c.place ? `\n주인공이 있는 곳: ${c.place}` : ""}
+${near ? `근처에서 만날 수 있는 인물: ${[...near.keys()].map(k => w.entities[k]?.title).filter(Boolean).join(", ")}` : ""}
+${secretsBlock(w, "page")}
+## 주인공 문서
+${docText(S.pages[pk], w)}
+
+## 이번 장에서 앞서 한 행동
+${recent.length ? JSON.stringify(recent) : "(없음)"}
+
+## 이번 행동
+${JSON.stringify(text)}
+
+## 규칙
+- 주인공의 행동은 시도다. 결과는 설정·장면·다른 인물의 반응에 따라 정하며 무조건 성공하지 않는다.
+- 지금 장면과 시간 안에서만 서술한다. 멀리 떠나기, 결전, 큰 사건의 해결처럼 장 하나를 바꿀 행동은 시작하는 모습까지만 쓰고, 결과는 다음 장에서 이어진다.
+- 주인공이 실제로 보고 듣고 알아낼 수 있는 것만 쓴다. 아직 드러나지 않은 진실은 쓰지 않고, 조사로 찾을 만한 단서까지만 보여 준다.
+- 주인공의 생각, 감정, 다음 행동을 대신 정하지 않는다.
+- 근처 인물이 짧게 반응할 수 있지만 길게 대화하지 않는다(대화는 그 인물과의 대화창에서 한다).
+- reply는 2~5문장, 자연스러운 한국어로만 쓴다. 줄표(—, –)를 쓰지 않는다.
+- memory는 이 행동으로 생긴 결과 한두 문장이다.
+
+JSON 하나: {"reply":"서술","memory":"결과"}`;
+}
+async function sendSceneTalk() {
+  const w = S.world, key = STORY_SCENE_KEY; if (!storyOn(w) || storyTalkBusy()) return;
+  if (storyTalkMissingPage(w, key)) { refreshStoryTalk(w, key); return; }
+  const s = storyTalkSession(w, key, true), text = (s.draft || "").trim();
+  if (!text || s.unsaved || storyTalkPlayerState(w) !== "available") return;
+  if (!S.sample) { s.err = ERR.no_sample; refreshStoryTalk(w, key); return; }
+  if (S.storyGen || S.gen || S.syncing || S.edit) { s.err = "진행 중인 작성·편집을 마친 뒤 행동할 수 있습니다."; refreshStoryTalk(w, key); return; }
+  const n = w.story.chapter, job = { ctl: new AbortController(), phase: "reply", key, wid: w.id, user: text };
+  S.storyTalkJob = job; s.err = ""; refreshStoryTalk(w, key);
+  let committed = false;
+  const timer = setTimeout(() => { job.timedOut = true; job.ctl.abort(); }, 60000);
+  try {
+    const out = await callJson("storyChat", storyScenePrompt(w, text), { signal: job.ctl.signal, modelTier: "default" }, { title: "상황", ch: n });
+    if (job.ctl.signal.aborted || S.world !== w || w.story.chapter !== n) throw { code: "cancelled" };
+    if (!out?.reply?.trim()) throw { code: "invalid_json" };
+    const undo = storyTalkUndoPoint(w, s);
+    s.turns.push({ user: text, act: true, reply: storyTalkClean(out.reply), memory: stripMarks(String(out.memory || "")).slice(0, 300) || text, knowledgeVersion: STORY_TALK_KNOWLEDGE, at: Date.now(), undo });
+    storyTalkTrimUndo(s); s.draft = "";
+    committed = true;
+    await Store.saveWorld(w);
+  } catch (e) {
+    s.err = committed ? "저장하지 못했습니다. 저장 다시 시도를 눌러 주세요." : job.timedOut ? "응답이 지연되어 중단했습니다. 입력은 남겨 두었습니다." : e.code === "cancelled" ? "" : "결과를 받지 못했습니다. " + errMsg(e);
+    s.unsaved = committed;
+  } finally { clearTimeout(timer); if (S.storyTalkJob === job) S.storyTalkJob = null; refreshStoryTalk(w, key); }
+}
+/* 대화 화면의 얼굴: 상황 채널은 표식, 인물은 프사 */
+const storyTalkFace = (w, k, cls) => isSceneKey(k) ? `<span class="avatar initial scene ${cls}" aria-hidden="true">◎</span>` : avatarHtml(w, k, cls);
 async function saveStoryTalk() {
   const w = S.world, s = storyTalkSession(w, S.view.key); if (!s) return;
   s.unsaved = false; s.err = "";
@@ -345,26 +423,26 @@ function storyTalkHtml() {
   const key = S.view.key, s = storyTalkSession(w, key), job = S.storyTalkJob, busy = !!job,
     missingPage = key ? storyTalkMissingPage(w, key) : "",
     own = job?.wid === w.id && job?.key === key, ready = storyTalkReady(w, key),
-    playerState = storyTalkPlayerState(w), blocked = ready && (s.state !== "available" || playerState !== "available"),
-    allowed = ready && !blocked, title = w.entities[key]?.title || "등장인물과 대화";
+    playerState = storyTalkPlayerState(w), scene = isSceneKey(key), blocked = ready && ((!scene && s.state !== "available") || playerState !== "available"),
+    allowed = ready && !blocked, title = scene ? "상황" : w.entities[key]?.title || "등장인물과 대화", act = scene || !!S.talkAct;
   const status = blocked ? (playerState !== "available" ? `주인공 · ${STORY_TALK_STATES[playerState]}` : STORY_TALK_STATES[s.state]) : "";
   const history = w.story.chapters.map(c => {
     const turns = c.dialogues?.[key]?.turns || [];
     const undoable = c === curCh(w) && storyTalkCanUndo(w, key);
     return turns.length ? `<section class="talk-chapter"><h2>${c.n}장</h2>${turns.map((t, i) => `<div class="talk-turn">
-      ${t.user ? `<div class="talk-message talk-self"><span class="sr-only">${esc(w.entities[w.story.protagonistKey]?.title)}</span><div class="talk-bubble">${esc(t.user)}</div></div>` : ""}
-      <div class="talk-message talk-other">${avatarHtml(w, key, "md")}<span class="talk-speaker">${esc(title)}</span><div class="talk-bubble">${esc(t.reply)}</div>
+      ${t.user ? `<div class="talk-message talk-self${t.act ? " talk-act" : ""}"><span class="sr-only">${esc(w.entities[w.story.protagonistKey]?.title)}${t.act ? "의 행동" : ""}</span><div class="talk-bubble">${esc(t.user)}</div></div>` : ""}
+      <div class="talk-message talk-other">${storyTalkFace(w, key, "md")}<span class="talk-speaker">${esc(title)}</span><div class="talk-bubble">${esc(t.reply)}</div>
       </div>${undoable && i === turns.length - 1 ? '<div class="talk-undo"><button type="button" class="btn" data-act="talk-undo" title="이 차례를 지우고 보낸 말을 입력란에 되돌립니다">↶ 되돌리기</button></div>' : ""}</div>`).join("")}</section>` : "";
   }).join("");
   return `<section class="story-talk" aria-label="등장인물과 대화" data-talk-current="${esc(key || "")}">
-    <header class="talk-header"><div class="talk-heading"><button type="button" class="talk-back btn" data-act="story-back" aria-label="문서로 돌아가기">←</button>${key && w.entities[key] ? `<button type="button" class="talk-face" data-k="${esc(key)}" aria-label="${esc(title)} 문서로 가기" title="문서로 가기">${avatarHtml(w, key, "lg")}</button>` : ""}<div class="talk-title"><h1>${esc(title)}</h1><span>${w.story.chapter}장${curCh(w).place ? ` · ${esc(curCh(w).place)}` : ""}${key && w.entities[key] ? ` · <button type="button" class="talk-doc" data-k="${esc(key)}">문서 보기</button>` : ""}</span></div>${storyOn(w) ? '<button type="button" class="btn talk-next" data-act="story-next">다음 장</button>' : ""}</div>
-    <nav class="talk-contacts" aria-label="대화 상대">${storyTalkers(w).map(k => `<button type="button" data-talk-key="${esc(k)}" aria-pressed="${k === key}" ${busy ? "disabled" : ""}${storyTalkNearby(w)?.get(k) ? ` title="${esc(storyTalkNearby(w).get(k))}"` : ""}>${avatarHtml(w, k, "sm")}${esc(w.entities[k].title)}${!S.pages[k] ? "<small>미작성</small>" : storyTalkReady(w, k) && storyTalkSession(w, k).state !== "available" ? `<small>${esc(STORY_TALK_STATES[storyTalkSession(w, k).state])}</small>` : ""}</button>`).join("")}${storyTalkNearby(w) ? `<button type="button" class="talk-find-chip" data-act="talk-find-open" aria-expanded="${!!S.talkFindOpen}" ${busy ? "disabled" : ""}>＋ 찾기</button>` : ""}</nav>${storyTalkFindHtml(w, busy)}
+    <header class="talk-header"><div class="talk-heading"><button type="button" class="talk-back btn" data-act="story-back" aria-label="문서로 돌아가기">←</button>${scene ? storyTalkFace(w, key, "lg") : ""}${key && w.entities[key] ? `<button type="button" class="talk-face" data-k="${esc(key)}" aria-label="${esc(title)} 문서로 가기" title="문서로 가기">${avatarHtml(w, key, "lg")}</button>` : ""}<div class="talk-title"><h1>${esc(title)}</h1><span>${w.story.chapter}장${curCh(w).place ? ` · ${esc(curCh(w).place)}` : ""}${key && w.entities[key] ? ` · <button type="button" class="talk-doc" data-k="${esc(key)}">문서 보기</button>` : ""}</span></div>${storyOn(w) ? '<button type="button" class="btn talk-next" data-act="story-next">다음 장</button>' : ""}</div>
+    <nav class="talk-contacts" aria-label="대화 상대">${storyOn(w) ? `<button type="button" data-talk-key="${STORY_SCENE_KEY}" aria-pressed="${scene}" ${busy ? "disabled" : ""} title="상대 없이 하는 행동: 살피기, 조사, 이동">${storyTalkFace(w, STORY_SCENE_KEY, "sm")}상황</button>` : ""}${storyTalkers(w).map(k => `<button type="button" data-talk-key="${esc(k)}" aria-pressed="${k === key}" ${busy ? "disabled" : ""}${storyTalkNearby(w)?.get(k) ? ` title="${esc(storyTalkNearby(w).get(k))}"` : ""}>${avatarHtml(w, k, "sm")}${esc(w.entities[k].title)}${!S.pages[k] ? "<small>미작성</small>" : storyTalkReady(w, k) && storyTalkSession(w, k).state !== "available" ? `<small>${esc(STORY_TALK_STATES[storyTalkSession(w, k).state])}</small>` : ""}</button>`).join("")}${storyTalkNearby(w) ? `<button type="button" class="talk-find-chip" data-act="talk-find-open" aria-expanded="${!!S.talkFindOpen}" ${busy ? "disabled" : ""}>＋ 찾기</button>` : ""}</nav>${storyTalkFindHtml(w, busy)}
     </header>
-    <div class="talk-messages" id="storyTalkMessages" role="log" aria-label="대화 기록" tabindex="0">${history || (own && job.phase !== "prepare" ? "" : `<div class="talk-empty"><span aria-hidden="true">◇</span><p>${key ? (missingPage ? "" : `${esc(title)}에게 말을 건네 보세요.`) : "아직 등장한 대화 상대가 없습니다."}</p></div>`)}
-    ${own && job.phase !== "prepare" ? `<div class="talk-message talk-self"><span class="sr-only">나</span><div class="talk-bubble">${esc(job.user || "")}</div></div><div class="talk-message talk-other">${avatarHtml(w, key, "md")}<span class="talk-speaker">${esc(title)}</span><div class="talk-bubble" id="storyTalkLive" role="status" aria-label="답변을 기다리는 중">…</div></div>` : ""}</div>
+    <div class="talk-messages" id="storyTalkMessages" role="log" aria-label="대화 기록" tabindex="0">${history || (own && job.phase !== "prepare" ? "" : `<div class="talk-empty"><span aria-hidden="true">◇</span><p>${key ? (missingPage ? "" : (scene ? "주변을 살피거나 직접 행동해 보세요." : `${esc(title)}에게 말을 건네 보세요.`)) : "아직 등장한 대화 상대가 없습니다."}</p></div>`)}
+    ${own && job.phase !== "prepare" ? `<div class="talk-message talk-self${act ? " talk-act" : ""}"><span class="sr-only">나</span><div class="talk-bubble">${esc(job.user || "")}</div></div><div class="talk-message talk-other">${storyTalkFace(w, key, "md")}<span class="talk-speaker">${esc(title)}</span><div class="talk-bubble" id="storyTalkLive" role="status" aria-label="답변을 기다리는 중">…</div></div>` : ""}</div>
     <footer class="talk-composer">${own && job.phase === "prepare" ? '<p class="talk-progress" role="status">불러오는 중…</p>' : ""}${status ? `<p class="talk-unavailable">${esc(status)}</p>` : ""}${!storyOn(w) ? '<p class="talk-progress">결말 이후의 대화입니다.</p>' : ""}
     ${missingPage ? `<div class="talk-document"><p>${missingPage === key ? "인물" : "주인공"} 문서를 작성하면 대화할 수 있습니다.</p><button type="button" class="btn" data-k="${esc(missingPage)}">${missingPage === key ? "인물" : "주인공"} 문서 작성</button></div>` : ""}
     ${!missingPage && s?.err ? `<p class="talk-error" role="alert">${esc(s.err)}</p>` : ""}
-    ${key ? `<label class="sr-only" for="storyTalkInput">${esc(title)}에게 할 말</label><div class="talk-input-row"><textarea id="storyTalkInput" rows="1" maxlength="2000" placeholder="${missingPage ? "문서를 먼저 작성해 주세요" : blocked ? "지금은 대화할 수 없습니다" : "메시지 입력"}" ${!allowed || busy ? "disabled" : ""}>${esc(s?.draft || "")}</textarea><button type="button" class="talk-send" data-act="talk-send" aria-label="메시지 보내기" ${!allowed || busy || !s?.draft?.trim() || s?.unsaved ? "disabled" : ""}><span aria-hidden="true">↑</span></button></div>
+    ${key ? `<label class="sr-only" for="storyTalkInput">${esc(title)}에게 할 말</label><div class="talk-input-row">${scene ? "" : `<button type="button" class="talk-mode" data-act="talk-mode" aria-pressed="${act}" title="말하기와 행동을 바꿉니다" ${busy ? "disabled" : ""}>${act ? "행동" : "말"}</button>`}<textarea id="storyTalkInput" rows="1" maxlength="2000" placeholder="${missingPage ? "문서를 먼저 작성해 주세요" : blocked ? (scene ? "지금은 행동할 수 없습니다" : "지금은 대화할 수 없습니다") : act ? (scene ? "행동 입력 (예: 격납고 구석을 살핀다)" : "행동 입력 (예: 서류를 빼앗는다)") : "메시지 입력"}" ${!allowed || busy ? "disabled" : ""}>${esc(s?.draft || "")}</textarea><button type="button" class="talk-send" data-act="talk-send" aria-label="메시지 보내기" ${!allowed || busy || !s?.draft?.trim() || s?.unsaved ? "disabled" : ""}><span aria-hidden="true">↑</span></button></div>
     <div class="talk-actions">${!missingPage && !ready && !busy ? '<button type="button" class="btn" data-act="talk-prepare">다시 시도</button>' : ""}${own ? '<button type="button" class="btn" data-act="talk-stop">중단</button>' : ""}${s?.unsaved ? '<button type="button" class="btn" data-act="talk-save">저장 다시 시도</button>' : ""}</div>` : ""}</footer></section>`;
 }

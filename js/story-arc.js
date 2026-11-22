@@ -236,7 +236,7 @@ function sealSources(w, arc) {
   for (const ev of w.events || []) if (re.test(String(ev?.src || ""))) ev.src = conv(ev.src);
 }
 function storyPlayerLines(w) {
-  return w.story.chapters.flatMap(c => Object.values(c.dialogues || {}).flatMap(s => (s.turns || []).map(t => String(t.user || "").trim()))).filter(t => t.length >= 6);
+  return w.story.chapters.flatMap(c => Object.entries(c.dialogues || {}).filter(([k]) => !isSceneKey(k)).flatMap(([, s]) => (s.turns || []).filter(t => !t.act).map(t => String(t.user || "").trim()))).filter(t => t.length >= 6);   // 말투 견본은 인물에게 한 말만
 }
 function storyRecordPrompt(w) {
   const st = w.story, pk = st.protagonistKey, lines = storyPlayerLines(w).slice(-30);

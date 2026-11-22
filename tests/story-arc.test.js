@@ -30,12 +30,14 @@ const server = appServer();
       S.worlds.unshift(w); S.sample = {};
       const original = { callJson, generatePage };
       const calls = [];
-      let failBlock = false, named = '', lastBible = '';
+      let failBlock = false, named = '', lastBible = '', lastScene = '', lastChat = '';
       callJson = async (kind, text) => {
         calls.push(kind);
         if (kind === 'storyBible') { lastBible = text; } if (kind === 'storyBible') return { protagonist: { ...(named ? { name: named } : {}), summary: '바뀌면 안 되는 새 정의', want: '배를 되찾는다', wound: '' }, storyPromise: { focus: '항구의 일상', central: { kind: 'goal', subject: '배' } }, spine: [{ n: 1, intent: '시작' }], secrets: [{ truth: '등대지기는 밀수꾼이다', cover: '성실한 등대지기', reveal: 3 }], chapter1: { title: '사라진 배', era: '1201년', summary: '한서윤의 배가 사라졌다.', incident: '배가 사라졌다', nextChoices: ['부두로 간다', '박도현을 찾는다', '기다린다'] }, place: '북쪽 부두', nearby: [{ title: '박도현', why: '같은 부두에서 일한다' }, { title: '이노인', why: '' }, { title: '없는사람', why: '' }] };
         if (kind === 'chapterBlock') { if (failBlock) throw { code: 'invalid_json' }; return { blocks: [{ ch: 1, heading: '사라진 배', sections: [{ heading: '부두의 아침', level: 1, body: '그날 아침 배가 보이지 않았다.' }] }], infoboxPatch: [], summaryPatch: '', facts: [], relations: [], timeline: [], newEntities: [] }; }
         if (kind === 'storyCast') return { profile: { personality: '무뚝뚝하다', voice: '짧게 반말', examples: ['뭐야.', '비켜.'] }, character: { key: park, state: 'available', evidence: '부두에 있다' }, player: { key: seo, state: 'available', evidence: '부두에 있다' }, relationship: '동료', bond: '편함', scene: '부두', opening: '어, 서윤이네. 무슨 일이야?', knowledge: { known: [] } };
+        if (kind === 'storyChat' && text.includes('이야기 서술자')) { lastScene = text; return { reply: '격납고 구석에 낡은 공구함이 있다—뚜껑이 열려 있다.', memory: '공구함을 찾았다' }; }
+        if (kind === 'storyChat') lastChat = text;
         if (kind === 'storyChat' || kind === 'storyChatReview') return { reply: '뭐? 그걸 네가 어떻게 알아?', memory: '한서윤이 등대지기 이야기를 꺼냈다', important: true, character: { key: park, state: 'available', evidence: '' }, player: { key: seo, state: 'available', evidence: '' }, relationship: '의심', bond: '각별함', scene: '부두', noticed: '들은 적 없는 이야기를 알고 있었다', knowledge: { known: [] } };
         if (kind === 'chapterPlan') return { protagonist: { tendency: '사람을 먼저 지켰다.', change: '혼자 버티던 사람이 도움을 청하게 됐다.', voice: '짧게 반말한다.' }, people: [{ title: '박도현', with: '함께 배를 찾았다.' }], open: ['등대의 불빛'] };
         throw { code: 'invalid_json' };
@@ -80,6 +82,20 @@ const server = appServer();
         await undoStoryTalk();
         out.bondUndone = STORY_TALK_BONDS[storyBond(w, park)];
         out.undone = { turns: ts.turns.length, rel: ts.relationship, noticed: (w.story.noticed || []).length, draft: ts.draft, undoBtn: !!document.querySelector('[data-act="talk-undo"]') };
+        // 말/행동 전환: 행동으로 보낸 차례는 행동으로 기록되고 프롬프트에도 행동으로 전해진다
+        S.talkAct = true; ts.draft = '서류를 빼앗는다'; await sendStoryTalk();
+        out.actTurn = !!ts.turns[ts.turns.length - 1].act && lastChat.includes('행동이다') && !!document.querySelector('.talk-act');
+        await undoStoryTalk(); out.actUndo = S.talkAct === true && ts.draft === '서류를 빼앗는다'; S.talkAct = false; ts.draft = '';
+        // 상황 채널: 상대 없이 한 행동을 서술자가 받는다
+        openStoryTalk('@scene'); storyTalkSession(w, '@scene', true).draft = '격납고 구석을 살핀다'; await sendStoryTalk();
+        const sc = storyTalkSession(w, '@scene');
+        out.sceneCh = { turns: sc.turns.length, act: sc.turns[0]?.act, reply: sc.turns[0]?.reply, secrets: lastScene.includes('등대지기는 밀수꾼이다') && lastScene.includes('쓰지 않는다'), chip: !!document.querySelector('[data-talk-key="@scene"][aria-pressed="true"]') };
+        out.deeds = storyChapterDeeds(w);
+        S.adv = { pick: -1, custom: '', err: '' }; S.view = { name: 'advance' }; renderMain();
+        out.advance = { did: document.querySelector('#main').textContent.includes('이번 장에 한 일'), radios: document.querySelectorAll('input[name="advPick"]').length };
+        const plan2 = chapterPlanPrompt(w, 2, null);
+        out.planAgency = plan2.includes('플레이어가 하지 않은 주인공의 결정') && plan2.includes('상황(서술자)') && plan2.includes('주인공의 행동');
+        S.view = { name: 'storyTalk', key: park }; renderMain();
         out.openingHtml = { self: document.querySelectorAll('.talk-chapter .talk-self').length, other: document.querySelector('.talk-chapter .talk-other .talk-bubble')?.textContent };
         out.talkNoticedRule = storyTalkPrompt(w, park, '등대지기는 밀수꾼이지?').includes('noticed');
 
@@ -134,6 +150,11 @@ const server = appServer();
     assert.strictEqual(r.bondSent, '신뢰', '마음의 거리는 한 차례에 한 단계만 움직인다'); assert.strictEqual(r.bondHidden, true, '화면에 보이지 않는다'); assert.strictEqual(r.bondUndone, '편함');
     assert.deepStrictEqual(r.sent, { turns: 2, rel: '의심', noticed: 2, undoBtn: true });
     assert.deepStrictEqual(r.undone, { turns: 1, rel: '동료', noticed: 1, draft: '등대지기는 밀수꾼이지?', undoBtn: false }, '첫마디는 되돌리지 않는다');
+    assert.strictEqual(r.actTurn, true, '행동으로 보낸 차례'); assert.strictEqual(r.actUndo, true, '되돌리면 행동 모드와 입력이 돌아온다');
+    assert.deepStrictEqual(r.sceneCh, { turns: 1, act: true, reply: '격납고 구석에 낡은 공구함이 있다, 뚜껑이 열려 있다.', secrets: true, chip: true });
+    assert.deepStrictEqual({ talks: r.deeds.talks, acts: r.deeds.acts, scene: r.deeds.scene }, { talks: 0, acts: 0, scene: 1 });
+    assert.deepStrictEqual(r.advance, { did: true, radios: 0 }, '이번 장에 말이나 행동을 했으면 선택지를 보이지 않는다');
+    assert.strictEqual(r.planAgency, true);
     assert.deepStrictEqual(r.openingHtml, { self: 0, other: '어, 서윤이네. 무슨 일이야?' });
     assert.strictEqual(r.sealed, true);
     assert.strictEqual(r.arcSection, 1);

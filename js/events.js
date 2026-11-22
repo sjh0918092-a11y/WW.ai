@@ -166,6 +166,7 @@ document.addEventListener("click", ev => {
     case "talk-stop": S.storyTalkJob?.ctl.abort(); break;
     case "talk-save": saveStoryTalk(); break;
     case "talk-undo": undoStoryTalk(); break;
+    case "talk-mode": S.talkAct = !S.talkAct; renderMain(); $("#storyTalkInput")?.focus(); break;
     case "talk-find-open": S.talkFindOpen = !S.talkFindOpen; renderMain(); if (S.talkFindOpen) $("#talkFind")?.focus(); break;
     case "talk-find-close": S.talkFindOpen = false; renderMain(); break;
     case "story-next": openAdvance(); break;
