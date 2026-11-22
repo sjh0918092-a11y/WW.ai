@@ -143,6 +143,8 @@ function storyArcCarryProfiles(w) {
   }
   delete profiles[st.protagonistKey];
   st.dialogueProfiles = { ...profiles, ...(st.dialogueProfiles || {}) };
+  const same = [...logs].reverse().find(l => l.protagonistKey === st.protagonistKey);   // 같은 주인공으로 이어 가면 인물들의 마음의 거리도 잇는다
+  if (same?.bonds) st.bonds = { ...same.bonds, ...(st.bonds || {}) };
 }
 function storyEntryState() { return S.storyEntry ||= { mode: "possess", pick: "", q: "", name: "", desc: "", total: STORY_DEF, wish: "", err: "", busy: false, phase: "" }; }
 function openStoryEntry() {
@@ -281,7 +283,7 @@ async function sealStory() {
     }
     sealSources(w, arc);
     (w.storyLog ||= []).push({ arc, protagonistKey: st.protagonistKey, protagonistTitle: w.entities[st.protagonistKey]?.title, entry: st.entry || "created", total: st.total, endedAt: st.endedAt, sealedAt: Date.now(),
-      chapters: st.chapters, spine: st.spine, secrets: st.secrets || [], continuity: st.continuity, epilogue: st.epilogue, noticed: st.noticed || [], cast: st.cast || [], dialogueProfiles: st.dialogueProfiles || {}, protagonist: st.protagonist, record });
+      chapters: st.chapters, spine: st.spine, secrets: st.secrets || [], continuity: st.continuity, epilogue: st.epilogue, noticed: st.noticed || [], cast: st.cast || [], dialogueProfiles: st.dialogueProfiles || {}, bonds: st.bonds || {}, protagonist: st.protagonist, record });
     delete w.story; delete w.mode;
     await Store.saveWorld(w);
     S.storySeal = null;
