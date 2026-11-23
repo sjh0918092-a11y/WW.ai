@@ -1,0 +1,31 @@
+# 사라진 대화 되살리기: 서버 데이터베이스를 지난 여러 시점으로 잠깐씩 돌려 스토리 세계관을 꺼내고, 끝나면 지금으로 되돌린다.
+# 저장소 Settings → Secrets and variables → Actions 에 CLOUDFLARE_API_TOKEN(D1 편집 권한), CLOUDFLARE_ACCOUNT_ID 를 넣고
+# Actions → '사라진 대화 되살리기' → Run workflow. 끝나면 결과 파일(recovered-worlds)을 내려받아 앱의 '되살린 기록 합치기'로 고른다.
+# 결과 파일에는 세계관 내용이 들어 있으니 내려받은 뒤 실행 기록에서 지운다(보관은 하루).
+name: 사라진 대화 되살리기
+on:
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: "몇 시간 전까지 살펴볼지"
+        default: "8"
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 지난 시점들에서 세계관 꺼내기
+        working-directory: relay
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          HOURS: ${{ inputs.hours }}
+        run: node tools/recover-snapshots.mjs --hours "$HOURS"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recovered-worlds
+          path: relay/recovered-worlds.json
+          retention-days: 1
