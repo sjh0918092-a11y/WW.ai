@@ -564,7 +564,11 @@ function recoveredWorlds(data) {
 }
 const countTurns = w => (w?.story?.chapters || []).reduce((n, c) => n + Object.values(c.dialogues || {}).reduce((m, s) => m + (s?.turns?.length || 0), 0), 0);
 async function mergeRecovered(file) {
-  let data; try { data = JSON.parse(await file.text()); } catch { toast("JSON 파일을 읽지 못했습니다."); return; }
+  const text = await file.text(); let data;
+  try { data = JSON.parse(text); } catch {   // 명령 출력 앞에 안내 줄이 붙어 있어도 JSON 부분만 읽는다
+    const i = text.search(/[[{]/); try { data = i >= 0 ? JSON.parse(text.slice(i)) : null; } catch { data = null; }
+    if (!data) { toast("JSON 파일을 읽지 못했습니다."); return; }
+  }
   const found = recoveredWorlds(data);
   if (!found.length) { toast("파일에서 세계관을 찾지 못했습니다."); return; }
   const done = [];
