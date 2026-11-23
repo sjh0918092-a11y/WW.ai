@@ -38,7 +38,7 @@ const server = appServer();
         if (kind === 'storyCast' && globalThis.failKnow && text.includes('아는 것 정리만')) { await new Promise(r => setTimeout(r, 20)); throw { code: 'network' }; }
         if (kind === 'storyCast' && globalThis.castDelta) { lastCast = text; (globalThis.castPrompts ||= []).push(text); return { profile: {}, character: { key: globalThis.castDelta, state: 'available', evidence: '부두에 있다' }, player: { key: seo, state: 'available', evidence: '부두에 있다' }, relationship: '동료', bond: '편함', scene: '부두', opening: '', knowledgeAdded: [{ fact: '새로 안 것', via: 'experience', source: 'ch1', evidence: '봤다' }], knowledgeDropped: ['틀린 옛 항목'] }; }
         if (kind === 'storyCast') return { profile: { personality: '무뚝뚝하다', lens: ['잘될 거라는 말에 토를 단다'], voice: '짧게 반말', examples: ['뭐야.', '비켜.'] }, character: { key: park, state: 'available', evidence: '부두에 있다' }, player: { key: seo, state: 'available', evidence: '부두에 있다' }, relationship: '동료', bond: '편함', scene: '부두', opening: '어, 서윤이네. 무슨 일이야?', knowledge: { known: [] } };
-        if (kind === 'storyChat' && text.includes('이야기 서술자')) { lastScene = text; return { reply: '격납고 구석에 낡은 공구함이 있다—뚜껑이 열려 있다.', memory: '공구함을 찾았다', reach: ['박도현', '없는사람'] }; }
+        if (kind === 'storyChat' && text.includes('이야기 서술자')) { lastScene = text; return { reply: '격납고 구석에 낡은 공구함이 있다—뚜껑이 열려 있다.', memory: '공구함을 찾았다', publicChange: '격납고 구석의 공구함이 열려 있다', reach: ['박도현', '없는사람'] }; }
         if (kind === 'storyChat') lastChat = text;
         if (kind === 'storyChatReview') { lastReview = text; return { fix: { reply: '뭐?! 그걸 네가 어떻게 알아?' } }; }
         if (kind === 'storyChat') return { ended: !!globalThis.endTalk, mood: '크게 놀람', selfAdded: ['어릴 때 항구 마을에서 자랐다'], reply: '뭐? 그걸 네가 어떻게 알아?', memory: '한서윤이 등대지기 이야기를 꺼냈다', important: true, character: { key: park, state: 'available', evidence: '' }, player: { key: seo, state: 'available', evidence: '' }, relationship: '의심', bond: '각별함', scene: '부두', noticed: '들은 적 없는 이야기를 알고 있었다', knowledgeAdded: [{ fact: '한서윤이 등대지기가 밀수꾼이라고 말했다', via: 'told', source: 'user', evidence: '이번 발언' }] };
@@ -102,7 +102,7 @@ const server = appServer();
         await undoStoryTalk(); out.reach.undone = storyTalkSession(w, park).state;
         storyTalkSession(w, '@scene').draft = '격납고 구석을 살핀다'; await sendStoryTalk();
         out.reach.again = storyTalkSession(w, park).state;
-        out.reach.context = !!storyTalkContext(w, park).elsewhereThisChapter?.some(x => x.with.startsWith('상황'));
+        out.reach.context = !!storyTalkContext(w, park).elsewhereThisChapter?.visibleChanges?.some(x => x.where === '주인공 혼자' && x.change.includes('공구함'));   // 혼자 한 행동도 바깥으로 드러난 것만
         const sc = storyTalkSession(w, '@scene');
         out.sceneCh = { turns: sc.turns.length, act: sc.turns[0]?.act, reply: sc.turns[0]?.reply, secrets: lastScene.includes('등대지기는 밀수꾼이다') && lastScene.includes('쓰지 않는다'), chip: !!document.querySelector('[data-talk-key="@scene"][aria-pressed="true"]') };
         out.deeds = storyChapterDeeds(w);
@@ -163,7 +163,11 @@ const server = appServer();
             out.lock.lazy = { noCast: calls.filter(c => c === 'storyCast').length === casts && !S.storyTalkJob, start: document.querySelector('[data-act="talk-start"]')?.textContent, input: document.querySelector('#storyTalkInput')?.disabled };
             openStoryTalk(park); }
           Object.assign(storyTalkSession(w, old, true), { knowledge: { known: [] } }); const op = storyTalkPrompt(w, old, '무슨 일 있었어?');
-          out.lock.elsewhere = op.includes('이번 장에 주인공이 이 인물과 떨어져 겪은 일') && op.includes(w.entities[park].title) && op.includes('주인공이 다른 인물과 나눈 말의 내용은 모른다') && !storyTalkPrompt(w, park, '응').includes('"with":"' + w.entities[park].title);
+          // 다른 대화의 내용은 넘기지 않고, 누구를 만났는지와 바깥으로 드러난 변화만 넘긴다(검토에는 누설 확인용으로 내용까지)
+          { const pt = storyTalkSession(w, park).turns, last = pt[pt.length - 1], keepPC = last.publicChange; last.publicChange = '기관실 쪽에서 쇳소리가 크게 났다'; last.secretLine = 1;
+            const op2 = storyTalkPrompt(w, old, '무슨 일 있었어?'), full = JSON.stringify(storyTalkElsewhere(w, old, { full: true }));
+            out.lock.elsewhere = op.includes('이번 장에 주인공이 이 인물과 떨어져 겪은 일') && op.includes(w.entities[park].title) && op.includes('주인공이 다른 인물과 나눈 말, 둘 사이에 있었던 일') && !op.includes('"result":') && op2.includes('기관실 쪽에서 쇳소리가 크게 났다') && !op2.includes(last.reply) && full.includes('"result":') && full.includes(String(last.memory || last.reply).slice(0, 10));
+            if (keepPC) last.publicChange = keepPC; else delete last.publicChange; delete last.secretLine; }
           { const c = curCh(w); c.where = { [w.story.protagonistKey]: { place: '북쪽 부두', detail: '' }, [park]: { place: '등대', detail: '꼭대기' } }; renderMain();
             out.lock.goLabel = document.querySelector('[data-act="talk-start"]')?.textContent; out.lock.chipPlace = document.querySelector(`[data-talk-key="${park}"] small`)?.textContent; }
           await storyTalkBegin(w, park);

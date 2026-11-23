@@ -264,15 +264,30 @@ function storyTalkApplyWhere(w, key, out) {
   if (x.player && typeof x.player === "object") storySetWhere(w, w.story.protagonistKey, x.player);
   if (key && !isSceneKey(key) && x.character && typeof x.character === "object") storySetWhere(w, key, x.character);
 }
-const STORY_TALK_ELSEWHERE_RULE = "elsewhereThisChapter는 이번 장에서 주인공이 이 인물과 떨어져 겪은 일이다(다른 인물과의 대화, 혼자 한 행동, 차례대로). 지금 장면은 그 마지막 상태에서 이어진다. 주인공이 있는 곳, 흐른 시간, 바뀐 상황(고친 기계, 옮긴 자리, 벌어진 일)을 그대로 이어받고, latestScene이 있으면 이 인물의 '현재 직접 접하는 상황'보다 그것이 나중이니 그쪽을 따른다. 이 인물은 그중 자기가 직접 보거나 들을 수 있었던 결과(같은 곳에서 벌어진 변화, 멀리까지 들린 소리, 모두가 알게 된 일)와 주인공이 지금 말해 주는 것만 안다. 주인공이 다른 인물과 나눈 말의 내용은 모른다.";
+const STORY_TALK_ELSEWHERE_RULE = "elsewhereThisChapter는 이번 장에 주인공이 이 인물과 떨어져 있던 동안의 일 중 바깥으로 드러난 것만 담는다(누구를 만났는지, 그 자리에 없던 사람도 보거나 들을 수 있었던 변화). 지금 장면은 그 변화와 지금 위치에서 이어진다. 주인공이 다른 인물과 나눈 말, 둘 사이에 있었던 일(장난, 다툼, 고백, 몸짓)은 이 인물이 모른다. 주인공이 지금 말해 주는 만큼만 안다. 모르는 일을 짐작으로 맞히거나 구체적으로 짚지 않는다.";
+const STORY_TALK_PUBLIC_RULE = "publicChange: 이번 차례로 생겨 그 자리에 없던 사람도 보거나 들을 수 있는 변화(장치가 돌아감, 큰 소리, 누가 자리를 옮김, 눈에 띄는 상처나 물건). 대화 내용이나 둘 사이의 일은 넣지 않는다. 없으면 빈 문자열.";
+const storyTalkPublic = out => { const x = typeof out?.publicChange === "string" ? stripMarks(out.publicChange).slice(0, 200).trim() : ""; return x ? { publicChange: x } : {}; };   // 바깥으로 드러난 변화만 다른 대화에 넘긴다
 function storyTalkElsewhereBlock(w, key) {
   const x = storyTalkElsewhere(w, key); if (!x.elsewhereThisChapter) return "";
   return `이번 장에 주인공이 이 인물과 떨어져 겪은 일: ${JSON.stringify(x)}\n${STORY_TALK_ELSEWHERE_RULE}\n`;
 }
 /* 한 번에 한 사람과 대화하니, 이 인물과 떨어져 있는 동안 주인공이 이번 장에 겪은 일(다른 인물과의 대화, 상황에서 한 행동)을
    차례대로 넘긴다. 지금 장면은 그 마지막 상태에서 이어지고, 이 인물이 그중 무엇을 아는지는 지침이 정한다 */
-function storyTalkElsewhere(w, key) {
+/* full: 서술자·검토(누설 확인)용으로 대화 내용까지. 기본은 인물이 알 수 있는 것만: 누구를 만났는지와 바깥으로 드러난 변화(publicChange) */
+function storyTalkElsewhere(w, key, opt = {}) {
   const dialogues = curCh(w)?.dialogues || {}, rows = [];
+  if (!opt.full) {
+    const mine = (dialogues[key]?.turns || []).reduce((m, t) => Math.max(m, Number(t.at) || 0), 0), met = [], seen = [];
+    for (const [k, s] of Object.entries(dialogues)) {
+      if (k === key) continue;
+      const turns = (s?.turns || []).filter(t => !t.opening && (t.user || t.ev)); if (!turns.length) continue;
+      const name = isSceneKey(k) ? "" : w.entities[k]?.title || k, last = Math.max(...turns.map(t => Number(t.at) || 0));
+      if (name) met.push({ at: last, name });
+      for (const t of turns) if (t.publicChange) seen.push({ at: Number(t.at) || 0, where: name || "주인공 혼자", change: t.publicChange, afterLastTalkWithThisCharacter: (Number(t.at) || 0) > mine });
+    }
+    if (!met.length && !seen.length) return {};
+    return { elsewhereThisChapter: { met: met.sort((a, b) => a.at - b.at).map(x => x.name), visibleChanges: seen.sort((a, b) => a.at - b.at).slice(-12).map(({ at, ...r }) => r) } };
+  }
   let latest = null;
   for (const [k, s] of Object.entries(dialogues)) {
     if (k === key) continue;
@@ -363,12 +378,13 @@ mood와 reply를 가장 먼저 출력한다. memory는 이번 발언으로 생�
 너에게 전달되는 knowledge.known은 이 인물이 실제로 알게 된 정보만 담는다. 세상과 다른 사람에 관한 그 밖의 정확한 세부 사항을 새로 지어내거나 다른 인물이 아는 일을 아는 척하지 않는다. 추론은 알고 있는 정보만으로 하며 단정하지 않는다. 사용자가 이번에 명시적으로 전한 내용은 전언으로 이해한다. 질문에 든 표현을 이미 알고 있던 사실처럼 재사용하지 않는다.
 ${storyTalkMentions(w, key, text)}현재 직접 접하는 상황: ${JSON.stringify(s.scene || "")}
 ${storyTalkElsewhereBlock(w, key)}${storyTalkPlaceLine(w, key)}${storyTalkWhereRule()}
+${STORY_TALK_PUBLIC_RULE}
 인물: ${JSON.stringify({ name: e.title, profile: w.story.dialogueProfiles?.[key], player: { name: w.entities[pk].title, state: storyTalkPlayerState(w) }, relationship: s.relationship, ...(s.mood ? { previousMood: s.mood } : {}), ...(storyBond(w, key) != null ? { distance: STORY_TALK_BONDS[storyBond(w, key)] } : {}), knowledge: { known: s.knowledge.known.map(({ fact, via }) => ({ fact, via })) } })}
 이전 승인된 대화의 기억: ${JSON.stringify(approved.map(t => t.memory))}
 최근 승인된 대화: ${JSON.stringify(approved.slice(-6).map(t => ({ user: t.user, reply: t.reply })))}
 ${ev === "farewell" ? `이번 차례는 ${w.entities[pk].title}이(가) 이 대화를 끝내고 자리를 뜨려 한다. 사용자 발언은 없다. 너는 이 인물로서 작별의 말을 한다. 지금까지 나눈 대화와 지금 기분을 살려 이 인물답게 보낸다(아쉬움, 당부, 퉁명스러운 인사, 다음 약속 확인 등). 새 화제를 꺼내 붙잡지 않는다.` : ev === "return" ? `이번 차례는 ${w.entities[pk].title}이(가) 이 인물과 대화를 끝내고 헤어졌다가 다시 찾아왔다. 사용자 발언은 없다. 너는 이 인물로서 먼저 말을 건넨다. 방금 헤어진 대화의 여운과 다시 온 것에 대한 이 인물다운 반응(반가움, 의아함, 귀찮음 등)을 살린다.` : act ? `이번 차례는 말이 아니라 ${w.entities[pk].title}의 행동이다: ${JSON.stringify(text)}
 행동은 시도다. 너는 그 행동에 이 인물로서 반응한다(말과 짧은 행동 묘사). 결과는 설정·상황·이 인물의 반응에 따라 정하며 무조건 성공하지 않는다. 장 전체를 이 행동 하나로 끝내지는 않지만, 이 시도 자체의 결과는 낸다.` : `이번 사용자 발언: ${JSON.stringify(text)}`}
-${w.story.entry ? `사용자가 맡은 ${w.entities[pk].title}은(는) 이 세계의 위키를 읽은 독자일 수 있다. 이번 발언이 ${w.entities[pk].title}이(가) 알 수 없을 법한 사실(그 인물의 문서·관계·지금까지 겪은 일로 설명되지 않는 지식)에 기대면, 너는 그 출처를 의아해하거나 경계한다. 그런 일이 있었으면 noticed에 무엇이 이상했는지 한 문장, 없으면 빈 문자열.\n` : ""}JSON 하나: {"mood":"지금 기분과 세기","reply":"인물의 응답","ended":false,"where":{"player":null,"character":null},"memory":"이번 대화의 결과","important":false,${storyTalkStatusOutput(w, key)},"relationship":"대화 후 관계","bond":"${STORY_TALK_BONDS.join("/")} 중 하나","selfAdded":["이번에 처음 밝힌 자기 신상 한 줄"],${w.story.entry ? '"noticed":"",' : ""}${STORY_TALK_KNOWLEDGE_DELTA}}`;
+${w.story.entry ? `사용자가 맡은 ${w.entities[pk].title}은(는) 이 세계의 위키를 읽은 독자일 수 있다. 이번 발언이 ${w.entities[pk].title}이(가) 알 수 없을 법한 사실(그 인물의 문서·관계·지금까지 겪은 일로 설명되지 않는 지식)에 기대면, 너는 그 출처를 의아해하거나 경계한다. 그런 일이 있었으면 noticed에 무엇이 이상했는지 한 문장, 없으면 빈 문자열.\n` : ""}JSON 하나: {"mood":"지금 기분과 세기","reply":"인물의 응답","ended":false,"where":{"player":null,"character":null},"publicChange":"","memory":"이번 대화의 결과","important":false,${storyTalkStatusOutput(w, key)},"relationship":"대화 후 관계","bond":"${STORY_TALK_BONDS.join("/")} 중 하나","selfAdded":["이번에 처음 밝힌 자기 신상 한 줄"],${w.story.entry ? '"noticed":"",' : ""}${STORY_TALK_KNOWLEDGE_DELTA}}`;
 }
 function storyDialogueBlock(w) {
   const rows = w.story.chapters.flatMap(c => Object.entries(c.dialogues || {}).flatMap(([k, s]) => (s.turns || []).map((t, i) => ({ source: `dialogue:${c.n}:${k}:${i}`, chapter: c.n, character: isSceneKey(k) ? "상황(서술자)" : w.entities[k]?.title, ...(t.act || isSceneKey(k) ? { kind: "주인공의 행동" } : {}), user: storyTalkUserLine(t), reply: t.reply, memory: t.memory, at: Number(t.at) || 0 }))))
@@ -520,6 +536,8 @@ async function sendStoryTalk(ev = "") {
 설정·말투·지식 범위·현재 생사와 의식 상태에 맞춰 아래 대화를 검토하고 어긋난 내용은 직접 고친 최종 JSON을 반환한다. 근거가 부족하다는 이유만으로 확인 필요 메모를 만들지 않는다. 약속·관계·정보 변화와 memory도 일치시킨다. 설정상 불가능한 행동은 성공시키지 않는다. 미공개 진실은 reply와 memory에 노출하지 않는다.
 ${prompt}
 ${STORY_TALK_ELSEWHERE_RULE} 이렇게 이어받은 장면 변화는 지식 문제가 아니니 되돌리지 않는다.
+${(x => x.elsewhereThisChapter ? `누설 확인용(이 인물은 모르는 다른 대화와 행동): ${JSON.stringify(x.elsewhereThisChapter)}
+초안이 이 안의 구체적인 내용(주인공이 한 말, 둘 사이의 일, 그 세부)을 이 인물이 아는 듯 말하거나 짐작으로 맞히면 고친다. 주인공이 이번 대화에서 직접 말한 만큼은 알아도 된다.` : "")(storyTalkElsewhere(w, key, { full: true }))}
 검토 자료: ${JSON.stringify(storyTalkContext(w, key, { slim: true }))}
 미공개 진실(누설 금지): ${JSON.stringify(hiddenSecrets(w))}
 초안: ${JSON.stringify(out)}
@@ -535,7 +553,7 @@ reply에 지식·설정·생사 상태 문제가 없고, 주인공에게 할 일
     storySetBond(w, key, out.bond, n);
     storyTalkAddSelf(w, key, out.selfAdded);
     storyTalkApplyWhere(w, key, out);
-    s.turns.push({ user: text, ...(act ? { act: true } : {}), ...(ev ? { ev } : {}), reply: out.reply, memory: out.memory, state: out.character.state, knowledgeVersion: STORY_TALK_KNOWLEDGE, at: Date.now(), undo });
+    s.turns.push({ user: text, ...(act ? { act: true } : {}), ...(ev ? { ev } : {}), ...storyTalkPublic(out), reply: out.reply, memory: out.memory, state: out.character.state, knowledgeVersion: STORY_TALK_KNOWLEDGE, at: Date.now(), undo });
     storyTalkTrimUndo(s);
     if (!ev && out.ended === true) { s.turns[s.turns.length - 1].ended = true; delete w.story.talking; }   // 말로 작별했으면 버튼 없이 대화를 닫는다
     if (typeof storyArcNoticed === "function" && typeof out.noticed === "string" && out.noticed.trim()) {   // 주인공이 알 수 없는 지식을 꺼낸 것을 상대가 알아챘다
@@ -569,7 +587,7 @@ ${docText(S.pages[pk], w)}
 
 ## 이번 장에서 앞서 한 행동
 ${recent.length ? JSON.stringify(recent) : "(없음)"}
-${(x => x.elsewhereThisChapter ? `\n## 이번 장에 주인공이 다른 인물과 겪은 일 (차례대로)\n${JSON.stringify(x)}\n장면은 이 마지막 상태(주인공이 있는 곳, 흐른 시간, 바뀐 상황)에서 이어진다.\n` : "")(storyTalkElsewhere(w, STORY_SCENE_KEY))}
+${(x => x.elsewhereThisChapter ? `\n## 이번 장에 주인공이 다른 인물과 겪은 일 (차례대로)\n${JSON.stringify(x)}\n장면은 이 마지막 상태(주인공이 있는 곳, 흐른 시간, 바뀐 상황)에서 이어진다.\n` : "")(storyTalkElsewhere(w, STORY_SCENE_KEY, { full: true }))}
 ## 이번 행동
 ${JSON.stringify(text)}
 
@@ -584,7 +602,8 @@ ${JSON.stringify(text)}
 - reach는 이 행동의 결과로 주인공이 찾아내거나 함께 있게 되어 이제 말을 걸 수 있는 인물이다(이미 존재하는 인물 제목 그대로). 없으면 빈 배열.
 
 ${storyTalkPlaceLine(w, "")}${storyTalkWhereRule().replace("주인공이나 이 인물이", "주인공이").replace("(같이 자리를 옮김, 이 인물이 자리를 뜸)", "")}
-JSON 하나: {"reply":"서술","memory":"결과","reach":["인물 제목"],"where":{"player":null}}`;
+${STORY_TALK_PUBLIC_RULE}
+JSON 하나: {"reply":"서술","memory":"결과","reach":["인물 제목"],"where":{"player":null},"publicChange":""}`;
 }
 async function sendSceneTalk() {
   const w = S.world, key = STORY_SCENE_KEY; if (!storyOn(w) || storyTalkBusy() || storyTalkActive(w)) return;
@@ -602,7 +621,7 @@ async function sendSceneTalk() {
     if (job.ctl.signal.aborted || S.world !== w || w.story.chapter !== n) throw { code: "cancelled" };
     if (!out?.reply?.trim()) throw { code: "invalid_json" };
     const undo = storyTalkUndoPoint(w, s);
-    s.turns.push({ user: text, act: true, reply: storyTalkClean(out.reply), memory: stripMarks(String(out.memory || "")).slice(0, 300) || text, knowledgeVersion: STORY_TALK_KNOWLEDGE, at: Date.now(), undo });
+    s.turns.push({ user: text, act: true, ...storyTalkPublic(out), reply: storyTalkClean(out.reply), memory: stripMarks(String(out.memory || "")).slice(0, 300) || text, knowledgeVersion: STORY_TALK_KNOWLEDGE, at: Date.now(), undo });
     storyTalkApplyWhere(w, "", out);
     const reached = storySceneReach(w, out.reach, out.memory || out.reply);
     if (reached.length) s.turns[s.turns.length - 1].reach = reached;
