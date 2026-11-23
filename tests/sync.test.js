@@ -117,6 +117,28 @@ const until = async (fn, msg, ms = 15000) => { const t0 = Date.now(); while (Dat
     assert.strictEqual(row("SELECT count(*) c FROM sessions").c, 2);
     pass("새로고침해도 로그인이 유지된다");
 
+    /* 예전 기록을 든 기기가 저장해도 다른 기기의 대화를 덮지 않고 합친다 */
+    const turnsOnServer = () => (JSON.parse(row("SELECT data FROM worlds WHERE wid = 'wsync1'")?.data || "{}").story?.chapters?.[0]?.dialogues?.e2?.turns || []).map(t => t.user);
+    await A.page.evaluate(async () => { const w = await Store.getWorld("wsync1"); w.story = { protagonistKey: "e1", chapter: 1, total: 3, status: "active", chapters: [{ n: 1, title: "t", dialogues: { e2: { turns: [{ user: "하나", reply: "1", at: 1 }] } } }] }; await Store.saveWorld(w); });
+    await until(() => turnsOnServer().join() === "하나", "첫 대화가 서버에 올라감");
+    await B.page.evaluate(() => Sync.pull());
+    await until(() => B.page.evaluate(async () => (await Store.getWorld("wsync1"))?.story?.chapters?.[0]?.dialogues?.e2?.turns?.length === 1), "B가 첫 대화를 받음");
+    await A.page.evaluate(async () => { const w = await Store.getWorld("wsync1"); w.story.chapters[0].dialogues.e2.turns.push({ user: "둘", reply: "2", at: 2 }, { user: "셋", reply: "3", at: 3 }); await Store.saveWorld(w); });
+    await until(() => turnsOnServer().join() === "하나,둘,셋", "A의 대화가 서버에 올라감");
+    await B.page.evaluate(async () => { const w = await Store.getWorld("wsync1"); w.story.chapters[0].dialogues.e2.turns.push({ user: "넷", reply: "4", at: 4 }); await Store.saveWorld(w); });   // B는 받아 오기 전의 예전 기록에 저장한다
+    await until(() => turnsOnServer().join() === "하나,둘,셋,넷", "B가 덮지 않고 합쳐서 올림");
+    await A.page.evaluate(() => Sync.pull());
+    await until(() => A.page.evaluate(async () => (await Store.getWorld("wsync1")).story.chapters[0].dialogues.e2.turns.map(t => t.user).join() === "하나,둘,셋,넷"), "A도 합친 기록을 받음");
+    pass("예전 기록을 든 기기가 저장해도 다른 기기의 대화를 덮지 않고 합친다");
+    const kept = await B.page.evaluate(async () => {   // 화면에 열린 예전 세계관 객체로 저장해도, 그사이 받아 둔 더 새 기록을 먼저 합친다
+      const mem = await Store.getWorld("wsync1"), newer = JSON.parse(JSON.stringify(mem));
+      newer.story.chapters[0].dialogues.e2.turns.push({ user: "다섯", reply: "5", at: 5 }); newer.updatedAt = mem.updatedAt + 10; await Store.putWorldRaw(newer); Sync.incoming.set("wsync1", newer.updatedAt);   // 동기화가 받아 저장한 것처럼
+      mem.story.chapters[0].dialogues.e2.turns.push({ user: "여섯", reply: "6", at: 6 }); await Store.saveWorld(mem);
+      return (await Store.getWorld("wsync1")).story.chapters[0].dialogues.e2.turns.map(t => t.user).join();
+    });
+    assert.strictEqual(kept, "하나,둘,셋,넷,다섯,여섯");
+    pass("열린 세계관을 저장할 때도 그사이 받은 기록을 덮지 않는다");
+
     /* B에서 세계관을 지우면 A에서도 사라진다 */
     await B.page.click('#side [data-act="home"]');
     await B.page.click('[data-del="wsync1"]'); await B.page.click('[data-del-yes="wsync1"]');

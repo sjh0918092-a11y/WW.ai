@@ -49,10 +49,23 @@ const Store = {
     if (this.mode === "local") return Object.values(LS.get("wwiki:v1:worlds") || {});
     return Object.values(this.mem.worlds).map(w => JSON.parse(JSON.stringify(w)));
   },
+  /* 메모리의 세계관을 저장한다. 그사이 동기화가 더 새 내용(다른 기기 것, 합친 것)을 저장해 두었으면 덮지 않고 먼저 합친다 */
   saveWorld(w) {
-    w.updatedAt = Math.max(Date.now(), (w.updatedAt || 0) + 1); const copy = JSON.parse(JSON.stringify(w));
     Sync.mark("w", w.id);
-    return this.putWorldRaw(copy);
+    if (!Sync.incoming.has(w.id)) {   // 받아 둔 것이 없으면 예전처럼 바로 저장한다
+      w.updatedAt = Math.max(Date.now(), (w.updatedAt || 0) + 1);
+      return this.putWorldRaw(JSON.parse(JSON.stringify(w)));
+    }
+    return this.run(async () => {
+      const stored = await this.getWorld(w.id);
+      if (stored && Sync.incoming.get(w.id) === stored.updatedAt && (stored.updatedAt || 0) > (w.updatedAt || 0)) mergeWorldInto(w, stored);   // 동기화로 받은 것만 합친다(되돌리기처럼 일부러 예전으로 돌린 저장은 그대로)
+      Sync.incoming.delete(w.id);
+      w.updatedAt = Math.max(Date.now(), (w.updatedAt || 0) + 1, (stored?.updatedAt || 0) + 1);
+      const copy = JSON.parse(JSON.stringify(w));
+      if (this.mode === "idb") return IDB.put("w:" + w.id, copy);
+      if (this.mode === "local") { const all = LS.get("wwiki:v1:worlds") || {}; all[w.id] = copy; if (!LS.set("wwiki:v1:worlds", all)) throw { code: "local_full" }; return; }
+      this.mem.worlds[w.id] = copy;
+    });
   },
   putWorldRaw(copy) {   // 시각을 바꾸지 않고 그대로 저장(서버에서 받은 것)
     const w = copy;
@@ -156,16 +169,79 @@ const Store = {
   }
 };
 
+/* ---------- 세계관 합치기 ----------
+   두 기기에서 같은 세계관을 바꿨을 때 한쪽으로 덮지 않고 합친다(target을 고친다). 지우기보다 잃지 않기를 우선한다:
+   대화 기록은 차례마다 합치고, 장이 더 나아간 쪽의 이야기를 바탕으로 삼고, 항목·사실·연표·관계는 합집합으로 둔다 */
+const turnSig = t => JSON.stringify([t?.at || 0, t?.user || "", t?.reply || "", t?.ev || ""]);
+function mergeSession(a, b) {
+  if (!b) return a; if (!a) return JSON.parse(JSON.stringify(b));
+  const seen = new Set((a.turns || []).map(turnSig)), extra = (b.turns || []).filter(t => !seen.has(turnSig(t)));
+  if (!extra.length) return a;
+  const lastA = Math.max(0, ...(a.turns || []).map(t => Number(t.at) || 0)), lastB = Math.max(0, ...(b.turns || []).map(t => Number(t.at) || 0));
+  const base = lastB > lastA ? { ...JSON.parse(JSON.stringify(b)), draft: a.draft ?? b.draft } : a;   // 상태(지식·관계·장면)는 마지막 차례가 더 나중인 쪽
+  base.turns = [...(a.turns || []), ...JSON.parse(JSON.stringify(extra))].sort((x, y) => (Number(x.at) || 0) - (Number(y.at) || 0));
+  return base;
+}
+function mergeChapter(a, b) {
+  if (!b) return a; if (!a) return JSON.parse(JSON.stringify(b));
+  const d = a.dialogues ||= {};
+  for (const [k, v] of Object.entries(b.dialogues || {})) d[k] = mergeSession(d[k], v);
+  for (const [k, v] of Object.entries(b)) if (a[k] === undefined) a[k] = JSON.parse(JSON.stringify(v));
+  return a;
+}
+const storyProgress = w => [(w.storyLog || []).length, w.story ? 1 : 0, (w.story?.chapters || []).length, w.story?.status === "ended" ? 1 : 0, (w.story?.chapters || []).reduce((n, c) => n + Object.values(c.dialogues || {}).reduce((m, s) => m + (s?.turns?.length || 0), 0), 0)];   // 정리한 이야기 수 → 진행 중 여부 → 장 → 결말 → 대화 수
+const ahead = (x, y) => { for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] > y[i]; return false; };
+function unionBy(a = [], b = [], sig = x => JSON.stringify(x)) { const seen = new Set(a.map(sig)); return [...a, ...b.filter(x => !seen.has(sig(x)) && seen.add(sig(x)))]; }
+function mergeWorldInto(target, other) {
+  if (!target || !other || target.id !== other.id) return target;
+  const o = JSON.parse(JSON.stringify(other));
+  // 이야기: 더 나아간 쪽(정리한 이야기가 많은 쪽, 장이 많은 쪽)을 바탕으로, 같은 이야기면 겹치는 장의 대화를 합친다
+  const oAhead = ahead(storyProgress(o), storyProgress(target)), primary = oAhead ? o : target, secondary = oAhead ? target : o;
+  if (primary.story && secondary.story && primary.story.protagonistKey === secondary.story.protagonistKey && (primary.storyLog || []).length === (secondary.storyLog || []).length) {
+    const ps = primary === target ? target.story : o.story, ss = primary === target ? JSON.parse(JSON.stringify(o.story)) : target.story;
+    ps.chapters = (ps.chapters || []).map((c, i) => mergeChapter(c, ss.chapters?.[i]?.n === c.n ? ss.chapters[i] : null));
+    for (const [k, v] of Object.entries(ss.dialogueProfiles || {})) if (!ps.dialogueProfiles?.[k]) (ps.dialogueProfiles ||= {})[k] = v;
+  }
+  if (oAhead) { if (o.story) { target.story = o.story; target.mode = o.mode; } else { delete target.story; delete target.mode; } }
+  target.storyLog = unionBy(target.storyLog || [], o.storyLog || [], x => String(x?.arc));
+  if (!target.storyLog.length) delete target.storyLog;
+  // 항목: 없는 것은 더하고, 있는 것은 사실·별칭을 합친다
+  for (const [k, e] of Object.entries(o.entities || {})) {
+    const t = (target.entities ||= {})[k];
+    if (!t) { target.entities[k] = e; continue; }
+    t.facts = unionBy(t.facts || [], e.facts || [], f => f?.t || JSON.stringify(f));
+    if (Array.isArray(e.mentions)) t.mentions = unionBy(t.mentions || [], e.mentions);
+    if (e.page && !t.page) t.page = e.page;
+    for (const [f, v] of Object.entries(e)) if (t[f] === undefined) t[f] = v;
+  }
+  for (const f of ["timeline", "relations"]) if (Array.isArray(o[f])) target[f] = unionBy(target[f] || [], o[f]);
+  if (o.aliases) target.aliases = { ...o.aliases, ...(target.aliases || {}) };
+  for (const [f, v] of Object.entries(o)) if (target[f] === undefined) target[f] = v;
+  return target;
+}
 /* ---------- 계정과 서버 저장 (중계 서버의 /api) ----------
    로그인하면 저장할 때마다 바뀐 세계관과 문서를 모아 서버에 올리고, 앱을 열거나 다시 돌아올 때 바뀐 것을 받아 온다.
    같은 것을 두 기기에서 고치면 수정 시각이 더 최근인 쪽이 남는다. 로그인하지 않으면 지금처럼 브라우저에만 저장한다. */
 const AKEY = "wwiki:acct", DKEY = "wwiki:dirty";
 const Sync = {
-  acct: LS.get(AKEY), dirty: null, timer: null, busy: false, err: "", lastAt: 0, pulling: false, marks: new Map(), markSeq: 0,
+  acct: LS.get(AKEY), dirty: null, incoming: new Map(), timer: null, busy: false, err: "", lastAt: 0, pulling: false, marks: new Map(), markSeq: 0,
   base() { return (GS.relay || DEFAULT_RELAY).replace(/\/+$/, "") + "/api"; },
   load() { const d = LS.get(DKEY) || {}; this.dirty = { w: new Set(d.w || []), p: new Set(d.p || []), dw: new Set(d.dw || []), dp: new Set(d.dp || []) }; },
   persist() { LS.set(DKEY, { w: [...this.dirty.w], p: [...this.dirty.p], dw: [...this.dirty.dw], dp: [...this.dirty.dp] }); },
   pending() { const d = this.dirty; return d ? d.w.size + d.p.size + d.dw.size + d.dp.size : 0; },
+  /* 기준 시각: 이 기기가 마지막으로 서버와 맞춘 세계관의 수정 시각. 서버 쪽이 이보다 새로우면 다른 기기가 바꾼 것이다 */
+  bases() { const k = "wwiki:bases:" + (this.acct?.id || ""); return this._bases?.k === k ? this._bases.v : (this._bases = { k, v: LS.get(k) || {} }).v; },
+  setBase(wid, t) { const b = this.bases(); b[wid] = t; LS.set(this._bases.k, b); },
+  /* 서버의 세계관 기록을 어떻게 받을지: take(받기) · merge(양쪽이 바뀌어 합치기) · skip(이미 본 것) */
+  worldAction(r, local) {
+    if (!local) return "take";
+    if (!this.dirty) this.load();
+    const base = this.bases()[r.wid], dirty = this.dirty.w.has(r.wid), at = local.updatedAt || 0;
+    const serverNew = base == null ? r.updated !== at : r.updated > base;
+    if (!serverNew) return "skip";
+    if (!dirty) return base != null || at < r.updated ? "take" : "skip";
+    return "merge";
+  },
   mark(kind, wid, key) {
     if (!this.acct) return; if (!this.dirty) this.load();
     const d = this.dirty, id = key === undefined ? wid : wid + "\u0001" + key;
@@ -197,6 +273,11 @@ const Sync = {
   async push() {
     if (!this.acct || this.busy) { if (this.acct) this.schedule(); return; }
     if (!this.dirty) this.load(); if (!this.pending()) return;
+    if (this.dirty.w.size && !this._prePull) {   // 세계관을 올리기 전에 다른 기기의 변경을 먼저 받아 합친다(덮어쓰기 방지)
+      this._prePull = true;
+      try { await this.pull(); } finally { this._prePull = false; }
+      if (this.err) { this.schedule(30000); this.render(); return; }
+    }
     this.busy = true; this.err = "";
     try {
       await Store.q;
@@ -211,7 +292,7 @@ const Sync = {
         if (this.acct?.token !== token || this.base() !== base || this.dirty !== d) throw new Error("동기화 중 계정이나 서버가 바뀌었습니다.");
         await this.req("/sync", { method: "POST", body: JSON.stringify({ worlds: batch.filter(x => x[0] === "w" || x[0] === "dw").map(x => x[2]), pages: batch.filter(x => x[0] === "p" || x[0] === "dp").map(x => x[2]) }) });
         if (this.acct?.token !== token || this.base() !== base || this.dirty !== d) throw new Error("동기화 중 계정이나 서버가 바뀌었습니다.");
-        for (const [k, id, , mark] of batch) if (this.marks.get(k + ":" + id) === mark) d[k].delete(id);
+        for (const [k, id, body, mark] of batch) { if (this.marks.get(k + ":" + id) === mark) d[k].delete(id); if (k === "w") this.setBase(id, body.updated); }
         this.persist(); batch = []; size = 0;
       };
       for (const it of items) { const n = (it[2].data || "").length + 200; if (size + n > 4e6 && batch.length) await send(); batch.push(it); size += n; }
@@ -240,11 +321,17 @@ const Sync = {
       const local = await Store.getWorld(r.wid);
       if (!current()) throw new Error("동기화 중 계정이나 서버가 바뀌었습니다.");
       if (r.deleted) { if (local && (local.updatedAt || 0) <= r.updated) { await Store.deleteWorld(r.wid, true); changed++; } continue; }
-      if (!local || (local.updatedAt || 0) < r.updated || (equal && local.updatedAt === r.updated && !this.dirty?.w.has(r.wid))) {
-        const w = JSON.parse(r.data);
-        if (!w || w.kind !== "world" || w.id !== r.wid) throw new Error("세계관 응답 형식이 올바르지 않습니다.");
-        w.updatedAt = r.updated; await Store.putWorldRaw(w); changed++;
-      }
+      const act = this.worldAction(r, local);
+      if (act === "skip") continue;
+      const w = JSON.parse(r.data);
+      if (!w || w.kind !== "world" || w.id !== r.wid) throw new Error("세계관 응답 형식이 올바르지 않습니다.");
+      if (act === "merge") {   // 이 기기도, 다른 기기도 바꿨다: 덮지 않고 합쳐서 다시 올린다
+        const merged = mergeWorldInto(JSON.parse(JSON.stringify(local)), w);
+        merged.updatedAt = Math.max(local.updatedAt || 0, r.updated) + 1;
+        await Store.putWorldRaw(merged); this.mark("w", r.wid);
+      } else { w.updatedAt = r.updated; await Store.putWorldRaw(w); }
+      this.incoming.set(r.wid, act === "merge" ? Math.max(local.updatedAt || 0, r.updated) + 1 : r.updated);   // 열린 세계관을 저장할 때 이것을 먼저 합친다
+      this.setBase(r.wid, r.updated); changed++;
     }
     for (const r of j.pages || []) {
       if (!current()) throw new Error("동기화 중 계정이나 서버가 바뀌었습니다.");
@@ -294,7 +381,7 @@ const Sync = {
           if (known === r.stamp) continue;
           if (r.deleted) { changed += await this.applyIncoming({ [r.kind === "w" ? "worlds" : "pages"]: [r] }, current); state.seen[key] = r.stamp; continue; }
           const local = r.kind === "w" ? await Store.getWorld(r.wid) : await Store.getPage(r.wid, r.pkey), at = local && (r.kind === "w" ? local.updatedAt : local.savedAt) || 0;
-          if (local && (at > r.updated || (at === r.updated && known === undefined))) state.seen[key] = r.stamp;
+          if (r.kind === "w" ? this.worldAction(r, local) === "skip" : local && (at > r.updated || (at === r.updated && known === undefined))) state.seen[key] = r.stamp;
           else needed.push(r);
         }
         try {
