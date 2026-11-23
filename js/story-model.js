@@ -386,7 +386,7 @@ ${secretsOf(w).map(x => `- [id: ${x.id}] ${x.revealed ? "[이미 드러남] " : 
 - 아직 드러나지 않은 답은 summary, protagonistBlock, affected, facts에 사실로 쓰지 않는다. 독자의 선택으로 조사 경로를 놓쳤다면 미공개로 남을 수 있으며 그 결과를 인정한다.
 - 아직 공개되지 않은 진실은 집필 계획이다. 이미 확정된 단서나 사실을 지키면서 사용자 선택과 사건 때문에 바꿔야 한다면 secretRevise에 id, truth, cover, reason, source, quote를 적는다. source/quote는 아래 출처 자료 또는 current의 원문이다. 이미 공개된 진실이나 앞에서 확정한 사실은 바꾸지 않는다.
 
-` : ""}${storyClocksBlock(w, nextN, finish)}
+` : ""}${storyClocksBlock(w, nextN, finish)}${(x => x.length ? `## 대화와 조사로 정해진 사실 (decided)\n${JSON.stringify(x)}\n이 사실들은 이미 이야기 속에서 정해졌다. record·첫 장면·문서는 이와 어긋나지 않게 쓴다.\n` : "")(typeof storyTalkDecided === "function" ? storyTalkDecided(w) : [])}
 
 ## 지금까지의 장
 ${st.chapters.map(c => `- ${c.n}장 「${c.title}」 (${c.era}): ${c.summary}${c.wove?.length ? `\n  이 장에 엮인 탐험: ${c.wove.map(x => w.entities[x.key]?.title).filter(Boolean).join(", ")}` : ""}`).join("\n")}

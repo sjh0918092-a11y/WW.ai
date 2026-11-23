@@ -40,7 +40,8 @@ const server = appServer();
         if (kind === 'storyCast') return { profile: { personality: '무뚝뚝하다', lens: ['잘될 거라는 말에 토를 단다'], voice: '짧게 반말', examples: ['뭐야.', '비켜.'] }, character: { key: park, state: 'available', evidence: '부두에 있다' }, player: { key: seo, state: 'available', evidence: '부두에 있다' }, relationship: '동료', bond: '편함', scene: '부두', opening: '어, 서윤이네. 무슨 일이야?', knowledge: { known: [] } };
         if (kind === 'storyChat' && text.includes('이야기 서술자')) { lastScene = text; return { reply: '격납고 구석에 낡은 공구함이 있다—뚜껑이 열려 있다.', memory: '공구함을 찾았다', publicChange: '격납고 구석의 공구함이 열려 있다', reach: ['박도현', '없는사람'] }; }
         if (kind === 'storyChat') lastChat = text;
-        if (kind === 'storyChatReview') { lastReview = text; return { fix: { reply: '뭐?! 그걸 네가 어떻게 알아?' } }; }
+        if (kind === 'storyChatReview' && text.startsWith('## 한국어로 고치기')) { globalThis.koFix = (globalThis.koFix || 0) + 1; return { reply: '어, 베로니카도 몰라?', memory: '베로니카도 모른다' }; }
+        if (kind === 'storyChatReview') { lastReview = text; return { fix: { reply: globalThis.jaReply ? 'へえ、ベロニカも知らないのか。' : '뭐?! 그걸 네가 어떻게 알아?', ...(globalThis.decide ? { worldAdded: [{ fact: '죽은 작업자는 3교대 정비병 카일이다', knownBy: '같은 구역 정비 인원' }] } : {}) } }; }
         if (kind === 'storyChat') return { ended: !!globalThis.endTalk, mood: '크게 놀람', selfAdded: ['어릴 때 항구 마을에서 자랐다'], reply: '뭐? 그걸 네가 어떻게 알아?', memory: '한서윤이 등대지기 이야기를 꺼냈다', important: true, character: { key: park, state: 'available', evidence: '' }, player: { key: seo, state: 'available', evidence: '' }, relationship: '의심', bond: '각별함', scene: '부두', noticed: '들은 적 없는 이야기를 알고 있었다', knowledgeAdded: [{ fact: '한서윤이 등대지기가 밀수꾼이라고 말했다', via: 'told', source: 'user', evidence: '이번 발언' }] };
         if (kind === 'chapterPlan') return { protagonist: { tendency: '사람을 먼저 지켰다.', change: '혼자 버티던 사람이 도움을 청하게 됐다.', voice: '짧게 반말한다.' }, people: [{ title: '박도현', with: '함께 배를 찾았다.' }], open: ['등대의 불빛'] };
         throw { code: 'invalid_json' };
@@ -207,6 +208,12 @@ const server = appServer();
         { const bk = keyOf('브룬힐데 에이르'); w.entities[bk] = newEntity('브룬힐데 에이르', '인물', '함장'); w.entities[bk].type = '인물';
           const mp = storyTalkPrompt(w, park, '저 브룬힐데 님 좋아해요'), none = storyTalkPrompt(w, park, '오늘 날씨 좋네');
           out.mention = mp.includes('이번 말에 나온 이 세계의 대상') && mp.includes('브룬힐데 에이르') && !none.includes('이번 말에 나온 이 세계의 대상'); delete w.entities[bk]; }
+        // 조사로 정한 사실은 기록해 다른 인물·다음 장과 맞추고, 일본어가 섞이면 한국어로 고친다
+        { const c = curCh(w); w.story.talking = { key: park, ch: w.story.chapter };
+          globalThis.decide = true; globalThis.jaReply = true; storyTalkSession(w, park).draft = '그 작업자가 누군지 아세요?'; await sendStoryTalk(); globalThis.decide = false; globalThis.jaReply = false;
+          const tt = storyTalkSession(w, park).turns, last = tt[tt.length - 1];
+          out.decide = { stored: (c.decided || []).some(x => x.fact === '죽은 작업자는 3교대 정비병 카일이다' && x.by === park), other: storyTalkPrompt(w, old, '작업자 알아요?').split(PROMPT_CACHE_BREAK)[1].includes('3교대 정비병 카일'), rule: storyTalkPrompt(w, old, 'x').split(PROMPT_CACHE_BREAK)[0].includes('누구나 모른다고 하면 이야기가 멈춘다'), plan: chapterPlanPrompt(w, 2, null).includes('3교대 정비병 카일'), scene: storyScenePrompt(w, '시신을 살핀다').includes('3교대 정비병 카일'), ko: last.reply === '어, 베로니카도 몰라?' && globalThis.koFix === 1 };
+          await undoStoryTalk(); out.decide.undo = !(curCh(w).decided || []).length; delete w.story.talking; }
         out.talkNoticedRule = storyTalkPrompt(w, park, '등대지기는 밀수꾼이지?').includes('noticed');
 
         // 봉인: 장 표시와 장 출처를 이야기 번호가 붙은 일반 기록으로 바꾸고 이야기를 보관한다
@@ -276,6 +283,7 @@ const server = appServer();
     assert.deepStrictEqual(r.stranger, { far: true, near: true, opening: true, talk: true }, '근처에 없는 인물은 닿을 수 있는지 판정하고, 처음 보는 사이도 첫마디와 반응이 있다');
     assert.deepStrictEqual(r.cache, { draftSame: true, draftLong: true, reviewHead: true, identity: true }, '대화·검토 프롬프트의 앞부분(지침)은 인물·차례와 상관없이 같아 캐시가 재사용한다');
     assert.deepStrictEqual(r.castDelta, { profile: true, count: true, added: true, dropped: true, ready: true, prompt: true }, '준비는 프로필을 다시 쓰지 않고 지식은 바뀐 것만 받는다');
+    assert.deepStrictEqual(r.decide, { stored: true, other: true, rule: true, plan: true, scene: true, ko: true, undo: true }, '조사로 정한 사실은 기록해 공유하고 되돌릴 수 있으며, 일본어 응답은 한국어로 고친다');
     assert.deepStrictEqual(r.redoFull, { two: true, scene: true, ready: true }, '말을 나누기 전이면 대화 준비 다시는 처음부터 다시 준비한다');
     assert.deepStrictEqual(r.redo, { btn: true, one: true, turns: true, scene: true, added: true, ready: true, news: true, publicRule: true }, '대화 준비 다시는 말을 나눈 뒤면 아는 것만 다시 정리하고 공개 사건 규칙을 따른다');
     assert.deepStrictEqual(r.syncKeep, { synced: true, stamp: true, ready: true, noCast: true }, '장 반영(동기화) 뒤에도 대화 준비를 다시 하지 않는다');
