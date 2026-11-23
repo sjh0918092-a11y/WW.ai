@@ -136,6 +136,9 @@ const server = appServer();
               { source: 'dialogue:1:없는키:0', to: w.entities[old].title, what: '근거 없는 말' }, { source: `dialogue:1:${park}:${turnIdx}`, to: w.entities[seo].title, what: '주인공에게 옮김' }]);
             const ctx = storyTalkContext(w, old, { slim: true });
             out.hearsay = { kept: (c.hearsay || []).length, ctx: ctx.hearsay?.[0]?.what, from: ctx.hearsay?.[0]?.from === w.entities[park].title, castRule: storyTalkCastPrompt(w, old, 'B').includes('hearsay는 장이 넘어가는 동안'), plan: chapterPlanPrompt(w, 2, null).includes('## 말 옮기기') && chapterPlanPrompt(w, 2, null).includes('"hearsay":[') };
+            { const os = Object.assign(storyTalkSession(w, old, true), {}), keepK = os.knowledge; os.knowledge = { known: [{ fact: '주인공이 등대지기를 의심한다', via: 'told', source: 'hearsay:1:0', evidence: '박도현에게 들음' }] };
+              const op3 = storyTalkPrompt(w, old, '그거 어떻게 알아?'); out.hearsay.heardFrom = op3.includes('"heardFrom":"' + w.entities[park].title + '"') && op3.includes('들은 적 없는 척 사실과 다르게 지어내지는 않는다');
+              out.hearsay.privateRule = storyTalkCastPrompt(w, old, 'B').includes('작가 시점의 기록이다'); os.knowledge = keepK; }
             delete c.hearsay; }
           out.stranger = { far: storyTalkVisitLine(w, old).includes('플레이어가 이름으로 찾아 불렀다'), near: !storyTalkVisitLine(w, park).includes('이름으로 찾아'), opening: storyTalkCastPrompt(w, old, 'A').includes('빈 문자열 금지'), talk: storyTalkPrompt(w, park, '누구세요').includes('서비스 직원처럼 응대하지 않는다') };
           out.castDelta = { profile: JSON.stringify(w.story.dialogueProfiles[park]) === keepProfile, count: facts.length === kept, added: facts.includes('새로 안 것'), dropped: !facts.includes('틀린 옛 항목'), ready: storyTalkReady(w, park), prompt: castPrompts.some(t => t.includes('{} 또는 고친 전체 프로필') && !t.includes('"knowledgeDropped"')) && castPrompts.some(t => t.includes('"knowledgeDropped"') && t.includes('아는 것 정리만')) };
@@ -250,7 +253,7 @@ const server = appServer();
     assert.deepStrictEqual(r.where, { stub: true, pk: '「북쪽 부두」 · 3번 선착장', park: '「등대」 · 꼭대기', line: true, rule: true, visit: true, noPersonPlace: true, moved: '「등대」 · 계단' }, '위치는 장소 항목에 묶이고 새 장소는 문서 없이 항목만 생긴다');
     assert.strictEqual(r.sealStop, true, '밀린 반영이 실패하면 마무리하지 않는다'); assert.strictEqual(r.sealSync, true, '마무리 전에 밀린 문서를 반영한다');
     assert.deepStrictEqual(r.halfFail, { ready: false, err: true, turns: true, profile: true }, '두 갈래 중 하나라도 실패하면 준비 전체가 실패하고 아무것도 바뀌지 않는다');
-    assert.deepStrictEqual(r.hearsay, { kept: 1, ctx: '주인공이 박도현에게 등대지기를 의심한다고 털어놨다더라', from: true, castRule: true, plan: true }, '실제 대화에서 나온 말만 가까운 인물에게 옮겨지고, 그 인물의 준비가 들은 말로 받는다');
+    assert.deepStrictEqual(r.hearsay, { kept: 1, ctx: '주인공이 박도현에게 등대지기를 의심한다고 털어놨다더라', from: true, castRule: true, plan: true, heardFrom: true, privateRule: true }, '실제 대화에서 나온 말만 가까운 인물에게 옮겨지고, 그 인물의 준비가 들은 말로 받는다');
     assert.deepStrictEqual(r.stranger, { far: true, near: true, opening: true, talk: true }, '근처에 없는 인물은 닿을 수 있는지 판정하고, 처음 보는 사이도 첫마디와 반응이 있다');
     assert.deepStrictEqual(r.castDelta, { profile: true, count: true, added: true, dropped: true, ready: true, prompt: true }, '준비는 프로필을 다시 쓰지 않고 지식은 바뀐 것만 받는다');
     assert.deepStrictEqual(r.syncKeep, { synced: true, stamp: true, ready: true, noCast: true }, '장 반영(동기화) 뒤에도 대화 준비를 다시 하지 않는다');
