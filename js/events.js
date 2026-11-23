@@ -161,6 +161,7 @@ document.addEventListener("click", ev => {
     case "story-revert-cancel": S.confirmRevert = false; renderMain(); break;
     case "story-revert-go": revertStory(); break;
     case "story-snap-discard": discardStorySnap(); break;
+    case "talk-redo": redoStoryTalk(S.view.key); break;
     case "talk-prepare": { const w = S.world, k = S.view.key; prepareStoryTalk(k).then(() => storyTalkBegin(w, k)); break; }
     case "talk-end": endStoryTalk(); break;
     case "talk-back": { const a = storyTalkActive(S.world); if (a) openStoryTalk(a); break; }

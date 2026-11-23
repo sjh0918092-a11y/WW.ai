@@ -471,14 +471,39 @@ function storyTalkCastPartial(w, key, job, raw) {
   const el = document.getElementById("storyTalkOpening");
   if (first || !el) refreshStoryTalk(w, key); else el.textContent = text;
 }
-async function prepareStoryTalk(key) {
+/* 대화 준비 다시: 이번 장에 이미 말을 나눴으면 상태·장면은 두고 아는 것만 다시 정리하고, 첫마디뿐이면 첫마디까지 처음부터 다시 준비한다 */
+async function redoStoryTalk(key) {
+  const w = S.world;
+  if (!isStory(w) || !storyTalkers(w).includes(key) || storyTalkBusy() || !storyTalkReady(w, key)) return;
+  const s = storyTalkSession(w, key);
+  if ((s.turns || []).some(t => !t.opening)) return redoStoryTalkKnowledge(w, key, s);
+  return prepareStoryTalk(key, { redo: true });
+}
+async function redoStoryTalkKnowledge(w, key, s) {
+  if (S.storyGen || S.gen || S.syncing || S.edit) { s.err = "진행 중인 작성·편집을 마친 뒤 다시 준비할 수 있습니다."; refreshStoryTalk(w, key); return; }
+  if (!S.sample) { s.err = ERR.no_sample; refreshStoryTalk(w, key); return; }
+  const job = { ctl: new AbortController(), phase: "prepare", key, wid: w.id, knowledgeOnly: true }, stamp = storyTalkStamp(w, key);
+  S.storyTalkJob = job; s.err = ""; refreshStoryTalk(w, key);
+  let changed = false;
+  try {
+    const out = await callJson("storyCast", storyTalkCastPrompt(w, key, "B"), { signal: job.ctl.signal, modelTier: "quick" }, { title: w.entities[key].title + " · 아는 것", ch: w.story.chapter });
+    if (job.ctl.signal.aborted || S.world !== w || stamp !== storyTalkStamp(w, key)) throw { code: "cancelled" };
+    const knowledge = storyTalkCastKnowledge(storyTalkKnowledgeBase(w, key), out);
+    if (!knowledge) throw { code: "invalid_json" };
+    Object.assign(s, { knowledge, knowledgeVersion: STORY_TALK_KNOWLEDGE }); changed = true;
+    s.unsaved = false;
+    await Store.saveWorld(w);
+  } catch (e) { if (changed) s.unsaved = true; s.err = e.code === "cancelled" ? "다시 준비를 중단했습니다." : "아는 것을 다시 정리하지 못했습니다. " + errMsg(e); }
+  finally { if (S.storyTalkJob === job) S.storyTalkJob = null; refreshStoryTalk(w, key); }
+}
+async function prepareStoryTalk(key, opt = {}) {
   const w = S.world;
   if (!isStory(w) || !storyTalkers(w).includes(key) || storyTalkBusy()) return;
   if (storyTalkMissingPage(w, key)) { refreshStoryTalk(w, key); return; }
   if (typeof ensureAvatar === "function") ensureAvatar(w, key);   // 이미지가 있는 인물은 준비하면서 대화 프사도 맞춘다(뒤에서 돌고 대화를 기다리게 하지 않는다)
   const s = storyTalkSession(w, key, true);
   const stamp = storyTalkStamp(w, key);
-  if (storyTalkReady(w, key) && (s.stamp === stamp || (!s.cacheVersion && s.stamp === storyTalkLegacyStamp(w, key)))) {
+  if (!opt.redo && storyTalkReady(w, key) && (s.stamp === stamp || (!s.cacheVersion && s.stamp === storyTalkLegacyStamp(w, key)))) {
     // 기존에 검토를 마친 기록도 출처가 그대로면 AI 재호출 없이 캐시 형식만 이전한다.
     if (!s.cacheVersion || s.stamp !== stamp) {
       s.cacheVersion = 1; s.stamp = stamp;
@@ -487,8 +512,9 @@ async function prepareStoryTalk(key) {
     return;
   }
   if (S.storyGen || S.gen || S.syncing || S.edit) { s.err = "진행 중인 작성·편집을 마친 뒤 대화를 준비할 수 있습니다."; refreshStoryTalk(w, key); return; }
-  s.ready = false;
   if (!S.sample) { s.err = ERR.no_sample; refreshStoryTalk(w, key); return; }
+  s.ready = false;
+  if (opt.redo) s.turns = (s.turns || []).filter(t => !t.opening);   // 말을 나누기 전이면 첫마디도 새로 쓴다
   const job = { ctl: new AbortController(), phase: "prepare", key, wid: w.id };
   S.storyTalkJob = job; s.err = ""; refreshStoryTalk(w, key);
   try {
@@ -725,9 +751,9 @@ function storyTalkHtml() {
     <div class="talk-messages" id="storyTalkMessages" role="log" aria-label="대화 기록" tabindex="0">${history || (own && job.phase !== "prepare" ? "" : `<div class="talk-empty"><span aria-hidden="true">◇</span><p>${key ? (missingPage ? "" : (scene ? "주변을 살피거나 직접 행동해 보세요." : idle ? `대화 시작을 누르면 ${esc(title)}에게 다가갑니다.` : `${esc(title)}에게 말을 건네 보세요.`)) : "아직 등장한 대화 상대가 없습니다."}</p></div>`)}
     ${early ? `<div class="talk-message talk-other">${storyTalkFace(w, key, "md")}<span class="talk-speaker">${esc(title)}</span><div class="talk-bubble" id="storyTalkOpening">${esc(job.opening)}</div></div>` : ""}
     ${own && job.phase !== "prepare" ? `${job.user ? `<div class="talk-message talk-self${act ? " talk-act" : ""}"><span class="sr-only">나</span><div class="talk-bubble">${esc(job.user)}</div></div>` : ""}<div class="talk-message talk-other">${storyTalkFace(w, key, "md")}<span class="talk-speaker">${esc(title)}</span><div class="talk-bubble" id="storyTalkLive" role="status" aria-label="답변을 기다리는 중">…</div></div>` : ""}</div>
-    <footer class="talk-composer">${own && job.phase === "prepare" ? `<p class="talk-progress" role="status">${early ? "준비를 마무리하는 중… 답을 먼저 써 두셔도 됩니다" : "불러오는 중…"}</p>` : ""}${status ? `<p class="talk-unavailable">${esc(status)}</p>` : ""}${!storyOn(w) ? '<p class="talk-progress">결말 이후의 대화입니다.</p>' : ""}
+    <footer class="talk-composer">${own && job.phase === "prepare" ? `<p class="talk-progress" role="status">${job.knowledgeOnly ? "아는 것을 다시 정리하는 중…" : early ? "준비를 마무리하는 중… 답을 먼저 써 두셔도 됩니다" : "불러오는 중…"}</p>` : ""}${status ? `<p class="talk-unavailable">${esc(status)}</p>` : ""}${!storyOn(w) ? '<p class="talk-progress">결말 이후의 대화입니다.</p>' : ""}
     ${missingPage ? `<div class="talk-document"><p>${missingPage === key ? "인물" : "주인공"} 문서를 작성하면 대화할 수 있습니다.</p><button type="button" class="btn" data-k="${esc(missingPage)}">${missingPage === key ? "인물" : "주인공"} 문서 작성</button></div>` : ""}
     ${!missingPage && s?.err ? `<p class="talk-error" role="alert">${esc(s.err)}</p>` : ""}
     ${key ? `<label class="sr-only" for="storyTalkInput">${esc(title)}에게 할 말</label><div class="talk-input-row">${scene ? "" : `<button type="button" class="talk-mode" data-act="talk-mode" aria-pressed="${act}" title="말하기와 행동을 바꿉니다" ${busy ? "disabled" : ""}>${act ? "행동" : "말"}</button>`}<textarea id="storyTalkInput" rows="1" maxlength="2000" placeholder="${missingPage ? "문서를 먼저 작성해 주세요" : elsewhere ? `${esc(w.entities[active].title)}와(과) 대화 중입니다. 끝내야 말을 걸 수 있습니다` : early ? "답을 써 두면 준비가 끝난 뒤 보낼 수 있습니다" : idle && !(ready && blocked) ? (parted ? "대화를 마쳤습니다" : "대화 시작을 누르면 말을 걸 수 있습니다") : blocked ? (scene ? "지금은 행동할 수 없습니다" : "지금은 대화할 수 없습니다") : act ? (scene ? "행동 입력 (예: 격납고 구석을 살핀다)" : "행동 입력 (예: 서류를 빼앗는다)") : "메시지 입력"}" ${early || (allowed && !busy) ? "" : "disabled"}>${esc(s?.draft || "")}</textarea><button type="button" class="talk-send" data-act="talk-send" aria-label="메시지 보내기" ${!allowed || busy || !s?.draft?.trim() || s?.unsaved ? "disabled" : ""}><span aria-hidden="true">↑</span></button></div>
-    <div class="talk-actions">${elsewhere && !busy ? `<button type="button" class="btn pri" data-act="talk-back">「${esc(w.entities[active].title)}」와(과)의 대화로 돌아가기</button>` : ""}${startable ? `<button type="button" class="btn pri" data-act="talk-start">${s?.err && !ready ? "다시 시도" : storyTalkAwayPlace(w, key) ? `「${esc(storyTalkAwayPlace(w, key))}」로 가서 대화` : parted ? "다시 말 걸기" : "대화 시작"}</button>` : ""}${!idle && !scene && !missingPage && !ready && !busy ? '<button type="button" class="btn" data-act="talk-prepare">다시 시도</button>' : ""}${active === key && !busy ? '<button type="button" class="btn" data-act="talk-end" title="상대가 작별 인사를 하고 대화가 끝납니다. 끝낸 뒤에 다른 인물과 대화할 수 있습니다">대화 끝내기</button>' : ""}${own ? '<button type="button" class="btn" data-act="talk-stop">중단</button>' : ""}${s?.unsaved ? '<button type="button" class="btn" data-act="talk-save">저장 다시 시도</button>' : ""}</div>` : ""}</footer></section>`;
+    <div class="talk-actions">${elsewhere && !busy ? `<button type="button" class="btn pri" data-act="talk-back">「${esc(w.entities[active].title)}」와(과)의 대화로 돌아가기</button>` : ""}${startable ? `<button type="button" class="btn pri" data-act="talk-start">${s?.err && !ready ? "다시 시도" : storyTalkAwayPlace(w, key) ? `「${esc(storyTalkAwayPlace(w, key))}」로 가서 대화` : parted ? "다시 말 걸기" : "대화 시작"}</button>` : ""}${!idle && !scene && !missingPage && !ready && !busy ? '<button type="button" class="btn" data-act="talk-prepare">다시 시도</button>' : ""}${ready && !scene && !busy && !elsewhere && !missingPage ? '<button type="button" class="btn" data-act="talk-redo" title="문서와 이번 장 줄거리로 이 인물이 아는 것을 다시 정리합니다. 아직 말을 나누기 전이면 첫마디도 새로 씁니다">대화 준비 다시</button>' : ""}${active === key && !busy ? '<button type="button" class="btn" data-act="talk-end" title="상대가 작별 인사를 하고 대화가 끝납니다. 끝낸 뒤에 다른 인물과 대화할 수 있습니다">대화 끝내기</button>' : ""}${own ? '<button type="button" class="btn" data-act="talk-stop">중단</button>' : ""}${s?.unsaved ? '<button type="button" class="btn" data-act="talk-save">저장 다시 시도</button>' : ""}</div>` : ""}</footer></section>`;
 }

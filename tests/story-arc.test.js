@@ -156,6 +156,19 @@ const server = appServer();
           out.syncKeep = { synced: (S.pages[park].sections || []).some(x => x.ch === w.story.chapter), stamp: ts3.stamp === storyTalkStamp(w, park), ready: storyTalkReady(w, park) };
           await prepareStoryTalk(park); out.syncKeep.noCast = calls.filter(c => c === 'storyCast').length === casts;
         }
+        // 대화 준비 다시: 이미 말을 나눴으면 상태·장면·대화는 두고 아는 것만 다시 정리한다
+        { const ts = storyTalkSession(w, park), keepTurns = ts.turns.slice();
+          { const casts = calls.filter(c => c === 'storyCast').length; ts.turns = ts.turns.filter(t => t.opening); ts.scene = '옛 장면';   // 첫마디뿐이면 첫마디까지 처음부터
+            globalThis.castDelta = park; await redoStoryTalk(park); globalThis.castDelta = '';
+            out.redoFull = { two: calls.filter(c => c === 'storyCast').length === casts + 2, scene: ts.scene === '부두', ready: storyTalkReady(w, park) }; }
+          ts.turns = keepTurns.some(t => !t.opening) ? keepTurns : [...keepTurns, { user: '안녕', reply: '응', memory: '인사', state: 'available', knowledgeVersion: STORY_TALK_KNOWLEDGE, at: Date.now() }];
+          const turns = ts.turns.length, scene = ts.scene, casts = calls.filter(c => c === 'storyCast').length;
+          S.view = { name: 'storyTalk', key: park }; renderMain(); const btn = !!document.querySelector('[data-act="talk-redo"]');
+          ts.knowledge = { known: ts.knowledge.known.filter(x => x.fact !== '새로 안 것') }; ts.scene = '그대로인 장면';
+          globalThis.castDelta = park; await redoStoryTalk(park); globalThis.castDelta = '';
+          out.redo = { btn, one: calls.filter(c => c === 'storyCast').length === casts + 1, turns: ts.turns.length === turns, scene: ts.scene === '그대로인 장면', added: ts.knowledge.known.some(x => x.fact === '새로 안 것'), ready: storyTalkReady(w, park) };
+          ts.scene = scene; ts.turns = keepTurns;
+          out.redo.publicRule = storyTalkCastPrompt(w, park, 'B').includes('성격상 숨길 수 없는 사건') && storyTalkPrompt(w, park, '무슨 일 있었어?').includes('당연히 보고받거나 전해 들었을 공개된 사건'); }
         // 한 번에 한 사람: 대화 중에는 다른 인물·상황으로 옮기지 않고, 끝내면 상대가 작별 인사를 한다
         { w.story.talkExtra = [old];
           out.lock = { active: storyTalkActive(w) === park, listed: storyTalkers(w).includes(old) };
@@ -261,6 +274,8 @@ const server = appServer();
     assert.deepStrictEqual(r.stranger, { far: true, near: true, opening: true, talk: true }, '근처에 없는 인물은 닿을 수 있는지 판정하고, 처음 보는 사이도 첫마디와 반응이 있다');
     assert.deepStrictEqual(r.cache, { draftSame: true, draftLong: true, reviewHead: true, identity: true }, '대화·검토 프롬프트의 앞부분(지침)은 인물·차례와 상관없이 같아 캐시가 재사용한다');
     assert.deepStrictEqual(r.castDelta, { profile: true, count: true, added: true, dropped: true, ready: true, prompt: true }, '준비는 프로필을 다시 쓰지 않고 지식은 바뀐 것만 받는다');
+    assert.deepStrictEqual(r.redoFull, { two: true, scene: true, ready: true }, '말을 나누기 전이면 대화 준비 다시는 처음부터 다시 준비한다');
+    assert.deepStrictEqual(r.redo, { btn: true, one: true, turns: true, scene: true, added: true, ready: true, publicRule: true }, '대화 준비 다시는 말을 나눈 뒤면 아는 것만 다시 정리하고 공개 사건 규칙을 따른다');
     assert.deepStrictEqual(r.syncKeep, { synced: true, stamp: true, ready: true, noCast: true }, '장 반영(동기화) 뒤에도 대화 준비를 다시 하지 않는다');
     assert.deepStrictEqual(r.lock, { active: true, listed: true, view: true, chips: { old: false, scene: false, input: true, back: true, start: false, noCast: true, end: true },
       farewell: { added: 1, ev: 'farewell', user: '', prompt: true, active: '', ended: true, input: true, again: true, oldChip: false, undo: false }, elsewhere: true,
