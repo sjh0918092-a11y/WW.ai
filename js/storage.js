@@ -551,6 +551,37 @@ function exportWorldReadOnly(format = "html") {
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
   toast(`「${w.title}」을(를) 읽기 전용 ${json ? "JSON" : "HTML"}으로 내보냈습니다.`);
 }
+/* 되살린 기록 합치기: 백업 파일, 서버 시점 복원에서 꺼낸 행(wrangler 출력), 세계관 JSON 그대로 중 무엇이든 받아
+   안에 든 세계관을 찾고, 이미 있는 세계관이면 덮지 않고 합친다(대화 기록은 차례마다 합친다) */
+function recoveredWorlds(data) {
+  const out = [], visit = (x, d = 0) => {
+    if (!x || d > 8) return;
+    if (typeof x === "string") { const t = x.trim(); if (t.startsWith("{")) { try { visit(JSON.parse(t), d + 1); } catch {} } return; }
+    if (Array.isArray(x)) { x.forEach(v => visit(v, d + 1)); return; }
+    if (typeof x === "object") { if (x.kind === "world" && x.id && x.entities) { out.push(x); return; } for (const v of Object.values(x)) visit(v, d + 1); }
+  };
+  visit(data); return out;
+}
+const countTurns = w => (w?.story?.chapters || []).reduce((n, c) => n + Object.values(c.dialogues || {}).reduce((m, s) => m + (s?.turns?.length || 0), 0), 0);
+async function mergeRecovered(file) {
+  let data; try { data = JSON.parse(await file.text()); } catch { toast("JSON 파일을 읽지 못했습니다."); return; }
+  const found = recoveredWorlds(data);
+  if (!found.length) { toast("파일에서 세계관을 찾지 못했습니다."); return; }
+  const done = [];
+  try {
+    for (const rec of found) {
+      const local = await Store.getWorld(rec.id), open = S.world?.id === rec.id ? S.world : null;
+      if (!local) { await Store.saveWorld(rec); done.push(`「${rec.title || rec.id}」 새로 추가`); continue; }
+      const target = open || JSON.parse(JSON.stringify(local)), before = countTurns(target);
+      mergeWorldInto(target, rec);
+      await Store.saveWorld(target);
+      done.push(`「${target.title || rec.id}」 대화 ${Math.max(0, countTurns(target) - before)}개 되살림`);
+    }
+  } catch (e) { toast("합치다 멈췄습니다. " + errMsg(e)); return; }
+  S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  if (S.world) { const cur = S.worlds.find(w => w.id === S.world.id); if (cur && cur !== S.world) S.world = cur; }
+  renderAll(); toast(done.join(", ") + ".");
+}
 async function importAll(file) {
   let data; try { data = JSON.parse(await file.text()); } catch { toast("JSON 파일을 읽지 못했습니다."); return; }
   const worlds = (Array.isArray(data?.worlds) ? data.worlds : []).filter(w => w && w.kind === "world" && w.id && w.entities);

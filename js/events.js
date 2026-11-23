@@ -247,6 +247,7 @@ document.addEventListener("click", ev => {
     case "export-world-ro": case "export-world-ro-json": try { exportWorldReadOnly(d.act === "export-world-ro-json" ? "json" : "html"); } catch (e) { toast("내보내지 못했습니다. " + errMsg(e)); } break;
     case "export": exportAll().catch(e => toast("내보내지 못했습니다. " + errMsg(e))); break;
     case "import": $("#importFile")?.click(); break;
+    case "import-merge": $("#mergeFile")?.click(); break;
     case "log-back": S.view = S.world ? { name: "article", key: (S.recent.find(x => S.world.entities[x]) || S.world.mainKey) } : { name: "home" }; renderAll(); break;
     case "log-clear": LOG.length = 0; try { localStorage.removeItem(LOGK); } catch {} renderAll(); break;
     case "prompt-copy": {
@@ -396,6 +397,7 @@ document.addEventListener("change", ev => {
   if (ev.target.id === "cpType" && S.compose) S.compose.type = ev.target.value;
   if (ev.target.dataset?.angleOff !== undefined && S.world && !S.discovery?.busy) { const w = S.world; w.angleOff = ev.target.checked; Store.saveWorld(w).catch(err => toast("저장하지 못했습니다. " + errMsg(err))); document.querySelectorAll("[data-angle-off]").forEach(x => { x.checked = w.angleOff; }); return; }
   if (ev.target.id === "importFile" && ev.target.files?.[0]) { const f = ev.target.files[0]; ev.target.value = ""; importAll(f); }
+  if (ev.target.id === "mergeFile" && ev.target.files?.[0]) { const f = ev.target.files[0]; ev.target.value = ""; mergeRecovered(f); }
 });
 /* 랜덤 서핑 제스처: 단일 누름과 입력창 열기를 구분한다. */
 const discoveryGesture = { click: null, hold: null, suppressUntil: 0, x: 0, y: 0 };

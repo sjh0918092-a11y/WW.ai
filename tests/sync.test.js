@@ -138,6 +138,16 @@ const until = async (fn, msg, ms = 15000) => { const t0 = Date.now(); while (Dat
     });
     assert.strictEqual(kept, "하나,둘,셋,넷,다섯,여섯");
     pass("열린 세계관을 저장할 때도 그사이 받은 기록을 덮지 않는다");
+    const revived = await B.page.evaluate(async () => {   // 서버 시점 복원에서 꺼낸 행(wrangler 출력)을 합치면 사라진 대화가 돌아온다
+      const old = JSON.parse(JSON.stringify(await Store.getWorld("wsync1")));
+      old.story.chapters[0].dialogues.e2.turns.splice(3, 0, { user: "사라졌던 말", reply: "돌아옴", at: 3.5 });
+      const now = await Store.getWorld("wsync1"); now.story.chapters[0].dialogues.e2.turns = now.story.chapters[0].dialogues.e2.turns.filter(t => t.user === "하나"); await Store.saveWorld(now);
+      const file = new File([JSON.stringify([{ results: [{ data: JSON.stringify(old) }], success: true }])], "world-backup.json");
+      await mergeRecovered(file);
+      return (await Store.getWorld("wsync1")).story.chapters[0].dialogues.e2.turns.map(t => t.user).join();
+    });
+    assert.strictEqual(revived, "하나,둘,셋,사라졌던 말,넷,다섯,여섯");
+    pass("되살린 기록 합치기: 시점 복원에서 꺼낸 세계관을 덮지 않고 합쳐 사라진 대화를 되돌린다");
 
     /* B에서 세계관을 지우면 A에서도 사라진다 */
     await B.page.click('#side [data-act="home"]');
