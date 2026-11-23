@@ -253,6 +253,7 @@ function storyTalkContext(w, key, opt = {}) {
       player: curCh(w).dialoguePlayerAssessment?.version === STORY_TALK_ASSESSMENT ? curCh(w).dialoguePlayerAssessment : null },
     editorialTruths: secretsOf(w).map(s => ({ truth: s.truth, cover: s.cover, revealedInStory: s.revealed })),
     positions: { player: storyWhereText(storyWhere(w, pk)), character: storyWhereText(storyWhere(w, key)) },
+    ...((h => h.length ? { hearsay: h } : {})((curCh(w)?.hearsay || []).map((x, i) => ({ ...x, i })).filter(x => x.to === key).map(x => ({ from: w.entities[x.from]?.title || x.from, what: x.what, source: `hearsay:${w.story.chapter}:${x.i}` })))),
     ...storyTalkElsewhere(w, key) };
 }
 /* 위치(주인공·이 인물). 대화나 행동으로 옮겼으면 where에 새 위치를 받아 앱이 고친다 */
@@ -318,6 +319,7 @@ function storyTalkCastPrompt(w, key, part = "") {
 bond는 지금까지의 관계와 대화로 본, 주인공에 대한 이 인물의 마음의 거리다(${STORY_TALK_BONDS.join(", ")}). ${storyBond(w, key) != null ? `이미 정해진 거리는 「${STORY_TALK_BONDS[storyBond(w, key)]}」이다. 그대로 쓴다.` : "처음 정한다."}
 opening은 주인공이 이번 장에서 처음 이 인물에게 말을 걸러 왔을 때 이 인물이 먼저 건네는 한마디다. 주인공에게 할 일을 시키거나 재촉하지 않는다. 주인공을 알아보고 이 인물다운 관심을 보인다. 줄표(—, –)는 쓰지 않는다. 1~2문장, 필요하면 짧은 행동 묘사를 붙인다. 지금 장면·관계·상태·말투에 맞춘다(예: 반가운 인사, 용건을 묻는 말, 바쁘다며 짧게 받는 말, 경계하는 말). 앞선 대화가 있으면 그 이어짐을 살린다. 이 인물이 대화할 수 없는 상태면 빈 문자열이다. 인물이 모르는 사실과 아직 드러나지 않은 진실은 쓰지 않는다. 이야기의 큰 사건을 이 한마디로 진행시키지 않는다.
 profile의 성격·말투·예시, relationship, scene에도 인물이 모르는 세부 정보를 섞지 않는다. ${STORY_TALK_ELSEWHERE_RULE} scene과 opening은 이 이어받은 상황에서 출발한다.
+hearsay는 장이 넘어가는 동안 이 인물이 가까운 사람(from)에게서 전해 들은 주인공 이야기다. 아는 것으로 정리할 때는 via를 told, source를 그 hearsay의 source, evidence를 누구에게서 들었는지로 쓴다. 들은 말이라 부풀었거나 틀렸을 수 있음을 이 인물도 안다. 성격과 주인공과의 거리에 따라 첫마디나 태도에 묻어날 수 있다(따지기, 놀리기, 서운해하기, 모른 척하기).
 ${storyTalkVisitLine(w, key)} knowledgeAdded에는 모르는 사실 목록을 넣지 않는다. 근거가 없는 항목은 제외하되 별도 확인 메모는 만들지 않는다.
 
 ${JSON.stringify(storyTalkContext(w, key, { slim: true }))}

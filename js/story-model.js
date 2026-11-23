@@ -272,6 +272,14 @@ ${finish ? "" : `- 장이 넘어가는 동안 각 시계는 한 칸 나아가거
 - 시계는 숨겨진 진실을 드러내지 않는다. 진실은 플레이어가 단서로 짚었을 때만 드러난다. 미공개 진실마다 정해진 단서(clues) 중 아직 나오지 않은 것을 이번 첫 장면, nearby 인물, 장소에 놓을 수 있다. 정해진 단서가 없으면 진실과 이어지는 사실의 조각을 여러 곳에 흘린다. 단서는 조각이지 해설이 아니다.
 `}`;
 }
+/* 말 옮기기: 장이 넘어가는 동안 주인공이 누군가에게 한 말이 그 인물과 가까운 사람에게 전해진다 */
+const STORY_HEARSAY_RULE = `## 말 옮기기 (hearsay)
+- 장이 넘어가는 동안 주인공이 위 대화에서 한 말이나 행동이 그 상대(from)를 통해 from과 가까운 인물(to: 연인, 가족, 단짝, 같은 조직의 가까운 동료처럼 문서나 관계에 드러난 사이)에게 전해질 수 있다.
+- 말할 거리가 되는 것만 옮긴다(고백, 작업, 협박, 약속, 털어놓은 비밀, 다툼, 이상한 행동). 평범한 인사나 잡담은 옮기지 않는다. 0~3건, 없으면 빈 배열.
+- 누가 옮기는지는 성격이 정한다. 입이 가벼운 인물은 잘 옮기고, 입이 무거운 인물은 덜 옮긴다. 주인공이 비밀로 해 달라고 했으면 from의 성격과 주인공과의 거리에 따라 지키거나 어긴다.
+- what은 to가 전해 들은 모양 그대로 쓴다. 들은 말이라 부풀거나 비틀릴 수 있다(예: 같이 밥 먹자고 했다 → 내 연인에게 작업을 걸었다).
+- source는 그 말이 나온 위 대화의 source를 글자 그대로 쓴다. from은 그 대화의 상대, to는 이미 있는 다른 인물(주인공 제외)이다. 숨겨진 진실은 옮기지 않는다. 주인공이 실제로 한 말과 행동만 옮긴다.
+`;
 function openChapterRules(w, nextN, finish) {
   const st = w.story, N = totalOf(w), prev = st.chapters[nextN - 2], pk = st.protagonistKey, pt = w.entities[pk].title;
   const marked = (S.pages[pk]?.sections || []).some(x => x.ch === nextN - 1);
@@ -385,6 +393,7 @@ ${st.chapters.map(c => `- ${c.n}장 「${c.title}」 (${c.era}): ${c.summary}${c
 
 ${typeof storyArcBlock === "function" ? storyArcBlock(w) : ""}
 ${typeof storyDialogueBlock === "function" ? storyDialogueBlock(w) : ""}
+${finish ? "" : STORY_HEARSAY_RULE}
 ## 주인공 문서의 현재 내용
 ${pp ? docText(pp, w) : "(아직 작성되지 않음)"}
 
@@ -435,7 +444,7 @@ ${entityIndex(w, [pk])}
 ## 출력
 ${ENTITY_DEFINITION_RULE}
 JSON 객체 하나만 출력:
-{${prevOpen ? `"record":{"heading":"${nextN - 1}장의 작중 사건명","summary":"${nextN - 1}장에 실제로 일어난 일 3~5문장","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}]${finish ? ',"infoboxPatch":[],"summaryPatch":""' : ""}},` : ""}${finish ? "" : `"title":"이 장에 닥친 상황의 이름","era":"이 장의 작중 시점","summary":"첫 장면의 상황 2~4문장",`}"timeline":[{"year":"연도","month":3,"day":14,"event":"..."}],${finish ? "" : `"protagonistBlock":{"heading":"이 장에 닥친 상황의 이름","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}],"infoboxPatch":[{"label":"상태","value":"..."}],"summaryPatch":""},`}"affected":[{"title":"항목 제목","change":"이번 장에서 이 항목에 일어난 일 한 문장","kind":"update 또는 new"}],"newEntities":[{"title":"...","type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의"}],"wove":[{"title":"탐험 항목 제목","how":"이 항목이 이번 장 사건에서 맡은 역할 한 문장"}],"facts":[{"about":"항목 제목","fact":"..."}],${REL_JSON},"spineRevise":[{"n":4,"intent":"..."}],"revealNow":[],"secretRevise":[],${STORY_CONTINUITY_OUTPUT},"dialogueConsequences":[{"character":"대화 상대 이름","detail":"이번 장 본문에 나타난 구체적인 대화의 결과. 없으면 빈 배열"}],${finish ? "" : `"place":{"place":"장소 문서 제목","detail":"그 안의 자리","summary":"새 장소일 때만 한 줄 설명"},"nearby":[{"title":"인물 제목","why":"닿을 수 있는 이유","place":{"place":"이 인물이 있는 장소 문서 제목","detail":"그 안의 자리"}}],`}${st.entry ? '"noticed":[{"who":"인물 제목","what":"..."}],' : ""}"nextChoices":${finish ? "[]" : '["...","...","..."]'},"ending":${finish ? '{"epilogue":"결말 이후 3~5문장"}' : "null"}${finish ? "" : st.clocks?.length ? ',"clockMoves":[{"id":"c1","to":2,"why":"왜 나아갔거나 멈췄거나 물러섰는지 한 문장"}]' : `,${WORLD_CLOCK_JSON.replace('"stages"', '"at":1,"stages"')}`}}`;
+{${prevOpen ? `"record":{"heading":"${nextN - 1}장의 작중 사건명","summary":"${nextN - 1}장에 실제로 일어난 일 3~5문장","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}]${finish ? ',"infoboxPatch":[],"summaryPatch":""' : ""}},` : ""}${finish ? "" : `"title":"이 장에 닥친 상황의 이름","era":"이 장의 작중 시점","summary":"첫 장면의 상황 2~4문장",`}"timeline":[{"year":"연도","month":3,"day":14,"event":"..."}],${finish ? "" : `"protagonistBlock":{"heading":"이 장에 닥친 상황의 이름","sections":[{"heading":"...","level":1,"body":"... [[링크]] ..."}],"infoboxPatch":[{"label":"상태","value":"..."}],"summaryPatch":""},`}"affected":[{"title":"항목 제목","change":"이번 장에서 이 항목에 일어난 일 한 문장","kind":"update 또는 new"}],"newEntities":[{"title":"...","type":"${TYPES.join("|")} 중 하나","summary":"한 문장 정의"}],"wove":[{"title":"탐험 항목 제목","how":"이 항목이 이번 장 사건에서 맡은 역할 한 문장"}],"facts":[{"about":"항목 제목","fact":"..."}],${REL_JSON},"spineRevise":[{"n":4,"intent":"..."}],"revealNow":[],"secretRevise":[],${STORY_CONTINUITY_OUTPUT},"dialogueConsequences":[{"character":"대화 상대 이름","detail":"이번 장 본문에 나타난 구체적인 대화의 결과. 없으면 빈 배열"}]${finish ? "" : ',"hearsay":[{"from":"말을 들은 인물 제목","to":"그 말을 전해 들은 가까운 인물 제목","what":"전해진 말(부풀거나 비틀린 그대로)","source":"dialogue:장:키:번호"}]'},${finish ? "" : `"place":{"place":"장소 문서 제목","detail":"그 안의 자리","summary":"새 장소일 때만 한 줄 설명"},"nearby":[{"title":"인물 제목","why":"닿을 수 있는 이유","place":{"place":"이 인물이 있는 장소 문서 제목","detail":"그 안의 자리"}}],`}${st.entry ? '"noticed":[{"who":"인물 제목","what":"..."}],' : ""}"nextChoices":${finish ? "[]" : '["...","...","..."]'},"ending":${finish ? '{"epilogue":"결말 이후 3~5문장"}' : "null"}${finish ? "" : st.clocks?.length ? ',"clockMoves":[{"id":"c1","to":2,"why":"왜 나아갔거나 멈췄거나 물러섰는지 한 문장"}]' : `,${WORLD_CLOCK_JSON.replace('"stages"', '"at":1,"stages"')}`}}`;
 }
 function chapterBlockPrompt(w, key, chs) {
   const p = S.pages[key], e = w.entities[key];

@@ -88,6 +88,7 @@ function applyChapter(w, n, out, choice) {
   const np = rebuildPage(w, pk, base, secs, { infoboxPatch: pb.infoboxPatch, summaryPatch: pb.summaryPatch });
   np.syncedTo = n; np.storyNotice = st.status !== "ended"; np.check = null;
   st.chapters[st.chapters.length - 1].fresh = Object.keys(w.entities).filter(k => !before.has(k) && k !== pk);   // 이번 장에 새로 등장한 항목
+  storyApplyHearsay(w, st.chapters[st.chapters.length - 1], out.hearsay);
   if (typeof storyArcScene === "function") { storyArcScene(w, st.chapters[st.chapters.length - 1], out); storyArcNoticed(w, n, out.noticed); }   // 장이 끝날 때의 위치·만날 수 있는 인물, 주변이 알아챈 것
   return np;
 }
@@ -101,6 +102,19 @@ function storyApplyClocks(w, n, out) {
     const next = Math.min(c.stages.length, Math.max(0, c.at + Math.sign(to - c.at)));
     (c.log ||= []).push({ n, from: c.at, to: next, why: stripMarks(asText(m.why || "")).slice(0, 200) }); c.at = next;
   }
+}
+/* 말 옮기기: 실제 대화(source)에서 나온 말만, 그 대화 상대(from)에게서 다른 인물(to)에게로. 새 장에 두고 그 장의 대화 준비가 to의 들은 말로 쓴다 */
+function storyApplyHearsay(w, ch, list) {
+  const st = w.story, pk = st.protagonistKey, out = [];
+  for (const h of (Array.isArray(list) ? list : []).slice(0, 3)) {
+    const m = /^dialogue:(\d+):(.+):(\d+)$/.exec(String(h?.source || "")); if (!m) continue;
+    const from = m[2], turn = st.chapters.find(c => c.n === +m[1])?.dialogues?.[from]?.turns?.[+m[3]];
+    if (!turn || from === "@scene" || from === pk || !w.entities[from]) continue;
+    const to = kOf(w, String(h?.to || "")), what = stripMarks(asText(h?.what || "")).slice(0, 240);
+    if (!what || !w.entities[to] || w.entities[to].type !== "인물" || to === from || to === pk) continue;
+    out.push({ from, to, what, src: h.source });
+  }
+  if (ch && out.length) ch.hearsay = out;
 }
 async function advanceChapter(skip) {
   const w = S.world; if (!storyOn(w)) return;
