@@ -299,7 +299,8 @@ function storyTalkVisitLine(w, key) {
   return `이번 대화는 주인공이 ${storyWhereText(pw) || "지금 있는 곳"}에서 이 인물이 있는 ${storyWhereText(cw)}(으)로 찾아가서 시작한다. 갈 수 없는 상황(길이 막힘, 잠김, 주인공이 지금 자리를 뜰 수 없음, 너무 멂)이면 character.state를 unable로 하고 evidence에 그 이유를 쓴다. 갈 수 있으면 scene과 opening은 주인공이 찾아온 상황에서 출발한다.`;
 }
 const storyTalkProfileDone = (w, key) => { const p = w.story.dialogueProfiles?.[key]; return !!p?.voice && Array.isArray(p.lens) && p.lens.length > 0; };
-function storyTalkCastPrompt(w, key) {
+/* part: "" 한 번에 모두, "A" 상태·관계·거리·말투 정보·첫마디·장면, "B" 아는 것만. A와 B는 같은 자료로 동시에 돌고 둘 다 끝나야 준비가 끝난다 */
+function storyTalkCastPrompt(w, key, part = "") {
   return `## 스토리 대화 준비
 ## 판단할 두 인물 (서로 바꾸지 않는다)
 - 선택한 대화 상대: ${w.entities[key].title} / key=${JSON.stringify(key)} → character에 이 상대의 상태만 쓴다.
@@ -320,8 +321,19 @@ profile의 성격·말투·예시, relationship, scene에도 인물이 모르는
 ${storyTalkVisitLine(w, key)} knowledgeAdded에는 모르는 사실 목록을 넣지 않는다. 근거가 없는 항목은 제외하되 별도 확인 메모는 만들지 않는다.
 
 ${JSON.stringify(storyTalkContext(w, key, { slim: true }))}
+${storyTalkCastOutput(w, key, part)}`;
+}
+function storyTalkCastOutput(w, key, part) {
+  const head = `${storyTalkStatusOutput(w, key)},"relationship":"현재 관계","bond":"${STORY_TALK_BONDS.join("/")} 중 하나","opening":"이 인물이 먼저 건네는 한마디","profile":${storyTalkProfileDone(w, key) ? "{} 또는 고친 전체 프로필" : ""}{"personality":"고정 성격과 동기","lens":["세상을 보는 시각·자주 나오는 반응"],"voice":"말투 규칙","examples":["평상시 대사","화나거나 짜증 날 때 대사","놀라거나 들뜰 때 대사"]}`;
+  const know = `"knowledgeAdded":${STORY_TALK_KNOWLEDGE_DELTA.split('"knowledgeAdded":')[1]},"knowledgeDropped":["설정이 정정되어 틀리게 된 기존 항목의 fact. 없으면 빈 배열"]`;
+  const scene = `"scene":"이 인물이 현재 직접 접할 수 있는 상황만 요약"`;
+  if (part === "A") return `이번 호출은 상태 판정·관계·거리·말투 정보·첫마디·장면을 맡는다. 아는 것 목록은 다른 호출이 같은 자료로 정리하니 쓰지 않는다. 다만 첫마디와 scene에는 위 지식 규칙대로 이 인물이 아는 것만 담는다.
 출력은 아래 순서 그대로 쓴다(앞부분이 먼저 화면에 쓰인다).
-JSON 하나: {${storyTalkStatusOutput(w, key)},"relationship":"현재 관계","bond":"${STORY_TALK_BONDS.join("/")} 중 하나","opening":"이 인물이 먼저 건네는 한마디","profile":${storyTalkProfileDone(w, key) ? "{} 또는 고친 전체 프로필" : ""}{"personality":"고정 성격과 동기","lens":["세상을 보는 시각·자주 나오는 반응"],"voice":"말투 규칙","examples":["평상시 대사","화나거나 짜증 날 때 대사","놀라거나 들뜰 때 대사"]},${STORY_TALK_KNOWLEDGE_DELTA},"knowledgeDropped":["설정이 정정되어 틀리게 된 기존 항목의 fact. 없으면 빈 배열"]}`;
+JSON 하나: {${head},${scene}}`;
+  if (part === "B") return `이번 호출은 이 인물이 아는 것 정리만 맡는다. 상태 판정·관계·첫마디·말투 정보는 다른 호출이 같은 자료로 쓰니 쓰지 않는다.
+JSON 하나: {${know}}`;
+  return `출력은 아래 순서 그대로 쓴다(앞부분이 먼저 화면에 쓰인다).
+JSON 하나: {${head},${STORY_TALK_KNOWLEDGE_DELTA},"knowledgeDropped":["설정이 정정되어 틀리게 된 기존 항목의 fact. 없으면 빈 배열"]}`;
 }
 const storyTalkUserLine = t => t.ev === "farewell" ? "(주인공이 대화를 끝내고 자리를 떴다)" : t.ev === "return" ? "(주인공이 다시 찾아왔다)" : t.user;
 function storyTalkPrompt(w, key, text, act = false, ev = "") {
@@ -444,7 +456,13 @@ async function prepareStoryTalk(key) {
   const job = { ctl: new AbortController(), phase: "prepare", key, wid: w.id };
   S.storyTalkJob = job; s.err = ""; refreshStoryTalk(w, key);
   try {
-    const out = await callJson("storyCast", storyTalkCastPrompt(w, key), { signal: job.ctl.signal, modelTier: "quick", onText: ({ text: raw }) => storyTalkCastPartial(w, key, job, raw) }, { title: w.entities[key].title, ch: w.story.chapter });
+    // 두 갈래를 동시에 부르고 둘 다 끝나야 준비를 마친다. 하나라도 실패하면 다른 쪽도 멈추고 준비 전체를 실패로 둔다
+    const meta = { title: w.entities[key].title, ch: w.story.chapter };
+    const [outA, outB] = await Promise.all([
+      callJson("storyCast", storyTalkCastPrompt(w, key, "A"), { signal: job.ctl.signal, modelTier: "quick", onText: ({ text: raw }) => storyTalkCastPartial(w, key, job, raw) }, meta),
+      callJson("storyCast", storyTalkCastPrompt(w, key, "B"), { signal: job.ctl.signal, modelTier: "quick" }, { ...meta, title: meta.title + " · 아는 것" }),
+    ].map(p => p.catch(e => { if (!job.failed) { job.failed = e; job.ctl.abort(); } throw job.failed; })));
+    const out = { ...outA, knowledgeAdded: outB?.knowledgeAdded, knowledgeDropped: outB?.knowledgeDropped };
     if (job.ctl.signal.aborted || S.world !== w || stamp !== storyTalkStamp(w, key)) throw { code: "cancelled" };
     const prev = w.story.dialogueProfiles?.[key], profile = out?.profile?.voice ? { ...out.profile, ...(prev?.self?.length ? { self: prev.self } : {}) } : prev, knowledge = storyTalkCastKnowledge(storyTalkKnowledgeBase(w, key), out);
     if (!profile?.voice || !storyTalkAssessment(w, key, out) || !knowledge) throw { code: "invalid_json" };

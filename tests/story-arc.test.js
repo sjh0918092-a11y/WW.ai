@@ -35,7 +35,8 @@ const server = appServer();
         calls.push(kind);
         if (kind === 'storyBible') { lastBible = text; } if (kind === 'storyBible') return { protagonist: { ...(named ? { name: named } : {}), summary: '바뀌면 안 되는 새 정의', want: '배를 되찾는다', wound: '' }, storyPromise: { focus: '항구의 일상', central: { kind: 'goal', subject: '배' } }, spine: [{ n: 1, intent: '시작' }], clocks: [{ name: '밀수 조직', aim: '항구를 손에 넣는다', stages: ['부두 창고를 산다', '경비를 매수한다', '배를 빼돌린다', '항구를 장악한다'] }], secrets: [{ truth: '등대지기는 밀수꾼이다', cover: '성실한 등대지기', reveal: 3, clues: ['등대 창고의 젖은 밧줄', '선원이 본 밤배', '장부의 빈 날짜'] }], chapter1: { title: '사라진 배', era: '1201년', summary: '한서윤의 배가 사라졌다.', incident: '배가 사라졌다', nextChoices: ['부두로 간다', '박도현을 찾는다', '기다린다'] }, place: '북쪽 부두', nearby: [{ title: '박도현', why: '같은 부두에서 일한다' }, { title: '이노인', why: '' }, { title: '없는사람', why: '' }] };
         if (kind === 'chapterBlock') { if (failBlock) throw { code: 'invalid_json' }; return { blocks: [{ ch: 1, heading: '사라진 배', sections: [{ heading: '부두의 아침', level: 1, body: '그날 아침 배가 보이지 않았다.' }] }], infoboxPatch: [], summaryPatch: '', facts: [], relations: [], timeline: [], newEntities: [] }; }
-        if (kind === 'storyCast' && globalThis.castDelta) { lastCast = text; return { profile: {}, character: { key: globalThis.castDelta, state: 'available', evidence: '부두에 있다' }, player: { key: seo, state: 'available', evidence: '부두에 있다' }, relationship: '동료', bond: '편함', scene: '부두', opening: '', knowledgeAdded: [{ fact: '새로 안 것', via: 'experience', source: 'ch1', evidence: '봤다' }], knowledgeDropped: ['틀린 옛 항목'] }; }
+        if (kind === 'storyCast' && globalThis.failKnow && text.includes('아는 것 정리만')) { await new Promise(r => setTimeout(r, 20)); throw { code: 'network' }; }
+        if (kind === 'storyCast' && globalThis.castDelta) { lastCast = text; (globalThis.castPrompts ||= []).push(text); return { profile: {}, character: { key: globalThis.castDelta, state: 'available', evidence: '부두에 있다' }, player: { key: seo, state: 'available', evidence: '부두에 있다' }, relationship: '동료', bond: '편함', scene: '부두', opening: '', knowledgeAdded: [{ fact: '새로 안 것', via: 'experience', source: 'ch1', evidence: '봤다' }], knowledgeDropped: ['틀린 옛 항목'] }; }
         if (kind === 'storyCast') return { profile: { personality: '무뚝뚝하다', lens: ['잘될 거라는 말에 토를 단다'], voice: '짧게 반말', examples: ['뭐야.', '비켜.'] }, character: { key: park, state: 'available', evidence: '부두에 있다' }, player: { key: seo, state: 'available', evidence: '부두에 있다' }, relationship: '동료', bond: '편함', scene: '부두', opening: '어, 서윤이네. 무슨 일이야?', knowledge: { known: [] } };
         if (kind === 'storyChat' && text.includes('이야기 서술자')) { lastScene = text; return { reply: '격납고 구석에 낡은 공구함이 있다—뚜껑이 열려 있다.', memory: '공구함을 찾았다', reach: ['박도현', '없는사람'] }; }
         if (kind === 'storyChat') lastChat = text;
@@ -119,14 +120,18 @@ const server = appServer();
           const facts = storyTalkSession(w, park).knowledge.known.map(x => x.fact);
           { const j1 = {}, j2 = {}, head = '{"character":{"key":"x","state":"available","evidence":"e"},"player":{"key":"y","state":"available","evidence":"e"},"relationship":"r","bond":"편함","opening":"어, 왔어? 잠깐';
             storyTalkCastPartial(w, park, j1, head); storyTalkCastPartial(w, park, j2, head.replace('"state":"available","evidence":"e"},"player"', '"state":"dead","evidence":"e"},"player"'));
-            out.early = { shown: j1.opening, dead: j2.opening || '', order: lastCast.lastIndexOf('"opening":') < lastCast.lastIndexOf('"profile":') }; }
+            out.early = { shown: j1.opening, dead: j2.opening || '', order: (t => t.lastIndexOf('"opening":') < t.lastIndexOf('"profile":'))(castPrompts.find(t => t.includes('"opening":'))) }; }
           { const c = curCh(w), saved = JSON.stringify(c.where || null), pk = w.story.protagonistKey;
             storyArcScene(w, c, { place: { place: '북쪽 부두', detail: '3번 선착장' }, nearby: [{ title: w.entities[park].title, why: '같은 항구', place: { place: '등대', detail: '꼭대기', summary: '항구 끝 등대' } }, { title: '등대', why: '', place: { place: w.entities[park].title } }] });
             const lk = keyOf('등대');
             out.where = { stub: w.entities[lk]?.type === '지명' && w.entities[lk]?.page === false, pk: storyWhereText(storyWhere(w, pk)), park: storyWhereText(storyWhere(w, park)), line: storyTalkPlaceLine(w, park).includes('「등대」 · 꼭대기'), rule: storyTalkWhereRule().includes('"place":"장소 문서 제목"'), visit: storyTalkVisitLine(w, park).includes('찾아가서 시작한다'), noPersonPlace: !storySetWhere(w, park, { place: w.entities[pk].title }) };
             storyTalkApplyWhere(w, park, { where: { player: { place: '등대', detail: '계단' }, character: null } }); out.where.moved = storyWhereText(storyWhere(w, pk));
             c.where = JSON.parse(saved) || undefined; if (!c.where) delete c.where; }
-          out.castDelta = { profile: JSON.stringify(w.story.dialogueProfiles[park]) === keepProfile, count: facts.length === kept, added: facts.includes('새로 안 것'), dropped: !facts.includes('틀린 옛 항목'), ready: storyTalkReady(w, park), prompt: lastCast.includes('{} 또는 고친 전체 프로필') && lastCast.includes('"knowledgeDropped"') };
+          { const ts4 = storyTalkSession(w, park), turns = ts4.turns.length, prof = JSON.stringify(w.story.dialogueProfiles[park]); ts4.stamp = 'old'; globalThis.failKnow = true; globalThis.castDelta = park;
+            await prepareStoryTalk(park); globalThis.failKnow = false;
+            out.halfFail = { ready: storyTalkReady(w, park), err: /준비하지 못했습니다/.test(ts4.err || ''), turns: ts4.turns.length === turns, profile: JSON.stringify(w.story.dialogueProfiles[park]) === prof };
+            await prepareStoryTalk(park); globalThis.castDelta = ''; }
+          out.castDelta = { profile: JSON.stringify(w.story.dialogueProfiles[park]) === keepProfile, count: facts.length === kept, added: facts.includes('새로 안 것'), dropped: !facts.includes('틀린 옛 항목'), ready: storyTalkReady(w, park), prompt: castPrompts.some(t => t.includes('{} 또는 고친 전체 프로필') && !t.includes('"knowledgeDropped"')) && castPrompts.some(t => t.includes('"knowledgeDropped"') && t.includes('아는 것 정리만')) };
         }
         // 장의 변화를 인물 문서에 반영(동기화)해도 대화를 다시 준비하지 않는다
         { const ts3 = storyTalkSession(w, park), pg = S.pages[park];
@@ -232,6 +237,7 @@ const server = appServer();
     assert.deepStrictEqual(r.early, { shown: '어, 왔어? 잠깐', dead: '', order: true }, '준비 중 첫마디는 둘 다 대화할 수 있을 때만 먼저 보인다');
     assert.deepStrictEqual(r.where, { stub: true, pk: '「북쪽 부두」 · 3번 선착장', park: '「등대」 · 꼭대기', line: true, rule: true, visit: true, noPersonPlace: true, moved: '「등대」 · 계단' }, '위치는 장소 항목에 묶이고 새 장소는 문서 없이 항목만 생긴다');
     assert.strictEqual(r.sealStop, true, '밀린 반영이 실패하면 마무리하지 않는다'); assert.strictEqual(r.sealSync, true, '마무리 전에 밀린 문서를 반영한다');
+    assert.deepStrictEqual(r.halfFail, { ready: false, err: true, turns: true, profile: true }, '두 갈래 중 하나라도 실패하면 준비 전체가 실패하고 아무것도 바뀌지 않는다');
     assert.deepStrictEqual(r.castDelta, { profile: true, count: true, added: true, dropped: true, ready: true, prompt: true }, '준비는 프로필을 다시 쓰지 않고 지식은 바뀐 것만 받는다');
     assert.deepStrictEqual(r.syncKeep, { synced: true, stamp: true, ready: true, noCast: true }, '장 반영(동기화) 뒤에도 대화 준비를 다시 하지 않는다');
     assert.deepStrictEqual(r.lock, { active: true, listed: true, redirect: true, chips: { old: true, scene: true, end: true },
