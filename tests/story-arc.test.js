@@ -36,7 +36,7 @@ const server = appServer();
         if (kind === 'storyBible') { lastBible = text; } if (kind === 'storyBible') return { protagonist: { ...(named ? { name: named } : {}), summary: '바뀌면 안 되는 새 정의', want: '배를 되찾는다', wound: '' }, storyPromise: { focus: '항구의 일상', central: { kind: 'goal', subject: '배' } }, spine: [{ n: 1, intent: '시작' }], clocks: [{ name: '밀수 조직', aim: '항구를 손에 넣는다', stages: ['부두 창고를 산다', '경비를 매수한다', '배를 빼돌린다', '항구를 장악한다'] }], secrets: [{ truth: '등대지기는 밀수꾼이다', cover: '성실한 등대지기', reveal: 3, clues: ['등대 창고의 젖은 밧줄', '선원이 본 밤배', '장부의 빈 날짜'] }], chapter1: { title: '사라진 배', era: '1201년', summary: '한서윤의 배가 사라졌다.', incident: '배가 사라졌다', nextChoices: ['부두로 간다', '박도현을 찾는다', '기다린다'] }, place: '북쪽 부두', nearby: [{ title: '박도현', why: '같은 부두에서 일한다' }, { title: '이노인', why: '' }, { title: '없는사람', why: '' }] };
         if (kind === 'chapterBlock') { if (failBlock) throw { code: 'invalid_json' }; return { blocks: [{ ch: 1, heading: '사라진 배', sections: [{ heading: '부두의 아침', level: 1, body: '그날 아침 배가 보이지 않았다.' }] }], infoboxPatch: [], summaryPatch: '', facts: [], relations: [], timeline: [], newEntities: [] }; }
         if (kind === 'storyCast' && globalThis.failKnow && text.includes('아는 것 정리만')) { await new Promise(r => setTimeout(r, 20)); throw { code: 'network' }; }
-        if (kind === 'storyCast' && globalThis.castDelta) { lastCast = text; (globalThis.castPrompts ||= []).push(text); return { profile: {}, character: { key: globalThis.castDelta, state: 'available', evidence: '부두에 있다' }, player: { key: seo, state: 'available', evidence: '부두에 있다' }, relationship: '동료', bond: '편함', scene: '부두', opening: '', knowledgeAdded: [{ fact: '새로 안 것', via: 'experience', source: 'ch1', evidence: '봤다' }], knowledgeDropped: ['틀린 옛 항목'] }; }
+        if (kind === 'storyCast' && globalThis.castDelta) { lastCast = text; (globalThis.castPrompts ||= []).push(text); return { profile: {}, character: { key: globalThis.castDelta, state: 'available', evidence: '부두에 있다' }, player: { key: seo, state: 'available', evidence: '부두에 있다' }, relationship: '동료', bond: '편함', scene: '부두', opening: '', knowledgeAdded: [{ fact: '새로 안 것', via: 'experience', source: 'ch1', evidence: '봤다' }], knowledgeDropped: ['틀린 옛 항목'], chapterNews: [{ what: '부두에서 사람이 다친 채 발견됐다', reach: '항구 사람들' }] }; }
         if (kind === 'storyCast') return { profile: { personality: '무뚝뚝하다', lens: ['잘될 거라는 말에 토를 단다'], voice: '짧게 반말', examples: ['뭐야.', '비켜.'] }, character: { key: park, state: 'available', evidence: '부두에 있다' }, player: { key: seo, state: 'available', evidence: '부두에 있다' }, relationship: '동료', bond: '편함', scene: '부두', opening: '어, 서윤이네. 무슨 일이야?', knowledge: { known: [] } };
         if (kind === 'storyChat' && text.includes('이야기 서술자')) { lastScene = text; return { reply: '격납고 구석에 낡은 공구함이 있다—뚜껑이 열려 있다.', memory: '공구함을 찾았다', publicChange: '격납고 구석의 공구함이 열려 있다', reach: ['박도현', '없는사람'] }; }
         if (kind === 'storyChat') lastChat = text;
@@ -168,6 +168,8 @@ const server = appServer();
           globalThis.castDelta = park; await redoStoryTalk(park); globalThis.castDelta = '';
           out.redo = { btn, one: calls.filter(c => c === 'storyCast').length === casts + 1, turns: ts.turns.length === turns, scene: ts.scene === '그대로인 장면', added: ts.knowledge.known.some(x => x.fact === '새로 안 것'), ready: storyTalkReady(w, park) };
           ts.scene = scene; ts.turns = keepTurns;
+          { const dp = storyTalkPrompt(w, park, '무슨 일 있었어?');
+            out.redo.news = JSON.stringify(curCh(w).news) === JSON.stringify([{ what: '부두에서 사람이 다친 채 발견됐다', reach: '항구 사람들' }]) && dp.split(PROMPT_CACHE_BREAK)[1].includes('부두에서 사람이 다친 채 발견됐다') && dp.split(PROMPT_CACHE_BREAK)[0].includes('reach에 들면') && !storyTalkCastPrompt(w, park, 'B').includes('"chapterNews"'); }
           out.redo.publicRule = storyTalkCastPrompt(w, park, 'B').includes('성격상 숨길 수 없는 사건') && storyTalkPrompt(w, park, '무슨 일 있었어?').includes('당연히 보고받거나 전해 들었을 공개된 사건'); }
         // 한 번에 한 사람: 대화 중에는 다른 인물·상황으로 옮기지 않고, 끝내면 상대가 작별 인사를 한다
         { w.story.talkExtra = [old];
@@ -275,7 +277,7 @@ const server = appServer();
     assert.deepStrictEqual(r.cache, { draftSame: true, draftLong: true, reviewHead: true, identity: true }, '대화·검토 프롬프트의 앞부분(지침)은 인물·차례와 상관없이 같아 캐시가 재사용한다');
     assert.deepStrictEqual(r.castDelta, { profile: true, count: true, added: true, dropped: true, ready: true, prompt: true }, '준비는 프로필을 다시 쓰지 않고 지식은 바뀐 것만 받는다');
     assert.deepStrictEqual(r.redoFull, { two: true, scene: true, ready: true }, '말을 나누기 전이면 대화 준비 다시는 처음부터 다시 준비한다');
-    assert.deepStrictEqual(r.redo, { btn: true, one: true, turns: true, scene: true, added: true, ready: true, publicRule: true }, '대화 준비 다시는 말을 나눈 뒤면 아는 것만 다시 정리하고 공개 사건 규칙을 따른다');
+    assert.deepStrictEqual(r.redo, { btn: true, one: true, turns: true, scene: true, added: true, ready: true, news: true, publicRule: true }, '대화 준비 다시는 말을 나눈 뒤면 아는 것만 다시 정리하고 공개 사건 규칙을 따른다');
     assert.deepStrictEqual(r.syncKeep, { synced: true, stamp: true, ready: true, noCast: true }, '장 반영(동기화) 뒤에도 대화 준비를 다시 하지 않는다');
     assert.deepStrictEqual(r.lock, { active: true, listed: true, view: true, chips: { old: false, scene: false, input: true, back: true, start: false, noCast: true, end: true },
       farewell: { added: 1, ev: 'farewell', user: '', prompt: true, active: '', ended: true, input: true, again: true, oldChip: false, undo: false }, elsewhere: true,
