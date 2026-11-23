@@ -152,8 +152,9 @@ const server = appServer();
         // 한 번에 한 사람: 대화 중에는 다른 인물·상황으로 옮기지 않고, 끝내면 상대가 작별 인사를 한다
         { w.story.talkExtra = [old];
           out.lock = { active: storyTalkActive(w) === park, listed: storyTalkers(w).includes(old) };
-          openStoryTalk(old); out.lock.redirect = S.view.key === park; renderMain();
-          out.lock.chips = { old: document.querySelector(`[data-talk-key="${old}"]`)?.disabled, scene: document.querySelector('[data-talk-key="@scene"]')?.disabled, end: !!document.querySelector('[data-act="talk-end"]') };
+          openStoryTalk(old); out.lock.view = S.view.key === old; renderMain();   // 대화 중에도 다른 탭의 지난 대화는 볼 수 있다
+          out.lock.chips = { old: document.querySelector(`[data-talk-key="${old}"]`)?.disabled, scene: document.querySelector('[data-talk-key="@scene"]')?.disabled, input: document.querySelector('#storyTalkInput')?.disabled, back: !!document.querySelector('[data-act="talk-back"]'), start: !!document.querySelector('[data-act="talk-start"]'), noCast: !S.storyTalkJob };
+          openStoryTalk(park); renderMain(); out.lock.chips.end = !!document.querySelector('[data-act="talk-end"]');
           const before = storyTalkSession(w, park).turns.length;
           await endStoryTalk();
           const tt = storyTalkSession(w, park).turns;
@@ -249,7 +250,7 @@ const server = appServer();
     assert.deepStrictEqual(r.stranger, { far: true, near: true, opening: true, talk: true }, '근처에 없는 인물은 닿을 수 있는지 판정하고, 처음 보는 사이도 첫마디와 반응이 있다');
     assert.deepStrictEqual(r.castDelta, { profile: true, count: true, added: true, dropped: true, ready: true, prompt: true }, '준비는 프로필을 다시 쓰지 않고 지식은 바뀐 것만 받는다');
     assert.deepStrictEqual(r.syncKeep, { synced: true, stamp: true, ready: true, noCast: true }, '장 반영(동기화) 뒤에도 대화 준비를 다시 하지 않는다');
-    assert.deepStrictEqual(r.lock, { active: true, listed: true, redirect: true, chips: { old: true, scene: true, end: true },
+    assert.deepStrictEqual(r.lock, { active: true, listed: true, view: true, chips: { old: false, scene: false, input: true, back: true, start: false, noCast: true, end: true },
       farewell: { added: 1, ev: 'farewell', user: '', prompt: true, active: '', ended: true, input: true, again: true, oldChip: false, undo: false }, elsewhere: true,
       back: { ev: 'return', prompt: true, active: true, plan: true }, lazy: { noCast: true, start: '대화 시작', input: true }, afterEnding: true, spoken: { ended: true, active: '', last: 'farewell', shown: true, rule: true, undo: true }, goLabel: '「등대」로 가서 대화', chipPlace: '등대', went: '「등대」 · 꼭대기', chapterEnds: true }, '대화 중에는 다른 상대로 못 옮기고, 끝내면 작별 인사, 다시 찾아가면 새 첫마디');
     assert.deepStrictEqual(r.fix, { reply: '뭐?! 그걸 네가 어떻게 알아?', mood: '크게 놀람', rule: true, review: true }, '검토는 고친 필드만 돌려주고 나머지는 초안을 쓴다. 기분은 저장된다'); assert.strictEqual(r.moodUndone, '', '되돌리면 기분도 되돌아간다');
