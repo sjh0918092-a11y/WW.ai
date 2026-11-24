@@ -156,6 +156,17 @@ const until = async (fn, msg, ms = 15000) => { const t0 = Date.now(); while (Dat
       const got = await B.page.evaluate(async bytes => { await mergeRecovered(new File([new Uint8Array(bytes)], "recovered-worlds.zip")); return (await Store.getWorld("wsync1")).story.chapters[0].dialogues.e2.turns.map(t => t.user); }, bytes);
       assert.ok(got.includes("zip에서 온 말")); pass("되살린 기록 합치기는 zip 파일도 바로 읽는다");
     }
+    { // 되살린 파일에 문서가 있으면, 그 시점과 다른 문서는 그 시점 것으로 되돌린다
+      const got = await B.page.evaluate(async () => {
+        const w = await Store.getWorld("wsync1"), keys = Object.keys(await Store.listPages("wsync1")), k = keys[0];
+        const good = JSON.parse(JSON.stringify(await Store.getPage("wsync1", k))); good.summary = "장 반영까지 된 문서";
+        const stale = JSON.parse(JSON.stringify(good)); stale.summary = "덮인 예전 문서"; await Store.savePage("wsync1", stale);
+        const same = keys[1] ? JSON.parse(JSON.stringify(await Store.getPage("wsync1", keys[1]))) : null;
+        await mergeRecovered(new File([JSON.stringify({ worlds: [w], pages: [{ wid: "wsync1", at: "x", list: [good, ...(same ? [same] : [])] }] })], "r.json"));
+        return { summary: (await Store.getPage("wsync1", k)).summary, toast: document.querySelector(".toast")?.innerText || "" };
+      });
+      assert.strictEqual(got.summary, "장 반영까지 된 문서"); assert.ok(got.toast.includes("문서 1개 되살림"), got.toast); pass("되살린 기록 합치기는 덮인 문서도 그 시점 것으로 되돌린다");
+    }
     { // 오래된 기록을 든 기기가 올려도 서버는 덮지 않고 서버 기록을 돌려주며, 기기는 합쳐서 다시 올린다
       await B.page.evaluate(() => Sync.push()); await until(() => B.page.evaluate(() => !Sync.pending() && !Sync.busy), "B 올리기 끝");
       const before = JSON.parse(row("SELECT data FROM worlds WHERE wid = 'wsync1'").data).story.chapters[0].dialogues.e2.turns.length;

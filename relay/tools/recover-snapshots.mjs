@@ -52,19 +52,32 @@ for (const r of current) for (let t = r.updated - 30 * 60e3; t < r.updated; t +=
 const list = [...times].sort((a, b) => a - b);
 console.log(`시점 ${list.length}개를 차례로 확인합니다.`);
 
-const found = []; let restored = false;
+/* 세계관마다 가장 많이 나아간(같으면 가장 늦은) 시점을 고르고, 그 시점의 문서들도 함께 꺼낸다(장 반영으로 바뀐 문서까지 되살리기) */
+const progress = w => [(w.storyLog || []).length, w.story ? 1 : 0, (w.story?.chapters || []).length, w.story?.status === "ended" ? 1 : 0, (w.story?.chapters || []).reduce((n, c) => n + Object.values(c.dialogues || {}).reduce((m, s) => m + (s?.turns?.length || 0), 0), 0)];
+const notBehind = (x, y) => { for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] > y[i]; return true; };
+const found = [], best = {}; let restored = false;
 try {
   for (const t of list) {
     const iso = new Date(t).toISOString().replace(/\.\d+Z$/, "Z");
     try {
       await D.restoreAt(iso); restored = true;
       const got = await D.query(select);
-      for (const r of got) { try { found.push(JSON.parse(r.data)); } catch {} }
+      for (const r of got) {
+        let w; try { w = JSON.parse(r.data); } catch { continue; }
+        found.push(w);
+        const pr = progress(w);
+        if (!best[r.wid] || notBehind(pr, best[r.wid].pr)) {
+          const pages = (await D.query(`SELECT pkey, data FROM pages WHERE deleted = 0 AND wid = '${String(r.wid).replace(/'/g, "")}'`)).map(x => { try { return JSON.parse(x.data); } catch { return null; } }).filter(Boolean);
+          best[r.wid] = { pr, at: iso, pages };
+        }
+      }
       console.log(`  ${iso}: 세계관 ${got.length}개`);
     } catch (e) { console.log(`  ${iso}: 건너뜀 (${String(e.message || e).split("\n")[0].slice(0, 120)})`); }
   }
 } finally {
   if (restored) { await D.restoreTo(now); console.log("데이터베이스를 지금 시점으로 되돌렸습니다."); }
 }
-writeFileSync("recovered-worlds.json", JSON.stringify(found));
+const pages = Object.entries(best).map(([wid, b]) => ({ wid, at: b.at, list: b.pages }));
+for (const p of pages) console.log(`  문서: ${p.wid} — ${p.at} 시점 ${p.list.length}개`);
+writeFileSync("recovered-worlds.json", JSON.stringify({ worlds: found, pages }));
 console.log(`recovered-worlds.json 에 ${found.length}개를 담았습니다. 앱 설정의 '되살린 기록 합치기'로 이 파일을 고르세요.`);

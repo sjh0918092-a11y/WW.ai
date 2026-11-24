@@ -609,6 +609,7 @@ async function mergeRecovered(file) {
   }
   const found = recoveredWorlds(data);
   if (!found.length) { toast("파일에서 세계관을 찾지 못했습니다."); return; }
+  const pageSets = Array.isArray(data?.pages) ? data.pages.filter(x => x && typeof x.wid === "string" && Array.isArray(x.list)) : [];
   const done = [];
   try {
     for (const rec of found) {
@@ -618,6 +619,20 @@ async function mergeRecovered(file) {
       mergeWorldInto(target, rec);
       await Store.saveWorld(target);
       done.push(`「${target.title || rec.id}」 대화 ${Math.max(0, countTurns(target) - before)}개 되살림`);
+    }
+    // 문서: 가장 많이 나아간 시점의 문서와 다르면 그 시점 것으로 되돌린다(덮인 장 반영까지 되살린다)
+    const bare = p => { const { savedAt, ...rest } = p || {}; return JSON.stringify(rest); };
+    for (const set of pageSets) {
+      if (!await Store.getWorld(set.wid)) continue;
+      let n = 0;
+      for (const p of set.list) {
+        if (!p || typeof p.key !== "string") continue;
+        const local = await Store.getPage(set.wid, p.key);
+        if (local && bare(local) === bare(p)) continue;
+        await Store.savePage(set.wid, JSON.parse(JSON.stringify(p))); n++;
+      }
+      if (n) done.push(`문서 ${n}개 되살림`);
+      if (S.world?.id === set.wid) S.pages = await Store.listPages(set.wid);
     }
   } catch (e) { toast("합치다 멈췄습니다. " + errMsg(e)); return; }
   S.worlds = (await Store.listWorlds()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
