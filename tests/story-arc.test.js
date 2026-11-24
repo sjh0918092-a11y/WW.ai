@@ -218,6 +218,9 @@ const server = appServer();
           const plan = chapterPlanPrompt(w, 2, null), blk = chapterBlockPrompt(w, w.story.protagonistKey, [1]), other = chapterBlockPrompt(w, park, [1]);
           out.wish = plan.includes('용의선상 인물을 여럿 만들어 줘') && plan.includes('새 인물을 최대 4명까지') && blk.includes('1장 첫 장면에 등장시키거나 언급하며') && !other.includes('최대 4명');
           if (keep) w.story.wish = keep; else delete w.story.wish; out.wish = out.wish && !chapterPlanPrompt(w, 2, null).includes('최대 4명까지'); }
+        { const t = w.entities[old].title; S.pages[old] = { ...(S.pages[old] || { key: old, title: t, sections: [] }), infobox: [{ label: '성별', value: '여성' }] };
+          const dp = storyTalkPrompt(w, park, `${t} 알아?`), parts = dp.split(PROMPT_CACHE_BREAK), plain = storyTalkPrompt(w, park, '안녕');
+          out.mention = parts[0].includes('어긋나는 사실(성별, 나이, 소속') && /mentioned\(.*성별: 여성/.test(parts[1]) && !plain.split(PROMPT_CACHE_BREAK)[1].includes('mentioned(') && storyScenePrompt(w, `${t}을 찾는다`).includes('성별: 여성'); }
         out.talkNoticedRule = storyTalkPrompt(w, park, '등대지기는 밀수꾼이지?').includes('noticed');
 
         // 봉인: 장 표시와 장 출처를 이야기 번호가 붙은 일반 기록으로 바꾸고 이야기를 보관한다
@@ -288,6 +291,7 @@ const server = appServer();
     assert.deepStrictEqual(r.cache, { draftSame: true, draftLong: true, reviewHead: true, identity: true }, '대화·검토 프롬프트의 앞부분(지침)은 인물·차례와 상관없이 같아 캐시가 재사용한다');
     assert.deepStrictEqual(r.castDelta, { profile: true, count: true, added: true, dropped: true, ready: true, prompt: true }, '준비는 프로필을 다시 쓰지 않고 지식은 바뀐 것만 받는다');
     assert.strictEqual(r.wish, true, '바라는 이야기는 장마다 따르고, 새 인물을 바라면 수 제한보다 우선한다');
+    assert.strictEqual(r.mention, true, '대화에 나온 인물의 문서 요지를 주어 성별·소속 같은 사실을 어긋나게 지어내지 않게 한다');
     assert.deepStrictEqual(r.decide, { stored: true, other: true, rule: true, plan: true, scene: true, ko: true, undo: true }, '조사로 정한 사실은 기록해 공유하고 되돌릴 수 있으며, 일본어 응답은 한국어로 고친다');
     assert.deepStrictEqual(r.redoFull, { two: true, scene: true, ready: true }, '말을 나누기 전이면 대화 준비 다시는 처음부터 다시 준비한다');
     assert.deepStrictEqual(r.redo, { btn: true, one: true, turns: true, scene: true, added: true, ready: true, news: true, publicRule: true }, '대화 준비 다시는 말을 나눈 뒤면 아는 것만 다시 정리하고 공개 사건 규칙을 따른다');

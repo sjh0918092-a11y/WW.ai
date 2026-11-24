@@ -306,6 +306,18 @@ memory: ${JSON.stringify(out.memory || "")}`, { signal, modelTier: "check" }, { 
   if (storyTalkForeign(out.reply)) throw { code: "foreign_reply", message: "응답에 일본어가 섞여 고치지 못했습니다. 다시 보내 주세요." };
   return out;
 }
+/* 대화에 나온 인물·항목의 문서 요지: 모르는 사람이라도 문서와 어긋나는 사실(성별, 소속, 생사)을 지어내지 않게 한다 */
+const STORY_TALK_MENTION_RULE = "mentioned는 지금 대화에 나온 인물·항목의 문서 요지다(작가 시점). 이 인물이 그 내용을 다 안다는 뜻은 아니지만, 말할 때 이 요지와 어긋나는 사실(성별, 나이, 소속, 직책, 생사, 관계)을 지어내지 않는다. 같은 조직·구역·동네 사람이거나 아는 사이면 이름, 성별, 하는 일 같은 겉으로 드러난 사실은 안다. 모르는 것은 모른다고 하거나 말하지 않는다.";
+function storyTalkMentioned(w, key, text) {
+  const pk = w.story.protagonistKey, s = isSceneKey(key) ? null : storyTalkSession(w, key);
+  const hay = [text, ...(s?.turns || []).slice(-4).flatMap(t => [t.user, t.reply]), ...storyTalkNews(w).map(x => x.what), ...storyTalkDecided(w).map(x => x.fact)].map(x => String(x || "")).join("\n");
+  const clean = v => stripMarks(asText(v || "")).replace(/\s+/g, " ").trim();
+  return Object.entries(w.entities)
+    .filter(([k, e]) => k !== key && k !== pk && !isSceneKey(k) && e?.title && e.title.length >= 2 && hay.includes(e.title))
+    .sort((a, b) => b[1].title.length - a[1].title.length).slice(0, 6)
+    .map(([k, e]) => { const p = S.pages[k]; return { name: e.title, type: e.type, summary: clean(p?.summary || e.summary).slice(0, 220), ...(p?.infobox?.length ? { infobox: p.infobox.slice(0, 10).map(x => `${clean(x.label)}: ${clean(x.value)}`.slice(0, 120)) } : {}) }; });
+}
+const storyTalkMentionLine = (w, key, text) => (x => x.length ? `mentioned(대화에 나온 인물·항목의 문서 요지): ${JSON.stringify(x)}\n` : "")(storyTalkMentioned(w, key, text));
 const STORY_TALK_PUBLIC_RULE = "publicChange: 이번 차례로 생겨 그 자리에 없던 사람도 보거나 들을 수 있는 변화(장치가 돌아감, 큰 소리, 누가 자리를 옮김, 눈에 띄는 상처나 물건). 대화 내용이나 둘 사이의 일은 넣지 않는다. 없으면 빈 문자열.";
 /* 들은 지식의 출처를 사람 이름으로: 누구에게 들었는지 물으면 둘러대지 않고 답할 수 있게 */
 /* 검토용: 지난 두 장에서 주인공이 다른 인물과 나눈 대화(이 인물이 없던 자리). 이 인물의 아는 것에 들어 있는 만큼만 알아도 된다 */
@@ -436,9 +448,10 @@ mood와 reply를 가장 먼저 출력한다. memory는 이번 발언으로 생�
 너에게 전달되는 knowledge.known은 이 인물이 실제로 알게 된 정보만 담는다. via가 told인 것은 heardFrom에게서 들은 것이다. 어떻게 아느냐고 물으면 성격대로 숨기거나 둘러댈 수는 있어도, 들은 적 없는 척 사실과 다르게 지어내지는 않는다. 세상과 다른 사람에 관한 그 밖의 정확한 세부 사항을 새로 지어내거나 다른 인물이 아는 일을 아는 척하지 않는다. 추론은 알고 있는 정보만으로 하며 단정하지 않는다. 사용자가 이번에 명시적으로 전한 내용은 전언으로 이해한다. 질문에 든 표현을 이미 알고 있던 사실처럼 재사용하지 않는다.
 ${STORY_TALK_NEWS_RULE}
 ${STORY_TALK_DECIDE_RULE}
+${STORY_TALK_MENTION_RULE}
 ${PROMPT_CACHE_BREAK}이번 대화: 너는 ${e.title}(key=${JSON.stringify(key)})이고, 사용자는 ${w.entities[pk].title}(key=${JSON.stringify(pk)})의 입장에서 말한다.
 ${storyTalkMentions(w, key, text)}현재 직접 접하는 상황: ${JSON.stringify(s.scene || "")}
-${storyTalkElsewhereBlock(w, key)}${(x => x.length ? `news: ${JSON.stringify(x)}\n` : "")(storyTalkNews(w))}${storyTalkDecidedLine(w)}${storyTalkPlaceLine(w, key)}${storyTalkWhereRule()}
+${storyTalkElsewhereBlock(w, key)}${(x => x.length ? `news: ${JSON.stringify(x)}\n` : "")(storyTalkNews(w))}${storyTalkDecidedLine(w)}${storyTalkMentionLine(w, key, text)}${storyTalkPlaceLine(w, key)}${storyTalkWhereRule()}
 ${STORY_TALK_PUBLIC_RULE}
 인물: ${JSON.stringify({ name: e.title, profile: w.story.dialogueProfiles?.[key], player: { name: w.entities[pk].title, state: storyTalkPlayerState(w) }, relationship: s.relationship, ...(s.mood ? { previousMood: s.mood } : {}), ...(storyBond(w, key) != null ? { distance: STORY_TALK_BONDS[storyBond(w, key)] } : {}), knowledge: { known: s.knowledge.known.map(({ fact, via, source, evidence }) => ({ fact, via, ...(via === "told" ? { heardFrom: storyTalkHeardFrom(w, source, evidence) } : {}) })) } })}
 이전 승인된 대화의 기억: ${JSON.stringify(approved.map(t => t.memory))}
@@ -620,7 +633,7 @@ async function sendStoryTalk(ev = "") {
     job.phase = "review"; refreshStoryTalk(w, key);
     const draft = out;
     out = storyTalkApplyFix(draft, await callJson("storyChatReview", `## 스토리 대화 지식·설정 검토
-중요한 변화가 없는 응답도 지식 범위를 확인한다. 문서와 줄거리의 사실을 인물의 지식으로 혼동하지 않았는지 실제 습득 경로를 기준으로 판단한다. 단순 소속·관계·현장에 있었다는 이유만으로 모든 세부 정보를 공유받았다고 가정하지 않는다. revealedInStory 표시도 개인 지식의 근거가 아니다. 다만 news(바깥으로 알려진 소식)의 what을 reach에 드는 인물이 아는 것은 누설이 아니니 지우거나 모르는 척으로 바꾸지 않는다. 초안이 worldAdded로 새로 정한 사실은, 미공개 진실(cover 포함)·문서·news·decided와 모순되거나 사건의 진실(범인, 숨은 동기)을 드러내면 reply와 worldAdded에서 모순 없게 고치거나 빼고, 그렇지 않고 이 인물의 자리에서 알 만하면 근거 없는 지식으로 보지 않고 둔다. 이 인물의 자리에서 알 만한 조사 사실까지 모두 모른다고 흐리는 초안은 고치지 않아도 되지만, 그런 방향으로 고치지도 않는다. 이번 발언에 없는 질문을 답하면서 모르는 구체적 사실을 흘리거나 유도하지 않도록 한다.
+중요한 변화가 없는 응답도 지식 범위를 확인한다. 문서와 줄거리의 사실을 인물의 지식으로 혼동하지 않았는지 실제 습득 경로를 기준으로 판단한다. 단순 소속·관계·현장에 있었다는 이유만으로 모든 세부 정보를 공유받았다고 가정하지 않는다. revealedInStory 표시도 개인 지식의 근거가 아니다. 다만 news(바깥으로 알려진 소식)의 what을 reach에 드는 인물이 아는 것은 누설이 아니니 지우거나 모르는 척으로 바꾸지 않는다. reply가 mentioned(문서 요지)와 어긋나는 사실(성별, 나이, 소속, 직책, 생사, 관계)을 말하면 문서에 맞게 고친다. 초안이 worldAdded로 새로 정한 사실은, 미공개 진실(cover 포함)·문서·news·decided와 모순되거나 사건의 진실(범인, 숨은 동기)을 드러내면 reply와 worldAdded에서 모순 없게 고치거나 빼고, 그렇지 않고 이 인물의 자리에서 알 만하면 근거 없는 지식으로 보지 않고 둔다. 이 인물의 자리에서 알 만한 조사 사실까지 모두 모른다고 흐리는 초안은 고치지 않아도 되지만, 그런 방향으로 고치지도 않는다. 이번 발언에 없는 질문을 답하면서 모르는 구체적 사실을 흘리거나 유도하지 않도록 한다.
 이번 사용자 발언이 명시적으로 전한 내용은 전달받은 주장으로 추가할 수 있지만 질문·가정은 확정된 습득이 아니다. knowledgeAdded에는 이번에 실제로 습득한 항목만 근거와 함께 쓴다(기존 항목은 다시 쓰지 않는다). 초안의 reply·memory·scene·relationship·knowledgeAdded에 근거 없는 지식이 있으면 함께 고친다. 이전의 승인되지 않은 응답·memory를 지식의 근거로 순환 인용하지 않는다. 모르는 내용을 답변에서 굳이 나열하거나 암시하지 않는다.
 설정·말투·지식 범위·현재 생사와 의식 상태에 맞춰 아래 대화를 검토하고 어긋난 내용은 직접 고친 최종 JSON을 반환한다. 근거가 부족하다는 이유만으로 확인 필요 메모를 만들지 않는다. 약속·관계·정보 변화와 memory도 일치시킨다. 설정상 불가능한 행동은 성공시키지 않는다. 미공개 진실은 reply와 memory에 노출하지 않는다.
 reply에 지식·설정·생사 상태 문제가 없고, 주인공에게 할 일을 지시·재촉하는 문장이나 맥락 없는 직업·전문 용어 나열이 없으면 초안의 reply를 글자 그대로 둔다. 그런 문장이 있으면 그 부분만 이 인물다운 다른 말로 바꾼다. 인물이 자기 뜻으로 한 약속·승낙·거절과 분명한 대답은 지식 문제가 아니니 그대로 두고, 미루거나 흐리는 말로 바꾸지 않는다. 고칠 때 해명이나 단서("~라는 말은 아니야", "내가 아는 건 ~뿐", "아직 정해진 거 없어")를 덧붙이지 않고, 입말의 리듬을 정돈된 설명문으로 바꾸지 않는다. 문제가 있으면 그 부분만 고치고 말투·감정·농담·문장 리듬은 살린다. 무난하게 다듬거나 앞선 용건을 되풀이하는 문장으로 바꾸지 않는다. 한국어가 아닌 문자(고유명사 제외)가 섞였으면 한국어로 고치고, 줄표(—, –)는 쉼표나 마침표로 바꾼다.
@@ -680,7 +693,7 @@ ${docText(S.pages[pk], w)}
 ## 이번 장에서 앞서 한 행동
 ${recent.length ? JSON.stringify(recent) : "(없음)"}
 ${(x => x.elsewhereThisChapter ? `\n## 이번 장에 주인공이 다른 인물과 겪은 일 (차례대로)\n${JSON.stringify(x)}\n장면은 이 마지막 상태(주인공이 있는 곳, 흐른 시간, 바뀐 상황)에서 이어진다.\n` : "")(storyTalkElsewhere(w, STORY_SCENE_KEY, { full: true }))}
-${(x => x.length ? `## 이번 장 무렵 알려진 소식\n${JSON.stringify(x)}\n` : "")(storyTalkNews(w))}${storyTalkDecidedLine(w)}
+${(x => x.length ? `## 이번 장 무렵 알려진 소식\n${JSON.stringify(x)}\n` : "")(storyTalkNews(w))}${storyTalkDecidedLine(w)}${storyTalkMentionLine(w, STORY_SCENE_KEY, text)}
 ## 이번 행동
 ${JSON.stringify(text)}
 
