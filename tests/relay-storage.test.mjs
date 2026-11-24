@@ -39,24 +39,36 @@ const pw = await env.DB.prepare("SELECT hash FROM users WHERE id = ?").bind("철
 assert(!pw.hash.includes("secret1") && pw.hash.length === 64); ok("비밀번호는 해시로만 저장한다");
 
 r = await call("/api/sync"); assert.strictEqual(r.status, 401); ok("로그인하지 않으면 저장소에 접근할 수 없다");
-r = await call("/api/sync", { method: "POST", token: t1, body: { worlds: [{ wid: "w1", data: '{"title":"A"}', updated: 100 }], pages: [{ wid: "w1", pkey: "p1", data: '{"t":1}', updated: 100 }, { wid: "w1", pkey: "p2", data: '{"t":2}', updated: 100 }] } });
+r = await call("/api/sync", { method: "POST", token: t1, body: { client: "test", worlds: [{ wid: "w1", data: '{"title":"A"}', updated: 100 }], pages: [{ wid: "w1", pkey: "p1", data: '{"t":1}', updated: 100 }, { wid: "w1", pkey: "p2", data: '{"t":2}', updated: 100 }] } });
 assert.strictEqual(r.status, 200);
 r = await call("/api/sync?since=0", { token: t2 });
 assert.strictEqual(r.json.worlds.length, 1); assert.strictEqual(r.json.pages.length, 2); const s1 = r.json.next;
 ok("한 기기에서 올린 세계관을 다른 기기(다른 토큰)에서 받는다");
-await call("/api/sync", { method: "POST", token: t1, body: { pages: [{ wid: "w1", pkey: "p1", data: '{"t":"old"}', updated: 50 }] } });
+await call("/api/sync", { method: "POST", token: t1, body: { client: "test", pages: [{ wid: "w1", pkey: "p1", data: '{"t":"old"}', updated: 50 }] } });
 r = await call("/api/sync?since=0", { token: t1 }); assert.strictEqual(r.json.pages.find(p => p.pkey === "p1").data, '{"t":1}');
-await call("/api/sync", { method: "POST", token: t1, body: { pages: [{ wid: "w1", pkey: "p1", data: '{"t":"new"}', updated: 200 }] } });
+await call("/api/sync", { method: "POST", token: t1, body: { client: "test", pages: [{ wid: "w1", pkey: "p1", data: '{"t":"new"}', updated: 200 }] } });
 r = await call("/api/sync?since=" + s1, { token: t1 }); assert.strictEqual(r.json.pages.length, 1); assert.strictEqual(r.json.pages[0].data, '{"t":"new"}');
 ok("더 오래된 수정은 덮어쓰지 않고, since 뒤에 바뀐 것만 내려 준다");
 await call("/api/signup", { method: "POST", body: { id: "영희", pw: "secret3", invite: "other" } });
 const t3 = (await call("/api/login", { method: "POST", body: { id: "영희", pw: "secret3" } })).json.token;
 r = await call("/api/sync?since=0", { token: t3 }); assert.strictEqual(r.json.worlds.length, 0); ok("다른 사람의 세계관은 보이지 않는다");
-await call("/api/sync", { method: "POST", token: t1, body: { worlds: [{ wid: "w1", deleted: true, updated: 300 }] } });
+{ // 예전 앱(client 없음)은 올리지 못하고, 다른 기기가 그 사이 바꾼 세계관은 덮지 않고 서버 기록을 돌려준다
+  r = await call("/api/sync", { method: "POST", token: t1, body: { worlds: [{ wid: "w1", data: '{"title":"OLD"}', updated: 999 }] } }); assert.strictEqual(r.status, 409);
+  await call("/api/sync", { method: "POST", token: t1, body: { client: "test", worlds: [{ wid: "wc", data: '{"v":1}', updated: 10 }] } });
+  r = await call("/api/sync", { method: "POST", token: t1, body: { client: "test", worlds: [{ wid: "wc", data: '{"v":2}', updated: 20, base: 10 }] } }); assert.deepStrictEqual(r.json.conflicts, []);
+  r = await call("/api/sync", { method: "POST", token: t1, body: { client: "test", worlds: [{ wid: "wc", data: '{"v":"stale"}', updated: 99, base: 10 }] } });
+  assert.strictEqual(r.json.conflicts.length, 1); assert.strictEqual(r.json.conflicts[0].data, '{"v":2}'); assert.strictEqual(r.json.conflicts[0].updated, 20);
+  r = await call("/api/sync", { method: "POST", token: t1, body: { client: "test", worlds: [{ wid: "wc", data: '{"v":"nobase"}', updated: 99 }] } }); assert.strictEqual(r.json.conflicts.length, 1);
+  r = await call("/api/sync", { method: "POST", token: t1, body: { client: "test", worlds: [{ wid: "wc", deleted: true, updated: 99, base: 10 }] } }); assert.strictEqual(r.json.conflicts.length, 1);
+  r = await call("/api/sync?since=0", { token: t1 }); assert.strictEqual(r.json.worlds.find(w => w.wid === "wc").data, '{"v":2}');
+  r = await call("/api/sync", { method: "POST", token: t1, body: { client: "test", worlds: [{ wid: "wc", data: '{"v":3}', updated: 30, base: 20 }] } }); assert.deepStrictEqual(r.json.conflicts, []);
+  ok("세계관은 마지막으로 받은 서버 기록 위에서만 덮어쓰고, 예전 앱의 올리기는 막는다");
+}
+await call("/api/sync", { method: "POST", token: t1, body: { client: "test", worlds: [{ wid: "w1", deleted: true, updated: 300, base: 100 }] } });
 r = await call("/api/sync?since=0", { token: t1 });
-assert(r.json.worlds[0].deleted === 1 && r.json.pages.every(p => p.deleted === 1 && p.data === null)); ok("세계관을 지우면 그 문서들도 지운 것으로 표시하고 내용을 비운다");
+assert(r.json.worlds.find(w => w.wid === "w1").deleted === 1 && r.json.pages.every(p => p.deleted === 1 && p.data === null)); ok("세계관을 지우면 그 문서들도 지운 것으로 표시하고 내용을 비운다");
 const many = Array.from({ length: 1700 }, (_, i) => ({ wid: "w2", pkey: "k" + i, data: "{}", updated: 1 }));
-await call("/api/sync", { method: "POST", token: t3, body: { worlds: [{ wid: "w2", data: "{}", updated: 1 }], pages: many } });
+await call("/api/sync", { method: "POST", token: t3, body: { client: "test", worlds: [{ wid: "w2", data: "{}", updated: 1 }], pages: many } });
 let since = 0, got = 0, more = true, rounds = 0;
 while (more) { r = await call("/api/sync?since=" + since, { token: t3 }); got += r.json.pages.length; since = r.json.next; more = r.json.more; rounds++; }
 assert.strictEqual(got, 1700); assert.strictEqual(rounds, 2); ok("문서가 많으면 나눠서 내려 주고 빠짐없이 받는다");

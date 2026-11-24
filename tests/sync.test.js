@@ -148,6 +148,22 @@ const until = async (fn, msg, ms = 15000) => { const t0 = Date.now(); while (Dat
     });
     assert.strictEqual(revived, "하나,둘,셋,사라졌던 말,넷,다섯,여섯");
     pass("되살린 기록 합치기: 시점 복원에서 꺼낸 세계관을 덮지 않고 합쳐 사라진 대화를 되돌린다");
+    { // GitHub 실행 결과는 zip으로 받아진다: 압축을 풀지 않고 골라도 합친다
+      const zipped = await B.page.evaluate(async () => { const old = JSON.parse(JSON.stringify(await Store.getWorld("wsync1"))); old.story.chapters[0].dialogues.e2.turns.push({ user: "zip에서 온 말", reply: "z", at: 99 }); return JSON.stringify([old]); });
+      const dir = fs.mkdtempSync(path.join(require("os").tmpdir(), "rz-")); fs.writeFileSync(path.join(dir, "recovered-worlds.json"), zipped);
+      require("child_process").execFileSync("zip", ["-q", "-j", path.join(dir, "recovered-worlds.zip"), path.join(dir, "recovered-worlds.json")]);
+      const bytes = [...fs.readFileSync(path.join(dir, "recovered-worlds.zip"))];
+      const got = await B.page.evaluate(async bytes => { await mergeRecovered(new File([new Uint8Array(bytes)], "recovered-worlds.zip")); return (await Store.getWorld("wsync1")).story.chapters[0].dialogues.e2.turns.map(t => t.user); }, bytes);
+      assert.ok(got.includes("zip에서 온 말")); pass("되살린 기록 합치기는 zip 파일도 바로 읽는다");
+    }
+    { // 오래된 기록을 든 기기가 올려도 서버는 덮지 않고 서버 기록을 돌려주며, 기기는 합쳐서 다시 올린다
+      await B.page.evaluate(() => Sync.push()); await until(() => B.page.evaluate(() => !Sync.pending() && !Sync.busy), "B 올리기 끝");
+      const before = JSON.parse(row("SELECT data FROM worlds WHERE wid = 'wsync1'").data).story.chapters[0].dialogues.e2.turns.length;
+      await A.page.evaluate(async () => { const w = await Store.getWorld("wsync1"); w.story.chapters[0].dialogues.e2.turns = w.story.chapters[0].dialogues.e2.turns.slice(0, 1); w.updatedAt = Date.now(); await Store.putWorldRaw(w); Sync.setBase("wsync1", 1); Sync.mark("w", "wsync1"); Sync._prePull = true; await Sync.push(); Sync._prePull = false; });
+      await until(() => A.page.evaluate(() => !Sync.pending() && !Sync.busy), "A 다시 올리기 끝", 20000);
+      const after = JSON.parse(row("SELECT data FROM worlds WHERE wid = 'wsync1'").data).story.chapters[0].dialogues.e2.turns.length;
+      assert.ok(after >= before, `서버 기록이 줄면 안 된다 (${before} → ${after})`); pass("오래된 기록으로 올려도 서버 세계관을 덮지 않고 합친다");
+    }
 
     /* B에서 세계관을 지우면 A에서도 사라진다 */
     await B.page.click('#side [data-act="home"]');

@@ -17,7 +17,7 @@
  *   GET  /api/sync?since=n             since 뒤에 바뀐 세계관과 문서
  *   GET  /api/sync?since=n&meta=1      본문 없는 변경 목록(같은 순번은 after로 나눠 받음)
  *   POST /api/sync/read {records}     필요한 순번의 본문만 받아 오기
- *   POST /api/sync {worlds, pages}     올리기. 기기의 수정 시각(updated)이 더 최근인 것만 저장한다
+ *   POST /api/sync {worlds, pages, client}  올리기. 세계관은 기기가 마지막으로 받은 서버 기록(base)이 지금 기록일 때만 저장하고, 아니면 conflicts로 서버 기록을 돌려준다. 문서는 수정 시각이 더 최근인 것만 저장한다
  */
 import { pipelineSchema } from "./pipeline-store.js";
 import { RELAY_VERSION } from "./engine.generated.js";
@@ -190,14 +190,18 @@ async function api(request, env, url, cors, fail) {
     }
     if (path === "/api/sync/read" && m === "POST") return json(await syncRead(db, uid, (await body()).records));
     if (path === "/api/sync" && m === "POST") {
-      const { worlds = [], pages = [] } = await body();
-      const st = [];
+      const { worlds = [], pages = [], client } = await body();
+      // 예전 앱(올리기 전에 다른 기기의 변경을 합치지 않음)이 열려 있던 탭에서 오래된 기록으로 덮어쓰지 못하게 막는다
+      if (!client) return fail(409, "앱이 예전 버전입니다. 이 화면을 새로고침한 뒤 다시 동기화해 주세요. 예전 버전은 다른 기기의 기록을 덮어쓸 수 있어 올리기를 막았습니다.");
+      const st = [], sent = [];
       for (const w of (Array.isArray(worlds) ? worlds : []).slice(0, 500)) {
         if (!w || typeof w.wid !== "string" || !w.wid) continue;
-        const del = w.deleted ? 1 : 0, s = nextStamp();
-        st.push(db.prepare("INSERT INTO worlds (uid, wid, data, updated, deleted, stamp) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (uid, wid) DO UPDATE SET data = excluded.data, updated = excluded.updated, deleted = excluded.deleted, stamp = excluded.stamp WHERE excluded.updated >= worlds.updated")
-          .bind(uid, w.wid, del ? null : String(w.data || ""), Number(w.updated) || 0, del, s));
-        if (del) st.push(db.prepare("UPDATE pages SET data = NULL, deleted = 1, stamp = ? WHERE uid = ? AND wid = ? AND deleted = 0").bind(nextStamp(), uid, w.wid));
+        const del = w.deleted ? 1 : 0, s = nextStamp(), base = w.base == null || !Number.isFinite(Number(w.base)) ? -1 : Number(w.base);
+        // 이 기기가 마지막으로 받은 서버 기록(base)이 지금 서버 기록이어야 저장한다. 그 사이 다른 기기가 바꿨으면 저장하지 않고 서버 기록을 돌려줘 합치게 한다
+        st.push(db.prepare("INSERT INTO worlds (uid, wid, data, updated, deleted, stamp) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (uid, wid) DO UPDATE SET data = excluded.data, updated = excluded.updated, deleted = excluded.deleted, stamp = excluded.stamp WHERE worlds.updated <= ? OR (worlds.deleted = 1 AND excluded.updated >= worlds.updated)")
+          .bind(uid, w.wid, del ? null : String(w.data || ""), Number(w.updated) || 0, del, s, base));
+        if (del) st.push(db.prepare("UPDATE pages SET data = NULL, deleted = 1, stamp = ? WHERE uid = ? AND wid = ? AND deleted = 0 AND EXISTS (SELECT 1 FROM worlds WHERE uid = ? AND wid = ? AND stamp = ?)").bind(nextStamp(), uid, w.wid, uid, w.wid, s));
+        sent.push([w.wid, s]);
       }
       for (const p of (Array.isArray(pages) ? pages : []).slice(0, 5000)) {
         if (!p || typeof p.wid !== "string" || typeof p.pkey !== "string" || !p.wid || !p.pkey) continue;
@@ -206,7 +210,14 @@ async function api(request, env, url, cors, fail) {
           .bind(uid, p.wid, p.pkey, del ? null : String(p.data || ""), Number(p.updated) || 0, del, nextStamp()));
       }
       for (let i = 0; i < st.length; i += 50) await db.batch(st.slice(i, i + 50));
-      return json({ ok: true, saved: st.length });
+      const conflicts = [];
+      for (let i = 0; i < sent.length; i += 50) {
+        const part = sent.slice(i, i + 50);
+        const rows = (await db.prepare(`SELECT wid, data, updated, deleted, stamp FROM worlds WHERE uid = ? AND wid IN (${part.map(() => "?").join(",")})`).bind(uid, ...part.map(x => x[0])).all()).results || [];
+        const by = new Map(rows.map(r => [r.wid, r]));
+        for (const [wid, s] of part) { const r = by.get(wid); if (r && Number(r.stamp) !== s) conflicts.push({ wid, data: r.deleted ? null : r.data, updated: r.updated, deleted: !!r.deleted, stamp: r.stamp }); }
+      }
+      return json({ ok: true, saved: st.length, conflicts });
     }
     return fail(404, "허용되지 않은 요청입니다.");
   } catch (e) {

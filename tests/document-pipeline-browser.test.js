@@ -43,6 +43,7 @@ const until=async(fn,ms=20000)=>{const t=Date.now();while(Date.now()-t<ms){if(aw
   const open=async()=>{const p=await context.newPage();p.on('pageerror',e=>errors.push(e.stack));await p.goto(origin);await p.waitForFunction(()=>S.ready);return p};
   page=await open();
   const fixture=async name=>page.evaluate(async name=>{
+   await Sync.pull();   // 서버는 이 기기가 마지막으로 받은 기록 위에서만 세계관을 덮어쓰므로, 통째로 바꾸기 전에 받아 둔다
    const A=keyOf('항구'),B=keyOf(name),ent=(title,type,pg)=>({...newEntity(title,type,''),page:pg});
    const w={kind:'world',id:'browser-world',title:'항구',seed:'항구 세계',era:'1900년',guide:'',rules:[],userCanon:'',timeline:[],relations:[],events:[],navboxes:{},aliases:{},toneTried:true,angleOff:true,relMigrated:true,entities:{[A]:ent('항구','지명',true),[B]:ent(name,'인물',false)},mainKey:A,createdAt:1};
    const p={key:A,title:'항구',type:'지명',summary:'항구 도시',infobox:[],sections:[{heading:'개요',level:1,body:'거대한 항구이다.'}],links:[],createdAt:1};

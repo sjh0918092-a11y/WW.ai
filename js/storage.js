@@ -273,7 +273,7 @@ const Sync = {
   async push() {
     if (!this.acct || this.busy) { if (this.acct) this.schedule(); return; }
     if (!this.dirty) this.load(); if (!this.pending()) return;
-    if (this.dirty.w.size && !this._prePull) {   // 세계관을 올리기 전에 다른 기기의 변경을 먼저 받아 합친다(덮어쓰기 방지)
+    if ((this.dirty.w.size || this.dirty.dw.size) && !this._prePull) {   // 세계관을 올리기 전에 다른 기기의 변경을 먼저 받아 합친다(덮어쓰기 방지)
       this._prePull = true;
       try { await this.pull(); } finally { this._prePull = false; }
       if (this.err) { this.schedule(30000); this.render(); return; }
@@ -282,24 +282,43 @@ const Sync = {
     try {
       await Store.q;
       const token = this.acct?.token, base = this.base(), d = this.dirty, items = [];
-      for (const wid of [...d.w]) { const mark = this.marks.get("w:" + wid); const w = await Store.getWorld(wid); if (w) items.push(["w", wid, { wid, data: JSON.stringify(w), updated: w.updatedAt || Date.now() }, mark]); else d.w.delete(wid); }
+      const bases = this.bases();
+      for (const wid of [...d.w]) { const mark = this.marks.get("w:" + wid); const w = await Store.getWorld(wid); if (w) items.push(["w", wid, { wid, data: JSON.stringify(w), updated: w.updatedAt || Date.now(), base: bases[wid] ?? null }, mark]); else d.w.delete(wid); }
       for (const id of [...d.p]) { const mark = this.marks.get("p:" + id); const [wid, key] = id.split("\u0001"); const p = await Store.getPage(wid, key); if (p) items.push(["p", id, { wid, pkey: key, data: JSON.stringify(p), updated: p.savedAt || p.createdAt || Date.now() }, mark]); else d.p.delete(id); }
-      for (const wid of d.dw) items.push(["dw", wid, { wid, deleted: true, updated: Date.now() }, this.marks.get("dw:" + wid)]);
+      for (const wid of d.dw) items.push(["dw", wid, { wid, deleted: true, updated: Date.now(), base: bases[wid] ?? null }, this.marks.get("dw:" + wid)]);
       for (const id of d.dp) { const [wid, key] = id.split("\u0001"); items.push(["dp", id, { wid, pkey: key, deleted: true, updated: Date.now() }, this.marks.get("dp:" + id)]); }
-      let batch = [], size = 0;
+      let batch = [], size = 0; const conflicts = [];
       const send = async () => {
         if (!batch.length) return;
         if (this.acct?.token !== token || this.base() !== base || this.dirty !== d) throw new Error("동기화 중 계정이나 서버가 바뀌었습니다.");
-        await this.req("/sync", { method: "POST", body: JSON.stringify({ worlds: batch.filter(x => x[0] === "w" || x[0] === "dw").map(x => x[2]), pages: batch.filter(x => x[0] === "p" || x[0] === "dp").map(x => x[2]) }) });
+        const res = await this.req("/sync", { method: "POST", body: JSON.stringify({ client: typeof APP_VERSION === "string" ? APP_VERSION : "?", worlds: batch.filter(x => x[0] === "w" || x[0] === "dw").map(x => x[2]), pages: batch.filter(x => x[0] === "p" || x[0] === "dp").map(x => x[2]) }) });
         if (this.acct?.token !== token || this.base() !== base || this.dirty !== d) throw new Error("동기화 중 계정이나 서버가 바뀌었습니다.");
-        for (const [k, id, body, mark] of batch) { if (this.marks.get(k + ":" + id) === mark) d[k].delete(id); if (k === "w") this.setBase(id, body.updated); }
+        const lost = new Set((Array.isArray(res?.conflicts) ? res.conflicts : []).map(r => { conflicts.push(r); return r.wid; }));   // 그 사이 다른 기기가 바꿔 저장되지 않은 세계관
+        for (const [k, id, body, mark] of batch) { if ((k === "w" || k === "dw") && lost.has(id)) continue; if (this.marks.get(k + ":" + id) === mark) d[k].delete(id); if (k === "w") this.setBase(id, body.updated); }
         this.persist(); batch = []; size = 0;
       };
       for (const it of items) { const n = (it[2].data || "").length + 200; if (size + n > 4e6 && batch.length) await send(); batch.push(it); size += n; }
       await send();
       this.lastAt = Date.now();
+      if (conflicts.length && await this.applyConflicts(conflicts)) { this.busy = false; this.schedule(500); await this.refresh(); }
     } catch (e) { this.err = e?.message || "올리지 못했습니다."; this.schedule(30000); }
     this.busy = false; this.render();
+  },
+  /* 올리기가 거절된 세계관: 서버 기록과 이 기기 기록을 합쳐 다시 올린다(어느 쪽도 덮지 않는다) */
+  async applyConflicts(rows) {
+    let n = 0;
+    for (const r of rows) {
+      if (!r || typeof r.wid !== "string") continue;
+      const local = await Store.getWorld(r.wid);
+      if (r.deleted || this.dirty?.dw.has(r.wid)) { this.setBase(r.wid, r.updated); n++; continue; }   // 다른 기기가 지웠거나 이 기기에서 지우는 중이다: 이 기기의 기록은 다음 올리기에서 되살린다
+      let w; try { w = JSON.parse(r.data); } catch { continue; }
+      if (!w || w.kind !== "world" || w.id !== r.wid) continue;
+      const merged = local ? mergeWorldInto(JSON.parse(JSON.stringify(local)), w) : w;
+      merged.updatedAt = Math.max(local?.updatedAt || 0, r.updated) + 1;
+      await Store.putWorldRaw(merged);
+      this.incoming.set(r.wid, merged.updatedAt); this.setBase(r.wid, r.updated); this.mark("w", r.wid); n++;
+    }
+    return n;
   },
   async flush() {
     const token = this.acct?.token, base = this.base(), until = Date.now() + 60000;
@@ -321,6 +340,7 @@ const Sync = {
       const local = await Store.getWorld(r.wid);
       if (!current()) throw new Error("동기화 중 계정이나 서버가 바뀌었습니다.");
       if (r.deleted) { if (local && (local.updatedAt || 0) <= r.updated) { await Store.deleteWorld(r.wid, true); changed++; } continue; }
+      if (this.dirty?.dw.has(r.wid)) { this.setBase(r.wid, r.updated); continue; }   // 이 기기에서 지운 세계관: 받지 않고, 지우기를 그 기록 위에 올린다
       const act = this.worldAction(r, local);
       if (act === "skip") continue;
       const w = JSON.parse(r.data);
@@ -563,8 +583,26 @@ function recoveredWorlds(data) {
   visit(data); return out;
 }
 const countTurns = w => (w?.story?.chapters || []).reduce((n, c) => n + Object.values(c.dialogues || {}).reduce((m, s) => m + (s?.turns?.length || 0), 0), 0);
+/* GitHub 실행 결과(Artifacts)는 zip으로 내려받아진다: 압축을 풀지 않고 안의 JSON을 읽는다 */
+async function zipJsonText(buf) {
+  const b = new Uint8Array(buf), dv = new DataView(buf), dec = new TextDecoder();
+  let e = -1; for (let i = b.length - 22; i >= Math.max(0, b.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { e = i; break; }
+  if (e < 0) throw new Error("zip 파일을 읽지 못했습니다.");
+  let at = dv.getUint32(e + 16, true); const count = dv.getUint16(e + 10, true), texts = [];
+  for (let k = 0; k < count && dv.getUint32(at, true) === 0x02014b50; k++) {
+    const method = dv.getUint16(at + 10, true), size = dv.getUint32(at + 20, true), nlen = dv.getUint16(at + 28, true), xlen = dv.getUint16(at + 30, true), clen = dv.getUint16(at + 32, true), off = dv.getUint32(at + 42, true);
+    const name = dec.decode(b.subarray(at + 46, at + 46 + nlen)); at += 46 + nlen + xlen + clen;
+    if (!/\.(json|txt)$/i.test(name)) continue;
+    const start = off + 30 + dv.getUint16(off + 26, true) + dv.getUint16(off + 28, true), raw = b.subarray(start, start + size);
+    texts.push(method === 0 ? dec.decode(raw) : await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text());
+  }
+  if (!texts.length) throw new Error("zip 안에 JSON 파일이 없습니다.");
+  return texts.length === 1 ? texts[0] : "[" + texts.join(",") + "]";
+}
 async function mergeRecovered(file) {
-  const text = await file.text(); let data;
+  let text, data;
+  try { const buf = await file.arrayBuffer(), h = new Uint8Array(buf, 0, Math.min(4, buf.byteLength)); text = h[0] === 0x50 && h[1] === 0x4b ? await zipJsonText(buf) : new TextDecoder().decode(buf); }
+  catch (e) { toast(e?.message || "파일을 읽지 못했습니다."); return; }
   try { data = JSON.parse(text); } catch {   // 명령 출력 앞에 안내 줄이 붙어 있어도 JSON 부분만 읽는다
     const i = text.search(/[[{]/); try { data = i >= 0 ? JSON.parse(text.slice(i)) : null; } catch { data = null; }
     if (!data) { toast("JSON 파일을 읽지 못했습니다."); return; }

@@ -233,7 +233,7 @@ function gsetHtml() {
     ${acctHtml()}
     <h2 class="nf-h">백업</h2>
     <p class="note">세계관과 문서를 JSON 파일 하나로 내보내거나, 그 파일에서 가져옵니다. 같은 id의 세계관은 가져온 내용으로 덮어씁니다. 저장 위치: ${esc(storeLabel())}</p>
-    <div class="row"><button type="button" class="btn" data-act="export" ${S.worlds.length ? "" : "disabled"}>내보내기</button><button type="button" class="btn" data-act="import">가져오기</button><input type="file" id="importFile" accept="application/json,.json" hidden><button type="button" class="btn" data-act="import-merge" title="서버 시점 복원이나 백업에서 꺼낸 세계관을 지금 세계관에 덮지 않고 합칩니다">되살린 기록 합치기</button><input type="file" id="mergeFile" accept="application/json,.json,.txt" hidden></div>
+    <div class="row"><button type="button" class="btn" data-act="export" ${S.worlds.length ? "" : "disabled"}>내보내기</button><button type="button" class="btn" data-act="import">가져오기</button><input type="file" id="importFile" accept="application/json,.json" hidden><button type="button" class="btn" data-act="import-merge" title="서버 시점 복원이나 백업에서 꺼낸 세계관을 지금 세계관에 덮지 않고 합칩니다">되살린 기록 합치기</button><input type="file" id="mergeFile" accept="application/json,.json,.txt,.zip,application/zip" hidden></div>
   </div>`;
 }
 function acctHtml() {
